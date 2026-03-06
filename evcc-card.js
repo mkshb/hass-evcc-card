@@ -334,7 +334,8 @@ class EvccCard extends HTMLElement {
       const slug = id.split(".")[1] ?? "";
       return slug.startsWith("evcc_");
     });
-    return evccIds.map(id => `${id}=${hass.states[id]?.state}`).join("|");
+    const lang = this._config.language || (hass.language ?? "de");
+    return lang + "|" + evccIds.map(id => `${id}=${hass.states[id]?.state}`).join("|");
   }
 
   setConfig(config) {
@@ -497,9 +498,9 @@ class EvccCard extends HTMLElement {
       ? stateVal(this._hass, ents.charge_current) : null;
     const phases  = ents.phases_active
       ? parseInt(stateVal(this._hass, ents.phases_active)) || null : null;
-    const phasesLabel = phases === 1 ? "1-phasig"
-                      : phases === 3 ? "3-phasig"
-                      : phases !== null ? `${phases}-phasig` : null;
+    const phasesLabel = phases === 1 ? this._t("phasesSingle")
+                      : phases === 3 ? this._t("phasesTriple")
+                      : phases !== null ? `${phases}` : null;
 
     return `
       <div class="power-row ${charging ? "charging" : ""}">
