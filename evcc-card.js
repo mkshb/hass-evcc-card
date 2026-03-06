@@ -1613,17 +1613,18 @@ class EvccCard extends HTMLElement {
         font-family: var(--paper-font-body1_-_font-family, sans-serif);
       }
       .card-content { padding: 12px 16px 16px; }
-      .card-content:has(.battery-block),
-      .card-content:has(.site-block) { padding: 0; }
 
       /* ── Loadpoint ── */
       .loadpoint {
-        border: 1px solid var(--divider-color, #e5e7eb);
-        border-radius: 10px;
-        padding: 14px;
-        margin-bottom: 12px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--divider-color, #e5e7eb);
+        margin-bottom: 0;
       }
-      .loadpoint:last-child { margin-bottom: 0; }
+      .loadpoint:first-child { padding-top: 0; }
+      .loadpoint:last-child {
+        border-bottom: none;
+        padding-bottom: 0;
+      }
       .lp-header {
         display: flex;
         align-items: center;
@@ -1805,12 +1806,7 @@ class EvccCard extends HTMLElement {
 
       /* ── Site-Block ── */
       .site-block {
-        padding-top: 4px;
-        background: var(--ha-card-background, var(--card-background-color));
-        border-radius: var(--ha-card-border-radius, 12px);
-        box-shadow: var(--ha-card-box-shadow, 0 2px 8px rgba(0,0,0,.3));
-        border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #333));
-        padding: 16px;
+        padding: 0;
       }
 
       .site-bar-wrap {
@@ -1878,12 +1874,7 @@ class EvccCard extends HTMLElement {
 
       /* ── Hausbatterie-Block ── */
       .battery-block {
-        padding-top: 4px;
-        background: var(--ha-card-background, var(--card-background-color));
-        border-radius: var(--ha-card-border-radius, 12px);
-        box-shadow: var(--ha-card-box-shadow, 0 2px 8px rgba(0,0,0,.3));
-        border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #333));
-        padding: 16px;
+        padding: 0;
       }
 
       .batt-tabs {
@@ -1905,23 +1896,24 @@ class EvccCard extends HTMLElement {
 
       .batt-main-row {
         display: flex;
-        gap: 12px;
+        gap: 16px;
         align-items: flex-start;
       }
       .batt-text-col {
         flex: 1;
+        min-width: 0;
         display: flex;
         flex-direction: column;
         gap: 12px;
       }
       .batt-text-item {
         display: flex;
-        gap: 10px;
+        gap: 8px;
         align-items: flex-start;
       }
       .batt-text-icon { font-size: 1rem; margin-top: 1px; flex-shrink: 0; }
-      .batt-text-title { font-size: .84rem; font-weight: 600; margin-bottom: 2px; }
-      .batt-text-desc  { font-size: .78rem; color: var(--secondary-text-color); }
+      .batt-text-title { font-size: .82rem; font-weight: 600; margin-bottom: 2px; }
+      .batt-text-desc  { font-size: .76rem; color: var(--secondary-text-color); line-height: 1.4; }
       .batt-inline-val {
         color: var(--primary-color, #00b4d8);
         text-decoration: underline dotted;
@@ -1936,13 +1928,8 @@ class EvccCard extends HTMLElement {
         gap: 10px;
         flex-shrink: 0;
       }
-      .batt-marker-top {
-        font-size: .7rem;
-        font-weight: 700;
-        color: var(--secondary-text-color);
-        align-self: flex-start;
-        padding-top: 2px;
-      }
+      /* Marker wird nicht mehr neben dem Visual angezeigt */
+      .batt-marker-top { display: none; }
       .batt-visual {
         display: flex;
         flex-direction: column;
