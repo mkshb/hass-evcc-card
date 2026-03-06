@@ -334,7 +334,8 @@ class EvccCard extends HTMLElement {
       const slug = id.split(".")[1] ?? "";
       return slug.startsWith("evcc_");
     });
-    return evccIds.map(id => `${id}=${hass.states[id]?.state}`).join("|");
+    const lang = this._config.language || (hass.language ?? "de");
+    return lang + "|" + evccIds.map(id => `${id}=${hass.states[id]?.state}`).join("|");
   }
 
   setConfig(config) {
@@ -430,7 +431,7 @@ class EvccCard extends HTMLElement {
           </span>
         </div>
         ${this._renderModeSelector(ents)}
-        ${this._renderSocBar(ents)}
+        ${this._renderSocBar(ents, charging)}
         ${this._renderPowerRow(ents, charging)}
         ${this._renderSliders(ents)}
         ${this._renderCurrentBlock(ents)}
@@ -458,7 +459,7 @@ class EvccCard extends HTMLElement {
 
   // ── SOC-Balken ────────────────────────────────────────────────────────────
 
-  _renderSocBar(ents) {
+  _renderSocBar(ents, charging = false) {
     if (!ents.vehicle_soc) return "";
     const soc   = parseFloat(stateVal(this._hass, ents.vehicle_soc)) || 0;
     const range = ents.vehicle_range
@@ -476,7 +477,7 @@ class EvccCard extends HTMLElement {
           ${range !== null ? `<span>🛣 ${range} km</span>` : ""}
         </div>
         <div class="soc-track">
-          <div class="soc-fill"
+          <div class="soc-fill ${charging ? 'charging' : ''}"
                data-live-entity="${ents.vehicle_soc}" data-live-type="soc-fill"
                style="width:${soc}%;background:${color}"></div>
           ${limit !== null
@@ -495,6 +496,11 @@ class EvccCard extends HTMLElement {
     const unit    = unitStr(this._hass, ents.charge_power);
     const current = ents.charge_current
       ? stateVal(this._hass, ents.charge_current) : null;
+    const phases  = ents.phases_active
+      ? parseInt(stateVal(this._hass, ents.phases_active)) || null : null;
+    const phasesLabel = phases === 1 ? this._t("phasesSingle")
+                      : phases === 3 ? this._t("phasesTriple")
+                      : phases !== null ? `${phases}` : null;
 
     return `
       <div class="power-row ${charging ? "charging" : ""}">
@@ -502,7 +508,8 @@ class EvccCard extends HTMLElement {
               data-live-entity="${ents.charge_power}" data-live-type="power">
           ${power} ${unit}
         </span>
-        ${current !== null ? `<span class="power-current">${current} A</span>` : ""}
+        ${current !== null ? `<span class="power-sep">·</span><span class="power-current">${current} A</span>` : ""}
+        ${phasesLabel !== null ? `<span class="power-sep">·</span><span class="power-phases">${phasesLabel}</span>` : ""}
       </div>
     `;
   }
@@ -1613,17 +1620,18 @@ class EvccCard extends HTMLElement {
         font-family: var(--paper-font-body1_-_font-family, sans-serif);
       }
       .card-content { padding: 12px 16px 16px; }
-      .card-content:has(.battery-block),
-      .card-content:has(.site-block) { padding: 0; }
 
       /* ── Loadpoint ── */
       .loadpoint {
-        border: 1px solid var(--divider-color, #e5e7eb);
-        border-radius: 10px;
-        padding: 14px;
-        margin-bottom: 12px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--divider-color, #e5e7eb);
+        margin-bottom: 0;
       }
-      .loadpoint:last-child { margin-bottom: 0; }
+      .loadpoint:first-child { padding-top: 0; }
+      .loadpoint:last-child {
+        border-bottom: none;
+        padding-bottom: 0;
+      }
       .lp-header {
         display: flex;
         align-items: center;
@@ -1685,10 +1693,18 @@ class EvccCard extends HTMLElement {
         border-radius: 4px;
         overflow: visible;
       }
+      @keyframes soc-pulse {
+        0%   { opacity: 1; }
+        50%  { opacity: 0.5; }
+        100% { opacity: 1; }
+      }
       .soc-fill {
         height: 100%;
         border-radius: 4px;
         transition: width .4s ease;
+      }
+      .soc-fill.charging {
+        animation: soc-pulse 1.4s ease-in-out infinite;
       }
       .soc-limit-marker {
         position: absolute;
@@ -1703,14 +1719,16 @@ class EvccCard extends HTMLElement {
       /* ── Leistung ── */
       .power-row {
         display: flex;
-        align-items: baseline;
-        gap: 10px;
+        align-items: flex-end;
+        gap: 8px;
         margin-bottom: 12px;
         color: var(--secondary-text-color);
       }
       .power-row.charging { color: #22c55e; }
-      .power-value { font-size: 1.4rem; font-weight: 700; }
-      .power-current { font-size: .9rem; }
+      .power-value { font-size: 1.6rem; font-weight: 700; }
+      .power-sep { font-size: .8rem; color: var(--secondary-text-color); align-self: flex-end; padding-bottom: .2rem; }
+      .power-current { font-size: .82rem; align-self: flex-end; padding-bottom: .2rem; }
+      .power-phases { font-size: .82rem; align-self: flex-end; padding-bottom: .2rem; }
 
       /* ── Slider ── */
       .sliders { margin-bottom: 10px; }
@@ -1805,12 +1823,7 @@ class EvccCard extends HTMLElement {
 
       /* ── Site-Block ── */
       .site-block {
-        padding-top: 4px;
-        background: var(--ha-card-background, var(--card-background-color));
-        border-radius: var(--ha-card-border-radius, 12px);
-        box-shadow: var(--ha-card-box-shadow, 0 2px 8px rgba(0,0,0,.3));
-        border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #333));
-        padding: 16px;
+        padding: 0;
       }
 
       .site-bar-wrap {
@@ -1878,12 +1891,7 @@ class EvccCard extends HTMLElement {
 
       /* ── Hausbatterie-Block ── */
       .battery-block {
-        padding-top: 4px;
-        background: var(--ha-card-background, var(--card-background-color));
-        border-radius: var(--ha-card-border-radius, 12px);
-        box-shadow: var(--ha-card-box-shadow, 0 2px 8px rgba(0,0,0,.3));
-        border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #333));
-        padding: 16px;
+        padding: 0;
       }
 
       .batt-tabs {
@@ -1905,23 +1913,24 @@ class EvccCard extends HTMLElement {
 
       .batt-main-row {
         display: flex;
-        gap: 12px;
+        gap: 16px;
         align-items: flex-start;
       }
       .batt-text-col {
         flex: 1;
+        min-width: 0;
         display: flex;
         flex-direction: column;
         gap: 12px;
       }
       .batt-text-item {
         display: flex;
-        gap: 10px;
+        gap: 8px;
         align-items: flex-start;
       }
       .batt-text-icon { font-size: 1rem; margin-top: 1px; flex-shrink: 0; }
-      .batt-text-title { font-size: .84rem; font-weight: 600; margin-bottom: 2px; }
-      .batt-text-desc  { font-size: .78rem; color: var(--secondary-text-color); }
+      .batt-text-title { font-size: .82rem; font-weight: 600; margin-bottom: 2px; }
+      .batt-text-desc  { font-size: .76rem; color: var(--secondary-text-color); line-height: 1.4; }
       .batt-inline-val {
         color: var(--primary-color, #00b4d8);
         text-decoration: underline dotted;
@@ -1936,13 +1945,8 @@ class EvccCard extends HTMLElement {
         gap: 10px;
         flex-shrink: 0;
       }
-      .batt-marker-top {
-        font-size: .7rem;
-        font-weight: 700;
-        color: var(--secondary-text-color);
-        align-self: flex-start;
-        padding-top: 2px;
-      }
+      /* Marker wird nicht mehr neben dem Visual angezeigt */
+      .batt-marker-top { display: none; }
       .batt-visual {
         display: flex;
         flex-direction: column;
