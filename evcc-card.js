@@ -430,7 +430,7 @@ class EvccCard extends HTMLElement {
           </span>
         </div>
         ${this._renderModeSelector(ents)}
-        ${this._renderSocBar(ents)}
+        ${this._renderSocBar(ents, charging)}
         ${this._renderPowerRow(ents, charging)}
         ${this._renderSliders(ents)}
         ${this._renderCurrentBlock(ents)}
@@ -458,7 +458,7 @@ class EvccCard extends HTMLElement {
 
   // ── SOC-Balken ────────────────────────────────────────────────────────────
 
-  _renderSocBar(ents) {
+  _renderSocBar(ents, charging = false) {
     if (!ents.vehicle_soc) return "";
     const soc   = parseFloat(stateVal(this._hass, ents.vehicle_soc)) || 0;
     const range = ents.vehicle_range
@@ -476,7 +476,7 @@ class EvccCard extends HTMLElement {
           ${range !== null ? `<span>🛣 ${range} km</span>` : ""}
         </div>
         <div class="soc-track">
-          <div class="soc-fill"
+          <div class="soc-fill ${charging ? 'charging' : ''}"
                data-live-entity="${ents.vehicle_soc}" data-live-type="soc-fill"
                style="width:${soc}%;background:${color}"></div>
           ${limit !== null
@@ -495,6 +495,11 @@ class EvccCard extends HTMLElement {
     const unit    = unitStr(this._hass, ents.charge_power);
     const current = ents.charge_current
       ? stateVal(this._hass, ents.charge_current) : null;
+    const phases  = ents.phases_active
+      ? parseInt(stateVal(this._hass, ents.phases_active)) || null : null;
+    const phasesLabel = phases === 1 ? "1-phasig"
+                      : phases === 3 ? "3-phasig"
+                      : phases !== null ? `${phases}-phasig` : null;
 
     return `
       <div class="power-row ${charging ? "charging" : ""}">
@@ -502,7 +507,8 @@ class EvccCard extends HTMLElement {
               data-live-entity="${ents.charge_power}" data-live-type="power">
           ${power} ${unit}
         </span>
-        ${current !== null ? `<span class="power-current">${current} A</span>` : ""}
+        ${current !== null ? `<span class="power-sep">·</span><span class="power-current">${current} A</span>` : ""}
+        ${phasesLabel !== null ? `<span class="power-sep">·</span><span class="power-phases">${phasesLabel}</span>` : ""}
       </div>
     `;
   }
@@ -1686,10 +1692,18 @@ class EvccCard extends HTMLElement {
         border-radius: 4px;
         overflow: visible;
       }
+      @keyframes soc-pulse {
+        0%   { opacity: 1; }
+        50%  { opacity: 0.5; }
+        100% { opacity: 1; }
+      }
       .soc-fill {
         height: 100%;
         border-radius: 4px;
         transition: width .4s ease;
+      }
+      .soc-fill.charging {
+        animation: soc-pulse 1.4s ease-in-out infinite;
       }
       .soc-limit-marker {
         position: absolute;
@@ -1704,14 +1718,16 @@ class EvccCard extends HTMLElement {
       /* ── Leistung ── */
       .power-row {
         display: flex;
-        align-items: baseline;
-        gap: 10px;
+        align-items: flex-end;
+        gap: 8px;
         margin-bottom: 12px;
         color: var(--secondary-text-color);
       }
       .power-row.charging { color: #22c55e; }
-      .power-value { font-size: 1.4rem; font-weight: 700; }
-      .power-current { font-size: .9rem; }
+      .power-value { font-size: 1.6rem; font-weight: 700; }
+      .power-sep { font-size: .8rem; color: var(--secondary-text-color); align-self: flex-end; padding-bottom: .2rem; }
+      .power-current { font-size: .82rem; align-self: flex-end; padding-bottom: .2rem; }
+      .power-phases { font-size: .82rem; align-self: flex-end; padding-bottom: .2rem; }
 
       /* ── Slider ── */
       .sliders { margin-bottom: 10px; }
