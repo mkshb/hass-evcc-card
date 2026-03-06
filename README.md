@@ -166,7 +166,10 @@ Minimalist charge plan view:
 
 ## Screenshots
 
-> *Add screenshots of your card in action here.*
+![Loadpoint block](images/chargepoint.png)
+![Site overview](images/site.png)
+![Battery block](images/battery.png)
+![Plan block](images/plan.png)
 
 ---
 
@@ -186,16 +189,6 @@ As long as you use the standard ha-evcc integration, no additional configuration
 ---
 
 ## Development
-
-### Project structure
-
-```
-evcc-card/
-├── evcc-card.js      # Main card implementation (single file, no build step)
-├── hacs.json         # HACS metadata
-├── README.md
-└── LICENSE
-```
 
 ### Local development
 
