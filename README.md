@@ -23,9 +23,10 @@ All charge points and site entities are **automatically discovered** based on th
 | 🏠 **Home battery block** | Buffer SoC, priority SoC and discharge lock with inline sliders |
 | ☀️ **Site overview** | PV power bar split across home/charging/battery/feed-in, individual PV strings, live In/Out table |
 | 📋 **Plan mode** | Minimalist mode showing only the charge plan — ideal for dedicated dashboard pages |
-| 🌍 **Multi-language** | German and English, auto-detected from HA language setting |
+| 📑 **Compact mode** | Tab-based layout grouping controls, settings, plan and session — ideal for space-constrained dashboards |
+| 🌍 **Multi-language** | German, English and Spanish — auto-detected from HA language setting, easily extensible |
 | 🔄 **Live updates** | Power, SoC and status update in real time without full re-render |
-| 🔎 **Filtering** | Select specific charge points via `loadpoints` config |
+| 🎛️ **Filtering** | Select specific charge points via `loadpoints` config |
 
 ---
 
@@ -49,13 +50,24 @@ All charge points and site entities are **automatically discovered** based on th
 
 ### Manual installation
 
-1. Download `evcc-card.js` from the [latest release](../../releases/latest)
-2. Copy it to `config/www/evcc-card.js` in your Home Assistant instance
+1. Download `evcc-card.js` and the `locales/` folder from the [latest release](../../releases/latest)
+2. Copy them to `config/www/evcc-card/` in your Home Assistant instance, preserving the folder structure:
+
+```
+config/www/evcc-card/
+├── evcc-card.js
+└── locales/
+    ├── index.json
+    ├── de.json
+    ├── en.json
+    └── es.json
+```
+
 3. Add it as a Lovelace resource:
 
 ```yaml
 # In your Lovelace resources (Settings → Dashboards → Resources)
-url: /local/evcc-card.js
+url: /local/evcc-card/evcc-card.js
 type: module
 ```
 
@@ -105,11 +117,28 @@ loadpoints:
   - openwb
 ```
 
+### Compact view
+
+Same content as the default charge point view, but organized into four tabs to save vertical space:
+
+```yaml
+type: custom:evcc-card
+mode: compact
+```
+
+```yaml
+type: custom:evcc-card
+mode: compact
+loadpoints:
+  - openwb          # show only specific charge points by name
+  - wallbox-garage
+```
+
 ### Override language
 
 ```yaml
 type: custom:evcc-card
-language: en   # or: de
+language: en   # or: de, es
 ```
 
 ---
@@ -118,9 +147,10 @@ language: en   # or: de
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `battery`, `site`, `plan` |
+| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `plan` |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
-| `language` | `string` | *(auto)* | Override UI language: `en` or `de` |
+| `language` | `string` | *(auto)* | Override UI language: `en`, `de`, `es` |
+| `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
 
 ---
 
@@ -135,12 +165,13 @@ The main charge point view. For each discovered charge point it shows:
 - Current charging session: energy, cost, duration, phases
 - Sliders: Target SoC, Min SoC, Priority SoC, Min current, Max current
 - Phase switch: Auto / 1-phase / 3-phase
+- Charge plan block
 
 ### `battery`
 
 Home battery management block:
 
-- Current battery SoC
+- Current battery SoC with visual indicator
 - Buffer SoC slider
 - Priority SoC slider
 - Discharge lock toggle
@@ -159,17 +190,50 @@ Minimalist charge plan view:
 
 - Vehicle selector
 - Target time picker
-- Target SoC input
+- Target SoC slider
 - Activate / delete plan
+
+### `compact`
+
+Same content as `loadpoint`, but organized into four tabs — ideal for dashboards where vertical space is limited or multiple charge points are shown side by side:
+
+| Tab | Contents |
+|---|---|
+| ⚡ **Control** | Charge mode buttons, vehicle SoC bar, current charging power |
+| 🎚️ **Settings** | Target SoC, Min SoC, Priority sliders, current limits, phase switch |
+| 📅 **Plan** | Charge plan: vehicle selector, target time, target SoC, activate/delete |
+| 📊 **Session** | Energy, cost, duration and phases of the current session |
+
+The selected tab is remembered per charge point across re-renders.
 
 ---
 
 ## Screenshots
 
 ![Loadpoint block](images/chargepoint.png)
+![Compact mode](images/compact.png)
 ![Site overview](images/site.png)
 ![Battery block](images/battery.png)
 ![Plan block](images/plan.png)
+
+---
+
+## Translations
+
+The card ships with **German**, **English** and **Spanish** and automatically uses the language configured in Home Assistant. You can override it per card via the `language` config option.
+
+Translations are stored as simple JSON files in the `locales/` folder. Adding a new language takes only two steps:
+
+1. Create a new file `locales/<lang>.json` by copying an existing one (e.g. `en.json`) and translating the values
+2. Add the language code to `locales/index.json`
+
+```json
+["de", "en", "es", "fr"]
+```
+
+That's it — no changes to `evcc-card.js` required.
+
+**Want to contribute a translation?** Pull requests for new languages are very welcome! Have a look at [`locales/en.json`](locales/en.json) as a starting point and open a PR with your new language file.
 
 ---
 
@@ -180,22 +244,11 @@ This card relies on the entity naming convention used by [ha-evcc](https://githu
 ```
 sensor.evcc_<loadpoint_name>_<entity_type>
 select.evcc_<loadpoint_name>_mode
-number.evcc_<loadpoint_name>_minsoc
+number.evcc_<loadpoint_name>_limit_soc
 ...
 ```
 
 As long as you use the standard ha-evcc integration, no additional configuration is needed — the card discovers all entities automatically.
-
----
-
-## Development
-
-### Local development
-
-1. Clone this repository
-2. Copy `evcc-card.js` to your HA `config/www/` folder
-3. Add it as a Lovelace resource (see manual installation above)
-4. Make changes and hard-reload the browser to see updates
 
 ---
 
@@ -208,6 +261,12 @@ Pull requests are welcome! Please open an issue first to discuss what you'd like
 3. Commit your changes: `git commit -m 'Add my feature'`
 4. Push to the branch: `git push origin feature/my-feature`
 5. Open a Pull Request
+
+Contributions that are especially appreciated:
+
+- 🌍 **New translations** — see the [Translations](#translations) section above
+- 🐛 **Bug reports and fixes**
+- 💡 **Feature suggestions and implementations**
 
 ---
 
