@@ -8,14 +8,9 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-// ─── Version ─────────────────────────────────────────────────────────────────
-
-const EVCC_CARD_VERSION = "0.2.6";
-
-// ─── Feature-Definitionen ────────────────────────────────────────────────────
+const EVCC_CARD_VERSION = "0.2.7";
 
 const FEATURES = [
-  // ── Loadpoint: Steuerung ──────────────────────────────────────────────────
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
   { suffix: "min_current",         domain: "select",        type: "select_slider", lp: true  },
   { suffix: "max_current",         domain: "select",        type: "select_slider", lp: true  },
@@ -29,10 +24,8 @@ const FEATURES = [
   { suffix: "vehicle_name",        domain: "select",        type: "select",        lp: true  },
   { suffix: "battery_boost_limit", domain: "select",        type: "select_slider", lp: true  },
 
-  // ── Loadpoint: Schalter ───────────────────────────────────────────────────
   { suffix: "battery_boost",       domain: "switch",        type: "toggle",        lp: true  },
 
-  // ── Loadpoint: Status-Sensoren ────────────────────────────────────────────
   { suffix: "charge_power",        domain: "sensor",        type: "power",         lp: true  },
   { suffix: "charge_current",      domain: "sensor",        type: "current",       lp: true  },
   { suffix: "charge_duration",     domain: "sensor",        type: "info",          lp: true  },
@@ -45,7 +38,6 @@ const FEATURES = [
   { suffix: "session_price",       domain: "sensor",        type: "info",          lp: true  },
   { suffix: "phases_active",       domain: "sensor",        type: "info",          lp: true  },
 
-  // ── Loadpoint: Plan-Sensoren ─────────────────────────────────────────────
   { suffix: "effective_plan_soc",      domain: "sensor", type: "info", lp: true },
   { suffix: "effective_plan_time",     domain: "sensor", type: "info", lp: true },
   { suffix: "plan_projected_start",    domain: "sensor", type: "info", lp: true },
@@ -53,14 +45,12 @@ const FEATURES = [
   { suffix: "vehicle_plans_soc",       domain: "sensor", type: "info", lp: true },
   { suffix: "vehicle_plans_time",      domain: "sensor", type: "info", lp: true },
 
-  // ── Loadpoint: Binär-Sensoren ─────────────────────────────────────────────
   { suffix: "charging",            domain: "binary_sensor", type: "status_bool",   lp: true  },
   { suffix: "connected",           domain: "binary_sensor", type: "status_bool",   lp: true  },
   { suffix: "enabled",             domain: "binary_sensor", type: "status_bool",   lp: true  },
   { suffix: "smart_cost_active",   domain: "binary_sensor", type: "status_bool",   lp: true  },
   { suffix: "plan_active",         domain: "binary_sensor", type: "status_bool",   lp: true  },
 
-  // ── Site: Sensoren ────────────────────────────────────────────────────────
   { suffix: "grid_power",          domain: "sensor",        type: "power",         lp: false },
   { suffix: "pv_power",            domain: "sensor",        type: "power",         lp: false },
   { suffix: "pv_0_power",          domain: "sensor",        type: "power",         lp: false },
@@ -85,7 +75,6 @@ const FEATURES = [
   { suffix: "tariff_feedin",       domain: "sensor",        type: "info",          lp: false },
   { suffix: "tariff_co2",          domain: "sensor",        type: "info",          lp: false },
 
-  // ── Site: Steuerung ───────────────────────────────────────────────────────
   { suffix: "priority_soc",        domain: "select",        type: "select_slider", lp: false },
   { suffix: "buffer_soc",          domain: "select",        type: "select_slider", lp: false },
   { suffix: "buffer_start_soc",    domain: "select",        type: "select_slider", lp: false },
@@ -95,16 +84,12 @@ const FEATURES = [
   { suffix: "battery_grid_charge_limit",  domain: "number",        type: "slider",      lp: false },
 ];
 
-// Lademodi → Icon + Label
 const CHARGE_MODES = {
   "off":   { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M13,3H11V13H13V3M17.83,5.17L16.41,6.59C17.99,7.86 19,9.81 19,12A7,7 0 0,1 12,19A7,7 0 0,1 5,12C5,9.81 6.01,7.86 7.58,6.58L6.17,5.17C4.23,6.82 3,9.26 3,12A9,9 0 0,0 12,21A9,9 0 0,0 21,12C21,9.26 19.77,6.82 17.83,5.17Z"/></svg>`,  tKey: "modeOff"  },
   "pv":    { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z"/></svg>`,  tKey: "modePV"   },
   "minpv": { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style="position:relative;top:4px;left:-6px;opacity:0.8"><path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z"/></svg>`, tKey: "modeMinPV"},
   "now":   { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>`,  tKey: "modeNow"  },
 };
-
-
-// ─── Discovery ────────────────────────────────────────────────────────────────
 
 function discoverEntities(hass) {
   const sortedFeatures = [...FEATURES].sort((a, b) => b.suffix.length - a.suffix.length);
@@ -158,8 +143,6 @@ function discoverEntities(hass) {
   return { loadpoints, site };
 }
 
-// ─── Hilfsfunktionen ──────────────────────────────────────────────────────────
-
 function stateVal(hass, entityId) {
   return hass.states[entityId]?.state ?? null;
 }
@@ -177,8 +160,6 @@ function isOn(hass, entityId) {
   return s === "on" || s === "true";
 }
 
-// ─── Web Component ────────────────────────────────────────────────────────────
-
 class EvccCard extends HTMLElement {
 
   constructor() {
@@ -191,11 +172,13 @@ class EvccCard extends HTMLElement {
     this._renderTimer   = null;
     this._lastRenderKey = null;
     this._planState     = {};
-    this._tabState      = {};        // { [lpName]: 0|1|2|3 } — aktiver Tab pro Ladepunkt
-    this._translations  = {};        // { de: {...}, en: {...} }
+    this._tabState      = {};
+    this._translations  = {};
     this._translationsReady = false;
 
     this._siteTableExpanded = undefined; // undefined = use config default
+    this._currentBlockExpanded = {};
+
     this._onPlanReset = (e) => {
       const lpName = e.detail?.lpName;
       setTimeout(() => {
@@ -210,8 +193,6 @@ class EvccCard extends HTMLElement {
   disconnectedCallback() {
     window.removeEventListener("evcc-plan-reset", this._onPlanReset);
   }
-
-  // ── Übersetzungen laden ───────────────────────────────────────────────────
 
   async _loadTranslations() {
     const base = new URL("locales/", import.meta.url).href;
@@ -284,8 +265,6 @@ class EvccCard extends HTMLElement {
     }
   }
 
-  // ── Übersetzungs-Helfer ───────────────────────────────────────────────────
-
   _toggleSite() {
     const wasExpanded = this._siteTableExpanded !== undefined
       ? this._siteTableExpanded
@@ -295,11 +274,9 @@ class EvccCard extends HTMLElement {
     const root = this.shadowRoot;
     const table = root?.querySelector(".site-table");
     if (table) table.style.display = wasExpanded ? "none" : "";
-    const btn = root?.querySelector(".site-toggle-btn");
-    if (btn) {
-      btn.dataset.expanded = String(!wasExpanded);
-      const svg = btn.querySelector("svg");
-      if (svg) svg.style.transform = wasExpanded ? "rotate(-90deg)" : "rotate(0deg)";
+    const wrap = root?.querySelector(".flow-wrap-clickable");
+    if (wrap) {
+      wrap.title = !wasExpanded ? this._tInline("siteCollapse") : this._tInline("siteExpand");
     }
   }
 
@@ -329,9 +306,6 @@ class EvccCard extends HTMLElement {
 
     return val;
   }
-
-
-  // ── Vollständiges Rendering ────────────────────────────────────────────────
 
   _render() {
     if (!this._hass) return;
@@ -389,8 +363,6 @@ class EvccCard extends HTMLElement {
     this._attachListeners();
   }
 
-  // ── Live-Update nur für read-only Elemente (während Drag) ─────────────────
-
   _updateLiveValues() {
     const root = this.shadowRoot;
     root.querySelectorAll("[data-live-entity]").forEach(el => {
@@ -410,8 +382,6 @@ class EvccCard extends HTMLElement {
       }
     });
   }
-
-  // ── Loadpoint ─────────────────────────────────────────────────────────────
 
   _renderLoadpoint(lpName, ents) {
     const charging   = ents.charging  ? isOn(this._hass, ents.charging)  : false;
@@ -433,15 +403,13 @@ class EvccCard extends HTMLElement {
         ${this._renderSocBar(ents, charging)}
         ${this._renderPowerRow(ents, charging)}
         ${this._renderSliders(ents)}
-        ${this._renderCurrentBlock(ents)}
+        ${this._renderCurrentBlock(ents, lpName)}
         ${this._renderToggles(ents)}
         ${noPlan ? "" : this._renderPlanBlock(lpName, ents)}
         ${this._renderSessionInfo(ents)}
       </div>
     `;
   }
-
-  // ── Compact-Loadpoint ─────────────────────────────────────────────────────
 
   _renderCompactLoadpoint(lpName, ents) {
     const charging    = ents.charging  ? isOn(this._hass, ents.charging)  : false;
@@ -478,7 +446,7 @@ class EvccCard extends HTMLElement {
       </div>`,
       `<div class="compact-panel" ${activeTab !== 1 ? 'hidden' : ''}>
         ${this._renderSliders(ents)}
-        ${this._renderCurrentBlock(ents)}
+        ${this._renderCurrentBlock(ents, lpName)}
         ${this._renderToggles(ents)}
       </div>`,
       `<div class="compact-panel" ${activeTab !== 2 ? 'hidden' : ''}>
@@ -503,8 +471,6 @@ class EvccCard extends HTMLElement {
     `;
   }
 
-  // ── Lademodus ─────────────────────────────────────────────────────────────
-
   _renderModeSelector(ents) {
     if (!ents.mode) return "";
     const current = stateVal(this._hass, ents.mode);
@@ -517,8 +483,6 @@ class EvccCard extends HTMLElement {
     `).join("");
     return `<div class="mode-row">${buttons}</div>`;
   }
-
-  // ── SOC-Balken ────────────────────────────────────────────────────────────
 
   _renderSocBar(ents, charging = false) {
     if (!ents.vehicle_soc) return "";
@@ -549,8 +513,6 @@ class EvccCard extends HTMLElement {
     `;
   }
 
-  // ── Ladeleistung ──────────────────────────────────────────────────────────
-
   _renderPowerRow(ents, charging) {
     if (!ents.charge_power) return "";
     const power   = stateVal(this._hass, ents.charge_power);
@@ -575,8 +537,6 @@ class EvccCard extends HTMLElement {
     `;
   }
 
-  // ── Slider ────────────────────────────────────────────────────────────────
-
   _renderSliders(ents) {
     const SLIDER_FEATURES = [
       { key: "limit_soc",   label: this._t("targetSoc") },
@@ -591,12 +551,15 @@ class EvccCard extends HTMLElement {
     return rows.length ? `<div class="sliders">${rows.join("")}</div>` : "";
   }
 
-  // ── Ladestrom-Block ───────────────────────────────────────────────────────
-
-  _renderCurrentBlock(ents) {
+  _renderCurrentBlock(ents, lpName = "") {
     const hasPhases  = !!ents.phases_configured;
     const hasCurrent = ents.min_current || ents.max_current;
     if (!hasPhases && !hasCurrent) return "";
+
+    const configDefault = this._config.charge_current_settings === "expanded";
+    const expanded = this._currentBlockExpanded[lpName] !== undefined
+      ? this._currentBlockExpanded[lpName]
+      : configDefault;
 
     let phasesHtml = "";
     if (hasPhases) {
@@ -625,11 +588,22 @@ class EvccCard extends HTMLElement {
       ents.min_current ? this._sliderRow(ents.min_current, this._t("minCurrent")) : "",
     ].join("");
 
+    const gearIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.68 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"/></svg>`;
+
     return `
-      <div class="current-block">
-        <div class="block-title">${this._t("chargeCurrent")}</div>
-        ${phasesHtml}
-        ${currentRows}
+      <div class="current-block" data-lp-current="${lpName}">
+        <div class="block-title-row">
+          <span class="block-title">${this._t("chargeCurrent")}</span>
+          <button class="current-toggle-btn ${expanded ? "active" : ""}"
+                  data-lp-current-toggle="${lpName}"
+                  title="${expanded ? (this._t("hideSettings") || "Ausblenden") : (this._t("showSettings") || "Einblenden")}">
+            ${gearIcon}
+          </button>
+        </div>
+        <div class="current-block-body" ${expanded ? "" : "hidden"}>
+          ${phasesHtml}
+          ${currentRows}
+        </div>
       </div>`;
   }
 
@@ -665,8 +639,6 @@ class EvccCard extends HTMLElement {
         </div>
       </div>`;
   }
-
-  // ── Batterie-Boost ────────────────────────────────────────────────────────
 
   _boostCommit(input) {
     this._isDragging = false;
@@ -715,8 +687,6 @@ class EvccCard extends HTMLElement {
     if (!ents.battery_boost_limit) return "";
   }
 
-  // ── Toggle-Schalter ───────────────────────────────────────────────────────
-
   _renderToggles(ents) {
     const TOGGLE_FEATURES = [];
     const rows = TOGGLE_FEATURES
@@ -739,8 +709,6 @@ class EvccCard extends HTMLElement {
       });
     return rows.length ? `<div class="toggles">${rows.join("")}</div>` : "";
   }
-
-  // ── Select-Steuerung ──────────────────────────────────────────────────────
 
   _renderSelects(ents) {
     const SELECT_FEATURES = [
@@ -769,8 +737,6 @@ class EvccCard extends HTMLElement {
       });
     return rows.length ? `<div class="selects">${rows.join("")}</div>` : "";
   }
-
-  // ── Ladeplanung ───────────────────────────────────────────────────────────
 
   _renderPlanBlock(lpName, ents, force = false) {
     const hasVehicle = !!ents.vehicle_soc;
@@ -896,8 +862,6 @@ class EvccCard extends HTMLElement {
     `;
   }
 
-  // ── Sitzungsinfo ──────────────────────────────────────────────────────────
-
   _renderSessionInfo(ents) {
     const hasAny = ents.session_energy || ents.session_price || ents.charge_duration;
     if (!hasAny) return "";
@@ -950,8 +914,6 @@ class EvccCard extends HTMLElement {
     `;
   }
 
-  // ── Plan-Modus ────────────────────────────────────────────────────────────
-
   _renderPlanMode(loadpoints) {
     if (Object.keys(loadpoints).length === 0) return this._renderEmpty(loadpoints);
     return Object.entries(loadpoints).map(([lpName, ents]) => {
@@ -969,8 +931,6 @@ class EvccCard extends HTMLElement {
     }).join("");
   }
 
-  // ── Site-Übersicht ────────────────────────────────────────────────────────
-
   _renderSiteBlock(site, loadpoints = {}) {
     const kw = id => {
       if (!id) return 0;
@@ -981,7 +941,6 @@ class EvccCard extends HTMLElement {
     const kwh = id => id ? parseFloat(stateVal(this._hass, id)) || 0 : null;
     const ct  = id => id ? parseFloat(stateVal(this._hass, id)) || 0 : null;
 
-    // PV-Klarname direkt aus dem "title"-Attribut der HA-Entität (ha-evcc setzt title = MeterName)
     const pvNameFromEntity = (entityId) => entityId ? (attr(this._hass, entityId, "title") ?? null) : null;
     const pvSources = [
       { key: "pv_0_power", energyKey: "pv_0_energy", idx: 1 },
@@ -1010,7 +969,6 @@ class EvccCard extends HTMLElement {
     const battChargePow = battPow < 0 ? Math.abs(battPow) : 0;
     const battDischPow  = battPow > 0 ? battPow : 0;
 
-    // ── Energiefluss-Berechnung für den Flow-Balken ───────────────────────
     const totalIn  = Math.max(pvPow + battDischPow + bezugPow, 0.001);
 
     const pvPct      = Math.round(pvPow      / totalIn * 100);
@@ -1076,7 +1034,6 @@ class EvccCard extends HTMLElement {
       cumPct += s.pct;
     });
 
-    // ── SVG-Klammer-Balken ───────────────────────────────────────────────────
     const SVG_W        = 1000;
     const LABEL_W      = 60;
     const BRACE_TOP_H  = 52;
@@ -1093,10 +1050,6 @@ class EvccCard extends HTMLElement {
     const TOP_TIP_Y    = BAR_Y - BRACE_TOP_H + 10;
     const BOT_TIP_Y    = BAR_Y + BAR_H + BRACE_BOT_H - 10;
 
-    // ── Theme-adaptive Farben ────────────────────────────────────────────────
-    // currentColor wird genutzt — die tatsächliche Farbe kommt aus der
-    // CSS-Klasse .flow-overlay im Shadow DOM, die --primary-text-color setzt.
-    // So funktioniert Theme-Adaption auch in eingebetteten SVG-Elementen.
     const COL_BRACE    = "currentColor";
     const COL_TEXT     = "currentColor";
     const COL_LABEL    = "currentColor";
@@ -1173,7 +1126,6 @@ class EvccCard extends HTMLElement {
 
     const SVG_ICON_HALF = 12;
 
-    // Obere Klammern: stroke + Icon nutzen COL_BRACE / COL_TEXT (CSS-Variablen)
     const topBraces = segsWithX.map(s => {
       const path  = bracePath(s.x0 + 2, s.x1 - 2, BAR_Y, TOP_TIP_Y);
       const ix = s.xMid - SVG_ICON_HALF, iy = TOP_TIP_Y - SVG_ICON_HALF;
@@ -1186,7 +1138,6 @@ class EvccCard extends HTMLElement {
         </g>`;
     }).join("");
 
-    // Untere Klammern: stroke + Icon nutzen COL_BRACE / COL_TEXT (CSS-Variablen)
     const botBraces = botSegsWithX.map(s => {
       const path  = bracePath(s.x0 + 2, s.x1 - 2, BAR_Y + BAR_H, BOT_TIP_Y);
       const ix = s.xMid - SVG_ICON_HALF, iy = BOT_TIP_Y - SVG_ICON_HALF;
@@ -1199,7 +1150,6 @@ class EvccCard extends HTMLElement {
         </g>`;
     }).join("");
 
-    // IN / OUT — Beschriftung rechts
     const LX = BAR_X1 + 18;
     const sideLabels = `
       <text x="${LX}" y="${TOP_TIP_Y}" text-anchor="start" dominant-baseline="central"
@@ -1222,8 +1172,6 @@ class EvccCard extends HTMLElement {
         </svg>
       </div>
     `;
-
-    // ── Detail-Tabelle ────────────────────────────────────────────────────
 
     const row = (icon, label, sub, pw, pwClass = "", indent = false) => `
       <div class="site-row ${indent ? "site-row-indent" : ""}">
@@ -1300,13 +1248,12 @@ class EvccCard extends HTMLElement {
       <div class="site-block">
         <div class="lp-header">
           <span class="lp-name">${this._t("overview")}</span>
-          <div class="site-toggle-btn" role="button" tabindex="0"
-               onclick="window.__evccCards.get('${this._cardId}')._toggleSite()"
-               title="${siteExpanded ? this._tInline("siteCollapse") : this._tInline("siteExpand")}">
-            <svg viewBox="0 0 24 24" width="14" height="14" style="transition:transform .2s;transform:${siteExpanded ? "rotate(0deg)" : "rotate(-90deg)"}"><path fill="currentColor" d="M7,10L12,15L17,10H7Z"/></svg>
-          </div>
         </div>
-        ${flowBar}
+        <div class="flow-wrap-clickable" role="button" tabindex="0"
+             onclick="window.__evccCards.get('${this._cardId}')._toggleSite()"
+             title="${siteExpanded ? this._tInline("siteCollapse") : this._tInline("siteExpand")}">
+          ${flowBar}
+        </div>
         <div class="site-table" style="${siteExpanded ? '' : 'display:none'}">
           ${inSection}
           <div class="site-section-gap"></div>
@@ -1314,8 +1261,6 @@ class EvccCard extends HTMLElement {
         </div>
       </div>`;
   }
-
-  // ── Hausbatterie-Block ────────────────────────────────────────────────────
 
   _renderBatteryBlock(site) {
     const socId         = site.battery_soc;
@@ -1460,9 +1405,25 @@ class EvccCard extends HTMLElement {
     `;
   }
 
-  // ── Event-Listener ────────────────────────────────────────────────────────
-
   _attachListeners() {
+    this.shadowRoot.querySelectorAll("[data-lp-current-toggle]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const lpName   = btn.dataset.lpCurrentToggle;
+        const expanded = this._currentBlockExpanded[lpName] === true;
+        this._currentBlockExpanded[lpName] = !expanded;
+
+        const block = this.shadowRoot.querySelector(`[data-lp-current="${lpName}"]`);
+        if (!block) return;
+        const body = block.querySelector(".current-block-body");
+        if (body) {
+          if (!expanded) body.removeAttribute("hidden");
+          else body.setAttribute("hidden", "");
+        }
+        btn.classList.toggle("active", !expanded);
+      });
+    });
+
     this.shadowRoot.querySelectorAll("button.compact-tab").forEach(btn => {
       btn.addEventListener("click", () => {
         const lpName   = btn.dataset.lp;
@@ -1537,21 +1498,16 @@ class EvccCard extends HTMLElement {
       });
     });
 
-    // Delegierter Click-Handler auf card-content (unterhalb von ha-card)
     const cardContent = this.shadowRoot.querySelector(".card-content");
     if (cardContent) {
       cardContent.addEventListener("click", (e) => {
-        // Batt-inline-popup schließen
         this.shadowRoot.querySelectorAll(".batt-inline-popup").forEach(p => p.setAttribute("hidden", ""));
-        // Site-Toggle handled via inline onclick → _toggleSite()
       });
     } else {
       this.shadowRoot.addEventListener("click", () => {
         this.shadowRoot.querySelectorAll(".batt-inline-popup").forEach(p => p.setAttribute("hidden", ""));
       }, { capture: true });
     }
-
-    // site-toggle-btn handled via inline onclick → _toggleSite()
 
     this.shadowRoot.querySelectorAll("button.mode-btn").forEach(btn => {
       btn.addEventListener("click", () => {
@@ -1758,8 +1714,6 @@ class EvccCard extends HTMLElement {
     });
   }
 
-  // ── CSS ───────────────────────────────────────────────────────────────────
-
   _styles() {
     return `
       :host { display: block; }
@@ -1844,10 +1798,25 @@ class EvccCard extends HTMLElement {
         border-top: 1px solid var(--divider-color, #333);
         margin-top: 10px; padding-top: 10px; margin-bottom: 10px;
       }
+      .block-title-row {
+        display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
+      }
       .block-title {
         font-size: .7rem; font-weight: 600; text-transform: uppercase;
-        letter-spacing: .08em; color: var(--secondary-text-color); margin-bottom: 8px;
+        letter-spacing: .08em; color: var(--secondary-text-color);
       }
+      .current-toggle-btn {
+        background: transparent; border: none; border-radius: 50%;
+        color: var(--secondary-text-color); cursor: pointer;
+        padding: 3px; display: flex; align-items: center; justify-content: center;
+        transition: color .15s, background .15s; margin: -3px;
+      }
+      .current-toggle-btn:hover {
+        color: var(--primary-color);
+        background: var(--secondary-background-color, rgba(0,0,0,.06));
+      }
+      .current-toggle-btn.active { color: var(--primary-color); }
+      .current-block-body[hidden] { display: none; }
 
       .selects { margin-bottom: 10px; }
       .select-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; }
@@ -1861,27 +1830,12 @@ class EvccCard extends HTMLElement {
 
       .site-block { padding: 0; }
       .site-table-hidden { display: none; }
-      .site-toggle-btn {
-        background: transparent;
-        border: none;
-        border-radius: 50%;
-        color: var(--secondary-text-color);
+      .flow-wrap-clickable {
         cursor: pointer;
-        padding: 4px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: color .15s, background .15s;
-        margin: -4px;
+        border-radius: 6px;
+        transition: opacity .15s;
       }
-      .site-toggle-btn:hover {
-        color: var(--primary-color);
-        background: var(--secondary-background-color, rgba(0,0,0,.06));
-      }
-      .site-toggle-btn svg {
-        display: block;
-        flex-shrink: 0;
-      }
+      .flow-wrap-clickable:hover { opacity: 0.85; }
 
       .flow-wrap {
         margin-bottom: 18px;
@@ -1890,13 +1844,9 @@ class EvccCard extends HTMLElement {
       .flow-wrap svg {
         overflow: visible;
       }
-      /* Theme-adaptive Farbe für Klammern und Icons im Flow-Balken.
-         currentColor in SVG-Presentation-Attributes erbt von hier. */
       .flow-overlay {
         color: var(--primary-text-color, #212121);
       }
-
-      /* ── Detail-Tabelle ── */
       .site-table { display: flex; flex-direction: column; }
       .site-section-gap { border-top: 1px solid var(--divider-color, #333); margin: 10px 0 12px; }
       .site-section-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--divider-color, #333); }
@@ -1997,8 +1947,6 @@ class EvccCard extends HTMLElement {
 
       .empty { text-align: center; padding: 24px; color: var(--secondary-text-color); font-size: .9rem; line-height: 1.8; }
       .empty code { background: var(--code-editor-background-color, #1e1e1e); color: var(--primary-color); padding: 1px 6px; border-radius: 4px; font-size: .82rem; }
-
-      /* ── Compact-Tabs ── */
       .compact-tabs {
         display: flex; gap: 4px; margin-bottom: 12px;
         border-bottom: 1px solid var(--divider-color, #e5e7eb); padding-bottom: 0;
@@ -2019,21 +1967,12 @@ class EvccCard extends HTMLElement {
   }
 }
 
-// ─── Registrierung ────────────────────────────────────────────────────────────
-
 customElements.define("evcc-card", EvccCard);
 window.__evccCards = window.__evccCards || new Map();
-
-// ─── Registrierung & Cache-Busting ───────────────────────────────────────────
-//
-// Beim Laden versucht die Card, ihre eigene Lovelace-Ressource in HA
-// automatisch auf ?v=VERSION zu aktualisieren. So wird bei jedem Update
-// der Cache-Parameter automatisch gesetzt — ohne manuelle Änderung.
 
 (async function cacheBust() {
   const ver = EVCC_CARD_VERSION;
 
-  // Konsolenbanner
   console.info(
     `%c evcc-card %c ${ver} %c`,
     "background:#1d4ed8;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px;font-weight:bold",
@@ -2041,13 +1980,11 @@ window.__evccCards = window.__evccCards || new Map();
     "background:transparent"
   );
 
-  // Warte bis HA bereit ist
   await customElements.whenDefined("home-assistant");
   const ha = document.querySelector("home-assistant");
   if (!ha || !ha.hass) return;
 
   try {
-    // Lovelace-Ressourcen abrufen
     const resources = await ha.hass.callWS({ type: "lovelace/resources" });
     const myRes = resources.find(r =>
       r.url && r.url.includes("evcc-card") && r.url.endsWith(".js") ||
@@ -2058,9 +1995,8 @@ window.__evccCards = window.__evccCards || new Map();
     const baseUrl = myRes.url.split("?")[0];
     const expectedUrl = `${baseUrl}?v=${ver}`;
 
-    if (myRes.url === expectedUrl) return; // bereits aktuell
+    if (myRes.url === expectedUrl) return;
 
-    // Ressource aktualisieren
     await ha.hass.callWS({
       type:   "lovelace/resources/update",
       res_id: myRes.id,
@@ -2070,7 +2006,6 @@ window.__evccCards = window.__evccCards || new Map();
     console.info(`[evcc-card] Cache-URL aktualisiert → ${expectedUrl}. Seite wird neu geladen.`);
     setTimeout(() => location.reload(), 500);
   } catch (e) {
-    // Kein Admin-Zugriff oder Managed Mode — still ignorieren
   }
 })();
 

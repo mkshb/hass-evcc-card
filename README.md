@@ -88,6 +88,7 @@ Add the card to any Lovelace dashboard using the YAML editor. The `mode` option 
 | `language` | `string` | *(auto)* | Override UI language: `en`, `de`, `es` |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
 | `site_details` | `string` | *(expanded)* | Set to `collapsed` to hide the IN/OUT detail table by default in `site` mode |
+| `charge_current_settings` | `string` | *(collapsed)* | Set to `expanded` to show the charge current block (phase switch, min/max current) expanded by default |
 
 ---
 
@@ -102,6 +103,8 @@ The main charge point view. For each discovered charge point it shows:
 - Phase switch: Auto / 1-phase / 3-phase
 - Charge plan block
 
+The **CHARGE CURRENT** section (phase switch, max current, min current) is collapsed by default and can be toggled at any time using the ⚙️ gear icon next to the section title. Use `charge_current_settings: expanded` to start it expanded instead.
+
 ```yaml
 type: custom:evcc-card
 ```
@@ -111,6 +114,11 @@ type: custom:evcc-card
 loadpoints:
   - openwb          # show only specific charge points by name
   - wallbox-garage
+```
+
+```yaml
+type: custom:evcc-card
+charge_current_settings: expanded   # show charge current block expanded by default
 ```
 
 ![Loadpoint block](images/chargepoint.png)
