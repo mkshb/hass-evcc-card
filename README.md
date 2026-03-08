@@ -43,8 +43,8 @@ All charge points and site entities are **automatically discovered** based on th
 ### Via HACS (recommended)
 
 1. Open **HACS** in Home Assistant
-2. Go to **Frontend** → click the three-dot menu → **Custom repositories**
-3. Add this repository URL and select category **Lovelace**
+2. Click the three-dot menu (top right) → **Custom repositories**
+3. Add this repository URL (https://github.com/mkshb/hass-evcc-card.git) and select category **Dashboard**
 4. Search for **EVCC Card** and click **Install**
 5. Reload your browser
 
@@ -87,6 +87,7 @@ Add the card to any Lovelace dashboard using the YAML editor. The `mode` option 
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language: `en`, `de`, `es` |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
+| `site_details` | `string` | *(expanded)* | Set to `collapsed` to hide the IN/OUT detail table by default in `site` mode |
 
 ---
 
@@ -126,9 +127,17 @@ Full site energy overview:
 - Battery SoC shown inline in the charging/discharging row (e.g. `Battery charging – 47 %`)
 - Active charge points shown as indented sub-rows under the charging row, including vehicle SoC or temperature
 
+The IN/OUT detail table can be toggled by clicking the power bar. It opens expanded by default; use `site_details: collapsed` to start collapsed instead.
+
 ```yaml
 type: custom:evcc-card
 mode: site
+```
+
+```yaml
+type: custom:evcc-card
+mode: site
+site_details: collapsed   # start with the detail table hidden
 ```
 
 ![Site overview](images/site.png)

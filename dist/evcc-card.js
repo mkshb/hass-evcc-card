@@ -8,6 +8,10 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
+// ─── Version ─────────────────────────────────────────────────────────────────
+
+const EVCC_CARD_VERSION = "0.2.6";
+
 // ─── Feature-Definitionen ────────────────────────────────────────────────────
 
 const FEATURES = [
@@ -191,6 +195,7 @@ class EvccCard extends HTMLElement {
     this._translations  = {};        // { de: {...}, en: {...} }
     this._translationsReady = false;
 
+    this._siteTableExpanded = undefined; // undefined = use config default
     this._onPlanReset = (e) => {
       const lpName = e.detail?.lpName;
       setTimeout(() => {
@@ -281,6 +286,33 @@ class EvccCard extends HTMLElement {
 
   // ── Übersetzungs-Helfer ───────────────────────────────────────────────────
 
+  _toggleSite() {
+    const wasExpanded = this._siteTableExpanded !== undefined
+      ? this._siteTableExpanded
+      : (this._config.site_details !== "collapsed");
+    this._siteTableExpanded = !wasExpanded;
+
+    const root = this.shadowRoot;
+    const table = root?.querySelector(".site-table");
+    if (table) table.style.display = wasExpanded ? "none" : "";
+    const btn = root?.querySelector(".site-toggle-btn");
+    if (btn) {
+      btn.dataset.expanded = String(!wasExpanded);
+      const svg = btn.querySelector("svg");
+      if (svg) svg.style.transform = wasExpanded ? "rotate(-90deg)" : "rotate(0deg)";
+    }
+  }
+
+  _tInline(key) {
+    const lang = (this._config.language
+      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+    const map = {
+      siteCollapse: { de: "Einklappen", en: "Collapse" },
+      siteExpand:   { de: "Ausklappen", en: "Expand" },
+    };
+    return (map[key]?.[lang]) ?? (map[key]?.["en"]) ?? key;
+  }
+
   _t(key, replacements = {}) {
     const lang = (this._config.language
       || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
@@ -303,6 +335,11 @@ class EvccCard extends HTMLElement {
 
   _render() {
     if (!this._hass) return;
+    if (!this._cardId) {
+      this._cardId = Math.random().toString(36).slice(2);
+      window.__evccCards = window.__evccCards || new Map();
+      window.__evccCards.set(this._cardId, this);
+    }
 
     if (!this._translationsReady) {
       this.shadowRoot.innerHTML = `
@@ -974,17 +1011,12 @@ class EvccCard extends HTMLElement {
     const battDischPow  = battPow > 0 ? battPow : 0;
 
     // ── Energiefluss-Berechnung für den Flow-Balken ───────────────────────
-    // Quellen (oben): PV, Batterie-Entladung, Netzbezug
-    // Verbraucher (unten): Haus (ohne LP), Laden, Batterie-Ladung, Einspeisung
-
     const totalIn  = Math.max(pvPow + battDischPow + bezugPow, 0.001);
 
-    // Prozentanteile der Quellen (bestimmen Segmentbreiten)
     const pvPct      = Math.round(pvPow      / totalIn * 100);
     const battDPct   = Math.round(battDischPow / totalIn * 100);
     const gridInPct  = Math.round(bezugPow   / totalIn * 100);
 
-    // Prozentanteile der Verbraucher — normiert auf 100% damit Klammern den ganzen Balken abdecken
     const houseOnlyPow = Math.max(homePow - chargePow, 0);
     const totalOut = Math.max(houseOnlyPow + chargePow + battChargePow + feedinPow, 0.001);
     const homePct   = Math.round(houseOnlyPow  / totalOut * 100);
@@ -1006,53 +1038,31 @@ class EvccCard extends HTMLElement {
     const tariffGrid   = ct(site.tariff_grid);
     const tariffFeedin = ct(site.tariff_feedin);
 
-    // ── Flow-Balken ──────────────────────────────────────────────────────────
-    //
-    // Layout:
-    //   [☀️ ←————————————] [🔋 ————————————→] [⚡]  ← obere Labels
-    //   ┌──────────────────────────────────────────┐
-    //   │  PV-Segment (grün)  │ Batt-Seg │ Netz-S  │  ← Balken
-    //   └──────────────────────────────────────────┘
-    //   [🏠 ←————————] [🔌 ——] [🔋 ——] [↑ Netz ——]  ← untere Labels
-    //
-    // Quellen-Segmente werden durch die Quellen-Anteile bestimmt.
-    // Verbraucher-Labels werden darunter proportional positioniert.
-
-    // Segment-Farben: PV=grün, Batt-Entladung=orange, Netzbezug=rot
-    // Haus=grün(dunkel), Laden=blau, Batt-Ladung=orange(hell), Einspeisung=gelb
-
     const hasBatt   = site.battery_power && (battDischPow > 0.05 || battChargePow > 0.05);
     const hasGrid   = bezugPow > 0.05 || feedinPow > 0.05;
     const hasPV     = pvPow > 0.05;
     const hasCharge = chargePow > 0.05;
 
-    // Segmente für den Balken (immer 100% zusammen)
-    // Wir zeigen alle Quellen-Segmente, auch wenn 0 (aber dann unsichtbar)
     const segments = [
       { cls: "seg-pv",      pct: pvPct,     label: fmtKw(pvPow),       color: "#22c55e", show: hasPV },
       { cls: "seg-battd",   pct: battDPct,  label: fmtKw(battDischPow),color: "#f97316", show: battDischPow > 0.05 },
       { cls: "seg-gridin",  pct: gridInPct, label: fmtKw(bezugPow),    color: "#ef4444", show: bezugPow > 0.05 },
     ].filter(s => s.pct > 0);
 
-    // Normiere auf 100%
     const segTotal = segments.reduce((s, x) => s + x.pct, 0);
     if (segTotal > 0 && segTotal !== 100) {
       const scale = 100 / segTotal;
       segments.forEach(s => s.pct = Math.round(s.pct * scale));
-      // Letztes Segment anpassen um Rundungsfehler zu korrigieren
       const diff = 100 - segments.reduce((s, x) => s + x.pct, 0);
       if (segments.length) segments[segments.length - 1].pct += diff;
     }
 
-    // Obere Labels: Quellen mit Klammer-Positionen
-    // Untere Labels: Verbraucher mit Klammer-Positionen
     const topLabels = [
       hasPV         ? { icon: "☀️",  val: fmtKw(pvPow),        pct: pvPct / 2 } : null,
       battDischPow > 0.05 ? { icon: "🔋↑", val: fmtKw(battDischPow), pct: pvPct + battDPct / 2 } : null,
       bezugPow > 0.05     ? { icon: "⚡↓", val: fmtKw(bezugPow),     pct: pvPct + battDPct + gridInPct / 2 } : null,
     ].filter(Boolean);
 
-    // Verbraucher-Anteile kumulativ für untere Label-Positionierung
     const bottomSegs = [
       { icon: "🏠",  val: fmtKw(houseOnlyPow), pct: homePct,   show: houseOnlyPow > 0.05 },
       { icon: "🔌",  val: fmtKw(chargePow),     pct: chargePct, show: hasCharge },
@@ -1060,7 +1070,6 @@ class EvccCard extends HTMLElement {
       { icon: "🗼",  val: fmtKw(feedinPow),     pct: feedinPct, show: feedinPow > 0.05 },
     ].filter(s => s.show);
 
-    // Kumulierte Mittelpunkte für Bottom-Labels
     let cumPct = 0;
     bottomSegs.forEach(s => {
       s.midPct = cumPct + s.pct / 2;
@@ -1068,30 +1077,30 @@ class EvccCard extends HTMLElement {
     });
 
     // ── SVG-Klammer-Balken ───────────────────────────────────────────────────
-    // Maße (viewBox-Koordinaten):
-    const SVG_W        = 1000;  // viewBox-Breite
-    const LABEL_W      = 60;    // Breite des IN/OUT-Bereichs rechts
-    const BRACE_TOP_H  = 52;    // Höhe Klammerbereich oben
-    const BAR_H        = 48;    // Balkenhöhe
-    const BRACE_BOT_H  = 52;    // Höhe Klammerbereich unten
+    const SVG_W        = 1000;
+    const LABEL_W      = 60;
+    const BRACE_TOP_H  = 52;
+    const BAR_H        = 48;
+    const BRACE_BOT_H  = 52;
     const BAR_Y        = BRACE_TOP_H;
     const BAR_X0       = 0;
     const BAR_X1       = SVG_W - LABEL_W;
     const BAR_W        = BAR_X1 - BAR_X0;
     const SVG_H        = BRACE_TOP_H + BAR_H + BRACE_BOT_H;
-    const R            = 5;     // Balken-Eckradius
-    const TICK         = 7;     // Länge der senkrechten Klammerenden
+    const R            = 5;
+    const TICK         = 7;
 
-    // Klammer-Tiefe: wie weit die Bogenmitte vom Balken entfernt ist
-    const TOP_TIP_Y    = BAR_Y - BRACE_TOP_H + 10;   // y der oberen Bogenspitze
-    const BOT_TIP_Y    = BAR_Y + BAR_H + BRACE_BOT_H - 10; // y der unteren Bogenspitze
+    const TOP_TIP_Y    = BAR_Y - BRACE_TOP_H + 10;
+    const BOT_TIP_Y    = BAR_Y + BAR_H + BRACE_BOT_H - 10;
 
-    const COL_BRACE    = "rgba(255,255,255,0.55)";
-    const COL_TEXT     = "rgba(255,255,255,0.92)";
-    const COL_LABEL    = "rgba(255,255,255,0.45)";
+    // ── Theme-adaptive Farben ────────────────────────────────────────────────
+    // currentColor wird genutzt — die tatsächliche Farbe kommt aus der
+    // CSS-Klasse .flow-overlay im Shadow DOM, die --primary-text-color setzt.
+    // So funktioniert Theme-Adaption auch in eingebetteten SVG-Elementen.
+    const COL_BRACE    = "currentColor";
+    const COL_TEXT     = "currentColor";
+    const COL_LABEL    = "currentColor";
 
-    // Klammer-Pfad: quadratische Bézier-Kurve
-    // dir=-1 → nach oben; dir=+1 → nach unten
     const bracePath = (x0, x1, barEdgeY, tipY) => {
       const yEnd = barEdgeY + (tipY > barEdgeY ? TICK : -TICK);
       return [
@@ -1103,7 +1112,6 @@ class EvccCard extends HTMLElement {
       ].join(" ");
     };
 
-    // Segmente mit absoluten x-Positionen
     let cumX = BAR_X0;
     const segsWithX = segments.map(s => {
       const w  = Math.round(s.pct / 100 * BAR_W);
@@ -1114,7 +1122,6 @@ class EvccCard extends HTMLElement {
     });
     if (segsWithX.length) segsWithX[segsWithX.length - 1].x1 = BAR_X1;
 
-    // Verbraucher-Segmente mit absoluten x-Positionen — normiert auf volle Balkenbreite
     let cumXB = BAR_X0;
     const botSegsWithX = bottomSegs.map(s => {
       const w  = Math.round(s.pct / 100 * BAR_W);
@@ -1123,14 +1130,9 @@ class EvccCard extends HTMLElement {
       cumXB = x1;
       return { ...s, x0, x1, xMid: (x0 + x1) / 2 };
     });
-    // Letztes Segment bis exakt BAR_X1 ausdehnen
     if (botSegsWithX.length) botSegsWithX[botSegsWithX.length - 1].x1 = BAR_X1;
-    // Mittelpunkte nach Korrektur neu berechnen
     botSegsWithX.forEach(s => { s.xMid = (s.x0 + s.x1) / 2; });
 
-    // ── SVG zusammenbauen ────────────────────────────────────────────────────
-
-    // Balken mit Clip für runde Ecken
     const barRects = segsWithX.map(s =>
       `<rect x="${s.x0}" y="${BAR_Y}" width="${s.x1 - s.x0}" height="${BAR_H}" fill="${s.color}" />`
     ).join("");
@@ -1143,13 +1145,11 @@ class EvccCard extends HTMLElement {
       </defs>
       <g clip-path="url(#bar-clip)">${barRects}</g>`;
 
-    // Subtile Trennlinie zwischen Segmenten
     const barDividers = segsWithX.slice(0, -1).map(s =>
       `<line x1="${s.x1}" y1="${BAR_Y}" x2="${s.x1}" y2="${BAR_Y + BAR_H}"
              stroke="rgba(0,0,0,0.20)" stroke-width="2" />`
     ).join("");
 
-    // Leistungswerte im Balken
     const barLabels = segsWithX.map(s => {
       if (s.w < 80) return "";
       return `<text x="${s.xMid}" y="${BAR_Y + BAR_H / 2 + 8}"
@@ -1157,7 +1157,6 @@ class EvccCard extends HTMLElement {
                     fill="rgba(255,255,255,0.95)">${s.label}</text>`;
     }).join("");
 
-    // MDI SVG Pfade für Klammer-Icons
     const MDI = {
       solar:   "M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z",
       battery: "M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z",
@@ -1172,43 +1171,47 @@ class EvccCard extends HTMLElement {
     const botPathMap = { "🏠": MDI.home, "🔌": MDI.ev, "🔋": MDI.battery, "🗼": MDI.tower };
     botSegsWithX.forEach(s => { s.mdiPath = botPathMap[s.icon] || ""; });
 
-    // Обere Klammern: MDI-Icon als nested SVG an der Spitze
     const SVG_ICON_HALF = 12;
+
+    // Obere Klammern: stroke + Icon nutzen COL_BRACE / COL_TEXT (CSS-Variablen)
     const topBraces = segsWithX.map(s => {
       const path  = bracePath(s.x0 + 2, s.x1 - 2, BAR_Y, TOP_TIP_Y);
       const ix = s.xMid - SVG_ICON_HALF, iy = TOP_TIP_Y - SVG_ICON_HALF;
       return `
-        <path d="${path}" fill="none" stroke="${COL_BRACE}" stroke-width="2.5"
-              stroke-linecap="round" stroke-linejoin="round" />
-        <svg x="${ix}" y="${iy}" width="24" height="24" viewBox="0 0 24 24" fill="rgba(255,255,255,0.92)">
-          <path d="${s.srcPath}"/>
-        </svg>`;
+        <path d="${path}" fill="none"
+              style="stroke:var(--primary-text-color,#212121);opacity:0.45"
+              stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+        <g transform="translate(${ix},${iy})" style="opacity:0.85">
+          <path d="${s.srcPath}" style="fill:var(--primary-text-color,#212121)" />
+        </g>`;
     }).join("");
 
-    // Untere Klammern: MDI-Icon als nested SVG an der Spitze
+    // Untere Klammern: stroke + Icon nutzen COL_BRACE / COL_TEXT (CSS-Variablen)
     const botBraces = botSegsWithX.map(s => {
       const path  = bracePath(s.x0 + 2, s.x1 - 2, BAR_Y + BAR_H, BOT_TIP_Y);
       const ix = s.xMid - SVG_ICON_HALF, iy = BOT_TIP_Y - SVG_ICON_HALF;
       return `
-        <path d="${path}" fill="none" stroke="${COL_BRACE}" stroke-width="2.5"
-              stroke-linecap="round" stroke-linejoin="round" />
-        <svg x="${ix}" y="${iy}" width="24" height="24" viewBox="0 0 24 24" fill="rgba(255,255,255,0.92)">
-          <path d="${s.mdiPath}"/>
-        </svg>`;
+        <path d="${path}" fill="none"
+              style="stroke:var(--primary-text-color,#212121);opacity:0.45"
+              stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+        <g transform="translate(${ix},${iy})" style="opacity:0.85">
+          <path d="${s.mdiPath}" style="fill:var(--primary-text-color,#212121)" />
+        </g>`;
     }).join("");
 
     // IN / OUT — Beschriftung rechts
-    const LX = BAR_X1 + 18;  // x-Position der Labels
+    const LX = BAR_X1 + 18;
     const sideLabels = `
       <text x="${LX}" y="${TOP_TIP_Y}" text-anchor="start" dominant-baseline="central"
-            font-size="19" font-weight="700" fill="${COL_LABEL}">IN</text>
+            font-size="19" font-weight="700"
+            style="fill:var(--secondary-text-color,#757575)">IN</text>
       <text x="${LX}" y="${BOT_TIP_Y}" text-anchor="start" dominant-baseline="central"
-            font-size="19" font-weight="700" fill="${COL_LABEL}">OUT</text>`;
+            font-size="19" font-weight="700"
+            style="fill:var(--secondary-text-color,#757575)">OUT</text>`;
 
-    // SVG zusammensetzen
     const flowBar = `
       <div class="flow-wrap">
-        <svg viewBox="0 0 ${SVG_W} ${SVG_H}" width="100%" height="auto"
+        <svg viewBox="0 0 ${SVG_W} ${SVG_H}" width="100%"
              style="display:block;overflow:visible;font-family:inherit">
           ${barClip}
           ${barDividers}
@@ -1253,7 +1256,6 @@ class EvccCard extends HTMLElement {
           ? `${Math.round(parseFloat(stateVal(this._hass, ents.vehicle_soc)) || 0)} ${unit}`
           : "";
         const label  = val ? `${lpName.toUpperCase()} – ${val}` : lpName.toUpperCase();
-        // Icon je nach Einheit: °C → Wärmepumpe, % → EV-Ladestation
         const icon   = unit.includes("°")
           ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="var(--secondary-text-color)" style="vertical-align:middle"><path d="M15,13V5A3,3 0 0,0 12,2A3,3 0 0,0 9,5V13A5,5 0 0,0 12,22A5,5 0 0,0 15,13M12,4A1,1 0 0,1 13,5V14.08C14.16,14.54 15,15.67 15,17A3,3 0 0,1 12,20A3,3 0 0,1 9,17C9,15.67 9.84,14.54 11,14.08V5A1,1 0 0,1 12,4Z"/></svg>`
           : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="var(--secondary-text-color)" style="vertical-align:middle"><path d="M19.77,7.23L19.78,7.22L16.06,3.5L15,4.56L17.11,6.67C16.17,7.03 15.5,7.93 15.5,9A2.5,2.5 0 0,0 18,11.5C18.36,11.5 18.69,11.42 19,11.29V18.5A1,1 0 0,1 18,19.5A1,1 0 0,1 17,18.5V14A2,2 0 0,0 15,12H14V5A2,2 0 0,0 12,3H6A2,2 0 0,0 4,5V21H14V13.5H15.5V18.5A2.5,2.5 0 0,0 18,21A2.5,2.5 0 0,0 20.5,18.5V9C20.5,8.31 20.22,7.68 19.77,7.23M18,10A1,1 0 0,1 17,9A1,1 0 0,1 18,8A1,1 0 0,1 19,9A1,1 0 0,1 18,10M12,10H6V5H12V10Z"/></svg>`;
@@ -1290,13 +1292,22 @@ class EvccCard extends HTMLElement {
         ? row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M11,7.5L9.5,3H14.5L13,7.5H15L18,3H21L15,12H17L21,21H15L12,15L9,21H3L7,12H9L3,3H6L9,7.5H11M12,13.5L13.9,19H10.1L12,13.5Z\"/></svg>", this._t("gridExport"), "", feedinPow, "site-pw-yellow") : "",
     ].join(""));
 
+    const siteExpanded = this._siteTableExpanded !== undefined
+      ? this._siteTableExpanded
+      : (this._config.site_details !== "collapsed");
+
     return `
       <div class="site-block">
         <div class="lp-header">
           <span class="lp-name">${this._t("overview")}</span>
+          <div class="site-toggle-btn" role="button" tabindex="0"
+               onclick="window.__evccCards.get('${this._cardId}')._toggleSite()"
+               title="${siteExpanded ? this._tInline("siteCollapse") : this._tInline("siteExpand")}">
+            <svg viewBox="0 0 24 24" width="14" height="14" style="transition:transform .2s;transform:${siteExpanded ? "rotate(0deg)" : "rotate(-90deg)"}"><path fill="currentColor" d="M7,10L12,15L17,10H7Z"/></svg>
+          </div>
         </div>
         ${flowBar}
-        <div class="site-table">
+        <div class="site-table" style="${siteExpanded ? '' : 'display:none'}">
           ${inSection}
           <div class="site-section-gap"></div>
           ${outSection}
@@ -1526,9 +1537,21 @@ class EvccCard extends HTMLElement {
       });
     });
 
-    this.shadowRoot.addEventListener("click", () => {
-      this.shadowRoot.querySelectorAll(".batt-inline-popup").forEach(p => p.setAttribute("hidden", ""));
-    }, { capture: true });
+    // Delegierter Click-Handler auf card-content (unterhalb von ha-card)
+    const cardContent = this.shadowRoot.querySelector(".card-content");
+    if (cardContent) {
+      cardContent.addEventListener("click", (e) => {
+        // Batt-inline-popup schließen
+        this.shadowRoot.querySelectorAll(".batt-inline-popup").forEach(p => p.setAttribute("hidden", ""));
+        // Site-Toggle handled via inline onclick → _toggleSite()
+      });
+    } else {
+      this.shadowRoot.addEventListener("click", () => {
+        this.shadowRoot.querySelectorAll(".batt-inline-popup").forEach(p => p.setAttribute("hidden", ""));
+      }, { capture: true });
+    }
+
+    // site-toggle-btn handled via inline onclick → _toggleSite()
 
     this.shadowRoot.querySelectorAll("button.mode-btn").forEach(btn => {
       btn.addEventListener("click", () => {
@@ -1837,6 +1860,28 @@ class EvccCard extends HTMLElement {
       button.phase-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
 
       .site-block { padding: 0; }
+      .site-table-hidden { display: none; }
+      .site-toggle-btn {
+        background: transparent;
+        border: none;
+        border-radius: 50%;
+        color: var(--secondary-text-color);
+        cursor: pointer;
+        padding: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: color .15s, background .15s;
+        margin: -4px;
+      }
+      .site-toggle-btn:hover {
+        color: var(--primary-color);
+        background: var(--secondary-background-color, rgba(0,0,0,.06));
+      }
+      .site-toggle-btn svg {
+        display: block;
+        flex-shrink: 0;
+      }
 
       .flow-wrap {
         margin-bottom: 18px;
@@ -1844,6 +1889,11 @@ class EvccCard extends HTMLElement {
       }
       .flow-wrap svg {
         overflow: visible;
+      }
+      /* Theme-adaptive Farbe für Klammern und Icons im Flow-Balken.
+         currentColor in SVG-Presentation-Attributes erbt von hier. */
+      .flow-overlay {
+        color: var(--primary-text-color, #212121);
       }
 
       /* ── Detail-Tabelle ── */
@@ -1972,6 +2022,57 @@ class EvccCard extends HTMLElement {
 // ─── Registrierung ────────────────────────────────────────────────────────────
 
 customElements.define("evcc-card", EvccCard);
+window.__evccCards = window.__evccCards || new Map();
+
+// ─── Registrierung & Cache-Busting ───────────────────────────────────────────
+//
+// Beim Laden versucht die Card, ihre eigene Lovelace-Ressource in HA
+// automatisch auf ?v=VERSION zu aktualisieren. So wird bei jedem Update
+// der Cache-Parameter automatisch gesetzt — ohne manuelle Änderung.
+
+(async function cacheBust() {
+  const ver = EVCC_CARD_VERSION;
+
+  // Konsolenbanner
+  console.info(
+    `%c evcc-card %c ${ver} %c`,
+    "background:#1d4ed8;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px;font-weight:bold",
+    "background:#22c55e;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0;font-weight:bold",
+    "background:transparent"
+  );
+
+  // Warte bis HA bereit ist
+  await customElements.whenDefined("home-assistant");
+  const ha = document.querySelector("home-assistant");
+  if (!ha || !ha.hass) return;
+
+  try {
+    // Lovelace-Ressourcen abrufen
+    const resources = await ha.hass.callWS({ type: "lovelace/resources" });
+    const myRes = resources.find(r =>
+      r.url && r.url.includes("evcc-card") && r.url.endsWith(".js") ||
+      r.url && r.url.includes("evcc-card") && r.url.includes(".js?")
+    );
+    if (!myRes) return;
+
+    const baseUrl = myRes.url.split("?")[0];
+    const expectedUrl = `${baseUrl}?v=${ver}`;
+
+    if (myRes.url === expectedUrl) return; // bereits aktuell
+
+    // Ressource aktualisieren
+    await ha.hass.callWS({
+      type:   "lovelace/resources/update",
+      res_id: myRes.id,
+      res_type: myRes.type || "module",
+      url:    expectedUrl,
+    });
+    console.info(`[evcc-card] Cache-URL aktualisiert → ${expectedUrl}. Seite wird neu geladen.`);
+    setTimeout(() => location.reload(), 500);
+  } catch (e) {
+    // Kein Admin-Zugriff oder Managed Mode — still ignorieren
+  }
+})();
 
 window.customCards = window.customCards || [];
 window.customCards.push({
@@ -1979,4 +2080,5 @@ window.customCards.push({
   name:        "EVCC Card",
   description: "Dashboard card for ha-evcc integration.",
   preview:     false,
+  version:     EVCC_CARD_VERSION,
 });

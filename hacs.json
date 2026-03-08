@@ -1,6 +1,6 @@
 {
   "name": "EVCC Custom Card",
   "render_readme": true,
-  "homeassistant": "2026.2.0",
+  "homeassistant": "2023.2",
   "filename": "evcc-card.js"
 }
