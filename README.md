@@ -23,9 +23,9 @@ All charge points and site entities are **automatically discovered** based on th
 | 🔍 **Auto-discovery** | Automatically detects all charge points and site entities — zero manual configuration |
 | 🔋 **SoC display** | Vehicle state of charge as a progress bar with percentage and estimated range |
 | 🎚️ **Slider controls** | Adjust Target SoC, Min SoC, Priority, Max current and Min current inline |
+| 🔌 **Phase switching** | Auto / 1-phase / 3-phase control built in |
 | 🌍 **Multi-language** | German, English and Spanish — auto-detected from HA language setting, easily extensible |
 | 🔄 **Live updates** | Power, SoC and status update in real time without full re-render |
-| 🎛️ **Filtering** | Select specific charge points via `loadpoints` config |
 | 🎛️ **Filtering** | Select specific charge points via `loadpoints` config |
 
 ---
@@ -63,24 +63,10 @@ config/www/evcc-card/
     └── es.json
 ```
 
-1. Download `evcc-card.js` and the `locales/` folder from the [latest release](../../releases/latest)
-2. Copy them to `config/www/evcc-card/` in your Home Assistant instance, preserving the folder structure:
-
-```
-config/www/evcc-card/
-├── evcc-card.js
-└── locales/
-    ├── index.json
-    ├── de.json
-    ├── en.json
-    └── es.json
-```
-
 3. Add it as a Lovelace resource:
 
 ```yaml
 # In your Lovelace resources (Settings → Dashboards → Resources)
-url: /local/evcc-card/evcc-card.js
 url: /local/evcc-card/evcc-card.js
 type: module
 ```
@@ -89,107 +75,20 @@ type: module
 
 ---
 
-## Configuration
+## Configuration & Modes
 
-Add the card to any Lovelace dashboard using the YAML editor:
+Add the card to any Lovelace dashboard using the YAML editor. The `mode` option controls what the card displays.
 
-### Charge point card (default)
-
-Shows all discovered charge points. Optionally filter to specific ones:
-
-```yaml
-type: custom:evcc-card
-```
-
-```yaml
-type: custom:evcc-card
-loadpoints:
-  - openwb          # show only specific charge points by name
-  - wallbox-garage
-```
-
-### Home battery block
-
-```yaml
-type: custom:evcc-card
-mode: battery
-```
-
-### Site overview
-
-```yaml
-type: custom:evcc-card
-mode: site
-```
-
-### Charge planning
-
-```yaml
-type: custom:evcc-card
-mode: plan
-loadpoints:
-  - openwb
-```
-
-### Compact view
-
-Same content as the default charge point view, but organized into four tabs to save vertical space:
-
-```yaml
-type: custom:evcc-card
-mode: compact
-```
-
-```yaml
-type: custom:evcc-card
-mode: compact
-loadpoints:
-  - openwb          # show only specific charge points by name
-  - wallbox-garage
-```
-
-### Compact view
-
-Same content as the default charge point view, but organized into four tabs to save vertical space:
-
-```yaml
-type: custom:evcc-card
-mode: compact
-```
-
-```yaml
-type: custom:evcc-card
-mode: compact
-loadpoints:
-  - openwb          # show only specific charge points by name
-  - wallbox-garage
-```
-
-### Override language
-
-```yaml
-type: custom:evcc-card
-language: en   # or: de, es
-language: en   # or: de, es
-```
-
----
-
-## Configuration options
+### Configuration options
 
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `plan` |
-| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `plan` |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
-| `language` | `string` | *(auto)* | Override UI language: `en`, `de`, `es` |
-| `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
 | `language` | `string` | *(auto)* | Override UI language: `en`, `de`, `es` |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
 
 ---
-
-## Modes
 
 ### `loadpoint` (default)
 
@@ -202,7 +101,20 @@ The main charge point view. For each discovered charge point it shows:
 - Phase switch: Auto / 1-phase / 3-phase
 - Charge plan block
 
+```yaml
+type: custom:evcc-card
+```
+
+```yaml
+type: custom:evcc-card
+loadpoints:
+  - openwb          # show only specific charge points by name
+  - wallbox-garage
+```
+
 ![Loadpoint block](images/chargepoint.png)
+
+---
 
 ### `site`
 
@@ -211,22 +123,35 @@ Full site energy overview:
 - PV production bar split into: home consumption / charging / battery / feed-in
 - Individual PV string values (e.g. BKW, Dach) shown as indented sub-rows
 - Live power table with IN/OUT sections: Grid import/export, PV generation, home consumption, charging, battery
-- Battery SoC shown inline in the charging/discharging row (e.g. *Battery charging – 47 %*)
+- Battery SoC shown inline in the charging/discharging row (e.g. `Battery charging – 47 %`)
 - Active charge points shown as indented sub-rows under the charging row, including vehicle SoC or temperature
 
+```yaml
+type: custom:evcc-card
+mode: site
+```
+
 ![Site overview](images/site.png)
+
+---
 
 ### `battery`
 
 Home battery management block:
 
 - Current battery SoC with visual indicator
-- Current battery SoC with visual indicator
 - Buffer SoC slider
 - Priority SoC slider
 - Discharge lock toggle
 
+```yaml
+type: custom:evcc-card
+mode: battery
+```
+
 ![Battery block](images/battery.png)
+
+---
 
 ### `plan`
 
@@ -235,24 +160,19 @@ Minimalist charge plan view:
 - Vehicle selector
 - Target time picker
 - Target SoC slider
-- Target SoC slider
 - Activate / delete plan
 
-### `compact`
-
-Same content as `loadpoint`, but organized into four tabs — ideal for dashboards where vertical space is limited or multiple charge points are shown side by side:
-
-| Tab | Contents |
-|---|---|
-| ⚡ **Control** | Charge mode buttons, vehicle SoC bar, current charging power |
-| 🎚️ **Settings** | Target SoC, Min SoC, Priority sliders, current limits, phase switch |
-| 📅 **Plan** | Charge plan: vehicle selector, target time, target SoC, activate/delete |
-| 📊 **Session** | Energy, cost, duration and phases of the current session |
-
-The selected tab is remembered per charge point across re-renders.
+```yaml
+type: custom:evcc-card
+mode: plan
+loadpoints:
+  - openwb
+```
 
 ![Plan block](images/plan.png)
 
+---
+
 ### `compact`
 
 Same content as `loadpoint`, but organized into four tabs — ideal for dashboards where vertical space is limited or multiple charge points are shown side by side:
@@ -266,7 +186,51 @@ Same content as `loadpoint`, but organized into four tabs — ideal for dashboar
 
 The selected tab is remembered per charge point across re-renders.
 
+```yaml
+type: custom:evcc-card
+mode: compact
+```
+
+```yaml
+type: custom:evcc-card
+mode: compact
+loadpoints:
+  - openwb          # show only specific charge points by name
+  - wallbox-garage
+```
+
 ![Compact mode](images/compact.png)
+
+---
+
+### Override language
+
+```yaml
+type: custom:evcc-card
+language: en   # or: de, es
+```
+
+---
+
+## Icons
+
+All icons throughout the card use inline [Material Design Icons](https://pictogrammers.com/library/mdi/) (MDI) rendered as embedded SVG paths — no external icon font, no `ha-icon` dependency, no `foreignObject`. This ensures correct rendering in all HA themes and browsers.
+
+Key icon assignments:
+
+| Element | Icon |
+|---|---|
+| PV generation | `mdi:white-balance-sunny` |
+| PV sub-source (string) | `mdi:solar-panel` |
+| Battery | `mdi:battery-charging-50` |
+| Grid import / export | `mdi:transmission-tower` |
+| Home consumption | `mdi:home` |
+| Charge point | `mdi:ev-station` |
+| Heat pump (°C loadpoint) | `mdi:thermometer-low` |
+| Mode: Off | `mdi:power` |
+| Mode: PV | `mdi:white-balance-sunny` |
+| Mode: Min+PV | `mdi:lightning-bolt` &amp; `mdi:white-balance-sunny` (combined) |
+| Mode: Now | `mdi:lightning-bolt` |
 
 ---
 
@@ -297,7 +261,6 @@ This card relies on the entity naming convention used by [ha-evcc](https://githu
 sensor.evcc_<loadpoint_name>_<entity_type>
 select.evcc_<loadpoint_name>_mode
 number.evcc_<loadpoint_name>_limit_soc
-number.evcc_<loadpoint_name>_limit_soc
 ...
 ```
 
@@ -314,12 +277,6 @@ Pull requests are welcome! Please open an issue first to discuss what you'd like
 3. Commit your changes: `git commit -m 'Add my feature'`
 4. Push to the branch: `git push origin feature/my-feature`
 5. Open a Pull Request
-
-Contributions that are especially appreciated:
-
-- 🌍 **New translations** — see the [Translations](#translations) section above
-- 🐛 **Bug reports and fixes**
-- 💡 **Feature suggestions and implementations**
 
 Contributions that are especially appreciated:
 
