@@ -2,6 +2,5 @@
   "name": "EVCC Custom Card",
   "render_readme": true,
   "homeassistant": "2023.2",
-  "filename": "evcc-card.js",
-  "icon": "https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/icon.png"
+  "filename": "evcc-card.js"
 }
