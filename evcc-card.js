@@ -93,10 +93,10 @@ const FEATURES = [
 
 // Lademodi → Icon + Label
 const CHARGE_MODES = {
-  "off":   { icon: "⏹",  tKey: "modeOff"  },
-  "pv":    { icon: "☀️",  tKey: "modePV"   },
-  "minpv": { icon: "⚡☀️", tKey: "modeMinPV"},
-  "now":   { icon: "⚡",  tKey: "modeNow"  },
+  "off":   { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M13,3H11V13H13V3M17.83,5.17L16.41,6.59C17.99,7.86 19,9.81 19,12A7,7 0 0,1 12,19A7,7 0 0,1 5,12C5,9.81 6.01,7.86 7.58,6.58L6.17,5.17C4.23,6.82 3,9.26 3,12A9,9 0 0,0 12,21A9,9 0 0,0 21,12C21,9.26 19.77,6.82 17.83,5.17Z"/></svg>`,  tKey: "modeOff"  },
+  "pv":    { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z"/></svg>`,  tKey: "modePV"   },
+  "minpv": { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style="position:relative;top:4px;left:-6px;opacity:0.8"><path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z"/></svg>`, tKey: "modeMinPV"},
+  "now":   { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>`,  tKey: "modeNow"  },
 };
 
 
@@ -209,11 +209,9 @@ class EvccCard extends HTMLElement {
   // ── Übersetzungen laden ───────────────────────────────────────────────────
 
   async _loadTranslations() {
-    // Basis-URL: selbes Verzeichnis wie evcc-card.js, Unterordner locales/
     const base = new URL("locales/", import.meta.url).href;
 
-    // Verfügbare Sprachen aus index.json lesen
-    let langs = ["de", "en"]; // Fallback falls index.json nicht erreichbar
+    let langs = ["de", "en"];
     try {
       const idxResp = await fetch(`${base}index.json`);
       if (idxResp.ok) langs = await idxResp.json();
@@ -272,7 +270,6 @@ class EvccCard extends HTMLElement {
   setConfig(config) {
     this._config = config || {};
 
-    // Übersetzungen beim ersten setConfig laden
     if (!this._translationsReady && !this._loadingTranslations) {
       this._loadingTranslations = true;
       this._loadTranslations().then(() => {
@@ -294,7 +291,6 @@ class EvccCard extends HTMLElement {
 
     let val = strings[key] ?? key;
 
-    // {placeholder} ersetzen, z.B. {val} oder {list}
     for (const [k, v] of Object.entries(replacements)) {
       val = val.replace(`{${k}}`, v);
     }
@@ -308,7 +304,6 @@ class EvccCard extends HTMLElement {
   _render() {
     if (!this._hass) return;
 
-    // Noch nicht bereit: Ladeanzeige
     if (!this._translationsReady) {
       this.shadowRoot.innerHTML = `
         <style>:host{display:block} ha-card{background:var(--card-background-color)}
@@ -372,7 +367,7 @@ class EvccCard extends HTMLElement {
         el.style.background = soc > 80 ? "#22c55e" : soc > 30 ? "#3b82f6" : "#f59e0b";
       } else if (type === "soc-pct") {
         const soc = parseFloat(stateVal(this._hass, entityId)) || 0;
-        el.textContent = `🔋 ${Math.round(soc)} ${unitStr(this._hass, entityId)}`;
+        el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${unitStr(this._hass, entityId)}`;
       } else if (type === "power") {
         el.textContent = `${stateVal(this._hass, entityId)} ${unitStr(this._hass, entityId)}`;
       }
@@ -418,16 +413,14 @@ class EvccCard extends HTMLElement {
     const statusColor = charging ? "#22c55e" : connected ? "#3b82f6" : "#6b7280";
     const noPlan      = Array.isArray(this._config.no_plan) && this._config.no_plan.includes(lpName);
 
-    // Aktiver Tab: 0=Steuerung, 1=Einstellungen, 2=Plan, 3=Session
-    // Standard: 0 — bei laufender Ladung Tab mit Steuerung zeigen
     if (this._tabState[lpName] === undefined) this._tabState[lpName] = 0;
     const activeTab = this._tabState[lpName];
 
     const tabs = [
-      { key: "tabControl",  icon: "⚡" },
-      { key: "tabSettings", icon: "🎚️" },
-      { key: "tabPlan",     icon: "📅" },
-      { key: "tabSession",  icon: "📊" },
+      { key: "tabControl",  icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>` },
+      { key: "tabSettings", icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3,17V19H9V17H3M3,5V7H13V5H3M13,21V19H21V17H13V15H11V21H13M7,9V11H3V13H7V15H9V9H7M21,13V11H11V13H21M15,9H17V7H21V5H17V3H15V9Z"/></svg>` },
+      { key: "tabPlan",     icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19,3H18V1H16V3H8V1H6V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M19,19H5V8H19V19Z"/></svg>` },
+      { key: "tabSession",  icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M22,21H2V3H4V19H6V17H10V19H12V16H16V19H18V17H22V21Z"/></svg>` },
     ];
 
     const tabBar = `
@@ -442,23 +435,19 @@ class EvccCard extends HTMLElement {
       </div>`;
 
     const tabContent = [
-      // Tab 0 — Steuerung
       `<div class="compact-panel" ${activeTab !== 0 ? 'hidden' : ''}>
         ${this._renderModeSelector(ents)}
         ${this._renderSocBar(ents, charging)}
         ${this._renderPowerRow(ents, charging)}
       </div>`,
-      // Tab 1 — Einstellungen
       `<div class="compact-panel" ${activeTab !== 1 ? 'hidden' : ''}>
         ${this._renderSliders(ents)}
         ${this._renderCurrentBlock(ents)}
         ${this._renderToggles(ents)}
       </div>`,
-      // Tab 2 — Plan
       `<div class="compact-panel" ${activeTab !== 2 ? 'hidden' : ''}>
         ${noPlan ? "" : this._renderPlanBlock(lpName, ents)}
       </div>`,
-      // Tab 3 — Session
       `<div class="compact-panel" ${activeTab !== 3 ? 'hidden' : ''}>
         ${this._renderSessionInfo(ents)}
       </div>`,
@@ -508,9 +497,9 @@ class EvccCard extends HTMLElement {
       <div class="soc-section">
         <div class="soc-label-row">
           <span data-live-entity="${ents.vehicle_soc}" data-live-type="soc-pct">
-            🔋 ${Math.round(soc)} ${unitStr(this._hass, ents.vehicle_soc)}
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${unitStr(this._hass, ents.vehicle_soc)}
           </span>
-          ${range !== null ? `<span>🛣 ${range} km</span>` : ""}
+          ${range !== null ? `<span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M11.5 0L9 8H11V16H13V8H15L11.5 0M3 18V20H21V18L11.5 16L3 18Z"/></svg> ${range} km</span>` : ""}
         </div>
         <div class="soc-track">
           <div class="soc-fill ${charging ? 'charging' : ''}"
@@ -833,7 +822,7 @@ class EvccCard extends HTMLElement {
 
     const projectionHtml = (startStr || endStr) ? `
       <div class="plan-projection">
-        ${startStr ? `<span>🔌 Start: <strong>${startStr}</strong></span>` : ""}
+        ${startStr ? `<span style="display:flex;align-items:center;gap:4px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M16.06,3.5L17.5,2.08L18.92,3.5L17.5,4.92L16.06,3.5M7.06,3.5L5.64,2.08L4.22,3.5L5.64,4.92L7.06,3.5M12,6A4,4 0 0,1 16,10V16H13V22H11V16H8V10A4,4 0 0,1 12,6Z"/></svg> Start: <strong>${startStr}</strong></span>` : ""}
         ${endStr   ? `<span>✅ Ende: <strong>${endStr}</strong></span>`    : ""}
       </div>` : "";
 
@@ -956,12 +945,17 @@ class EvccCard extends HTMLElement {
     const kwh = id => id ? parseFloat(stateVal(this._hass, id)) || 0 : null;
     const ct  = id => id ? parseFloat(stateVal(this._hass, id)) || 0 : null;
 
+    // PV-Klarname direkt aus dem "title"-Attribut der HA-Entität (ha-evcc setzt title = MeterName)
+    const pvNameFromEntity = (entityId) => entityId ? (attr(this._hass, entityId, "title") ?? null) : null;
     const pvSources = [
-      { key: "pv_0_power", energyKey: "pv_0_energy", label: "PV 1" },
-      { key: "pv_1_power", energyKey: "pv_1_energy", label: "PV 2" },
-      { key: "pv_2_power", energyKey: "pv_2_energy", label: "PV 3" },
-      { key: "pv_3_power", energyKey: "pv_3_energy", label: "PV 4" },
-    ].filter(s => site[s.key]);
+      { key: "pv_0_power", energyKey: "pv_0_energy", idx: 1 },
+      { key: "pv_1_power", energyKey: "pv_1_energy", idx: 2 },
+      { key: "pv_2_power", energyKey: "pv_2_energy", idx: 3 },
+      { key: "pv_3_power", energyKey: "pv_3_energy", idx: 4 },
+    ].filter(s => site[s.key]).map(s => ({
+      ...s,
+      label: pvNameFromEntity(site[s.key]) ?? `PV ${s.idx}`,
+    }));
     const pvPow = pvSources.length > 0
       ? pvSources.reduce((sum, s) => sum + kw(site[s.key]), 0)
       : kw(site.pv_power);
@@ -980,48 +974,256 @@ class EvccCard extends HTMLElement {
     const battChargePow = battPow < 0 ? Math.abs(battPow) : 0;
     const battDischPow  = battPow > 0 ? battPow : 0;
 
-    const barTotal  = Math.max(pvPow, 0.001);
-    const homePct   = Math.min(Math.round(Math.max(homePow - chargePow, 0) / barTotal * 100), 100);
-    const chargePct = Math.min(Math.round(chargePow      / barTotal * 100), 100);
-    const battPct   = Math.min(Math.round(battChargePow  / barTotal * 100), 100);
-    const feedinPct = Math.min(Math.round(feedinPow      / barTotal * 100), 100);
-    const usedPct   = homePct + chargePct + battPct + feedinPct;
-    const restPct   = Math.max(0, 100 - usedPct);
+    // ── Energiefluss-Berechnung für den Flow-Balken ───────────────────────
+    // Quellen (oben): PV, Batterie-Entladung, Netzbezug
+    // Verbraucher (unten): Haus (ohne LP), Laden, Batterie-Ladung, Einspeisung
 
+    const totalIn  = Math.max(pvPow + battDischPow + bezugPow, 0.001);
+
+    // Prozentanteile der Quellen (bestimmen Segmentbreiten)
+    const pvPct      = Math.round(pvPow      / totalIn * 100);
+    const battDPct   = Math.round(battDischPow / totalIn * 100);
+    const gridInPct  = Math.round(bezugPow   / totalIn * 100);
+
+    // Prozentanteile der Verbraucher — normiert auf 100% damit Klammern den ganzen Balken abdecken
+    const houseOnlyPow = Math.max(homePow - chargePow, 0);
+    const totalOut = Math.max(houseOnlyPow + chargePow + battChargePow + feedinPow, 0.001);
+    const homePct   = Math.round(houseOnlyPow  / totalOut * 100);
+    const chargePct = Math.round(chargePow     / totalOut * 100);
+    const battCPct  = Math.round(battChargePow / totalOut * 100);
+    const feedinPct = Math.round(feedinPow     / totalOut * 100);
+
+    const fmt    = v => v < 10 ? v.toFixed(1) : Math.round(v).toString();
+    const fmtKw  = v => `${fmt(v)} kW`;
+    const fmtKwh = v => v === null ? "–" : `${fmt(v)} kWh`;
+
+    const batterySoc = kwh(site.battery_soc);
     const gridKwh    = kwh(site.grid_energy);
     const exportKwh  = kwh(site.grid_energy_export);
     const battCKwh   = kwh(site.battery_energy_charge);
     const battDKwh   = kwh(site.battery_energy_discharge);
     const homeKwh    = kwh(site.home_energy);
-    const batterySoc = kwh(site.battery_soc);
 
-    const fmt   = v => v === null ? "–" : v < 10 ? v.toFixed(1) : Math.round(v).toString();
-    const fmtKw  = v => `${fmt(v)} kW`;
-    const fmtKwh = v => v === null ? "–" : `${fmt(v)} kWh`;
+    const tariffGrid   = ct(site.tariff_grid);
+    const tariffFeedin = ct(site.tariff_feedin);
 
-    const inTotal  = pvPow + battDischPow + bezugPow;
-    const outTotal = homePow + battChargePow + feedinPow;
+    // ── Flow-Balken ──────────────────────────────────────────────────────────
+    //
+    // Layout:
+    //   [☀️ ←————————————] [🔋 ————————————→] [⚡]  ← obere Labels
+    //   ┌──────────────────────────────────────────┐
+    //   │  PV-Segment (grün)  │ Batt-Seg │ Netz-S  │  ← Balken
+    //   └──────────────────────────────────────────┘
+    //   [🏠 ←————————] [🔌 ——] [🔋 ——] [↑ Netz ——]  ← untere Labels
+    //
+    // Quellen-Segmente werden durch die Quellen-Anteile bestimmt.
+    // Verbraucher-Labels werden darunter proportional positioniert.
 
-    const bar = `
-      <div class="site-bar-wrap">
-        <div class="site-sun-icon">☀️</div>
-        <div class="site-bar">
-          <div class="site-bar-home"   style="flex:${homePct}"   title="Haus ${homePct}%"></div>
-          <div class="site-bar-charge" style="flex:${chargePct}" title="Laden ${chargePct}%"></div>
-          <div class="site-bar-batt"   style="flex:${battPct}"   title="Batterie ${battPct}%"></div>
-          <div class="site-bar-feedin" style="flex:${feedinPct}" title="Einspeisung ${feedinPct}%"></div>
-          <div class="site-bar-rest"   style="flex:${restPct}"></div>
-        </div>
-        <div class="site-export-icon">⚡</div>
+    // Segment-Farben: PV=grün, Batt-Entladung=orange, Netzbezug=rot
+    // Haus=grün(dunkel), Laden=blau, Batt-Ladung=orange(hell), Einspeisung=gelb
+
+    const hasBatt   = site.battery_power && (battDischPow > 0.05 || battChargePow > 0.05);
+    const hasGrid   = bezugPow > 0.05 || feedinPow > 0.05;
+    const hasPV     = pvPow > 0.05;
+    const hasCharge = chargePow > 0.05;
+
+    // Segmente für den Balken (immer 100% zusammen)
+    // Wir zeigen alle Quellen-Segmente, auch wenn 0 (aber dann unsichtbar)
+    const segments = [
+      { cls: "seg-pv",      pct: pvPct,     label: fmtKw(pvPow),       color: "#22c55e", show: hasPV },
+      { cls: "seg-battd",   pct: battDPct,  label: fmtKw(battDischPow),color: "#f97316", show: battDischPow > 0.05 },
+      { cls: "seg-gridin",  pct: gridInPct, label: fmtKw(bezugPow),    color: "#ef4444", show: bezugPow > 0.05 },
+    ].filter(s => s.pct > 0);
+
+    // Normiere auf 100%
+    const segTotal = segments.reduce((s, x) => s + x.pct, 0);
+    if (segTotal > 0 && segTotal !== 100) {
+      const scale = 100 / segTotal;
+      segments.forEach(s => s.pct = Math.round(s.pct * scale));
+      // Letztes Segment anpassen um Rundungsfehler zu korrigieren
+      const diff = 100 - segments.reduce((s, x) => s + x.pct, 0);
+      if (segments.length) segments[segments.length - 1].pct += diff;
+    }
+
+    // Obere Labels: Quellen mit Klammer-Positionen
+    // Untere Labels: Verbraucher mit Klammer-Positionen
+    const topLabels = [
+      hasPV         ? { icon: "☀️",  val: fmtKw(pvPow),        pct: pvPct / 2 } : null,
+      battDischPow > 0.05 ? { icon: "🔋↑", val: fmtKw(battDischPow), pct: pvPct + battDPct / 2 } : null,
+      bezugPow > 0.05     ? { icon: "⚡↓", val: fmtKw(bezugPow),     pct: pvPct + battDPct + gridInPct / 2 } : null,
+    ].filter(Boolean);
+
+    // Verbraucher-Anteile kumulativ für untere Label-Positionierung
+    const bottomSegs = [
+      { icon: "🏠",  val: fmtKw(houseOnlyPow), pct: homePct,   show: houseOnlyPow > 0.05 },
+      { icon: "🔌",  val: fmtKw(chargePow),     pct: chargePct, show: hasCharge },
+      { icon: "🔋",  val: fmtKw(battChargePow), pct: battCPct,  show: battChargePow > 0.05 },
+      { icon: "🗼",  val: fmtKw(feedinPow),     pct: feedinPct, show: feedinPow > 0.05 },
+    ].filter(s => s.show);
+
+    // Kumulierte Mittelpunkte für Bottom-Labels
+    let cumPct = 0;
+    bottomSegs.forEach(s => {
+      s.midPct = cumPct + s.pct / 2;
+      cumPct += s.pct;
+    });
+
+    // ── SVG-Klammer-Balken ───────────────────────────────────────────────────
+    // Maße (viewBox-Koordinaten):
+    const SVG_W        = 1000;  // viewBox-Breite
+    const LABEL_W      = 60;    // Breite des IN/OUT-Bereichs rechts
+    const BRACE_TOP_H  = 52;    // Höhe Klammerbereich oben
+    const BAR_H        = 48;    // Balkenhöhe
+    const BRACE_BOT_H  = 52;    // Höhe Klammerbereich unten
+    const BAR_Y        = BRACE_TOP_H;
+    const BAR_X0       = 0;
+    const BAR_X1       = SVG_W - LABEL_W;
+    const BAR_W        = BAR_X1 - BAR_X0;
+    const SVG_H        = BRACE_TOP_H + BAR_H + BRACE_BOT_H;
+    const R            = 5;     // Balken-Eckradius
+    const TICK         = 7;     // Länge der senkrechten Klammerenden
+
+    // Klammer-Tiefe: wie weit die Bogenmitte vom Balken entfernt ist
+    const TOP_TIP_Y    = BAR_Y - BRACE_TOP_H + 10;   // y der oberen Bogenspitze
+    const BOT_TIP_Y    = BAR_Y + BAR_H + BRACE_BOT_H - 10; // y der unteren Bogenspitze
+
+    const COL_BRACE    = "rgba(255,255,255,0.55)";
+    const COL_TEXT     = "rgba(255,255,255,0.92)";
+    const COL_LABEL    = "rgba(255,255,255,0.45)";
+
+    // Klammer-Pfad: quadratische Bézier-Kurve
+    // dir=-1 → nach oben; dir=+1 → nach unten
+    const bracePath = (x0, x1, barEdgeY, tipY) => {
+      const yEnd = barEdgeY + (tipY > barEdgeY ? TICK : -TICK);
+      return [
+        `M ${x0} ${barEdgeY}`,
+        `L ${x0} ${yEnd}`,
+        `Q ${x0} ${tipY} ${(x0 + x1) / 2} ${tipY}`,
+        `Q ${x1} ${tipY} ${x1} ${yEnd}`,
+        `L ${x1} ${barEdgeY}`,
+      ].join(" ");
+    };
+
+    // Segmente mit absoluten x-Positionen
+    let cumX = BAR_X0;
+    const segsWithX = segments.map(s => {
+      const w  = Math.round(s.pct / 100 * BAR_W);
+      const x0 = cumX;
+      const x1 = cumX + w;
+      cumX = x1;
+      return { ...s, x0, x1, xMid: (x0 + x1) / 2, w };
+    });
+    if (segsWithX.length) segsWithX[segsWithX.length - 1].x1 = BAR_X1;
+
+    // Verbraucher-Segmente mit absoluten x-Positionen — normiert auf volle Balkenbreite
+    let cumXB = BAR_X0;
+    const botSegsWithX = bottomSegs.map(s => {
+      const w  = Math.round(s.pct / 100 * BAR_W);
+      const x0 = cumXB;
+      const x1 = cumXB + w;
+      cumXB = x1;
+      return { ...s, x0, x1, xMid: (x0 + x1) / 2 };
+    });
+    // Letztes Segment bis exakt BAR_X1 ausdehnen
+    if (botSegsWithX.length) botSegsWithX[botSegsWithX.length - 1].x1 = BAR_X1;
+    // Mittelpunkte nach Korrektur neu berechnen
+    botSegsWithX.forEach(s => { s.xMid = (s.x0 + s.x1) / 2; });
+
+    // ── SVG zusammenbauen ────────────────────────────────────────────────────
+
+    // Balken mit Clip für runde Ecken
+    const barRects = segsWithX.map(s =>
+      `<rect x="${s.x0}" y="${BAR_Y}" width="${s.x1 - s.x0}" height="${BAR_H}" fill="${s.color}" />`
+    ).join("");
+
+    const barClip = `
+      <defs>
+        <clipPath id="bar-clip">
+          <rect x="${BAR_X0}" y="${BAR_Y}" width="${BAR_W}" height="${BAR_H}" rx="${R}" ry="${R}" />
+        </clipPath>
+      </defs>
+      <g clip-path="url(#bar-clip)">${barRects}</g>`;
+
+    // Subtile Trennlinie zwischen Segmenten
+    const barDividers = segsWithX.slice(0, -1).map(s =>
+      `<line x1="${s.x1}" y1="${BAR_Y}" x2="${s.x1}" y2="${BAR_Y + BAR_H}"
+             stroke="rgba(0,0,0,0.20)" stroke-width="2" />`
+    ).join("");
+
+    // Leistungswerte im Balken
+    const barLabels = segsWithX.map(s => {
+      if (s.w < 80) return "";
+      return `<text x="${s.xMid}" y="${BAR_Y + BAR_H / 2 + 8}"
+                    text-anchor="middle" font-size="24" font-weight="700"
+                    fill="rgba(255,255,255,0.95)">${s.label}</text>`;
+    }).join("");
+
+    // MDI SVG Pfade für Klammer-Icons
+    const MDI = {
+      solar:   "M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z",
+      battery: "M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z",
+      tower:   "M11,7.5L9.5,3H14.5L13,7.5H15L18,3H21L15,12H17L21,21H15L12,15L9,21H3L7,12H9L3,3H6L9,7.5H11M12,13.5L13.9,19H10.1L12,13.5Z",
+      home:    "M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z",
+      ev:      "M19.77,7.23L19.78,7.22L16.06,3.5L15,4.56L17.11,6.67C16.17,7.03 15.5,7.93 15.5,9A2.5,2.5 0 0,0 18,11.5C18.36,11.5 18.69,11.42 19,11.29V18.5A1,1 0 0,1 18,19.5A1,1 0 0,1 17,18.5V14A2,2 0 0,0 15,12H14V5A2,2 0 0,0 12,3H6A2,2 0 0,0 4,5V21H14V13.5H15.5V18.5A2.5,2.5 0 0,0 18,21A2.5,2.5 0 0,0 20.5,18.5V9C20.5,8.31 20.22,7.68 19.77,7.23M18,10A1,1 0 0,1 17,9A1,1 0 0,1 18,8A1,1 0 0,1 19,9A1,1 0 0,1 18,10M12,10H6V5H12V10Z",
+      solpan:  "M4,6H20A2,2 0 0,1 22,8V16A2,2 0 0,1 20,18H4A2,2 0 0,1 2,16V8A2,2 0 0,1 4,6M4,8V16H20V8H4M5,9H11V13H5V9M12,9H19V13H12V9M5,14H11V16H5V14M12,14H19V16H12V14Z",
+      heat:    "M15,13V5A3,3 0 0,0 12,2A3,3 0 0,0 9,5V13A5,5 0 0,0 12,22A5,5 0 0,0 15,13M12,4A1,1 0 0,1 13,5V14.08C14.16,14.54 15,15.67 15,17A3,3 0 0,1 12,20A3,3 0 0,1 9,17C9,15.67 9.84,14.54 11,14.08V5A1,1 0 0,1 12,4Z",
+    };
+    const srcPathMap = { "seg-pv": MDI.solar, "seg-battd": MDI.battery, "seg-gridin": MDI.tower };
+    segsWithX.forEach(s => { s.srcPath = srcPathMap[s.cls] || ""; });
+    const botPathMap = { "🏠": MDI.home, "🔌": MDI.ev, "🔋": MDI.battery, "🗼": MDI.tower };
+    botSegsWithX.forEach(s => { s.mdiPath = botPathMap[s.icon] || ""; });
+
+    // Обere Klammern: MDI-Icon als nested SVG an der Spitze
+    const SVG_ICON_HALF = 12;
+    const topBraces = segsWithX.map(s => {
+      const path  = bracePath(s.x0 + 2, s.x1 - 2, BAR_Y, TOP_TIP_Y);
+      const ix = s.xMid - SVG_ICON_HALF, iy = TOP_TIP_Y - SVG_ICON_HALF;
+      return `
+        <path d="${path}" fill="none" stroke="${COL_BRACE}" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round" />
+        <svg x="${ix}" y="${iy}" width="24" height="24" viewBox="0 0 24 24" fill="rgba(255,255,255,0.92)">
+          <path d="${s.srcPath}"/>
+        </svg>`;
+    }).join("");
+
+    // Untere Klammern: MDI-Icon als nested SVG an der Spitze
+    const botBraces = botSegsWithX.map(s => {
+      const path  = bracePath(s.x0 + 2, s.x1 - 2, BAR_Y + BAR_H, BOT_TIP_Y);
+      const ix = s.xMid - SVG_ICON_HALF, iy = BOT_TIP_Y - SVG_ICON_HALF;
+      return `
+        <path d="${path}" fill="none" stroke="${COL_BRACE}" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round" />
+        <svg x="${ix}" y="${iy}" width="24" height="24" viewBox="0 0 24 24" fill="rgba(255,255,255,0.92)">
+          <path d="${s.mdiPath}"/>
+        </svg>`;
+    }).join("");
+
+    // IN / OUT — Beschriftung rechts
+    const LX = BAR_X1 + 18;  // x-Position der Labels
+    const sideLabels = `
+      <text x="${LX}" y="${TOP_TIP_Y}" text-anchor="start" dominant-baseline="central"
+            font-size="19" font-weight="700" fill="${COL_LABEL}">IN</text>
+      <text x="${LX}" y="${BOT_TIP_Y}" text-anchor="start" dominant-baseline="central"
+            font-size="19" font-weight="700" fill="${COL_LABEL}">OUT</text>`;
+
+    // SVG zusammensetzen
+    const flowBar = `
+      <div class="flow-wrap">
+        <svg viewBox="0 0 ${SVG_W} ${SVG_H}" width="100%" height="auto"
+             style="display:block;overflow:visible;font-family:inherit">
+          ${barClip}
+          ${barDividers}
+          ${barLabels}
+          ${topBraces}
+          ${botBraces}
+          ${sideLabels}
+        </svg>
       </div>
-      <div class="site-legend">
-        <span><span class="site-dot green"></span> ${this._t("legendHome")}
-              <span class="site-dot blue"></span> ${this._t("legendCharge")}
-              <span class="site-dot orange"></span> ${this._t("legendBatt")}</span>
-        <span>${this._t("legendFeedin")} <span class="site-dot yellow"></span></span>
-      </div>`;
+    `;
 
-    const row = (icon, label, sub, _kwh, _ct, pw, pwClass="", indent=false) => `
+    // ── Detail-Tabelle ────────────────────────────────────────────────────
+
+    const row = (icon, label, sub, pw, pwClass = "", indent = false) => `
       <div class="site-row ${indent ? "site-row-indent" : ""}">
         <span class="site-row-icon">${icon}</span>
         <span class="site-row-label">
@@ -1040,37 +1242,53 @@ class EvccCard extends HTMLElement {
         ${rows}
       </div>`;
 
-    const tariffGrid   = ct(site.tariff_grid);
-    const tariffFeedin = ct(site.tariff_feedin);
+    const inTotal  = pvPow + battDischPow + bezugPow;
+    const outTotal = homePow + battChargePow + feedinPow;
 
     const lpRows = Object.entries(loadpoints)
       .filter(([, ents]) => kw(ents.charge_power) > 0.05)
       .map(([lpName, ents]) => {
-        const lpPow = kw(ents.charge_power);
-        const lpSoc = ents.vehicle_soc ? `${Math.round(parseFloat(stateVal(this._hass, ents.vehicle_soc)) || 0)} ${unitStr(this._hass, ents.vehicle_soc)}` : "";
-        return row("🔌", lpName, lpSoc, null, null, lpPow, "site-pw-blue", true);
+        const lpPow  = kw(ents.charge_power);
+        const unit   = ents.vehicle_soc ? unitStr(this._hass, ents.vehicle_soc) : "";
+        const val    = ents.vehicle_soc
+          ? `${Math.round(parseFloat(stateVal(this._hass, ents.vehicle_soc)) || 0)} ${unit}`
+          : "";
+        const label  = val ? `${lpName.toUpperCase()} – ${val}` : lpName.toUpperCase();
+        // Icon je nach Einheit: °C → Wärmepumpe, % → EV-Ladestation
+        const icon   = unit.includes("°")
+          ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="var(--secondary-text-color)" style="vertical-align:middle"><path d="M15,13V5A3,3 0 0,0 12,2A3,3 0 0,0 9,5V13A5,5 0 0,0 12,22A5,5 0 0,0 15,13M12,4A1,1 0 0,1 13,5V14.08C14.16,14.54 15,15.67 15,17A3,3 0 0,1 12,20A3,3 0 0,1 9,17C9,15.67 9.84,14.54 11,14.08V5A1,1 0 0,1 12,4Z"/></svg>`
+          : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="var(--secondary-text-color)" style="vertical-align:middle"><path d="M19.77,7.23L19.78,7.22L16.06,3.5L15,4.56L17.11,6.67C16.17,7.03 15.5,7.93 15.5,9A2.5,2.5 0 0,0 18,11.5C18.36,11.5 18.69,11.42 19,11.29V18.5A1,1 0 0,1 18,19.5A1,1 0 0,1 17,18.5V14A2,2 0 0,0 15,12H14V5A2,2 0 0,0 12,3H6A2,2 0 0,0 4,5V21H14V13.5H15.5V18.5A2.5,2.5 0 0,0 18,21A2.5,2.5 0 0,0 20.5,18.5V9C20.5,8.31 20.22,7.68 19.77,7.23M18,10A1,1 0 0,1 17,9A1,1 0 0,1 18,8A1,1 0 0,1 19,9A1,1 0 0,1 18,10M12,10H6V5H12V10Z"/></svg>`;
+        return row(icon, label, "", lpPow, "site-pw-blue", true);
       }).join("");
 
     const pvRows = pvSources.length > 1
       ? pvSources.map(s => {
           const p = kw(site[s.key]);
-          const e = kwh(site[s.energyKey]);
-          return p > 0.005 ? row("☀️", s.label, "", e, null, p, "site-pw-green", true) : "";
+          return p > 0.005 ? row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M4,6H20A2,2 0 0,1 22,8V16A2,2 0 0,1 20,18H4A2,2 0 0,1 2,16V8A2,2 0 0,1 4,6M4,8V16H20V8H4M5,9H11V13H5V9M12,9H19V13H12V9M5,14H11V16H5V14M12,14H19V16H12V14Z\"/></svg>", s.label, "", p, "site-pw-green", true) : "";
         }).join("")
       : "";
 
-    const inSection  = section("In", inTotal, [
-      row("☀️", this._t("generation"), "", pvKwh, null, pvPow, "site-pw-green"),
+    const inSection = section(this._t("in") || "In", inTotal, [
+      row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z\"/></svg>", this._t("generation"), "", pvPow, "site-pw-green"),
       pvRows,
-      battDischPow > 0.05 ? row("🔋", this._t("battDischarge"), batterySoc !== null ? `${Math.round(batterySoc)} %` : "", battDKwh, null, battDischPow) : "",
-      bezugPow > 0.05 ? row("🔌", this._t("gridImport"), "", gridKwh, tariffGrid, bezugPow) : "",
+      battDischPow > 0.05
+        ? row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z\"/></svg>",
+              batterySoc !== null ? `${this._t("battDischarge")} – ${Math.round(batterySoc)} %` : this._t("battDischarge"),
+              "", battDischPow) : "",
+      bezugPow > 0.05
+        ? row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M11,7.5L9.5,3H14.5L13,7.5H15L18,3H21L15,12H17L21,21H15L12,15L9,21H3L7,12H9L3,3H6L9,7.5H11M12,13.5L13.9,19H10.1L12,13.5Z\"/></svg>", this._t("gridImport"), "", bezugPow) : "",
     ].join(""));
 
-    const outSection = section("Out", outTotal, [
-      row("🏠", this._t("consumption"), "", homeKwh, tariffGrid, homePow),
-      chargePow > 0.05 ? row("🔌", this._t("chargePoint"), "", null, null, chargePow, "site-pw-blue") + lpRows : "",
-      battChargePow > 0.05 ? row("🔋", this._t("battCharge"), batterySoc !== null ? `${Math.round(batterySoc)} %` : "", battCKwh, null, battChargePow) : "",
-      feedinPow > 0.05 ? row("⚡", this._t("gridExport"), "", exportKwh, tariffFeedin, feedinPow, "site-pw-yellow") : "",
+    const outSection = section(this._t("out") || "Out", outTotal, [
+      row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z\"/></svg>", this._t("consumption"), "", homePow),
+      chargePow > 0.05
+        ? row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M19.77,7.23L19.78,7.22L16.06,3.5L15,4.56L17.11,6.67C16.17,7.03 15.5,7.93 15.5,9A2.5,2.5 0 0,0 18,11.5C18.36,11.5 18.69,11.42 19,11.29V18.5A1,1 0 0,1 18,19.5A1,1 0 0,1 17,18.5V14A2,2 0 0,0 15,12H14V5A2,2 0 0,0 12,3H6A2,2 0 0,0 4,5V21H14V13.5H15.5V18.5A2.5,2.5 0 0,0 18,21A2.5,2.5 0 0,0 20.5,18.5V9C20.5,8.31 20.22,7.68 19.77,7.23M18,10A1,1 0 0,1 17,9A1,1 0 0,1 18,8A1,1 0 0,1 19,9A1,1 0 0,1 18,10M12,10H6V5H12V10Z\"/></svg>", this._t("chargePoint"), "", chargePow, "site-pw-blue") + lpRows : "",
+      battChargePow > 0.05
+        ? row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z\"/></svg>",
+              batterySoc !== null ? `${this._t("battCharge")} – ${Math.round(batterySoc)} %` : this._t("battCharge"),
+              "", battChargePow) : "",
+      feedinPow > 0.05
+        ? row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M11,7.5L9.5,3H14.5L13,7.5H15L18,3H21L15,12H17L21,21H15L12,15L9,21H3L7,12H9L3,3H6L9,7.5H11M12,13.5L13.9,19H10.1L12,13.5Z\"/></svg>", this._t("gridExport"), "", feedinPow, "site-pw-yellow") : "",
     ].join(""));
 
     return `
@@ -1078,7 +1296,7 @@ class EvccCard extends HTMLElement {
         <div class="lp-header">
           <span class="lp-name">${this._t("overview")}</span>
         </div>
-        ${bar}
+        ${flowBar}
         <div class="site-table">
           ${inSection}
           <div class="site-section-gap"></div>
@@ -1135,14 +1353,14 @@ class EvccCard extends HTMLElement {
         <div class="batt-body">
           ${splitPct > 0 && splitPct < 100 ? `
             <div class="batt-zone batt-zone-car" style="flex:${carZonePct}">
-              <span class="batt-zone-icon">🚗</span>
+              <span class="batt-zone-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="rgba(255,255,255,0.5)"><path d="M16,6L19,10H5L8,6H16M16,4H8L3,10V16H5V18H8V16H16V18H19V16H21V10L16,4M7,12A1,1 0 0,1 8,11A1,1 0 0,1 9,12A1,1 0 0,1 8,13A1,1 0 0,1 7,12M15,12A1,1 0 0,1 16,11A1,1 0 0,1 17,12A1,1 0 0,1 16,13A1,1 0 0,1 15,12Z"/></svg></span>
             </div>
             <div class="batt-divider-line"></div>
             <div class="batt-zone batt-zone-haus" style="flex:${hausZonePct}">
-              <span class="batt-zone-icon">🏠</span>
+              <span class="batt-zone-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="rgba(255,255,255,0.5)"><path d="M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z"/></svg></span>
             </div>` : `
             <div class="batt-zone batt-zone-car" style="flex:1">
-              <span class="batt-zone-icon">🚗</span>
+              <span class="batt-zone-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="rgba(255,255,255,0.5)"><path d="M16,6L19,10H5L8,6H16M16,4H8L3,10V16H5V18H8V16H16V18H19V16H21V10L16,4M7,12A1,1 0 0,1 8,11A1,1 0 0,1 9,12A1,1 0 0,1 8,13A1,1 0 0,1 7,12M15,12A1,1 0 0,1 16,11A1,1 0 0,1 17,12A1,1 0 0,1 16,13A1,1 0 0,1 15,12Z"/></svg></span>
             </div>`}
           <div class="batt-soc-overlay" style="height:${socFillH}%;background:${socColor}"></div>
         </div>
@@ -1175,7 +1393,7 @@ class EvccCard extends HTMLElement {
           <div class="batt-text-col">
             ${bufferSocId ? `
             <div class="batt-text-item">
-              <span class="batt-text-icon">⚡</span>
+              <span class="batt-text-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="#facc15"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg></span>
               <div>
                 <div class="batt-text-title">${this._t("battBoostTitle")}</div>
                 <div class="batt-text-desc">${this._t("battBoostDesc", { val: inlineSlider(bufferSocId, bufferVal) })}</div>
@@ -1183,14 +1401,14 @@ class EvccCard extends HTMLElement {
             </div>` : ""}
             ${prioritySocId ? `
             <div class="batt-text-item">
-              <span class="batt-text-icon">🚗</span>
+              <span class="batt-text-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="#3b82f6"><path d="M16,6L19,10H5L8,6H16M16,4H8L3,10V16H5V18H8V16H16V18H19V16H21V10L16,4M7,12A1,1 0 0,1 8,11A1,1 0 0,1 9,12A1,1 0 0,1 8,13A1,1 0 0,1 7,12M15,12A1,1 0 0,1 16,11A1,1 0 0,1 17,12A1,1 0 0,1 16,13A1,1 0 0,1 15,12Z"/></svg></span>
               <div>
                 <div class="batt-text-title">${this._t("battCarPrioTitle")}</div>
                 <div class="batt-text-desc">${this._t("battCarPrioDesc", { val: inlineSlider(prioritySocId, priorityVal) })}</div>
               </div>
             </div>
             <div class="batt-text-item">
-              <span class="batt-text-icon">🏠</span>
+              <span class="batt-text-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="var(--secondary-text-color)"><path d="M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z"/></svg></span>
               <div>
                 <div class="batt-text-title">${this._t("battHomePrioTitle")}</div>
                 <div class="batt-text-desc">${this._t("battHomePrioDesc", { val: inlineSlider(prioritySocId, priorityVal) })}</div>
@@ -1235,7 +1453,6 @@ class EvccCard extends HTMLElement {
   // ── Event-Listener ────────────────────────────────────────────────────────
 
   _attachListeners() {
-    // Compact-Tabs
     this.shadowRoot.querySelectorAll("button.compact-tab").forEach(btn => {
       btn.addEventListener("click", () => {
         const lpName   = btn.dataset.lp;
@@ -1559,7 +1776,7 @@ class EvccCard extends HTMLElement {
       }
       .mode-btn:hover { border-color: var(--primary-color); }
       .mode-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
-      .mode-icon { font-size: 1.1rem; }
+      .mode-icon { display: flex; align-items: center; justify-content: center; line-height: 1; min-height: 20px; }
 
       .soc-section { margin-bottom: 12px; }
       .soc-label-row {
@@ -1623,36 +1840,41 @@ class EvccCard extends HTMLElement {
       button.phase-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
 
       .site-block { padding: 0; }
-      .site-bar-wrap { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-      .site-bar {
-        flex: 1; height: 28px; border-radius: 6px;
-        display: flex; overflow: hidden; background: var(--divider-color, #333);
+
+      .flow-wrap {
+        margin-bottom: 18px;
+        padding: 0;
       }
-      .site-bar-home   { background: #22c55e; transition: flex .4s; min-width: 0; }
-      .site-bar-charge { background: #3b82f6; transition: flex .4s; min-width: 0; }
-      .site-bar-batt   { background: #f97316; transition: flex .4s; min-width: 0; }
-      .site-bar-feedin { background: #facc15; transition: flex .4s; min-width: 0; }
-      .site-bar-rest   { background: var(--divider-color, #333); min-width: 0; }
-      .site-sun-icon, .site-export-icon { font-size: 1.1rem; flex-shrink: 0; }
-      .site-legend { display: flex; justify-content: space-between; font-size: .72rem; color: var(--secondary-text-color); margin-bottom: 14px; }
-      .site-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: middle; margin: 0 3px; }
-      .site-dot.green  { background: #22c55e; }
-      .site-dot.blue   { background: #3b82f6; }
-      .site-dot.orange { background: #f97316; }
-      .site-dot.yellow { background: #facc15; }
+      .flow-wrap svg {
+        overflow: visible;
+      }
+
+      /* ── Detail-Tabelle ── */
       .site-table { display: flex; flex-direction: column; }
-      .site-section-gap { border-top: 1px solid var(--divider-color, #333); margin: 8px 0 10px; }
-      .site-section-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
-      .site-section-title { font-size: .9rem; font-weight: 700; }
-      .site-section-total { font-size: .9rem; font-weight: 700; }
-      .site-row { display: grid; grid-template-columns: 1.2rem 1fr auto; gap: 0 6px; align-items: center; padding: 3px 0; font-size: .78rem; }
-      .site-row-icon  { text-align: center; font-size: .85rem; }
+      .site-section-gap { border-top: 1px solid var(--divider-color, #333); margin: 10px 0 12px; }
+      .site-section-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--divider-color, #333); }
+      .site-section-title { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--secondary-text-color); }
+      .site-section-total { font-size: 1rem; font-weight: 700; }
+      .site-row { display: grid; grid-template-columns: 1.4rem 1fr auto; gap: 0 6px; align-items: center; padding: 5px 0; font-size: .78rem; }
+      .site-row-icon  { display: flex; align-items: center; justify-content: center; }
       .site-row-label { display: flex; flex-direction: column; gap: 1px; }
       .site-row-name  { font-size: .8rem; }
       .site-row-sub   { font-size: .68rem; color: var(--secondary-text-color); }
       .site-row-pw    { font-weight: 700; font-size: .82rem; min-width: 48px; text-align: right; }
-      .site-row-indent .site-row-icon { visibility: hidden; }
-      .site-row-indent .site-row-name { padding-left: 10px; font-size: .75rem; color: var(--secondary-text-color); }
+      .site-row-indent { padding-left: 1.2rem; position: relative; }
+      .site-row-indent::before {
+        content: "└";
+        position: absolute;
+        left: 0.15rem;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: .75rem;
+        color: var(--secondary-text-color);
+        opacity: 0.6;
+      }
+      .site-row-indent .site-row-icon { opacity: 0.7; }
+      .site-row-indent .site-row-name { font-size: .75rem; color: var(--secondary-text-color); }
+      .site-row-indent .site-row-pw   { font-size: .78rem; }
       .site-pw-green  { color: #22c55e; }
       .site-pw-blue   { color: #3b82f6; }
       .site-pw-yellow { color: #facc15; }
@@ -1667,7 +1889,7 @@ class EvccCard extends HTMLElement {
       .batt-main-row { display: flex; gap: 16px; align-items: flex-start; }
       .batt-text-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
       .batt-text-item { display: flex; gap: 8px; align-items: flex-start; }
-      .batt-text-icon { font-size: 1rem; margin-top: 1px; flex-shrink: 0; }
+      .batt-text-icon { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }
       .batt-text-title { font-size: .82rem; font-weight: 600; margin-bottom: 2px; }
       .batt-text-desc  { font-size: .76rem; color: var(--secondary-text-color); line-height: 1.4; }
       .batt-inline-val { color: var(--primary-color, #00b4d8); text-decoration: underline dotted; cursor: pointer; font-weight: 600; }
@@ -1731,34 +1953,18 @@ class EvccCard extends HTMLElement {
 
       /* ── Compact-Tabs ── */
       .compact-tabs {
-        display: flex;
-        gap: 4px;
-        margin-bottom: 12px;
-        border-bottom: 1px solid var(--divider-color, #e5e7eb);
-        padding-bottom: 0;
+        display: flex; gap: 4px; margin-bottom: 12px;
+        border-bottom: 1px solid var(--divider-color, #e5e7eb); padding-bottom: 0;
       }
       .compact-tab {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 2px;
-        padding: 6px 4px 8px;
-        background: transparent;
-        border: none;
-        border-bottom: 2px solid transparent;
-        color: var(--secondary-text-color);
-        cursor: pointer;
-        font-size: .68rem;
-        margin-bottom: -1px;
+        flex: 1; display: flex; flex-direction: column; align-items: center;
+        gap: 2px; padding: 6px 4px 8px; background: transparent; border: none;
+        border-bottom: 2px solid transparent; color: var(--secondary-text-color);
+        cursor: pointer; font-size: .68rem; margin-bottom: -1px;
         transition: color .15s, border-color .15s;
       }
       .compact-tab:hover { color: var(--primary-text-color); }
-      .compact-tab.active {
-        color: var(--primary-color);
-        border-bottom-color: var(--primary-color);
-        font-weight: 600;
-      }
+      .compact-tab.active { color: var(--primary-color); border-bottom-color: var(--primary-color); font-weight: 600; }
       .compact-tab-icon  { font-size: 1rem; line-height: 1; }
       .compact-tab-label { font-size: .68rem; }
       .compact-panel[hidden] { display: none; }
