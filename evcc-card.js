@@ -437,7 +437,6 @@ class EvccCard extends HTMLElement {
     const tabContent = [
       `<div class="compact-panel" ${activeTab !== 0 ? 'hidden' : ''}>
         ${this._renderModeSelector(ents)}
-        ${this._renderSocBar(ents, charging)}
         ${this._renderPowerRow(ents, charging)}
       </div>`,
       `<div class="compact-panel" ${activeTab !== 1 ? 'hidden' : ''}>
@@ -1613,7 +1612,6 @@ class EvccCard extends HTMLElement {
 
     this.shadowRoot.querySelectorAll("select.plan-vehicle-select").forEach(sel => {
       sel.addEventListener("focus", () => {
-        this._isDragging    = true;
         this._pendingRender = false;
         const eid = sel.dataset.entity;
         if (eid) console.info("[evcc-card] vehicle_name entity attrs:", this._hass.states[eid]?.attributes);
@@ -1699,7 +1697,6 @@ class EvccCard extends HTMLElement {
             .catch(e => console.warn("[evcc-card] delete plan:", e));
         } else {
           this._hass.callService("evcc_intg", "set_loadpoint_plan", { loadpoint: lpName, soc: 0, startdate: "" })
-            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } })); })
             .catch(e => console.warn("[evcc-card] delete plan:", e));
         }
       });
