@@ -295,7 +295,7 @@ class EvccCard extends HTMLElement {
       || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
 
     const strings = this._translations[lang]
-      || this._translations["de"]
+      || this._translations["en"]
       || {};
 
     let val = strings[key] ?? key;
@@ -608,9 +608,10 @@ class EvccCard extends HTMLElement {
   }
 
   _sliderRow(entityId, label) {
-    const domain = entityId.split(".")[0];
-    const val    = parseFloat(stateVal(this._hass, entityId)) || 0;
-    const unit   = unitStr(this._hass, entityId);
+    const domain  = entityId.split(".")[0];
+    const val     = parseFloat(stateVal(this._hass, entityId)) || 0;
+    const rawUnit = unitStr(this._hass, entityId);
+    const unit    = rawUnit || (entityId.includes("soc") ? "%" : "");
     let min, max, step;
 
     if (domain === "select") {
