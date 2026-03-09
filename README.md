@@ -1,6 +1,8 @@
 # EVCC Card for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
+<!-- LANGUAGES_START -->
+<!-- LANGUAGES_END -->
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A custom Lovelace card for [Home Assistant](https://www.home-assistant.io/) that provides a comprehensive dashboard for [EVCC](https://evcc.io/) — the open-source EV charging controller — using the [ha-evcc integration](https://github.com/marq24/ha-evcc).
@@ -252,6 +254,10 @@ Key icon assignments:
 ---
 
 ## Translations
+
+<!-- LANGUAGES_START -->
+
+<!-- LANGUAGES_END -->
 
 The card ships with **German**, **English** and **Spanish** and automatically uses the language configured in Home Assistant. You can override it per card via the `language` config option.
 

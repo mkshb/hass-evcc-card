@@ -1,0 +1,29 @@
+# .github/workflows/update-readme-languages.yml
+name: Update language list in README
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dist/locales/index.json'
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update language table and badge in README
+        run: python3 .github/scripts/update_languages.py
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git diff --quiet && exit 0
+          git add README.md
+          git commit -m "docs: update supported languages [skip ci]"
+          git push
