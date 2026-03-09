@@ -3,7 +3,8 @@ name: Update language list in README
 
 on:
   push:
-    branches: [main]
+    branches-ignore:
+      - main
     paths:
       - 'dist/locales/index.json'
 
