@@ -755,8 +755,14 @@ class EvccCard extends HTMLElement {
     if (!force && !hasVehicle && !planActive) return "";
 
     if (!this._planState[lpName]) {
+      const limitSoc = ents.effective_limit_soc
+        ? Math.round(parseFloat(stateVal(this._hass, ents.effective_limit_soc))) : null;
+      
       const initSoc = (planSoc && planSoc !== "unknown" && planSoc !== "unavailable")
-        ? Math.round(parseFloat(planSoc)) : 80;
+        ? Math.round(parseFloat(planSoc))
+        : (limitSoc && limitSoc > 0)
+          ? limitSoc
+          : 80;
       let initDt = "";
       if (planTime && planTime !== "unknown" && planTime !== "unavailable") {
         try {
