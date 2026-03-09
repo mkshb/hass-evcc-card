@@ -24,7 +24,7 @@ All charge points and site entities are **automatically discovered** based on th
 | 🔋 **SoC display** | Vehicle state of charge as a progress bar with percentage and estimated range |
 | 🎚️ **Slider controls** | Adjust Target SoC, Min SoC, Priority, Max current and Min current inline |
 | 🔌 **Phase switching** | Auto / 1-phase / 3-phase control built in |
-| 🌍 **Multi-language** | German, English and Spanish — auto-detected from HA language setting, easily extensible |
+| 🌍 **Multi-language** | Support for various languages — auto-detected from HA language setting, easily extensible |
 | 🔄 **Live updates** | Power, SoC and status update in real time without full re-render |
 | 🎛️ **Filtering** | Select specific charge points via `loadpoints` config |
 
@@ -85,7 +85,7 @@ Add the card to any Lovelace dashboard using the YAML editor. The `mode` option 
 |---|---|---|---|
 | `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `plan` |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
-| `language` | `string` | *(auto)* | Override UI language: `en`, `de`, `es`, `nl` |
+| `language` | `string` | *(auto)* | Override UI language: `de`, `en`, `es`, `hr`, `nl` |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
 | `site_details` | `string` | *(expanded)* | Set to `collapsed` to hide the IN/OUT detail table by default in `site` mode |
 | `charge_current_settings` | `string` | *(collapsed)* | Set to `expanded` to show the charge current block (phase switch, min/max current) expanded by default |
@@ -224,7 +224,7 @@ loadpoints:
 
 ```yaml
 type: custom:evcc-card
-language: en   # or: de, es, nl
+language: en   # or other available
 ```
 
 ---
