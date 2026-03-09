@@ -86,10 +86,11 @@ Add the card to any Lovelace dashboard using the YAML editor. The `mode` option 
 |---|---|---|---|
 | `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `plan` |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
-| `language` | `string` | *(auto)* | Override UI language: `de`, `en`, `es`, `hr`, `nl` |
+| `language` | `string` | *(auto)* | Override UI language. Examples: `de`, `en`, `es`, `hr`, `nl` |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
 | `site_details` | `string` | *(expanded)* | Set to `collapsed` to hide the IN/OUT detail table by default in `site` mode |
 | `charge_current_settings` | `string` | *(collapsed)* | Set to `expanded` to show the charge current block (phase switch, min/max current) expanded by default |
+| `prefix` | `string` | `evcc_` | Entity name prefix used by the integration — only needed if you run multiple EVCC instances with a custom prefix (e.g. `evcc2_`) |
 
 ---
 
@@ -223,9 +224,13 @@ loadpoints:
 
 ### Override language
 
+<!-- LANGUAGES_START -->
+![Supported languages](https://img.shields.io/badge/languages-de%20%7C%20en%20%7C%20es%20%7C%20fr%20%7C%20hr%20%7C%20nl%20%7C%20pl%20%7C%20pt-blue)
+<!-- LANGUAGES_END -->
+
 ```yaml
 type: custom:evcc-card
-language: en   # or other available
+language: en   # or other available language
 ```
 
 ---
@@ -287,6 +292,13 @@ number.evcc_<loadpoint_name>_limit_soc
 ```
 
 As long as you use the standard ha-evcc integration, no additional configuration is needed — the card discovers all entities automatically.
+
+If you run **multiple EVCC instances** and your integration uses a custom prefix (e.g. `evcc2_`), set the `prefix` option accordingly:
+
+```yaml
+type: custom:evcc-card
+prefix: evcc2_
+```
 
 ---
 

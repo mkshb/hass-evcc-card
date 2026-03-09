@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.2.7";
+const EVCC_CARD_VERSION = "0.3.1";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -91,8 +91,9 @@ const CHARGE_MODES = {
   "now":   { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>`,  tKey: "modeNow"  },
 };
 
-function discoverEntities(hass) {
+function discoverEntities(hass, prefix = "evcc_") {
   const sortedFeatures = [...FEATURES].sort((a, b) => b.suffix.length - a.suffix.length);
+  const prefixLen = prefix.length;
 
   const loadpoints = {};
   const site = {};
@@ -102,9 +103,9 @@ function discoverEntities(hass) {
     const domain = entityId.slice(0, dotIdx);
     const slug   = entityId.slice(dotIdx + 1);
 
-    if (!slug.startsWith("evcc_")) continue;
+    if (!slug.startsWith(prefix)) continue;
 
-    const rest = slug.slice(5);
+    const rest = slug.slice(prefixLen);
 
     let matched = null;
     for (const feat of sortedFeatures) {
@@ -202,7 +203,7 @@ class EvccCard extends HTMLElement {
   async _loadTranslations() {
     const base = new URL("locales/", import.meta.url).href;
 
-    let langs = ["en"];
+    let langs = ["de", "en"];
     try {
       const idxResp = await fetch(`${base}index.json`);
       if (idxResp.ok) langs = await idxResp.json();
@@ -250,11 +251,12 @@ class EvccCard extends HTMLElement {
 
   _buildRenderKey(hass) {
     if (!hass) return "";
+    const prefix = this._config.prefix || "evcc_";
     const evccIds = Object.keys(hass.states).filter(id => {
       const slug = id.split(".")[1] ?? "";
-      return slug.startsWith("evcc_");
+      return slug.startsWith(prefix);
     });
-    const lang = this._config.language || (hass.language ?? "en");
+    const lang = this._config.language || (hass.language ?? "de");
     return lang + "|" + evccIds.map(id => `${id}=${hass.states[id]?.state}`).join("|");
   }
 
@@ -286,16 +288,18 @@ class EvccCard extends HTMLElement {
   }
 
   _tInline(key) {
+    const lang = (this._config.language
+      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
     const map = {
-      siteCollapse: "Collapse",
-      siteExpand:   "Expand",
+      siteCollapse: { de: "Einklappen", en: "Collapse" },
+      siteExpand:   { de: "Ausklappen", en: "Expand" },
     };
-    return map[key] ?? key;
+    return (map[key]?.[lang]) ?? (map[key]?.["en"]) ?? key;
   }
 
   _t(key, replacements = {}) {
     const lang = (this._config.language
-      || (this._hass?.language ?? "en")).split("-")[0].toLowerCase();
+      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
 
     const strings = this._translations[lang]
       || this._translations["en"]
@@ -326,7 +330,8 @@ class EvccCard extends HTMLElement {
       return;
     }
 
-    const { loadpoints, site } = discoverEntities(this._hass);
+    const prefix = this._config.prefix || "evcc_";
+    const { loadpoints, site } = discoverEntities(this._hass, prefix);
 
     const filterRaw = this._config.loadpoints;
     const filter = filterRaw
