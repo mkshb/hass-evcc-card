@@ -989,7 +989,7 @@ class EvccCard extends HTMLElement {
     const battDPct   = Math.round(battDischPow / totalIn * 100);
     const gridInPct  = Math.round(bezugPow   / totalIn * 100);
 
-    const houseOnlyPow = Math.max(homePow - chargePow, 0);
+    const houseOnlyPow = homePow;
     const totalOut = Math.max(houseOnlyPow + chargePow + battChargePow + feedinPow, 0.001);
     const homePct   = Math.round(houseOnlyPow  / totalOut * 100);
     const chargePct = Math.round(chargePow     / totalOut * 100);
@@ -1207,7 +1207,7 @@ class EvccCard extends HTMLElement {
       </div>`;
 
     const inTotal  = pvPow + battDischPow + bezugPow;
-    const outTotal = homePow + battChargePow + feedinPow;
+    const outTotal = homePow + chargePow + battChargePow + feedinPow;
 
     const lpRows = Object.entries(loadpoints)
       .filter(([, ents]) => kw(ents.charge_power) > 0.05)
