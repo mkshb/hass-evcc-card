@@ -47,6 +47,8 @@ All charge points and site entities are **automatically discovered** based on th
 4. Search for **EVCC Card** and click **Install**
 5. Reload your browser
 
+> **Note for YAML mode users:** If your Lovelace is configured with `mode: yaml` in `configuration.yaml`, HACS cannot register the resource automatically. Add the resource entry manually — see [Manual resource registration](#manual-resource-registration) below.
+
 ### Manual installation
 
 1. Download `evcc-card.js` and the `locales/` folder from the [latest release](../../releases/latest)
@@ -60,15 +62,34 @@ config/www/evcc-card/
     └── *.json
 ```
 
-3. Add it as a Lovelace resource:
+3. Register the resource — see [Manual resource registration](#manual-resource-registration) below.
+4. Reload your browser
+
+### Manual resource registration
+
+Depending on how your Lovelace is set up, register the resource in one of two ways:
+
+**UI mode** (default): Go to **Settings → Dashboards → ⋮ → Resources** and add:
 
 ```yaml
-# In your Lovelace resources (Settings → Dashboards → Resources)
-url: /local/evcc-card/evcc-card.js
+url: /hacsfiles/evcc-card/evcc-card.js   # if installed via HACS
+# or
+url: /local/evcc-card/evcc-card.js       # if installed manually
 type: module
 ```
 
-4. Reload your browser
+**YAML mode** (`lovelace_mode: yaml` in `configuration.yaml`): Add the resource to your Lovelace YAML configuration file (typically `ui-lovelace.yaml` or referenced via `lovelace: !include`):
+
+```yaml
+resources:
+  - url: /hacsfiles/evcc-card/evcc-card.js   # if installed via HACS
+    type: module
+  # or
+  - url: /local/evcc-card/evcc-card.js       # if installed manually
+    type: module
+```
+
+Then restart Home Assistant or reload the Lovelace resources.
 
 ---
 
@@ -248,7 +269,7 @@ Key icon assignments:
 | Heat pump (°C loadpoint) | `mdi:thermometer-low` |
 | Mode: Off | `mdi:power` |
 | Mode: PV | `mdi:white-balance-sunny` |
-| Mode: Min+PV | `mdi:lightning-bolt` &amp; `mdi:white-balance-sunny` (combined) |
+| Mode: Min+PV | `mdi:lightning-bolt` & `mdi:white-balance-sunny` (combined) |
 | Mode: Now | `mdi:lightning-bolt` |
 
 ---
