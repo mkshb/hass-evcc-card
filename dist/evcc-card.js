@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.3.2";
+const EVCC_CARD_VERSION = "0.3.3";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -996,9 +996,11 @@ class EvccCard extends HTMLElement {
     const battCPct  = Math.round(battChargePow / totalOut * 100);
     const feedinPct = Math.round(feedinPow     / totalOut * 100);
 
-    const fmt    = v => v < 10 ? v.toFixed(1) : Math.round(v).toString();
-    const fmtKw  = v => `${fmt(v)} kW`;
-    const fmtKwh = v => v === null ? "–" : `${fmt(v)} kWh`;
+    const fmt     = v => v < 10 ? v.toFixed(1) : Math.round(v).toString();
+    const useWatt = Math.max(inTotal, outTotal) < 1;
+    const fmtPow  = v => useWatt ? `${Math.round(v * 1000)} W` : `${fmt(v)} kW`;
+    const fmtKw   = v => `${fmt(v)} kW`;
+    const fmtKwh  = v => v === null ? "–" : `${fmt(v)} kWh`;
 
     const batterySoc = kwh(site.battery_soc);
     const gridKwh    = kwh(site.grid_energy);
@@ -1016,10 +1018,10 @@ class EvccCard extends HTMLElement {
     const hasCharge = chargePow > 0.05;
 
     const segments = [
-      { cls: "seg-pv",      pct: pvPct,     label: fmtKw(pvPow),       color: "#22c55e", show: hasPV },
-      { cls: "seg-battd",   pct: battDPct,  label: fmtKw(battDischPow),color: "#f97316", show: battDischPow > 0.05 },
-      { cls: "seg-gridin",  pct: gridInPct, label: fmtKw(bezugPow),    color: "#ef4444", show: bezugPow > 0.05 },
-    ].filter(s => s.pct > 0);
+      { cls: "seg-pv",      pct: pvPct,     label: fmtPow(pvPow),       color: "#22c55e", show: hasPV },
+      { cls: "seg-battd",   pct: battDPct,  label: fmtPow(battDischPow),color: "#f97316", show: battDischPow > 0.05 },
+      { cls: "seg-gridin",  pct: gridInPct, label: fmtPow(bezugPow),    color: "#ef4444", show: bezugPow > 0.05 },
+    ].filter(s => s.pct > 0);;
 
     const segTotal = segments.reduce((s, x) => s + x.pct, 0);
     if (segTotal > 0 && segTotal !== 100) {
@@ -1036,10 +1038,10 @@ class EvccCard extends HTMLElement {
     ].filter(Boolean);
 
     const bottomSegs = [
-      { icon: "🏠",  val: fmtKw(houseOnlyPow), pct: homePct,   show: houseOnlyPow > 0.05 },
-      { icon: "🔌",  val: fmtKw(chargePow),     pct: chargePct, show: hasCharge },
-      { icon: "🔋",  val: fmtKw(battChargePow), pct: battCPct,  show: battChargePow > 0.05 },
-      { icon: "🗼",  val: fmtKw(feedinPow),     pct: feedinPct, show: feedinPow > 0.05 },
+      { icon: "🏠",  val: fmtPow(houseOnlyPow), pct: homePct,   show: houseOnlyPow > 0.05 },
+      { icon: "🔌",  val: fmtPow(chargePow),     pct: chargePct, show: hasCharge },
+      { icon: "🔋",  val: fmtPow(battChargePow), pct: battCPct,  show: battChargePow > 0.05 },
+      { icon: "🗼",  val: fmtPow(feedinPow),     pct: feedinPct, show: feedinPow > 0.05 },
     ].filter(s => s.show);
 
     let cumPct = 0;
@@ -1194,14 +1196,14 @@ class EvccCard extends HTMLElement {
           <span class="site-row-name">${label}</span>
           ${sub ? `<span class="site-row-sub">${sub}</span>` : ""}
         </span>
-        <span class="site-row-pw ${pwClass}">${fmtKw(pw)}</span>
+        <span class="site-row-pw ${pwClass}">${fmtPow(pw)}</span>
       </div>`;
 
     const section = (title, total, rows) => `
       <div class="site-section">
         <div class="site-section-head">
           <span class="site-section-title">${title}</span>
-          <span class="site-section-total">${fmtKw(total)}</span>
+          <span class="site-section-total">${fmtPow(total)}</span>
         </div>
         ${rows}
       </div>`;

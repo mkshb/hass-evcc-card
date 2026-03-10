@@ -8,7 +8,7 @@ badge = f"![Supported languages](https://img.shields.io/badge/languages-{badge_l
 
 new_readme = re.sub(
     r"<!-- LANGUAGES_START -->.*?<!-- LANGUAGES_END -->",
-    f"<!-- LANGUAGES_START -->\n{badge}\n<!-- LANGUAGES_END -->",
+    f"<!-- LANGUAGES_START -->{badge}<!-- LANGUAGES_END -->",
     open("README.md").read(),
     flags=re.DOTALL
 )
