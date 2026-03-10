@@ -144,6 +144,58 @@ function discoverEntities(hass, prefix = "evcc_") {
   return { loadpoints, site };
 }
 
+function detectAllPrefixes(hass) {
+  const knownSuffixes = [...FEATURES]
+    .sort((a, b) => b.suffix.length - a.suffix.length)
+    .map(f => f.suffix);
+
+  const found = new Set();
+
+  for (const entityId of Object.keys(hass.states)) {
+    const dotIdx = entityId.indexOf(".");
+    const slug   = entityId.slice(dotIdx + 1);
+
+    for (const suffix of knownSuffixes) {
+      if (slug.endsWith("_" + suffix)) {
+        const candidate = slug.slice(0, slug.length - suffix.length - 1);
+        const parts = candidate.split("_");
+        for (let i = 1; i <= parts.length; i++) {
+          const prefixCandidate = parts.slice(0, i).join("_") + "_";
+          if (slug.startsWith(prefixCandidate)) {
+            const rest = slug.slice(prefixCandidate.length);
+            if (rest === suffix || rest.endsWith("_" + suffix)) {
+              found.add(prefixCandidate);
+            }
+          }
+        }
+        break;
+      } else if (slug === suffix) {
+        found.add("");
+        break;
+      }
+    }
+  }
+
+  if (found.size > 1) found.delete("");
+
+  const arr = [...found].sort((a, b) => b.length - a.length);
+  const deduped = arr.filter(p =>
+    !arr.some(other => other !== p && other.startsWith(p) &&
+      !Object.keys(hass.states).some(id => {
+        const slug = id.split(".")[1] ?? "";
+        if (!slug.startsWith(p)) return false;
+        const rest = slug.slice(p.length);
+        return FEATURES.some(f =>
+          rest === f.suffix ||
+          (rest.endsWith("_" + f.suffix) && !rest.slice(0, rest.length - f.suffix.length - 1).includes("_"))
+        );
+      })
+    )
+  );
+
+  return deduped.length > 0 ? deduped : arr;
+}
+
 function stateVal(hass, entityId) {
   return hass.states[entityId]?.state ?? null;
 }
@@ -330,8 +382,23 @@ class EvccCard extends HTMLElement {
       return;
     }
 
-    const prefix = this._config.prefix || "evcc_";
-    const { loadpoints, site } = discoverEntities(this._hass, prefix);
+    const configPrefix = this._config.prefix || "evcc_";
+    const { loadpoints: configLoadpoints, site: configSite } = discoverEntities(this._hass, configPrefix);
+
+    const configHasEntities =
+      Object.keys(configLoadpoints).length > 0 || Object.keys(configSite).length > 0;
+
+    if (!configHasEntities) {
+      const allPrefixes = detectAllPrefixes(this._hass);
+      this.shadowRoot.innerHTML = `
+        <style>${this._styles()}</style>
+        <ha-card><div class="card-content">${this._renderPrefixHint(configPrefix, allPrefixes)}</div></ha-card>`;
+      return;
+    }
+
+    const prefix = configPrefix;
+    const loadpoints = configLoadpoints;
+    const site = configSite;
 
     const filterRaw = this._config.loadpoints;
     const filter = filterRaw
@@ -1408,6 +1475,62 @@ class EvccCard extends HTMLElement {
       </div>`;
   }
 
+_renderPrefixHint(configPrefix, foundPrefixes) {
+    const lang = (this._config.language ||
+      (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+
+    const s = {
+      de: {
+        title:   "Keine Entitäten gefunden",
+        sub:     p => `Mit dem Prefix <code>${p}</code> wurden keine ha-evcc Entitäten gefunden.`,
+        found:   "Automatisch erkannte Prefixes:",
+        none:    "Es wurden keine ha-evcc Entitäten in Home Assistant gefunden. Ist die ha-evcc Integration installiert und aktiv?",
+        hint:    p => `Füge <code>prefix: ${p}</code> zur Karten-Konfiguration hinzu:`,
+        multi:   "Mehrere Instanzen gefunden — wähle den gewünschten Prefix:",
+      },
+      en: {
+        title:   "No entities found",
+        sub:     p => `No ha-evcc entities were found using prefix <code>${p}</code>.`,
+        found:   "Auto-detected prefixes:",
+        none:    "No ha-evcc entities found in Home Assistant. Is the ha-evcc integration installed and active?",
+        hint:    p => `Add <code>prefix: ${p}</code> to your card configuration:`,
+        multi:   "Multiple instances detected — choose the desired prefix:",
+      },
+    }[lang] ?? {
+      title: "No entities found",
+      sub:   p => `Prefix: <code>${p}</code>`,
+      found: "Detected prefixes:",
+      none:  "No ha-evcc entities found.",
+      hint:  p => `Use <code>prefix: ${p}</code>`,
+      multi: "Multiple instances found:",
+    };
+
+    if (foundPrefixes.length === 0) {
+      return `
+        <div class="prefix-hint">
+          <div class="prefix-hint-icon">🔌</div>
+          <div class="prefix-hint-title">${s.title}</div>
+          <div class="prefix-hint-body">${s.none}</div>
+        </div>`;
+    }
+
+    const cards = foundPrefixes.map(p => `
+      <div class="prefix-candidate">
+        <div class="prefix-candidate-label">${s.hint(p)}</div>
+        <pre class="prefix-candidate-code">type: custom:evcc-card\nprefix: ${p}</pre>
+      </div>`).join("");
+
+    return `
+      <div class="prefix-hint">
+        <div class="prefix-hint-icon">🔍</div>
+        <div class="prefix-hint-title">${s.title}</div>
+        <div class="prefix-hint-body">${s.sub(configPrefix)}</div>
+        <div class="prefix-hint-found">${s.found}</div>
+        ${foundPrefixes.length > 1 ? `<div class="prefix-hint-multi">${s.multi}</div>` : ""}
+        ${cards}
+      </div>`;
+  }
+
   _renderEmpty(allLoadpoints = {}) {
     const available = Object.keys(allLoadpoints);
     const hint = available.length > 0
@@ -1960,6 +2083,43 @@ class EvccCard extends HTMLElement {
       .plan-btn.delete:hover { background: #ef444422; }
       select.plan-vehicle-select { flex: 1; padding: 4px 8px; border: 1px solid var(--divider-color, #4b5563); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); font-size: .82rem; }
       .plan-error { margin-top: 8px; padding: 6px 10px; border-radius: 6px; background: #ef444422; color: #ef4444; font-size: .78rem; word-break: break-all; }
+
+      .prefix-hint {
+        padding: 20px 4px; display: flex; flex-direction: column; gap: 10px;
+      }
+      .prefix-hint-icon { font-size: 2rem; text-align: center; }
+      .prefix-hint-title {
+        font-size: 1rem; font-weight: 700; text-align: center;
+        color: var(--primary-text-color);
+      }
+      .prefix-hint-body {
+        font-size: .82rem; color: var(--secondary-text-color);
+        text-align: center; line-height: 1.5;
+      }
+      .prefix-hint-body code, .prefix-candidate-label code {
+        background: var(--code-editor-background-color, rgba(0,0,0,.12));
+        color: var(--primary-color); padding: 1px 5px; border-radius: 3px; font-size: .8rem;
+      }
+      .prefix-hint-found {
+        font-size: .78rem; font-weight: 600; text-transform: uppercase;
+        letter-spacing: .06em; color: var(--secondary-text-color); margin-top: 4px;
+      }
+      .prefix-hint-multi {
+        font-size: .8rem; color: var(--secondary-text-color); font-style: italic;
+      }
+      .prefix-candidate {
+        background: var(--secondary-background-color, rgba(0,0,0,.06));
+        border-radius: 8px; padding: 10px 12px;
+        display: flex; flex-direction: column; gap: 6px;
+      }
+      .prefix-candidate-label { font-size: .82rem; color: var(--secondary-text-color); }
+      .prefix-candidate-code {
+        margin: 0; padding: 8px 10px;
+        background: var(--code-editor-background-color, rgba(0,0,0,.15));
+        border-radius: 5px; font-size: .78rem; color: var(--primary-text-color);
+        font-family: monospace; white-space: pre; overflow-x: auto;
+        border-left: 3px solid var(--primary-color);
+      }
 
       .empty { text-align: center; padding: 24px; color: var(--secondary-text-color); font-size: .9rem; line-height: 1.8; }
       .empty code { background: var(--code-editor-background-color, #1e1e1e); color: var(--primary-color); padding: 1px 6px; border-radius: 4px; font-size: .82rem; }
