@@ -52,10 +52,10 @@ All charge points and site entities are **automatically discovered** based on th
 ### Manual installation
 
 1. Download `evcc-card.js` and the `locales/` folder from the [latest release](../../releases/latest)
-2. Copy them to `config/www/evcc-card/` in your Home Assistant instance, preserving the folder structure:
+2. Copy them to `config/www/hass-evcc-card/` in your Home Assistant instance, preserving the folder structure:
 
 ```
-config/www/evcc-card/
+config/www/hass-evcc-card/
 ├── evcc-card.js
 └── locales/
     ├── index.json
@@ -72,9 +72,9 @@ Depending on how your Lovelace is set up, register the resource in one of two wa
 **UI mode** (default): Go to **Settings → Dashboards → ⋮ → Resources** and add:
 
 ```yaml
-url: /hacsfiles/evcc-card/evcc-card.js   # if installed via HACS
+url: /hacsfiles/hass-evcc-card/evcc-card.js  # if installed via HACS
 # or
-url: /local/evcc-card/evcc-card.js       # if installed manually
+url: /local/hass-evcc-card/evcc-card.js       # if installed manually
 type: module
 ```
 
@@ -82,10 +82,10 @@ type: module
 
 ```yaml
 resources:
-  - url: /hacsfiles/evcc-card/evcc-card.js   # if installed via HACS
+  - url: /hacsfiles/hass-evcc-card/evcc-card.js   # if installed via HACS
     type: module
   # or
-  - url: /local/evcc-card/evcc-card.js       # if installed manually
+  - url: /local/hass-evcc-card/evcc-card.js       # if installed manually
     type: module
 ```
 
