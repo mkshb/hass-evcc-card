@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.3.8";
+const EVCC_CARD_VERSION = "0.3.9";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -1413,46 +1413,48 @@ class EvccCard extends HTMLElement {
     const { kwhId } = this._getStatEntityIds();
     if (!kwhId) return;
     const start = new Date();
-    start.setDate(start.getDate() - 15); // extra day for baseline
+    start.setDate(start.getDate() - 14);
     start.setHours(0, 0, 0, 0);
     try {
-      const result = await this._hass.callWS({
-        type: "recorder/statistics_during_period",
-        start_time: start.toISOString(),
-        statistic_ids: [kwhId],
-        period: "day",
-        types: ["sum"],
-      });
-      const stats = result[kwhId] ?? [];
-      this._statsHistory = this._computeDeltasFromStats(stats, 14);
+      const result = await this._hass.callApi(
+        "GET",
+        `history/period/${start.toISOString()}?filter_entity_id=${encodeURIComponent(kwhId)}&minimal_response=true&no_attributes=true`
+      );
+      this._statsHistory = this._computeDailyDeltas(result?.[0] ?? [], 14);
       this._render();
     } catch(e) {
-      console.warn("[evcc-card] stats error", e);
+      console.warn("[evcc-card] stats history error", e);
     }
   }
 
-  _computeDeltasFromStats(stats, days) {
+  _computeDailyDeltas(states, days) {
     const result = [];
-    const now = new Date();
-    const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`; };
-    const byKey = {};
-    stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
+    const now    = new Date();
+    const valid  = s => s.state !== "unavailable" && s.state !== "unknown";
+    const vs     = states.filter(valid);
+
     for (let i = days - 1; i >= 0; i--) {
-      const day = new Date(now);
-      day.setDate(day.getDate() - i);
-      day.setHours(0, 0, 0, 0);
-      const prevDay = new Date(day);
-      prevDay.setDate(prevDay.getDate() - 1);
-      const cur  = byKey[toKey(day)];
-      const prev = byKey[toKey(prevDay)];
-      const delta = (cur != null && prev != null) ? Math.max(0, cur - prev) : null;
-      result.push({ delta, label: new Date(day) });
+      const dayStart = new Date(now);
+      dayStart.setDate(dayStart.getDate() - i);
+      dayStart.setHours(0, 0, 0, 0);
+      const nextDay = new Date(dayStart);
+      nextDay.setDate(nextDay.getDate() + 1);
+
+      const before = vs.filter(s => new Date(s.last_changed) < dayStart);
+      const during = vs.filter(s => { const t = new Date(s.last_changed); return t >= dayStart && t < nextDay; });
+
+      const startVal = before.length > 0 ? parseFloat(before[before.length - 1].state) : null;
+      const endVal   = during.length > 0 ? parseFloat(during[during.length - 1].state)
+                     : (before.length > 0 ? parseFloat(before[before.length - 1].state) : null);
+
+      const delta = (startVal !== null && endVal !== null) ? Math.max(0, endVal - startVal) : null;
+      result.push({ delta, label: new Date(dayStart) });
     }
     return result;
   }
 
   _renderBarChart(data) {
-    const W = 280, BAR_H = 55, LABEL_H = 16, TOTAL_H = BAR_H + LABEL_H + 4;
+    const W = 280, VALUE_H = 30, BAR_H = 55, LABEL_H = 16, TOTAL_H = VALUE_H + BAR_H + LABEL_H + 4;
     const n = data.length, GAP = 2;
     const barW = Math.floor((W - (n - 1) * GAP) / n);
     const maxVal = Math.max(...data.map(d => d.delta ?? 0), 0.1);
@@ -1461,13 +1463,19 @@ class EvccCard extends HTMLElement {
     const bars = data.map((d, i) => {
       const x = i * (barW + GAP);
       const isToday = i === n - 1;
-      let h = 0, y = BAR_H;
+      let h = 0, y = VALUE_H + BAR_H;
       if (d.delta !== null && d.delta > 0) {
         h = Math.max(2, Math.round((d.delta / maxVal) * BAR_H));
-        y = BAR_H - h;
+        y = VALUE_H + BAR_H - h;
       }
       const dayChar = d.label.toLocaleDateString(lang, { weekday: "narrow" });
-      return `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(h,1)}"
+      const valLabel = (d.delta !== null && d.delta > 0)
+        ? `<text transform="translate(${x + barW / 2}, ${y - 2}) rotate(-90)"
+                text-anchor="start" font-size="8" fill="var(--secondary-text-color,#888)"
+                opacity="${isToday ? "1" : "0.75"}">${d.delta.toFixed(2)}</text>`
+        : "";
+      return `${valLabel}
+              <rect x="${x}" y="${y}" width="${barW}" height="${Math.max(h,1)}"
                     fill="var(--primary-color,#3b82f6)" opacity="${isToday ? "1" : "0.45"}" rx="1.5"/>
               <text x="${x + barW / 2}" y="${TOTAL_H}" text-anchor="middle"
                     font-size="9" fill="var(--secondary-text-color,#888)"
