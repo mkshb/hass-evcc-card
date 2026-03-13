@@ -1452,7 +1452,7 @@ class EvccCard extends HTMLElement {
   }
 
   _renderBarChart(data) {
-    const W = 280, VALUE_H = 30, BAR_H = 55, LABEL_H = 16, TOTAL_H = VALUE_H + BAR_H + LABEL_H + 4;
+    const W = 280, VALUE_H = 22, BAR_H = 55, LABEL_H = 32, TOTAL_H = VALUE_H + BAR_H + LABEL_H + 4;
     const n = data.length, GAP = 2;
     const barW = Math.floor((W - (n - 1) * GAP) / n);
     const maxVal = Math.max(...data.map(d => d.delta ?? 0), 0.1);
@@ -1466,18 +1466,18 @@ class EvccCard extends HTMLElement {
         h = Math.max(2, Math.round((d.delta / maxVal) * BAR_H));
         y = VALUE_H + BAR_H - h;
       }
-      const dayChar = d.label.toLocaleDateString(lang, { weekday: "narrow" });
+      const dateStr = d.label.toLocaleDateString(lang, { day: "numeric", month: "numeric" });
       const valLabel = (d.delta !== null && d.delta > 0)
-        ? `<text transform="translate(${x + barW / 2}, ${y - 2}) rotate(-90)"
-                text-anchor="start" font-size="8" fill="var(--secondary-text-color,#888)"
+        ? `<text transform="translate(${x + barW / 2}, ${y - 2}) rotate(-45)"
+                text-anchor="start" font-size="6.5" fill="var(--secondary-text-color,#888)"
                 opacity="${isToday ? "1" : "0.75"}">${d.delta.toFixed(2)}</text>`
         : "";
       return `${valLabel}
               <rect x="${x}" y="${y}" width="${barW}" height="${Math.max(h,1)}"
                     fill="var(--primary-color,#3b82f6)" opacity="${isToday ? "1" : "0.45"}" rx="1.5"/>
-              <text x="${x + barW / 2}" y="${TOTAL_H}" text-anchor="middle"
-                    font-size="9" fill="var(--secondary-text-color,#888)"
-                    opacity="${isToday ? "1" : "0.75"}">${dayChar}</text>`;
+              <text transform="translate(${x + barW / 2}, ${VALUE_H + BAR_H + 4}) rotate(90)"
+                    text-anchor="start" font-size="7" fill="var(--secondary-text-color,#888)"
+                    opacity="${isToday ? "1" : "0.75"}">${dateStr}</text>`;
     }).join("");
 
     return `<svg viewBox="0 0 ${W} ${TOTAL_H}" style="width:100%;display:block">${bars}</svg>`;
