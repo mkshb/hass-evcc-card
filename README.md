@@ -186,6 +186,8 @@ type: custom:evcc-card
 mode: site2
 ```
 
+![Site2 overview](images/site2.png)
+
 ---
 
 ### `battery`
