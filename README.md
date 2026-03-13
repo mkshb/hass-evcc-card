@@ -204,6 +204,7 @@ The stat entities are auto-discovered using the pattern `sensor.{prefix}stat_tot
 type: custom:evcc-card
 mode: stats
 ```
+![Stats](images/stats.png)
 
 ---
 
