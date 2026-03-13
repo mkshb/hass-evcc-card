@@ -997,7 +997,7 @@ class EvccCard extends HTMLElement {
     const feedinPct = Math.round(feedinPow     / totalOut * 100);
 
     const fmt     = v => v < 10 ? v.toFixed(1) : Math.round(v).toString();
-    const useWatt = Math.max(inTotal, outTotal) < 1;
+    const useWatt = Math.max(totalIn, totalOut) < 1;
     const fmtPow  = v => useWatt ? `${Math.round(v * 1000)} W` : `${fmt(v)} kW`;
     const fmtKw   = v => `${fmt(v)} kW`;
     const fmtKwh  = v => v === null ? "–" : `${fmt(v)} kWh`;
