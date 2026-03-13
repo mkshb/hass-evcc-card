@@ -1385,7 +1385,6 @@ class EvccCard extends HTMLElement {
                 <div class="batt-text-desc">${this._t("battHomePrioDesc", { val: inlineSlider(prioritySocId, priorityVal) })}</div>
               </div>
             </div>` : ""}
-            ${dischargeHtml}
           </div>
           <div class="batt-visual-col">
             ${bufferVal !== null ? `<span class="batt-marker-top">${bufferVal} %</span>` : ""}
@@ -1393,6 +1392,7 @@ class EvccCard extends HTMLElement {
             ${info}
           </div>
         </div>
+        ${dischargeHtml}
         <div class="batt-inline-popup" hidden>
           <input type="range" class="batt-inline-input" />
           <span class="batt-inline-label"></span>
@@ -1906,8 +1906,8 @@ class EvccCard extends HTMLElement {
       .batt-text-icon { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }
       .batt-text-title { font-size: .82rem; font-weight: 600; margin-bottom: 2px; }
       .batt-text-desc  { font-size: .76rem; color: var(--secondary-text-color); line-height: 1.4; }
-      .batt-inline-val { color: var(--primary-color, #00b4d8); text-decoration: underline dotted; cursor: pointer; font-weight: 600; }
-      .batt-visual-col { display: flex; align-items: flex-start; gap: 10px; flex-shrink: 0; }
+      .batt-inline-val { color: var(--primary-color, #00b4d8); text-decoration: underline dotted; cursor: pointer; font-weight: 600; white-space: nowrap; }
+      .batt-visual-col { display: flex; align-items: flex-start; gap: 10px; flex-shrink: 0; align-self: flex-start; }
       .batt-marker-top { display: none; }
       .batt-visual { display: flex; flex-direction: column; align-items: center; width: 56px; }
       .batt-cap-tip { width: 22px; height: 5px; background: var(--divider-color, #555); border-radius: 3px 3px 0 0; margin-bottom: 1px; }
@@ -1922,7 +1922,7 @@ class EvccCard extends HTMLElement {
       .batt-info-label { font-size: .72rem; color: var(--secondary-text-color); }
       .batt-info-pct   { font-size: 1rem; font-weight: 700; }
       .batt-info-kwh, .batt-info-power { font-size: .72rem; color: var(--secondary-text-color); }
-      .batt-discharge-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; font-size: .84rem; }
+      .batt-discharge-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--divider-color, #333); font-size: .84rem; }
       .batt-discharge-toggle { width: 42px; height: 24px; border-radius: 12px; border: none; background: var(--divider-color, #444); position: relative; cursor: pointer; flex-shrink: 0; transition: background .2s; }
       .batt-discharge-toggle.on { background: var(--primary-color, #00b4d8); }
       .batt-toggle-knob { position: absolute; width: 18px; height: 18px; border-radius: 50%; background: white; top: 3px; left: 3px; transition: left .2s; }
