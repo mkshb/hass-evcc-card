@@ -13,6 +13,7 @@ All charge points and site entities are **automatically discovered** based on th
 | Feature | Description |
 |---|---|
 | ☀️ **Site overview** | PV power bar split across home/charging/battery/feed-in, individual PV strings, live In/Out table |
+| ⚡ **Compact site overview** | Net grid value with color coding, solar share badge, source and consumer chips (`site2` mode) |
 | ⚡ **Charge mode control** | Switch between `Off`, `PV`, `Min+PV` and `Now` with a single tap |
 | 🏠 **Home battery block** | Buffer SoC, priority SoC and discharge lock with inline sliders |
 | 📑 **Compact mode** | Tab-based layout grouping controls, settings, plan and session — ideal for space-constrained dashboards |
@@ -101,7 +102,7 @@ Add the card to any Lovelace dashboard using the YAML editor. The `mode` option 
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `plan` |
+| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `site2`, `plan` |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language. Examples: `de`, `en`, `es`, `hr`, `nl` |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
@@ -168,6 +169,22 @@ site_details: collapsed   # start with the detail table hidden
 ```
 
 ![Site overview](images/site.png)
+
+---
+
+### `site2`
+
+Compact site energy overview with a focus on the current grid status:
+
+- Large net grid value with color coding: red for import, green for export
+- Solar self-sufficiency badge (e.g. `86 % Solar`) shown when PV is active
+- Source chips: active energy sources (PV generation, grid import, battery discharge)
+- Consumer chips: active consumers (home consumption, charge points with vehicle SoC/temperature, battery charging, grid export)
+
+```yaml
+type: custom:evcc-card
+mode: site2
+```
 
 ---
 
