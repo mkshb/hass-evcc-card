@@ -33,6 +33,8 @@
   "consumption": "Consumption",
   "gridImport": "Grid import",
   "gridExport": "Grid export",
+  "gridStatus": "Grid status",
+  "gridNeutral": "Grid independent",
   "battCharge": "Battery charge",
   "battDischarge": "Battery discharge",
   "chargePoint": "Charge point",

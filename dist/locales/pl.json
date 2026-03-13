@@ -33,6 +33,8 @@
   "consumption": "Zużycie",
   "gridImport": "Pobór z sieci",
   "gridExport": "Oddanie do sieci",
+  "gridStatus": "Status sieci",
+  "gridNeutral": "Niezależny od sieci",
   "battCharge": "Ładowanie baterii",
   "battDischarge": "Rozładowanie baterii",
   "chargePoint": "Punkt ładowania",

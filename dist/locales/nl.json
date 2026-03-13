@@ -33,6 +33,8 @@
   "consumption": "Verbruik",
   "gridImport": "Netafname",
   "gridExport": "Teruglevering",
+  "gridStatus": "Netstatus",
+  "gridNeutral": "Netoniafhankelijk",
   "battCharge": "Batterij laden",
   "battDischarge": "Batterij ontladen",
   "chargePoint": "Laadpunt",

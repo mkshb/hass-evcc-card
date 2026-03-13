@@ -33,6 +33,8 @@
   "consumption": "Verbrauch",
   "gridImport": "Netzbezug",
   "gridExport": "Einspeisung",
+  "gridStatus": "Netzstatus",
+  "gridNeutral": "Netzunabhängig",
   "battCharge": "Batterie laden",
   "battDischarge": "Batterie entladen",
   "chargePoint": "Ladepunkt",

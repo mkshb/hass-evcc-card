@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.3.4";
+const EVCC_CARD_VERSION = "0.3.6";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -351,6 +351,8 @@ class EvccCard extends HTMLElement {
             ? this._renderBatteryBlock(site)
             : this._config.mode === "site"
               ? this._renderSiteBlock(site, loadpoints)
+              : this._config.mode === "site2"
+              ? this._renderSiteBlock2(site, loadpoints)
               : this._config.mode === "plan"
                 ? this._renderPlanMode(visible)
                 : this._config.mode === "compact"
@@ -1278,6 +1280,110 @@ class EvccCard extends HTMLElement {
       </div>`;
   }
 
+  _renderSiteBlock2(site, loadpoints = {}) {
+    const kw = id => {
+      if (!id) return 0;
+      const raw  = parseFloat(stateVal(this._hass, id)) || 0;
+      const unit = unitStr(this._hass, id);
+      return unit === "kW" ? raw : raw / 1000;
+    };
+
+    const pvSources = [
+      { key: "pv_0_power" }, { key: "pv_1_power" },
+      { key: "pv_2_power" }, { key: "pv_3_power" },
+    ].filter(s => site[s.key]);
+
+    const pvPow         = pvSources.length > 0
+      ? pvSources.reduce((sum, s) => sum + kw(site[s.key]), 0)
+      : kw(site.pv_power);
+    const gridPow       = kw(site.grid_power);
+    const battPow       = kw(site.battery_power);
+    const homePow       = kw(site.home_power);
+    const feedinPow     = gridPow < 0 ? Math.abs(gridPow) : 0;
+    const bezugPow      = gridPow > 0 ? gridPow : 0;
+    const battDischPow  = battPow > 0 ? battPow : 0;
+    const battChargePow = battPow < 0 ? Math.abs(battPow) : 0;
+
+    const totalIn = pvPow + battDischPow + bezugPow;
+    const pvShare = totalIn > 0.05 ? Math.round(pvPow / totalIn * 100) : 0;
+
+    const fmt   = v => v < 10 ? v.toFixed(1) : Math.round(v).toString();
+    const fmtKw = v => `${fmt(v)} kW`;
+
+    const importing = bezugPow > 0.05;
+    const exporting = feedinPow > 0.05;
+    const netColor  = importing ? "#ef4444" : exporting ? "#22c55e" : "var(--secondary-text-color)";
+    const netAbs    = importing ? bezugPow : feedinPow;
+    const netValStr = (importing || exporting)
+      ? `${importing ? "+" : "−"}${fmtKw(netAbs)}`
+      : "–";
+    const netLabel  = importing
+      ? this._t("gridImport")
+      : exporting
+        ? this._t("gridExport")
+        : this._t("gridNeutral") || "–";
+
+    const pvBadge = pvShare > 0
+      ? `<div class="s2-pv-badge">
+           <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor"><path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z"/></svg>
+           ${pvShare} % Solar
+         </div>`
+      : "";
+
+    const chip = (dot, label, sub) =>
+      `<div class="s2-chip">
+        <span class="s2-chip-dot" style="background:${dot}"></span>
+        <span class="s2-chip-name">${label}</span>
+        ${sub ? `<span class="s2-chip-sub">${sub}</span>` : ""}
+      </div>`;
+
+    const lpChips = Object.entries(loadpoints)
+      .filter(([, ents]) => kw(ents.charge_power) > 0.05)
+      .map(([lpName, ents]) => {
+        const lpPow = kw(ents.charge_power);
+        const unit  = ents.vehicle_soc ? unitStr(this._hass, ents.vehicle_soc) : "";
+        const soc   = ents.vehicle_soc
+          ? `${Math.round(parseFloat(stateVal(this._hass, ents.vehicle_soc)) || 0)} ${unit}`
+          : "";
+        return chip("#3b82f6", lpName.toUpperCase(), soc ? `${fmtKw(lpPow)} · ${soc}` : fmtKw(lpPow));
+      }).join("");
+
+    const srcChips = [
+      pvPow        > 0.05 ? chip("#22c55e", this._t("generation"),    fmtKw(pvPow))        : "",
+      bezugPow     > 0.05 ? chip("#ef4444", this._t("gridImport"),    fmtKw(bezugPow))     : "",
+      battDischPow > 0.05 ? chip("#f97316", this._t("battDischarge"), fmtKw(battDischPow)) : "",
+    ].filter(Boolean).join("");
+
+    const dstChips = [
+      homePow      > 0.05 ? chip("var(--secondary-text-color)", this._t("consumption"), fmtKw(homePow))       : "",
+      lpChips,
+      battChargePow > 0.05 ? chip("#f97316", this._t("battCharge"),  fmtKw(battChargePow)) : "",
+      feedinPow    > 0.05 ? chip("#eab308", this._t("gridExport"),   fmtKw(feedinPow))     : "",
+    ].filter(Boolean).join("");
+
+    const section = (labelKey, chips) => chips
+      ? `<div class="s2-section">
+           <div class="s2-section-label">${this._t(labelKey)}</div>
+           <div class="s2-chips">${chips}</div>
+         </div>`
+      : "";
+
+    return `
+      <div class="s2-block">
+        <div class="lp-header">
+          <span class="lp-name">${this._t("overview")}</span>
+        </div>
+        <div class="s2-net">
+          <div class="s2-net-label">${this._t("gridStatus") || "Netzstatus"}</div>
+          <div class="s2-net-value" style="color:${netColor}">${netValStr}</div>
+          <div class="s2-net-status" style="color:${netColor}">${netLabel}</div>
+          ${pvBadge}
+        </div>
+        ${section("generation", srcChips)}
+        ${section("consumption", dstChips)}
+      </div>`;
+  }
+
   _renderBatteryBlock(site) {
     const socId         = site.battery_soc;
     const powerId       = site.battery_power;
@@ -1892,6 +1998,36 @@ class EvccCard extends HTMLElement {
       .site-pw-green  { color: #22c55e; }
       .site-pw-blue   { color: #3b82f6; }
       .site-pw-yellow { color: #facc15; }
+
+      .s2-net {
+        text-align: center; padding: 14px 0 16px;
+        border-bottom: 1px solid var(--divider-color, #333); margin-bottom: 14px;
+      }
+      .s2-net-label {
+        font-size: .6rem; font-weight: 700; letter-spacing: .1em;
+        text-transform: uppercase; color: var(--secondary-text-color); margin-bottom: 4px;
+      }
+      .s2-net-value { font-size: 2.2rem; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
+      .s2-net-status { font-size: .75rem; font-weight: 600; margin-top: 4px; }
+      .s2-pv-badge {
+        display: inline-flex; align-items: center; gap: 4px;
+        margin-top: 8px; background: rgba(34,197,94,0.12); color: #22c55e;
+        border-radius: 20px; padding: 3px 10px; font-size: .68rem; font-weight: 700;
+      }
+      .s2-section { margin-bottom: 12px; }
+      .s2-section-label {
+        font-size: .58rem; font-weight: 700; letter-spacing: .12em;
+        text-transform: uppercase; color: var(--secondary-text-color); opacity: .55; margin-bottom: 6px;
+      }
+      .s2-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+      .s2-chip {
+        display: inline-flex; align-items: center; gap: 5px;
+        background: var(--secondary-background-color, rgba(255,255,255,0.05));
+        border-radius: 20px; padding: 5px 11px; font-size: .72rem; font-weight: 600;
+        border: 1px solid var(--divider-color, #333);
+      }
+      .s2-chip-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+      .s2-chip-sub { font-size: .62rem; color: var(--secondary-text-color); font-weight: 400; }
 
       .battery-block { padding: 0; }
       .batt-tabs { display: flex; border-bottom: 1px solid var(--divider-color, #333); margin-bottom: 14px; }

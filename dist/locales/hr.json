@@ -33,6 +33,8 @@
   "consumption": "Potrošnja",
   "gridImport": "Uvoz s mreže",
   "gridExport": "Izvoz u mrežu",
+  "gridStatus": "Status mreže",
+  "gridNeutral": "Neovisno o mreži",
   "battCharge": "Punjenje baterije",
   "battDischarge": "Pražnjenje baterije",
   "chargePoint": "Točka punjenja",
