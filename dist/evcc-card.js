@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.3.3";
+const EVCC_CARD_VERSION = "0.3.4";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -1750,7 +1750,7 @@ class EvccCard extends HTMLElement {
       .lp-header {
         display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
       }
-      .lp-name { font-size: 1rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+      .lp-name { font-size: 1rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px; }
       .lp-badge {
         font-size: .75rem; font-weight: 600; padding: 2px 10px;
         border-radius: 999px; border: 1px solid currentColor;
@@ -1759,14 +1759,15 @@ class EvccCard extends HTMLElement {
       .mode-row { display: flex; gap: 6px; margin-bottom: 12px; }
       .mode-btn {
         flex: 1; display: flex; flex-direction: column; align-items: center;
-        gap: 2px; padding: 8px 4px;
+        gap: 2px; padding: 8px 2px; min-width: 0;
         border: 1px solid var(--divider-color, #e5e7eb); border-radius: 8px;
         background: transparent; color: var(--secondary-text-color);
-        cursor: pointer; font-size: .7rem; transition: all .15s;
+        cursor: pointer; font-size: .7rem; transition: all .15s; overflow: hidden;
       }
       .mode-btn:hover { border-color: var(--primary-color); }
       .mode-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
       .mode-icon { display: flex; align-items: center; justify-content: center; line-height: 1; min-height: 20px; }
+      .mode-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
       .soc-section { margin-bottom: 12px; }
       .soc-label-row {
@@ -1787,7 +1788,7 @@ class EvccCard extends HTMLElement {
         background: var(--warning-color, #f59e0b); border-radius: 2px; transform: translateX(-50%);
       }
 
-      .power-row { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 12px; color: var(--secondary-text-color); }
+      .power-row { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 12px; color: var(--secondary-text-color); flex-wrap: wrap; }
       .power-row.charging { color: #22c55e; }
       .power-value { font-size: 1.6rem; font-weight: 700; }
       .power-sep { font-size: .8rem; color: var(--secondary-text-color); align-self: flex-end; padding-bottom: .2rem; }
@@ -1795,14 +1796,14 @@ class EvccCard extends HTMLElement {
       .power-phases  { font-size: .82rem; align-self: flex-end; padding-bottom: .2rem; }
 
       .sliders { margin-bottom: 10px; }
-      .slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: .83rem; }
-      .slider-row label { width: 90px; flex-shrink: 0; color: var(--secondary-text-color); }
-      .slider-control { display: flex; align-items: center; gap: 8px; flex: 1; }
-      .slider-control input { flex: 1; accent-color: var(--primary-color); }
-      .slider-val { width: 58px; text-align: right; font-size: .8rem; }
+      .slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: .83rem; flex-wrap: wrap; }
+      .slider-row label { flex: 0 0 auto; min-width: 70px; white-space: nowrap; color: var(--secondary-text-color); }
+      .slider-control { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 120px; }
+      .slider-control input { flex: 1; min-width: 0; accent-color: var(--primary-color); }
+      .slider-val { flex-shrink: 0; width: 52px; text-align: right; font-size: .8rem; }
 
       .toggles { margin-bottom: 10px; }
-      .toggle-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; }
+      .toggle-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; flex-wrap: wrap; gap: 4px; }
       button.toggle {
         padding: 3px 14px; border-radius: 999px; border: 1px solid var(--divider-color);
         background: transparent; color: var(--secondary-text-color);
@@ -1835,7 +1836,7 @@ class EvccCard extends HTMLElement {
       .current-block-body[hidden] { display: none; }
 
       .selects { margin-bottom: 10px; }
-      .select-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; }
+      .select-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; flex-wrap: wrap; gap: 4px; }
       .phase-btn-group { display: flex; gap: 4px; }
       button.phase-btn {
         padding: 3px 10px; border-radius: 999px; border: 1px solid var(--divider-color);
@@ -1899,7 +1900,7 @@ class EvccCard extends HTMLElement {
         color: var(--secondary-text-color); padding: 7px 16px; font-size: .84rem; cursor: pointer; margin-bottom: -1px;
       }
       button.batt-tab.active { color: var(--primary-text-color); border-bottom-color: var(--primary-text-color); font-weight: 600; }
-      .batt-main-row { display: flex; gap: 16px; align-items: flex-start; }
+      .batt-main-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
       .batt-text-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
       .batt-text-item { display: flex; gap: 8px; align-items: flex-start; }
       .batt-text-icon { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }
@@ -1946,8 +1947,8 @@ class EvccCard extends HTMLElement {
       .plan-projection { display: flex; flex-direction: column; gap: 3px; font-size: .78rem; color: var(--secondary-text-color); margin-bottom: 10px; padding: 7px 10px; background: var(--secondary-background-color, rgba(0,0,0,.08)); border-radius: 6px; }
       .plan-projection strong { color: var(--primary-text-color); }
       .plan-inputs { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
-      .plan-row { display: flex; align-items: center; gap: 8px; font-size: .83rem; }
-      .plan-row label { width: 70px; flex-shrink: 0; color: var(--secondary-text-color); }
+      .plan-row { display: flex; align-items: center; gap: 8px; font-size: .83rem; flex-wrap: wrap; }
+      .plan-row label { flex: 0 0 auto; min-width: 60px; white-space: nowrap; color: var(--secondary-text-color); }
       .plan-soc-control { display: flex; align-items: center; gap: 8px; flex: 1; }
       .plan-soc-range { flex: 1; accent-color: var(--primary-color); }
       .plan-soc-val { width: 42px; text-align: right; font-size: .8rem; }
