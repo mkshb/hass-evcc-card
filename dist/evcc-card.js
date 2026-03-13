@@ -2356,4 +2356,4 @@ window.customCards.push({
   description: "Dashboard card for ha-evcc integration.",
   preview:     false,
   version:     EVCC_CARD_VERSION,
-});
+}); 
