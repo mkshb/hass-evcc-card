@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.3.7";
+const EVCC_CARD_VERSION = "0.3.8";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -1413,42 +1413,40 @@ class EvccCard extends HTMLElement {
     const { kwhId } = this._getStatEntityIds();
     if (!kwhId) return;
     const start = new Date();
-    start.setDate(start.getDate() - 14);
+    start.setDate(start.getDate() - 15); // extra day for baseline
     start.setHours(0, 0, 0, 0);
     try {
-      const result = await this._hass.callApi(
-        "GET",
-        `history/period/${start.toISOString()}?filter_entity_id=${encodeURIComponent(kwhId)}&minimal_response=true&no_attributes=true`
-      );
-      this._statsHistory = this._computeDailyDeltas(result?.[0] ?? [], 14);
+      const result = await this._hass.callWS({
+        type: "recorder/statistics_during_period",
+        start_time: start.toISOString(),
+        statistic_ids: [kwhId],
+        period: "day",
+        types: ["sum"],
+      });
+      const stats = result[kwhId] ?? [];
+      this._statsHistory = this._computeDeltasFromStats(stats, 14);
       this._render();
     } catch(e) {
-      console.warn("[evcc-card] stats history error", e);
+      console.warn("[evcc-card] stats error", e);
     }
   }
 
-  _computeDailyDeltas(states, days) {
+  _computeDeltasFromStats(stats, days) {
     const result = [];
-    const now    = new Date();
-    const valid  = s => s.state !== "unavailable" && s.state !== "unknown";
-    const vs     = states.filter(valid);
-
+    const now = new Date();
+    const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`; };
+    const byKey = {};
+    stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
     for (let i = days - 1; i >= 0; i--) {
-      const dayStart = new Date(now);
-      dayStart.setDate(dayStart.getDate() - i);
-      dayStart.setHours(0, 0, 0, 0);
-      const nextDay = new Date(dayStart);
-      nextDay.setDate(nextDay.getDate() + 1);
-
-      const before = vs.filter(s => new Date(s.last_changed) < dayStart);
-      const during = vs.filter(s => { const t = new Date(s.last_changed); return t >= dayStart && t < nextDay; });
-
-      const startVal = before.length > 0 ? parseFloat(before[before.length - 1].state) : null;
-      const endVal   = during.length > 0 ? parseFloat(during[during.length - 1].state)
-                     : (before.length > 0 ? parseFloat(before[before.length - 1].state) : null);
-
-      const delta = (startVal !== null && endVal !== null) ? Math.max(0, endVal - startVal) : null;
-      result.push({ delta, label: new Date(dayStart) });
+      const day = new Date(now);
+      day.setDate(day.getDate() - i);
+      day.setHours(0, 0, 0, 0);
+      const prevDay = new Date(day);
+      prevDay.setDate(prevDay.getDate() - 1);
+      const cur  = byKey[toKey(day)];
+      const prev = byKey[toKey(prevDay)];
+      const delta = (cur != null && prev != null) ? Math.max(0, cur - prev) : null;
+      result.push({ delta, label: new Date(day) });
     }
     return result;
   }
