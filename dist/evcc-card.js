@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.3.7";
+const EVCC_CARD_VERSION = "0.3.6";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -353,8 +353,6 @@ class EvccCard extends HTMLElement {
               ? this._renderSiteBlock(site, loadpoints)
               : this._config.mode === "site2"
               ? this._renderSiteBlock2(site, loadpoints)
-              : this._config.mode === "stats"
-              ? this._renderStatsBlock()
               : this._config.mode === "plan"
                 ? this._renderPlanMode(visible)
                 : this._config.mode === "compact"
@@ -1279,7 +1277,6 @@ class EvccCard extends HTMLElement {
           <div class="site-section-gap"></div>
           ${outSection}
         </div>
-        ${this._renderStatsFooter()}
       </div>`;
   }
 
@@ -1384,156 +1381,6 @@ class EvccCard extends HTMLElement {
         </div>
         ${section("generation", srcChips)}
         ${section("consumption", dstChips)}
-        ${this._renderStatsFooter()}
-      </div>`;
-  }
-
-  _getStatEntityIds() {
-    const p = (this._config.prefix || "evcc_") + "stat_";
-    const find = s => {
-      const id = `sensor.${p}${s}`;
-      return this._hass?.states[id] ? id : null;
-    };
-    return {
-      kwhId:   find("total_charged_kwh"),
-      solarId: find("total_solar_percentage"),
-      priceId: find("total_avg_price"),
-    };
-  }
-
-  _maybeRefreshStats() {
-    const age = Date.now() - (this._statsHistoryFetched ?? 0);
-    if (age > 5 * 60 * 1000) {
-      this._statsHistoryFetched = Date.now();
-      this._fetchStatsHistory();
-    }
-  }
-
-  async _fetchStatsHistory() {
-    const { kwhId } = this._getStatEntityIds();
-    if (!kwhId) return;
-    const start = new Date();
-    start.setDate(start.getDate() - 14);
-    start.setHours(0, 0, 0, 0);
-    try {
-      const result = await this._hass.callApi(
-        "GET",
-        `history/period/${start.toISOString()}?filter_entity_id=${encodeURIComponent(kwhId)}&minimal_response=true&no_attributes=true`
-      );
-      this._statsHistory = this._computeDailyDeltas(result?.[0] ?? [], 14);
-      this._render();
-    } catch(e) {
-      console.warn("[evcc-card] stats history error", e);
-    }
-  }
-
-  _computeDailyDeltas(states, days) {
-    const result = [];
-    const now    = new Date();
-    const valid  = s => s.state !== "unavailable" && s.state !== "unknown";
-    const vs     = states.filter(valid);
-
-    for (let i = days - 1; i >= 0; i--) {
-      const dayStart = new Date(now);
-      dayStart.setDate(dayStart.getDate() - i);
-      dayStart.setHours(0, 0, 0, 0);
-      const nextDay = new Date(dayStart);
-      nextDay.setDate(nextDay.getDate() + 1);
-
-      const before = vs.filter(s => new Date(s.last_changed) < dayStart);
-      const during = vs.filter(s => { const t = new Date(s.last_changed); return t >= dayStart && t < nextDay; });
-
-      const startVal = before.length > 0 ? parseFloat(before[before.length - 1].state) : null;
-      const endVal   = during.length > 0 ? parseFloat(during[during.length - 1].state)
-                     : (before.length > 0 ? parseFloat(before[before.length - 1].state) : null);
-
-      const delta = (startVal !== null && endVal !== null) ? Math.max(0, endVal - startVal) : null;
-      result.push({ delta, label: new Date(dayStart) });
-    }
-    return result;
-  }
-
-  _renderBarChart(data) {
-    const W = 280, BAR_H = 55, LABEL_H = 16, TOTAL_H = BAR_H + LABEL_H + 4;
-    const n = data.length, GAP = 2;
-    const barW = Math.floor((W - (n - 1) * GAP) / n);
-    const maxVal = Math.max(...data.map(d => d.delta ?? 0), 0.1);
-    const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
-
-    const bars = data.map((d, i) => {
-      const x = i * (barW + GAP);
-      const isToday = i === n - 1;
-      let h = 0, y = BAR_H;
-      if (d.delta !== null && d.delta > 0) {
-        h = Math.max(2, Math.round((d.delta / maxVal) * BAR_H));
-        y = BAR_H - h;
-      }
-      const dayChar = d.label.toLocaleDateString(lang, { weekday: "narrow" });
-      return `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(h,1)}"
-                    fill="var(--primary-color,#3b82f6)" opacity="${isToday ? "1" : "0.45"}" rx="1.5"/>
-              <text x="${x + barW / 2}" y="${TOTAL_H}" text-anchor="middle"
-                    font-size="9" fill="var(--secondary-text-color,#888)"
-                    opacity="${isToday ? "1" : "0.75"}">${dayChar}</text>`;
-    }).join("");
-
-    return `<svg viewBox="0 0 ${W} ${TOTAL_H}" style="width:100%;display:block">${bars}</svg>`;
-  }
-
-  _renderStatsFooter() {
-    const { kwhId, solarId, priceId } = this._getStatEntityIds();
-    if (!kwhId && !solarId && !priceId) return "";
-
-    const val = id => id ? (parseFloat(stateVal(this._hass, id)) || 0) : null;
-    const kwh   = val(kwhId);
-    const solar = val(solarId);
-    const price = val(priceId);
-
-    const items = [
-      kwhId   ? `<span class="sf-item"><span class="sf-val">${Math.round(kwh)} kWh</span><span class="sf-lbl">${this._t("statsTotalCharged") || "Geladen"}</span></span>` : "",
-      solarId ? `<span class="sf-item"><span class="sf-val" style="color:#22c55e">${Math.round(solar)} %</span><span class="sf-lbl">${this._t("statsSolarShare") || "Solar"}</span></span>` : "",
-      priceId ? `<span class="sf-item"><span class="sf-val">${(price * 100).toFixed(1)} ct</span><span class="sf-lbl">${this._t("statsAvgPrice") || "Ø ct/kWh"}</span></span>` : "",
-    ].filter(Boolean);
-
-    if (items.length === 0) return "";
-    return `<div class="stats-footer">${items.join('<span class="sf-sep"></span>')}</div>`;
-  }
-
-  _renderStatsBlock() {
-    this._maybeRefreshStats();
-    const { kwhId, solarId, priceId } = this._getStatEntityIds();
-
-    const val = id => id ? (parseFloat(stateVal(this._hass, id)) || 0) : null;
-    const kwh   = val(kwhId);
-    const solar = val(solarId);
-    const price = val(priceId);
-
-    const kpi = (v, label, fmt, color) => `
-      <div class="stats-kpi">
-        <div class="stats-kpi-val"${color ? ` style="color:${color}"` : ""}>${v !== null ? fmt(v) : "–"}</div>
-        <div class="stats-kpi-lbl">${label}</div>
-      </div>`;
-
-    const kpis = [
-      kpi(kwh,   this._t("statsTotalCharged") || "Geladen gesamt", v => `${Math.round(v)} kWh`, null),
-      kpi(solar, this._t("statsSolarShare")   || "Solaranteil",    v => `${Math.round(v)} %`,   solar > 0 ? "#22c55e" : null),
-      kpi(price, this._t("statsAvgPrice")     || "Ø Preis/kWh",    v => `${(v * 100).toFixed(1)} ct`, null),
-    ].join("");
-
-    const chart = kwhId ? `
-      <div class="stats-chart-section">
-        <div class="stats-chart-title">${this._t("statsLast14Days") || "Letzte 14 Tage"}</div>
-        ${this._statsHistory
-          ? this._renderBarChart(this._statsHistory)
-          : '<div class="stats-chart-loading">…</div>'}
-      </div>` : "";
-
-    return `
-      <div>
-        <div class="lp-header">
-          <span class="lp-name">${this._t("overview")}</span>
-        </div>
-        <div class="stats-kpi-row">${kpis}</div>
-        ${chart}
       </div>`;
   }
 
@@ -2181,34 +2028,6 @@ class EvccCard extends HTMLElement {
       }
       .s2-chip-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
       .s2-chip-sub { font-size: .62rem; color: var(--secondary-text-color); font-weight: 400; }
-
-      .stats-footer {
-        display: flex; align-items: center;
-        border-top: 1px solid var(--divider-color, #333);
-        margin-top: 12px; padding-top: 10px;
-      }
-      .sf-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; }
-      .sf-val  { font-size: .82rem; font-weight: 700; }
-      .sf-lbl  { font-size: .58rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
-      .sf-sep  { width: 1px; height: 28px; background: var(--divider-color, #333); flex-shrink: 0; }
-
-      .stats-kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
-      .stats-kpi {
-        background: var(--secondary-background-color, rgba(255,255,255,.05));
-        border-radius: 8px; padding: 10px 8px; text-align: center;
-        display: flex; flex-direction: column; gap: 3px;
-      }
-      .stats-kpi-val { font-size: 1.1rem; font-weight: 800; line-height: 1; }
-      .stats-kpi-lbl { font-size: .58rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
-      .stats-chart-section { margin-top: 4px; }
-      .stats-chart-title {
-        font-size: .58rem; font-weight: 700; letter-spacing: .12em;
-        text-transform: uppercase; color: var(--secondary-text-color); opacity: .55; margin-bottom: 8px;
-      }
-      .stats-chart-loading {
-        height: 75px; display: flex; align-items: center; justify-content: center;
-        color: var(--secondary-text-color); font-size: .75rem; opacity: .5;
-      }
 
       .battery-block { padding: 0; }
       .batt-tabs { display: flex; border-bottom: 1px solid var(--divider-color, #333); margin-bottom: 14px; }

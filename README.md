@@ -102,7 +102,7 @@ Add the card to any Lovelace dashboard using the YAML editor. The `mode` option 
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `site2`, `stats`, `plan` |
+| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `site2`, `plan` |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language. Examples: `de`, `en`, `es`, `hr`, `nl` |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
@@ -187,23 +187,6 @@ mode: site2
 ```
 
 ![Site2 overview](images/site2.png)
-
----
-
-### `stats`
-
-Lifetime charging statistics with a 14-day bar chart:
-
-- Three KPIs: total charged energy (kWh), solar share (%), average price (ct/kWh)
-- 14-day bar chart showing daily charged energy — fetched once from the HA Recorder and cached for 5 minutes
-- The same three KPIs also appear as a compact footer row at the bottom of `site` and `site2` cards whenever the `evcc_stat_*` entities are present
-
-The stat entities are auto-discovered using the pattern `sensor.{prefix}stat_total_*` (e.g. `sensor.evcc_stat_total_charged_kwh`).
-
-```yaml
-type: custom:evcc-card
-mode: stats
-```
 
 ---
 
