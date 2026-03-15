@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.4.3";
+const EVCC_CARD_VERSION = "0.4.2";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -58,8 +58,16 @@ const FEATURES = [
   { suffix: "pv_2_power",          domain: "sensor",        type: "power",         lp: false },
   { suffix: "pv_3_power",          domain: "sensor",        type: "power",         lp: false },
   { suffix: "home_power",          domain: "sensor",        type: "power",         lp: false },
-  { suffix: "battery_power",       domain: "sensor",        type: "power",         lp: false },
+  { suffix: "battery_power",        domain: "sensor",        type: "power",         lp: false },
+  { suffix: "battery_0_power",     domain: "sensor",        type: "power",         lp: false },
+  { suffix: "battery_1_power",     domain: "sensor",        type: "power",         lp: false },
+  { suffix: "battery_2_power",     domain: "sensor",        type: "power",         lp: false },
+  { suffix: "battery_3_power",     domain: "sensor",        type: "power",         lp: false },
   { suffix: "battery_soc",         domain: "sensor",        type: "soc",           lp: false },
+  { suffix: "battery_0_soc",       domain: "sensor",        type: "soc",           lp: false },
+  { suffix: "battery_1_soc",       domain: "sensor",        type: "soc",           lp: false },
+  { suffix: "battery_2_soc",       domain: "sensor",        type: "soc",           lp: false },
+  { suffix: "battery_3_soc",       domain: "sensor",        type: "soc",           lp: false },
   { suffix: "battery_capacity",    domain: "sensor",        type: "info",          lp: false },
   { suffix: "pv_energy",           domain: "sensor",        type: "info",          lp: false },
   { suffix: "pv_0_energy",         domain: "sensor",        type: "info",          lp: false },
@@ -301,6 +309,10 @@ class EvccCard extends HTMLElement {
 
   setConfig(config) {
     this._config = config || {};
+    const validPeriods = ["30d", "365d", "thisYear", "total"];
+    if (validPeriods.includes(config?.stats_period)) {
+      this._statsPeriod = config.stats_period;
+    }
 
     if (!this._translationsReady && !this._loadingTranslations) {
       this._loadingTranslations = true;
@@ -1054,6 +1066,15 @@ class EvccCard extends HTMLElement {
     const pvKwh = pvSources.length > 0
       ? pvSources.reduce((sum, s) => sum + (kwh(site[s.energyKey]) ?? 0), 0)
       : kwh(site.pv_energy);
+    const battSources = [
+      { key: "battery_0_power", socKey: "battery_0_soc", idx: 0 },
+      { key: "battery_1_power", socKey: "battery_1_soc", idx: 1 },
+      { key: "battery_2_power", socKey: "battery_2_soc", idx: 2 },
+      { key: "battery_3_power", socKey: "battery_3_soc", idx: 3 },
+    ].filter(s => site[s.key]).map(s => ({
+      ...s,
+      label: pvNameFromEntity(site[s.key]) ?? `Batterie ${s.idx + 1}`,
+    }));
     const gridPow = kw(site.grid_power);
     const battPow = kw(site.battery_power);
     const homePow = kw(site.home_power);
@@ -1316,6 +1337,24 @@ class EvccCard extends HTMLElement {
         }).join("")
       : "";
 
+    const battRowIcon = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z\"/></svg>";
+    const battDischRows = battSources.length > 1
+      ? battSources.map(s => {
+          const p = kw(site[s.key]);
+          const bSoc = site[s.socKey] ? Math.round(parseFloat(stateVal(this._hass, site[s.socKey])) || 0) : null;
+          const label = bSoc !== null ? `${s.label} – ${bSoc} %` : s.label;
+          return p > 0.05 ? row(battRowIcon, label, "", p, "", true) : "";
+        }).join("")
+      : "";
+    const battChargeRows = battSources.length > 1
+      ? battSources.map(s => {
+          const p = kw(site[s.key]);
+          const bSoc = site[s.socKey] ? Math.round(parseFloat(stateVal(this._hass, site[s.socKey])) || 0) : null;
+          const label = bSoc !== null ? `${s.label} – ${bSoc} %` : s.label;
+          return p < -0.05 ? row(battRowIcon, label, "", Math.abs(p), "", true) : "";
+        }).join("")
+      : "";
+
     const inSection = section(this._t("in") || "In", inTotal, [
       row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z\"/></svg>", this._t("generation"), "", pvPow, "site-pw-green"),
       pvRows,
@@ -1323,6 +1362,7 @@ class EvccCard extends HTMLElement {
         ? row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z\"/></svg>",
               batterySoc !== null ? `${this._t("battDischarge")} – ${Math.round(batterySoc)} %` : this._t("battDischarge"),
               "", battDischPow) : "",
+      battDischRows,
       bezugPow > 0.05
         ? row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M11,7.5L9.5,3H14.5L13,7.5H15L18,3H21L15,12H17L21,21H15L12,15L9,21H3L7,12H9L3,3H6L9,7.5H11M12,13.5L13.9,19H10.1L12,13.5Z\"/></svg>", this._t("gridImport"), "", bezugPow) : "",
     ].join(""));
@@ -1335,6 +1375,7 @@ class EvccCard extends HTMLElement {
         ? row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z\"/></svg>",
               batterySoc !== null ? `${this._t("battCharge")} – ${Math.round(batterySoc)} %` : this._t("battCharge"),
               "", battChargePow) : "",
+      battChargeRows,
       feedinPow > 0.05
         ? row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M11,7.5L9.5,3H14.5L13,7.5H15L18,3H21L15,12H17L21,21H15L12,15L9,21H3L7,12H9L3,3H6L9,7.5H11M12,13.5L13.9,19H10.1L12,13.5Z\"/></svg>", this._t("gridExport"), "", feedinPow, "site-pw-yellow") : "",
     ].join(""));
@@ -1346,7 +1387,7 @@ class EvccCard extends HTMLElement {
     return `
       <div class="site-block">
         <div class="lp-header">
-          <span class="lp-name">${this._t("energyFlow")}</span>
+          <span class="lp-name">${this._t("overview")}</span>
         </div>
         <div class="flow-wrap-clickable" role="button" tabindex="0"
              onclick="window.__evccCards.get('${this._cardId}')._toggleSite()"
@@ -1374,6 +1415,16 @@ class EvccCard extends HTMLElement {
       { key: "pv_0_power" }, { key: "pv_1_power" },
       { key: "pv_2_power" }, { key: "pv_3_power" },
     ].filter(s => site[s.key]);
+
+    const battSources = [
+      { key: "battery_0_power", socKey: "battery_0_soc", idx: 0 },
+      { key: "battery_1_power", socKey: "battery_1_soc", idx: 1 },
+      { key: "battery_2_power", socKey: "battery_2_soc", idx: 2 },
+      { key: "battery_3_power", socKey: "battery_3_soc", idx: 3 },
+    ].filter(s => site[s.key]).map(s => ({
+      ...s,
+      label: (site[s.key] ? (attr(this._hass, site[s.key], "title") ?? null) : null) ?? `Batterie ${s.idx + 1}`,
+    }));
 
     const pvPow         = pvSources.length > 0
       ? pvSources.reduce((sum, s) => sum + kw(site[s.key]), 0)
@@ -1430,16 +1481,36 @@ class EvccCard extends HTMLElement {
         return chip("var(--evcc-blue)", lpName.toUpperCase(), soc ? `${fmtKw(lpPow)} · ${soc}` : fmtKw(lpPow));
       }).join("");
 
+    const aggBattSoc = site.battery_soc ? Math.round(parseFloat(stateVal(this._hass, site.battery_soc)) || 0) : null;
+
+    const battDischChips = battSources.length > 1
+      ? battSources.flatMap(s => {
+          const p = kw(site[s.key]);
+          if (p <= 0.05) return [];
+          const bSoc = site[s.socKey] ? Math.round(parseFloat(stateVal(this._hass, site[s.socKey])) || 0) : null;
+          return [chip("var(--evcc-orange)", s.label, bSoc !== null ? `${fmtKw(p)} · ${bSoc} %` : fmtKw(p))];
+        })
+      : battDischPow > 0.05 ? [chip("var(--evcc-orange)", this._t("battDischarge"), aggBattSoc !== null ? `${fmtKw(battDischPow)} · ${aggBattSoc} %` : fmtKw(battDischPow))] : [];
+
+    const battChargeChips = battSources.length > 1
+      ? battSources.flatMap(s => {
+          const p = kw(site[s.key]);
+          if (p >= -0.05) return [];
+          const bSoc = site[s.socKey] ? Math.round(parseFloat(stateVal(this._hass, site[s.socKey])) || 0) : null;
+          return [chip("var(--evcc-orange)", s.label, bSoc !== null ? `${fmtKw(Math.abs(p))} · ${bSoc} %` : fmtKw(Math.abs(p)))];
+        })
+      : battChargePow > 0.05 ? [chip("var(--evcc-orange)", this._t("battCharge"), aggBattSoc !== null ? `${fmtKw(battChargePow)} · ${aggBattSoc} %` : fmtKw(battChargePow))] : [];
+
     const srcChips = [
-      pvPow        > 0.05 ? chip("var(--evcc-green)",  this._t("generation"),    fmtKw(pvPow))        : "",
-      bezugPow     > 0.05 ? chip("var(--evcc-red)",   this._t("gridImport"),    fmtKw(bezugPow))     : "",
-      battDischPow > 0.05 ? chip("var(--evcc-orange)",this._t("battDischarge"), fmtKw(battDischPow)) : "",
+      pvPow        > 0.05 ? chip("var(--evcc-green)",  this._t("generation"),    fmtKw(pvPow))    : "",
+      bezugPow     > 0.05 ? chip("var(--evcc-red)",    this._t("gridImport"),    fmtKw(bezugPow)) : "",
+      ...battDischChips,
     ].filter(Boolean).join("");
 
     const dstChips = [
-      homePow      > 0.05 ? chip("var(--secondary-text-color)", this._t("consumption"), fmtKw(homePow))       : "",
+      homePow      > 0.05 ? chip("var(--secondary-text-color)", this._t("consumption"), fmtKw(homePow)) : "",
       lpChips,
-      battChargePow > 0.05 ? chip("var(--evcc-orange)", this._t("battCharge"),  fmtKw(battChargePow)) : "",
+      ...battChargeChips,
       feedinPow    > 0.05 ? chip("var(--evcc-yellow)", this._t("gridExport"),   fmtKw(feedinPow))     : "",
     ].filter(Boolean).join("");
 
@@ -1675,6 +1746,7 @@ class EvccCard extends HTMLElement {
 
   _renderStatsFooter() {
     const period = this._config.stats_period ?? "total";
+    if (period === "none") return "";
     const { kwhId, solarId, priceId } = this._getStatEntityIds(period);
     if (!kwhId && !solarId && !priceId) return "";
 
@@ -1683,8 +1755,11 @@ class EvccCard extends HTMLElement {
     const solar = val(solarId);
     const price = val(priceId);
 
+    const periodTKey = { "30d": "statsPeriod30d", "365d": "statsPeriod365d", "thisYear": "statsPeriodThisYear", "total": "statsPeriodTotal" }[period] ?? "statsPeriodTotal";
+    const kwhLabel = `${this._t(periodTKey)} ${this._t("statsCharged")}`;
+
     const items = [
-      kwhId   ? `<span class="sf-item"><span class="sf-val">${Math.round(kwh)} kWh</span><span class="sf-lbl">${this._t("statsTotalCharged")}</span></span>` : "",
+      kwhId   ? `<span class="sf-item"><span class="sf-val">${Math.round(kwh)} kWh</span><span class="sf-lbl">${kwhLabel}</span></span>` : "",
       solarId ? `<span class="sf-item"><span class="sf-val" style="color:var(--evcc-green)">${Math.round(solar)} %</span><span class="sf-lbl">${this._t("statsSolarShare")}</span></span>` : "",
       priceId ? `<span class="sf-item"><span class="sf-val">${(price * 100).toFixed(1)} ct</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
     ].filter(Boolean);

@@ -58,6 +58,7 @@
   "phasesSingle": "1-fazowe",
   "phasesTriple": "3-fazowe",
   "statsTotalCharged": "Łącznie naładowano",
+  "statsCharged": "naładowano",
   "statsSolarShare": "Udział słoneczny",
   "statsAvgPrice": "Śr. cena/kWh",
   "statsLast14Days": "Ostatnie 14 dni",
