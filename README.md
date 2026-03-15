@@ -13,7 +13,7 @@ All charge points and site entities are **automatically discovered** based on th
 | Feature | Description |
 |---|---|
 | ☀️ **Site overview** | PV power bar split across home/charging/battery/feed-in, individual PV strings, live In/Out table |
-| ⚡ **Compact site overview** | Net grid value with color coding, solar share badge, source and consumer chips (`site2` mode) |
+| ⚡ **Compact site overview** | Net grid value with color coding, solar share badge, source and consumer chips (`grid` mode) |
 | ⚡ **Charge mode control** | Switch between `Off`, `PV`, `Min+PV` and `Now` with a single tap |
 | 🏠 **Home battery block** | Buffer SoC, priority SoC and discharge lock with inline sliders |
 | 📑 **Compact mode** | Tab-based layout grouping controls, settings, plan and session — ideal for space-constrained dashboards |
@@ -102,7 +102,7 @@ Add the card to any Lovelace dashboard using the YAML editor. The `mode` option 
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `site2`, `stats`, `plan` |
+| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `grid`, `stats`, `plan` |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language. Examples: `de`, `en`, `es`, `hr`, `nl` |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
@@ -172,7 +172,7 @@ site_details: collapsed   # start with the detail table hidden
 
 ---
 
-### `site2`
+### `grid`
 
 Compact site energy overview with a focus on the current grid status:
 
@@ -183,10 +183,12 @@ Compact site energy overview with a focus on the current grid status:
 
 ```yaml
 type: custom:evcc-card
-mode: site2
+mode: grid
 ```
 
-![Site2 overview](images/site2.png)
+![Grid overview](images/site2.png)
+
+> **⚠️ Deprecation notice:** `mode: site2` still works but is deprecated and will be removed in a future release. Please migrate to `mode: grid`.
 
 ---
 
