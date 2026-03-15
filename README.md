@@ -18,6 +18,7 @@ All charge points and site entities are **automatically discovered** based on th
 | 🏠 **Home battery block** | Buffer SoC, priority SoC and discharge lock with inline sliders |
 | 📑 **Compact mode** | Tab-based layout grouping controls, settings, plan and session — ideal for space-constrained dashboards |
 | 📋 **Plan mode** | Minimalist mode showing only the charge plan — ideal for dedicated dashboard pages |
+| 📈 **Statistics** | Charging KPIs (energy, solar share, avg. price) with period selector (30 days / 365 days / this year / total) and a matching bar chart (daily / monthly / yearly) |
 | 📅 **Charge planning** | Select vehicle, set target time & SoC, activate and delete plans |
 | 📊 **Session overview** | Energy, cost, duration and phases of the current charging session |
 | 🔍 **Auto-discovery** | Automatically detects all charge points and site entities — zero manual configuration |
@@ -195,16 +196,27 @@ mode: grid
 
 ### `stats`
 
-Charging statistics with period selector and a 14-day bar chart:
+Charging statistics with period selector and a matching bar chart:
 
 - **Period tabs:** 30 days · 365 days · This year · Total — switch with a single tap; the selection is remembered for the session
 - Three KPIs per period: charged energy (kWh), solar share (%), average price (ct/kWh)
-- 14-day bar chart showing daily charged energy — fetched once from the HA Recorder and cached for 5 minutes
+- The bar chart adapts to the selected period:
+
+| Tab | Chart | Bars |
+|---|---|---|
+| **30 days** | Daily values | 30 bars (day.month labels) |
+| **365 days** | Rolling monthly | 13 bars (3-letter month labels) |
+| **This year** | Monthly, current calendar year | Jan – current month |
+| **Total** | One bar per year | All available years |
+
+- Chart data is fetched lazily per tab on first access and cached for 5 minutes
 - The same three KPIs also appear as a compact footer row at the bottom of `site` and `grid` cards — the period shown there is controlled via the `stats_period` config option (default: `total`)
 
-The stat entities are auto-discovered using the pattern `sensor.{prefix}stat_*` (e.g. `sensor.evcc_stat_total_charged_kwh`).
+The stat entities are auto-discovered using the pattern `sensor.{prefix}stat_*` (e.g. `sensor.evcc_stat_total_charged_kwh`). The bar chart always uses the cumulative `sensor.{prefix}stat_total_charged_kwh` entity from the HA Recorder, independent of which KPI period is selected.
 
 > **ℹ️ Note:** The **Total** period is enabled by default in ha-evcc. The periods **30 days**, **365 days** and **This year** must be **manually enabled** in the ha-evcc integration settings (Settings → Devices & Services → ha-evcc → Configure). If a period is not yet activated, the card shows a hint with instructions directly inside the card.
+
+> **ℹ️ Single-year fallback:** If the **Total** tab detects that only one calendar year of data is available in the HA Recorder, it automatically falls back to showing the monthly breakdown of the current year — identical to the **This year** chart.
 
 ```yaml
 type: custom:evcc-card

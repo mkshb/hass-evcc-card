@@ -216,6 +216,8 @@ class EvccCard extends HTMLElement {
     this._planState     = {};
     this._tabState      = {};
     this._statsPeriod   = "total";
+    this._chartCache     = {};
+    this._chartCacheTime = {};
     this._translations  = {};
     this._translationsReady = false;
 
@@ -1498,53 +1500,139 @@ class EvccCard extends HTMLElement {
   }
 
   _maybeRefreshStats() {
-    const age = Date.now() - (this._statsHistoryFetched ?? 0);
+    const period = this._statsPeriod ?? "total";
+    const age = Date.now() - (this._chartCacheTime[period] ?? 0);
     if (age > 5 * 60 * 1000) {
-      this._statsHistoryFetched = Date.now();
-      this._fetchStatsHistory();
+      this._chartCacheTime[period] = Date.now();
+      this._fetchChartData(period);
     }
   }
 
-  async _fetchStatsHistory() {
-    const { kwhId } = this._getStatEntityIds();
+  async _fetchChartData(period) {
+    const { kwhId } = this._getStatEntityIds("total"); // always use cumulative total entity
     if (!kwhId) return;
-    const start = new Date();
-    start.setDate(start.getDate() - 15); // extra day for baseline
-    start.setHours(0, 0, 0, 0);
+
+    const now   = new Date();
+    let startTime, recorderPeriod;
+
+    if (period === "30d") {
+      startTime = new Date(now);
+      startTime.setDate(startTime.getDate() - 31);
+      startTime.setHours(0, 0, 0, 0);
+      recorderPeriod = "day";
+    } else if (period === "365d") {
+      startTime = new Date(now.getFullYear(), now.getMonth() - 14, 1);
+      recorderPeriod = "month";
+    } else if (period === "thisYear") {
+      startTime = new Date(now.getFullYear(), 0, 1);
+      recorderPeriod = "month";
+    } else { // total
+      startTime = new Date(2010, 0, 1);
+      recorderPeriod = "month";
+    }
+
     try {
       const result = await this._hass.callWS({
         type: "recorder/statistics_during_period",
-        start_time: start.toISOString(),
+        start_time: startTime.toISOString(),
         statistic_ids: [kwhId],
-        period: "day",
+        period: recorderPeriod,
         types: ["sum"],
       });
       const stats = result[kwhId] ?? [];
-      this._statsHistory = this._computeDeltasFromStats(stats, 14);
+
+      if      (period === "30d")      this._chartCache[period] = this._computeDailyDeltas(stats, 30);
+      else if (period === "365d")     this._chartCache[period] = this._computeMonthlyDeltas(stats, 13);
+      else if (period === "thisYear") this._chartCache[period] = this._computeThisYearMonthly(stats);
+      else {
+        const yearly = this._computeYearlyTotals(stats);
+        this._chartCache[period] = yearly.length <= 1
+          ? this._computeThisYearMonthly(stats)  // only one year of data → show months
+          : yearly;
+      }
+
       this._render();
     } catch(e) {
-      console.warn("[evcc-card] stats error", e);
+      console.warn("[evcc-card] chart error", e);
     }
   }
 
-  _computeDeltasFromStats(stats, days) {
-    const result = [];
+  _computeDailyDeltas(stats, days) {
+    const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
     const now = new Date();
     const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`; };
     const byKey = {};
     stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
+    const result = [];
     for (let i = days - 1; i >= 0; i--) {
       const day = new Date(now);
       day.setDate(day.getDate() - i);
       day.setHours(0, 0, 0, 0);
       const prevDay = new Date(day);
       prevDay.setDate(prevDay.getDate() - 1);
-      const cur  = byKey[toKey(day)];
-      const prev = byKey[toKey(prevDay)];
+      const cur   = byKey[toKey(day)];
+      const prev  = byKey[toKey(prevDay)];
       const delta = (cur != null && prev != null) ? Math.max(0, cur - prev) : null;
-      result.push({ delta, label: new Date(day) });
+      const labelStr = day.toLocaleDateString(lang, { day: "numeric", month: "numeric" });
+      result.push({ delta, label: day, labelStr, isCurrent: i === 0 });
     }
     return result;
+  }
+
+  _computeMonthlyDeltas(stats, count) {
+    const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
+    const now = new Date();
+    const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}`; };
+    const byKey = {};
+    stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
+    const result = [];
+    for (let i = count - 1; i >= 0; i--) {
+      const month     = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const prevMonth = new Date(month.getFullYear(), month.getMonth() - 1, 1);
+      const cur   = byKey[toKey(month)];
+      const prev  = byKey[toKey(prevMonth)];
+      const delta = (cur != null && prev != null) ? Math.max(0, cur - prev) : null;
+      const labelStr = month.toLocaleDateString(lang, { month: "short" });
+      result.push({ delta, label: month, labelStr, isCurrent: i === 0 });
+    }
+    return result;
+  }
+
+  _computeThisYearMonthly(stats) {
+    const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
+    const now  = new Date();
+    const year = now.getFullYear();
+    const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}`; };
+    const byKey = {};
+    stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
+    const result = [];
+    for (let m = 0; m <= now.getMonth(); m++) {
+      const month     = new Date(year, m, 1);
+      const prevMonth = new Date(year, m - 1, 1);
+      const cur   = byKey[toKey(month)];
+      const prev  = byKey[toKey(prevMonth)];
+      const delta = (cur != null && prev != null) ? Math.max(0, cur - prev) : null;
+      const labelStr = month.toLocaleDateString(lang, { month: "short" });
+      result.push({ delta, label: month, labelStr, isCurrent: m === now.getMonth() });
+    }
+    return result;
+  }
+
+  _computeYearlyTotals(stats) {
+    const now = new Date();
+    const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}`; };
+    const byKey = {};
+    stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
+    const years = [...new Set(stats.map(s => new Date(s.start).getFullYear()))].sort();
+    return years.map(year => {
+      let yearTotal = 0, hasAny = false;
+      for (let m = 0; m <= 11; m++) {
+        const cur  = byKey[`${year}-${m}`];
+        const prev = byKey[m === 0 ? `${year - 1}-11` : `${year}-${m - 1}`];
+        if (cur != null && prev != null) { yearTotal += Math.max(0, cur - prev); hasAny = true; }
+      }
+      return { delta: hasAny ? yearTotal : null, label: new Date(year, 0, 1), labelStr: String(year), isCurrent: year === now.getFullYear() };
+    });
   }
 
   _renderBarChart(data) {
@@ -1552,28 +1640,26 @@ class EvccCard extends HTMLElement {
     const n = data.length, GAP = 2;
     const barW = Math.floor((W - (n - 1) * GAP) / n);
     const maxVal = Math.max(...data.map(d => d.delta ?? 0), 0.1);
-    const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
 
     const bars = data.map((d, i) => {
-      const x = i * (barW + GAP);
-      const isToday = i === n - 1;
+      const x          = i * (barW + GAP);
+      const isCurrent  = d.isCurrent ?? (i === n - 1);
       let h = 0, y = VALUE_H + BAR_H;
       if (d.delta !== null && d.delta > 0) {
         h = Math.max(2, Math.round((d.delta / maxVal) * BAR_H));
         y = VALUE_H + BAR_H - h;
       }
-      const dateStr = d.label.toLocaleDateString(lang, { day: "numeric", month: "numeric" });
       const valLabel = (d.delta !== null && d.delta > 0)
         ? `<text transform="translate(${x + barW / 2}, ${y - 2}) rotate(-45)"
                 text-anchor="start" font-size="6.5" fill="var(--secondary-text-color,#888)"
-                opacity="${isToday ? "1" : "0.75"}">${d.delta.toFixed(2)}</text>`
+                opacity="${isCurrent ? "1" : "0.75"}">${d.delta.toFixed(1)}</text>`
         : "";
       return `${valLabel}
               <rect x="${x}" y="${y}" width="${barW}" height="${Math.max(h,1)}"
-                    fill="var(--primary-color,#3b82f6)" opacity="${isToday ? "1" : "0.45"}" rx="1.5"/>
+                    fill="var(--primary-color,#3b82f6)" opacity="${isCurrent ? "1" : "0.45"}" rx="1.5"/>
               <text transform="translate(${x + barW / 2}, ${VALUE_H + BAR_H + 4}) rotate(90)"
                     text-anchor="start" font-size="7" fill="var(--secondary-text-color,#888)"
-                    opacity="${isToday ? "1" : "0.75"}">${dateStr}</text>`;
+                    opacity="${isCurrent ? "1" : "0.75"}">${d.labelStr}</text>`;
     }).join("");
 
     return `<svg viewBox="0 0 ${W} ${TOTAL_H}" style="width:100%;display:block">${bars}</svg>`;
@@ -1620,11 +1706,15 @@ class EvccCard extends HTMLElement {
       kpi(price, this._t("statsAvgPrice")     || "Ø Preis/kWh",    v => `${(v * 100).toFixed(1)} ct`, null),
     ].join("");
 
-    const chart = kwhId ? `
+    const { kwhId: chartKwhId } = this._getStatEntityIds("total");
+    const period     = this._statsPeriod ?? "total";
+    const chartData  = this._chartCache[period];
+    const chartTitle = this._t({ "30d": "statsPeriod30d", "365d": "statsPeriod365d", "thisYear": "statsPeriodThisYear", "total": "statsPeriodTotal" }[period]);
+    const chart = chartKwhId ? `
       <div class="stats-chart-section">
-        <div class="stats-chart-title">${this._t("statsLast14Days") || "Letzte 14 Tage"}</div>
-        ${this._statsHistory
-          ? this._renderBarChart(this._statsHistory)
+        <div class="stats-chart-title">${chartTitle}</div>
+        ${chartData
+          ? this._renderBarChart(chartData)
           : '<div class="stats-chart-loading">…</div>'}
       </div>` : "";
 
