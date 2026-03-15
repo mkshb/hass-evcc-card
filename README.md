@@ -146,6 +146,12 @@ type: custom:evcc-card
 charge_current_settings: expanded   # show charge current block expanded by default
 ```
 
+```yaml
+type: custom:evcc-card
+no_plan:
+  - wallbox-garage   # hide the charge plan block for this charge point
+```
+
 ![Loadpoint block](images/chargepoint.png)
 
 ---
