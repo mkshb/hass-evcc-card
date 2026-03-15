@@ -8,25 +8,28 @@ All charge points and site entities are **automatically discovered** based on th
 
 ---
 
-## Features
+## Modes
+
+| Mode | Description |
+|---|---|
+| ⚡ `loadpoint` | Main charge point view — mode buttons, SoC bar, session, sliders, phase switch, charge plan |
+| ☀️ `site` | Full site energy overview — PV bar, individual strings, live In/Out table with battery & charge point details |
+| 🔌 `grid` | Compact grid focus — large net value with color coding, solar share badge, source and consumer chips |
+| 📈 `stats` | Charging statistics — KPIs with period selector (30d / 365d / this year / total) and solar trend bar chart |
+| 🏠 `battery` | Home battery block — SoC indicator, buffer & priority sliders, discharge lock |
+| 📑 `compact` | Tab layout of `loadpoint` — Control / Settings / Plan / Session, ideal for space-constrained dashboards |
+| 📋 `plan` | Minimalist charge plan only — vehicle selector, target time & SoC, activate / delete |
+
+## General Features
 
 | Feature | Description |
 |---|---|
-| ☀️ **Site overview** | PV power bar split across home/charging/battery/feed-in, individual PV strings, live In/Out table |
-| ⚡ **Compact site overview** | Net grid value with color coding, solar share badge, source and consumer chips (`grid` mode) |
-| ⚡ **Charge mode control** | Switch between `Off`, `PV`, `Min+PV` and `Now` with a single tap |
-| 🏠 **Home battery block** | Buffer SoC, priority SoC and discharge lock with inline sliders |
-| 📑 **Compact mode** | Tab-based layout grouping controls, settings, plan and session — ideal for space-constrained dashboards |
-| 📋 **Plan mode** | Minimalist mode showing only the charge plan — ideal for dedicated dashboard pages |
-| 📈 **Statistics** | Charging KPIs (energy, solar share, avg. price) with period selector (30 days / 365 days / this year / total) and a matching bar chart (daily / monthly / yearly) |
-| 📅 **Charge planning** | Select vehicle, set target time & SoC, activate and delete plans |
-| 📊 **Session overview** | Energy, cost, duration and phases of the current charging session |
 | 🔍 **Auto-discovery** | Automatically detects all charge points and site entities — zero manual configuration |
+| 🔄 **Live updates** | Power, SoC and status update in real time without full re-render |
 | 🔋 **SoC display** | Vehicle state of charge as a progress bar with percentage and estimated range |
 | 🎚️ **Slider controls** | Adjust Target SoC, Min SoC, Priority, Max current and Min current inline |
 | 🔌 **Phase switching** | Auto / 1-phase / 3-phase control built in |
 | 🌍 **Multi-language** | Support for various languages — auto-detected from HA language setting, easily extensible |
-| 🔄 **Live updates** | Power, SoC and status update in real time without full re-render |
 | 🎛️ **Filtering** | Select specific charge points via `loadpoints` config |
 
 ---
