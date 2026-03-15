@@ -69,5 +69,6 @@
   "statsPeriod365d": "365 dagen",
   "statsPeriodThisYear": "Dit jaar",
   "statsPeriodTotal": "Totaal",
-  "statsNoData": "Periode niet ingeschakeld – activeer deze in de ha-evcc integratie-instellingen."
+  "statsNoData": "Periode niet ingeschakeld – activeer deze in de ha-evcc integratie-instellingen.",
+  "statsGrid": "Net"
 }

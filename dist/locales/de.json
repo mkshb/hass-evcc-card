@@ -69,5 +69,6 @@
   "statsPeriod365d": "365 Tage",
   "statsPeriodThisYear": "Dieses Jahr",
   "statsPeriodTotal": "Gesamt",
-  "statsNoData": "Zeitraum nicht aktiviert – bitte in der ha-evcc Integration unter Einstellungen aktivieren."
+  "statsNoData": "Zeitraum nicht aktiviert – bitte in der ha-evcc Integration unter Einstellungen aktivieren.",
+  "statsGrid": "Netz"
 }

@@ -69,5 +69,6 @@
   "statsPeriod365d": "365 jours",
   "statsPeriodThisYear": "Cette année",
   "statsPeriodTotal": "Total",
-  "statsNoData": "Période non activée – veuillez l'activer dans les paramètres de l'intégration ha-evcc."
+  "statsNoData": "Période non activée – veuillez l'activer dans les paramètres de l'intégration ha-evcc.",
+  "statsGrid": "Réseau"
 }

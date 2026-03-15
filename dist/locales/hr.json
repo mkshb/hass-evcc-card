@@ -69,5 +69,6 @@
   "statsPeriod365d": "365 dana",
   "statsPeriodThisYear": "Ova godina",
   "statsPeriodTotal": "Ukupno",
-  "statsNoData": "Period nije aktiviran – aktivirajte ga u postavkama ha-evcc integracije."
+  "statsNoData": "Period nije aktiviran – aktivirajte ga u postavkama ha-evcc integracije.",
+  "statsGrid": "Mreža"
 }

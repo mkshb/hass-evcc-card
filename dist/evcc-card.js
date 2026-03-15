@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.4.2";
+const EVCC_CARD_VERSION = "0.4.3";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -1509,7 +1509,7 @@ class EvccCard extends HTMLElement {
   }
 
   async _fetchChartData(period) {
-    const { kwhId, solarId } = this._getStatEntityIds("total"); // always use cumulative total entity
+    const { kwhId } = this._getStatEntityIds("total"); // always use cumulative total entities
     if (!kwhId) return;
 
     const now   = new Date();
@@ -1532,24 +1532,22 @@ class EvccCard extends HTMLElement {
     }
 
     try {
-      const statIds = solarId ? [kwhId, solarId] : [kwhId];
       const result = await this._hass.callWS({
         type: "recorder/statistics_during_period",
         start_time: startTime.toISOString(),
-        statistic_ids: statIds,
+        statistic_ids: [kwhId],
         period: recorderPeriod,
-        types: solarId ? ["sum", "mean"] : ["sum"],
+        types: ["sum"],
       });
-      const stats      = result[kwhId]  ?? [];
-      const solarStats = solarId ? (result[solarId] ?? []) : [];
+      const stats = result[kwhId] ?? [];
 
-      if      (period === "30d")      this._chartCache[period] = this._computeDailyDeltas(stats, 30, solarStats);
-      else if (period === "365d")     this._chartCache[period] = this._computeMonthlyDeltas(stats, 13, solarStats);
-      else if (period === "thisYear") this._chartCache[period] = this._computeThisYearMonthly(stats, solarStats);
+      if      (period === "30d")      this._chartCache[period] = this._computeDailyDeltas(stats, 30);
+      else if (period === "365d")     this._chartCache[period] = this._computeMonthlyDeltas(stats, 13);
+      else if (period === "thisYear") this._chartCache[period] = this._computeThisYearMonthly(stats);
       else {
-        const yearly = this._computeYearlyTotals(stats, solarStats);
+        const yearly = this._computeYearlyTotals(stats);
         this._chartCache[period] = yearly.length <= 1
-          ? this._computeThisYearMonthly(stats, solarStats)  // only one year of data → show months
+          ? this._computeThisYearMonthly(stats)  // only one year of data → show months
           : yearly;
       }
 
@@ -1559,14 +1557,12 @@ class EvccCard extends HTMLElement {
     }
   }
 
-  _computeDailyDeltas(stats, days, solarStats = []) {
+  _computeDailyDeltas(stats, days) {
     const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
     const now = new Date();
     const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`; };
     const byKey = {};
     stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
-    const solarByKey = {};
-    solarStats.forEach(s => { if (s.mean != null) solarByKey[toKey(s.start)] = s.mean; });
     const result = [];
     for (let i = days - 1; i >= 0; i--) {
       const day = new Date(now);
@@ -1577,21 +1573,18 @@ class EvccCard extends HTMLElement {
       const cur   = byKey[toKey(day)];
       const prev  = byKey[toKey(prevDay)];
       const delta = (cur != null && prev != null) ? Math.max(0, cur - prev) : null;
-      const solar = solarByKey[toKey(day)] ?? null;
       const labelStr = day.toLocaleDateString(lang, { day: "numeric", month: "numeric" });
-      result.push({ delta, label: day, labelStr, isCurrent: i === 0, solar });
+      result.push({ delta, label: day, labelStr, isCurrent: i === 0 });
     }
     return result;
   }
 
-  _computeMonthlyDeltas(stats, count, solarStats = []) {
+  _computeMonthlyDeltas(stats, count) {
     const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
     const now = new Date();
     const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}`; };
     const byKey = {};
     stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
-    const solarByKey = {};
-    solarStats.forEach(s => { if (s.mean != null) solarByKey[toKey(s.start)] = s.mean; });
     const result = [];
     for (let i = count - 1; i >= 0; i--) {
       const month     = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -1599,22 +1592,19 @@ class EvccCard extends HTMLElement {
       const cur   = byKey[toKey(month)];
       const prev  = byKey[toKey(prevMonth)];
       const delta = (cur != null && prev != null) ? Math.max(0, cur - prev) : null;
-      const solar = solarByKey[toKey(month)] ?? null;
       const labelStr = month.toLocaleDateString(lang, { month: "short" });
-      result.push({ delta, label: month, labelStr, isCurrent: i === 0, solar });
+      result.push({ delta, label: month, labelStr, isCurrent: i === 0 });
     }
     return result;
   }
 
-  _computeThisYearMonthly(stats, solarStats = []) {
+  _computeThisYearMonthly(stats) {
     const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
     const now  = new Date();
     const year = now.getFullYear();
     const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}`; };
     const byKey = {};
     stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
-    const solarByKey = {};
-    solarStats.forEach(s => { if (s.mean != null) solarByKey[toKey(s.start)] = s.mean; });
     const result = [];
     for (let m = 0; m <= now.getMonth(); m++) {
       const month     = new Date(year, m, 1);
@@ -1622,20 +1612,17 @@ class EvccCard extends HTMLElement {
       const cur   = byKey[toKey(month)];
       const prev  = byKey[toKey(prevMonth)];
       const delta = (cur != null && prev != null) ? Math.max(0, cur - prev) : null;
-      const solar = solarByKey[toKey(month)] ?? null;
       const labelStr = month.toLocaleDateString(lang, { month: "short" });
-      result.push({ delta, label: month, labelStr, isCurrent: m === now.getMonth(), solar });
+      result.push({ delta, label: month, labelStr, isCurrent: m === now.getMonth() });
     }
     return result;
   }
 
-  _computeYearlyTotals(stats, solarStats = []) {
+  _computeYearlyTotals(stats) {
     const now = new Date();
     const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}`; };
     const byKey = {};
     stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
-    const solarByKey = {};
-    solarStats.forEach(s => { if (s.mean != null) solarByKey[toKey(s.start)] = s.mean; });
     const years = [...new Set(stats.map(s => new Date(s.start).getFullYear()))].sort();
     return years.map(year => {
       let yearTotal = 0, hasAny = false;
@@ -1644,14 +1631,7 @@ class EvccCard extends HTMLElement {
         const prev = byKey[m === 0 ? `${year - 1}-11` : `${year}-${m - 1}`];
         if (cur != null && prev != null) { yearTotal += Math.max(0, cur - prev); hasAny = true; }
       }
-      // Average the monthly mean values of stat_total_solar_percentage within this year
-      const solarVals = [];
-      for (let m = 0; m <= 11; m++) {
-        const v = solarByKey[`${year}-${m}`];
-        if (v != null) solarVals.push(v);
-      }
-      const solar = solarVals.length > 0 ? solarVals.reduce((a, b) => a + b, 0) / solarVals.length : null;
-      return { delta: hasAny ? yearTotal : null, label: new Date(year, 0, 1), labelStr: String(year), isCurrent: year === now.getFullYear(), solar };
+      return { delta: hasAny ? yearTotal : null, label: new Date(year, 0, 1), labelStr: String(year), isCurrent: year === now.getFullYear() };
     });
   }
 
@@ -1662,42 +1642,35 @@ class EvccCard extends HTMLElement {
     const maxVal = Math.max(...data.map(d => d.delta ?? 0), 0.1);
 
     const bars = data.map((d, i) => {
-      const x          = i * (barW + GAP);
-      const isCurrent  = d.isCurrent ?? (i === n - 1);
-      let h = 0, y = VALUE_H + BAR_H;
+      const x         = i * (barW + GAP);
+      const cx        = x + barW / 2;
+      const isCurrent = d.isCurrent ?? (i === n - 1);
+      const opacity   = isCurrent ? "0.75" : "0.35";
+      let totalH = 0, topY = VALUE_H + BAR_H;
       if (d.delta !== null && d.delta > 0) {
-        h = Math.max(2, Math.round((d.delta / maxVal) * BAR_H));
-        y = VALUE_H + BAR_H - h;
+        totalH = Math.max(2, Math.round((d.delta / maxVal) * BAR_H));
+        topY   = VALUE_H + BAR_H - totalH;
       }
+
       const valLabel = (d.delta !== null && d.delta > 0)
-        ? `<text transform="translate(${x + barW / 2}, ${y - 2}) rotate(-45)"
+        ? `<text transform="translate(${cx}, ${topY - 2}) rotate(-45)"
                 text-anchor="start" font-size="6.5" fill="var(--secondary-text-color,#888)"
                 opacity="${isCurrent ? "1" : "0.75"}">${d.delta.toFixed(1)}</text>`
         : "";
-      return `${valLabel}
-              <rect x="${x}" y="${y}" width="${barW}" height="${Math.max(h,1)}"
-                    fill="var(--primary-color,#3b82f6)" opacity="${isCurrent ? "0.7" : "0.3"}" rx="1.5"/>
-              <text transform="translate(${x + barW / 2}, ${VALUE_H + BAR_H + 4}) rotate(90)"
-                    text-anchor="start" font-size="7" fill="var(--secondary-text-color,#888)"
-                    opacity="${isCurrent ? "1" : "0.75"}">${d.labelStr}</text>`;
+
+      const barRect = totalH > 0
+        ? `<rect x="${x}" y="${topY}" width="${barW}" height="${totalH}"
+                 fill="var(--primary-color,#3b82f6)" opacity="${opacity}" rx="1.5"/>`
+        : "";
+
+      const labelText = `<text transform="translate(${cx}, ${VALUE_H + BAR_H + 4}) rotate(90)"
+                               text-anchor="start" font-size="7" fill="var(--secondary-text-color,#888)"
+                               opacity="${isCurrent ? "1" : "0.75"}">${d.labelStr}</text>`;
+
+      return `${valLabel}${barRect}${labelText}`;
     }).join("");
 
-    // Solar % trend line — drawn over bars when per-bar solar data is available
-    const solarPts = data
-      .map((d, i) => d.solar != null
-        ? { x: i * (barW + GAP) + barW / 2, y: VALUE_H + BAR_H - (d.solar / 100) * BAR_H }
-        : null)
-      .filter(Boolean);
-    const solarOverlay = solarPts.length >= 2 ? (() => {
-      const pts  = solarPts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-      const dots = solarPts.map(p =>
-        `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="1.0"
-                 fill="var(--evcc-green,#22c55e)" opacity="0.7"/>`).join("");
-      return `<polyline points="${pts}" fill="none" stroke="var(--evcc-green,#22c55e)"
-                        stroke-width="1.0" stroke-linejoin="round" opacity="0.6"/>${dots}`;
-    })() : "";
-
-    return `<svg viewBox="0 0 ${W} ${TOTAL_H}" style="width:100%;display:block">${bars}${solarOverlay}</svg>`;
+    return `<svg viewBox="0 0 ${W} ${TOTAL_H}" style="width:100%;display:block">${bars}</svg>`;
   }
 
   _renderStatsFooter() {
