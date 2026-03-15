@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.3.9";
+const EVCC_CARD_VERSION = "0.4.0";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -412,7 +412,7 @@ class EvccCard extends HTMLElement {
           </span>
         </div>
         ${this._renderModeSelector(ents)}
-        ${this._renderSocBar(ents, charging)}
+        ${this._renderVehicleInfo(ents, charging)}
         ${this._renderPowerRow(ents, charging)}
         ${this._renderSliders(ents)}
         ${this._renderCurrentBlock(ents, lpName)}
@@ -454,6 +454,7 @@ class EvccCard extends HTMLElement {
     const tabContent = [
       `<div class="compact-panel" ${activeTab !== 0 ? 'hidden' : ''}>
         ${this._renderModeSelector(ents)}
+        ${this._renderVehicleInfo(ents, charging)}
         ${this._renderPowerRow(ents, charging)}
       </div>`,
       `<div class="compact-panel" ${activeTab !== 1 ? 'hidden' : ''}>
@@ -521,6 +522,40 @@ class EvccCard extends HTMLElement {
             ? `<div class="soc-limit-marker" style="left:${Math.min(limit,100)}%"></div>`
             : ""}
         </div>
+      </div>
+    `;
+  }
+
+  _renderVehicleInfo(ents, charging = false) {
+    if (!ents.vehicle_soc && !ents.vehicle_name) return "";
+    const vehicleAttrs = ents.vehicle_name
+      ? (this._hass.states[ents.vehicle_name]?.attributes ?? {}) : {};
+    const vehicleName  = vehicleAttrs.vehicle?.name || null;
+    const validName    = vehicleName && vehicleName !== "null" ? vehicleName : null;
+
+    if (!ents.vehicle_soc && !validName) return "";
+
+    const soc   = ents.vehicle_soc ? parseFloat(stateVal(this._hass, ents.vehicle_soc)) || 0 : null;
+    const range = ents.vehicle_range
+      ? Math.round(parseFloat(stateVal(this._hass, ents.vehicle_range))) : null;
+    const limit = ents.limit_soc
+      ? parseFloat(stateVal(this._hass, ents.limit_soc)) : null;
+    const color = soc !== null ? (soc > 80 ? "#22c55e" : soc > 30 ? "#3b82f6" : "#f59e0b") : "#3b82f6";
+
+    return `
+      <div class="soc-section">
+        <div class="soc-label-row">
+          ${validName ? `<span class="vehicle-name"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M5,11L6.5,6.5H17.5L19,11M17.5,16A1.5,1.5 0 0,1 16,14.5A1.5,1.5 0 0,1 17.5,13A1.5,1.5 0 0,1 19,14.5A1.5,1.5 0 0,1 17.5,16M6.5,16A1.5,1.5 0 0,1 5,14.5A1.5,1.5 0 0,1 6.5,13A1.5,1.5 0 0,1 8,14.5A1.5,1.5 0 0,1 6.5,16M18.92,6C18.72,5.42 18.16,5 17.5,5H6.5C5.84,5 5.28,5.42 5.08,6L3,12V20A1,1 0 0,0 4,21H5A1,1 0 0,0 6,20V19H18V20A1,1 0 0,0 19,21H20A1,1 0 0,0 21,20V12L18.92,6Z"/></svg> ${validName}</span>` : ""}
+          ${soc !== null ? `<span data-live-entity="${ents.vehicle_soc}" data-live-type="soc-pct"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${unitStr(this._hass, ents.vehicle_soc)}</span>` : ""}
+          ${range !== null ? `<span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M11.5 0L9 8H11V16H13V8H15L11.5 0M3 18V20H21V18L11.5 16L3 18Z"/></svg> ${range} km</span>` : ""}
+        </div>
+        ${soc !== null ? `
+        <div class="soc-track">
+          <div class="soc-fill ${charging ? 'charging' : ''}"
+               data-live-entity="${ents.vehicle_soc}" data-live-type="soc-fill"
+               style="width:${soc}%;background:${color}"></div>
+          ${limit !== null ? `<div class="soc-limit-marker" style="left:${Math.min(limit,100)}%"></div>` : ""}
+        </div>` : ""}
       </div>
     `;
   }
@@ -2037,6 +2072,7 @@ class EvccCard extends HTMLElement {
         display: flex; justify-content: space-between;
         font-size: .85rem; margin-bottom: 6px; color: var(--secondary-text-color);
       }
+      .vehicle-name { font-weight: 500; color: var(--primary-text-color); }
       .soc-track {
         position: relative; height: 8px;
         background: var(--divider-color, #e5e7eb); border-radius: 4px; overflow: visible;
