@@ -12,13 +12,13 @@ All charge points and site entities are **automatically discovered** based on th
 
 | Mode | Description |
 |---|---|
-| ⚡ `loadpoint` | Main charge point view — mode buttons, SoC bar, session, sliders, phase switch, charge plan |
-| ☀️ `site` | Full site energy overview — PV bar, individual strings, live In/Out table with battery & charge point details |
-| 🔌 `grid` | Compact grid focus — large net value with color coding, solar share badge, source and consumer chips |
-| 📈 `stats` | Charging statistics — KPIs with period selector (30d / 365d / this year / total) and solar trend bar chart |
-| 🏠 `battery` | Home battery block — SoC indicator, buffer & priority sliders, discharge lock |
-| 📑 `compact` | Tab layout of `loadpoint` — Control / Settings / Plan / Session, ideal for space-constrained dashboards |
-| 📋 `plan` | Minimalist charge plan only — vehicle selector, target time & SoC, activate / delete |
+| ⚡ [`loadpoint`](#loadpoint-default) | Main charge point view — mode buttons, SoC bar, session, sliders, phase switch, charge plan |
+| ☀️ [`site`](#site) | Full site energy overview — PV bar, individual strings, live In/Out table with battery & charge point details |
+| 🔌 [`grid`](#grid) | Compact grid focus — large net value with color coding, solar share badge, source and consumer chips |
+| 📈 [`stats`](#stats) | Charging statistics — KPIs with period selector (30d / 365d / this year / total) and solar trend bar chart |
+| 🏠 [`battery`](#battery) | Home battery block — SoC indicator, buffer & priority sliders, discharge lock |
+| 📑 [`compact`](#compact) | Tab layout of `loadpoint` — Control / Settings / Plan / Session, ideal for space-constrained dashboards |
+| 📋 [`plan`](#plan) | Minimalist charge plan only — vehicle selector, target time & SoC, activate / delete |
 
 ## General Features
 
