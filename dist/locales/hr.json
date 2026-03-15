@@ -64,5 +64,10 @@
   "tabControl": "Kontrola",
   "tabSettings": "Postavke",
   "tabPlan": "Plan",
-  "tabSession": "Postupak"
+  "tabSession": "Postupak",
+  "statsPeriod30d": "30 dana",
+  "statsPeriod365d": "365 dana",
+  "statsPeriodThisYear": "Ova godina",
+  "statsPeriodTotal": "Ukupno",
+  "statsNoData": "Period nije aktiviran – aktivirajte ga u postavkama ha-evcc integracije."
 }

@@ -64,5 +64,10 @@
   "tabControl": "Commande",
   "tabSettings": "Paramètres",
   "tabPlan": "Plan",
-  "tabSession": "Session"
+  "tabSession": "Session",
+  "statsPeriod30d": "30 jours",
+  "statsPeriod365d": "365 jours",
+  "statsPeriodThisYear": "Cette année",
+  "statsPeriodTotal": "Total",
+  "statsNoData": "Période non activée – veuillez l'activer dans les paramètres de l'intégration ha-evcc."
 }

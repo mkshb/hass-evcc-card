@@ -215,6 +215,7 @@ class EvccCard extends HTMLElement {
     this._lastRenderKey = null;
     this._planState     = {};
     this._tabState      = {};
+    this._statsPeriod   = "total";
     this._translations  = {};
     this._translationsReady = false;
 
@@ -1464,17 +1465,36 @@ class EvccCard extends HTMLElement {
       </div>`;
   }
 
-  _getStatEntityIds() {
-    const p = (this._config.prefix || "evcc_") + "stat_";
-    const find = s => {
-      const id = `sensor.${p}${s}`;
-      return this._hass?.states[id] ? id : null;
+  _getStatEntityIds(period) {
+    const per    = period ?? this._statsPeriod ?? "total";
+    const base   = `sensor.${this._config.prefix || "evcc_"}`;
+    const find   = id => this._hass?.states[id] ? id : null;
+    const sufMap = {
+      total:    { kwh: "stat_total_charged_kwh",    solar: "stat_total_solar_percentage",    price: "stat_total_avg_price"    },
+      "30d":    { kwh: "stat30_charged_kwh",         solar: "stat30_solar_percentage",         price: "stat30_avg_price"         },
+      "365d":   { kwh: "stat365_charged_kwh",        solar: "stat365_solar_percentage",        price: "stat365_avg_price"        },
+      thisYear: { kwh: "stat_this_year_charged_kwh", solar: "stat_this_year_solar_percentage", price: "stat_this_year_avg_price" },
     };
+    const s = sufMap[per] ?? sufMap.total;
     return {
-      kwhId:   find("total_charged_kwh"),
-      solarId: find("total_solar_percentage"),
-      priceId: find("total_avg_price"),
+      kwhId:   find(`${base}${s.kwh}`),
+      solarId: find(`${base}${s.solar}`),
+      priceId: find(`${base}${s.price}`),
     };
+  }
+
+  _renderStatsPeriodTabs(size = "normal") {
+    const cur  = this._statsPeriod ?? "total";
+    const defs = [
+      { key: "30d",      tKey: "statsPeriod30d"      },
+      { key: "365d",     tKey: "statsPeriod365d"     },
+      { key: "thisYear", tKey: "statsPeriodThisYear" },
+      { key: "total",    tKey: "statsPeriodTotal"    },
+    ];
+    const btns = defs.map(d =>
+      `<button class="stats-period-tab${d.key === cur ? " active" : ""}" data-period="${d.key}">${this._t(d.tKey)}</button>`
+    ).join("");
+    return `<div class="stats-period-tabs${size === "small" ? " stats-period-tabs--small" : ""}">${btns}</div>`;
   }
 
   _maybeRefreshStats() {
@@ -1560,7 +1580,8 @@ class EvccCard extends HTMLElement {
   }
 
   _renderStatsFooter() {
-    const { kwhId, solarId, priceId } = this._getStatEntityIds();
+    const period = this._config.stats_period ?? "total";
+    const { kwhId, solarId, priceId } = this._getStatEntityIds(period);
     if (!kwhId && !solarId && !priceId) return "";
 
     const val = id => id ? (parseFloat(stateVal(this._hass, id)) || 0) : null;
@@ -1569,9 +1590,9 @@ class EvccCard extends HTMLElement {
     const price = val(priceId);
 
     const items = [
-      kwhId   ? `<span class="sf-item"><span class="sf-val">${Math.round(kwh)} kWh</span><span class="sf-lbl">${this._t("statsTotalCharged") || "Geladen"}</span></span>` : "",
-      solarId ? `<span class="sf-item"><span class="sf-val" style="color:var(--evcc-green)">${Math.round(solar)} %</span><span class="sf-lbl">${this._t("statsSolarShare") || "Solar"}</span></span>` : "",
-      priceId ? `<span class="sf-item"><span class="sf-val">${(price * 100).toFixed(1)} ct</span><span class="sf-lbl">${this._t("statsAvgPrice") || "Ø ct/kWh"}</span></span>` : "",
+      kwhId   ? `<span class="sf-item"><span class="sf-val">${Math.round(kwh)} kWh</span><span class="sf-lbl">${this._t("statsTotalCharged")}</span></span>` : "",
+      solarId ? `<span class="sf-item"><span class="sf-val" style="color:var(--evcc-green)">${Math.round(solar)} %</span><span class="sf-lbl">${this._t("statsSolarShare")}</span></span>` : "",
+      priceId ? `<span class="sf-item"><span class="sf-val">${(price * 100).toFixed(1)} ct</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
     ].filter(Boolean);
 
     if (items.length === 0) return "";
@@ -1607,11 +1628,17 @@ class EvccCard extends HTMLElement {
           : '<div class="stats-chart-loading">…</div>'}
       </div>` : "";
 
+    const noDataHint = (!kwhId && !solarId && !priceId && this._statsPeriod !== "total")
+      ? `<div class="stats-no-data">${this._t("statsNoData")}</div>`
+      : "";
+
     return `
       <div>
         <div class="lp-header">
           <span class="lp-name">${this._t("statistics")}</span>
         </div>
+        ${this._renderStatsPeriodTabs()}
+        ${noDataHint}
         <div class="stats-kpi-row">${kpis}</div>
         ${chart}
       </div>`;
@@ -1790,6 +1817,13 @@ class EvccCard extends HTMLElement {
           b.classList.toggle("active", i === tabIdx));
         block.querySelectorAll(".compact-panel").forEach((p, i) =>
           i === tabIdx ? p.removeAttribute("hidden") : p.setAttribute("hidden", ""));
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.stats-period-tab").forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._statsPeriod = btn.dataset.period;
+        this._render();
       });
     });
 
@@ -2280,6 +2314,22 @@ class EvccCard extends HTMLElement {
       .s2-chip-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
       .s2-chip-sub { font-size: .62rem; color: var(--secondary-text-color); font-weight: 400; }
 
+      .stats-period-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+      .stats-period-tab {
+        padding: 2px 10px; border-radius: 999px;
+        border: 1px solid var(--divider-color, #e5e7eb);
+        background: transparent; color: var(--secondary-text-color);
+        cursor: pointer; font-size: .72rem; font-weight: 600; transition: all .15s;
+      }
+      .stats-period-tab.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+      .stats-period-tabs--small .stats-period-tab { font-size: .65rem; padding: 1px 8px; }
+
+      .stats-footer-wrap {
+        border-top: 1px solid var(--divider-color, #333);
+        margin-top: 12px; padding-top: 8px;
+      }
+      .stats-footer-wrap .stats-footer { border-top: none; margin-top: 6px; padding-top: 0; }
+
       .stats-footer {
         display: flex; align-items: center;
         border-top: 1px solid var(--divider-color, #333);
@@ -2289,6 +2339,13 @@ class EvccCard extends HTMLElement {
       .sf-val  { font-size: .82rem; font-weight: 700; }
       .sf-lbl  { font-size: .58rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
       .sf-sep  { width: 1px; height: 28px; background: var(--divider-color, #333); flex-shrink: 0; }
+
+      .stats-no-data {
+        font-size: .76rem; color: var(--secondary-text-color);
+        background: var(--secondary-background-color, rgba(255,255,255,.04));
+        border: 1px solid var(--divider-color, #333);
+        border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; line-height: 1.4;
+      }
 
       .stats-kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
       .stats-kpi {

@@ -64,5 +64,10 @@
   "tabControl": "Steuerung",
   "tabSettings": "Einstellungen",
   "tabPlan": "Plan",
-  "tabSession": "Session"
+  "tabSession": "Session",
+  "statsPeriod30d": "30 Tage",
+  "statsPeriod365d": "365 Tage",
+  "statsPeriodThisYear": "Dieses Jahr",
+  "statsPeriodTotal": "Gesamt",
+  "statsNoData": "Zeitraum nicht aktiviert – bitte in der ha-evcc Integration unter Einstellungen aktivieren."
 }

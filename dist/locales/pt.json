@@ -64,5 +64,10 @@
   "tabControl": "Controlo",
   "tabSettings": "Definições",
   "tabPlan": "Plano",
-  "tabSession": "Sessão"
+  "tabSession": "Sessão",
+  "statsPeriod30d": "30 dias",
+  "statsPeriod365d": "365 dias",
+  "statsPeriodThisYear": "Este ano",
+  "statsPeriodTotal": "Total",
+  "statsNoData": "Período não ativado – ative nas definições da integração ha-evcc."
 }

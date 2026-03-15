@@ -64,5 +64,10 @@
   "tabControl": "Sterowanie",
   "tabSettings": "Ustawienia",
   "tabPlan": "Plan",
-  "tabSession": "Sesja"
+  "tabSession": "Sesja",
+  "statsPeriod30d": "30 dni",
+  "statsPeriod365d": "365 dni",
+  "statsPeriodThisYear": "Ten rok",
+  "statsPeriodTotal": "Łącznie",
+  "statsNoData": "Okres nieaktywny – włącz go w ustawieniach integracji ha-evcc."
 }

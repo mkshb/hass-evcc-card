@@ -109,6 +109,7 @@ Add the card to any Lovelace dashboard using the YAML editor. The `mode` option 
 | `site_details` | `string` | *(expanded)* | Set to `collapsed` to hide the IN/OUT detail table by default in `site` mode |
 | `charge_current_settings` | `string` | *(collapsed)* | Set to `expanded` to show the charge current block (phase switch, min/max current) expanded by default |
 | `prefix` | `string` | `evcc_` | Entity name prefix used by the integration — only needed if you run multiple EVCC instances with a custom prefix (e.g. `evcc2_`) |
+| `stats_period` | `string` | `total` | Statistics period shown in the footer of `site` and `grid` cards. Allowed values: `total`, `30d`, `365d`, `thisYear`. The `stats` card always shows an interactive tab selector regardless of this option. |
 
 ---
 
@@ -194,13 +195,16 @@ mode: grid
 
 ### `stats`
 
-Lifetime charging statistics with a 14-day bar chart:
+Charging statistics with period selector and a 14-day bar chart:
 
-- Three KPIs: total charged energy (kWh), solar share (%), average price (ct/kWh)
+- **Period tabs:** 30 days · 365 days · This year · Total — switch with a single tap; the selection is remembered for the session
+- Three KPIs per period: charged energy (kWh), solar share (%), average price (ct/kWh)
 - 14-day bar chart showing daily charged energy — fetched once from the HA Recorder and cached for 5 minutes
-- The same three KPIs also appear as a compact footer row at the bottom of `site` and `site2` cards whenever the `evcc_stat_*` entities are present
+- The same three KPIs also appear as a compact footer row at the bottom of `site` and `grid` cards — the period shown there is controlled via the `stats_period` config option (default: `total`)
 
-The stat entities are auto-discovered using the pattern `sensor.{prefix}stat_total_*` (e.g. `sensor.evcc_stat_total_charged_kwh`).
+The stat entities are auto-discovered using the pattern `sensor.{prefix}stat_*` (e.g. `sensor.evcc_stat_total_charged_kwh`).
+
+> **ℹ️ Note:** The **Total** period is enabled by default in ha-evcc. The periods **30 days**, **365 days** and **This year** must be **manually enabled** in the ha-evcc integration settings (Settings → Devices & Services → ha-evcc → Configure). If a period is not yet activated, the card shows a hint with instructions directly inside the card.
 
 ```yaml
 type: custom:evcc-card
