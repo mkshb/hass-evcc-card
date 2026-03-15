@@ -113,7 +113,7 @@ Add the card to any Lovelace dashboard using the YAML editor. The `mode` option 
 | `site_details` | `string` | *(expanded)* | Set to `collapsed` to hide the IN/OUT detail table by default in `site` mode |
 | `charge_current_settings` | `string` | *(collapsed)* | Set to `expanded` to show the charge current block (phase switch, min/max current) expanded by default |
 | `prefix` | `string` | `evcc_` | Entity name prefix used by the integration — only needed if you run multiple EVCC instances with a custom prefix (e.g. `evcc2_`) |
-| `stats_period` | `string` | `total` | Statistics period shown in the footer of `site` and `grid` cards. Allowed values: `total`, `30d`, `365d`, `thisYear`. The `stats` card always shows an interactive tab selector regardless of this option. |
+| `stats_period` | `string` | `total` | Default statistics period. For `site` and `grid` cards: controls the footer KPIs; allowed values: `total`, `30d`, `365d`, `thisYear`, `none` (hides the footer entirely). For the `stats` card: sets the initially selected tab; allowed values: `total`, `30d`, `365d`, `thisYear` (the user can still switch tabs interactively). |
 
 ---
 
@@ -172,6 +172,7 @@ The IN/OUT detail table can be toggled by clicking the power bar. It opens expan
 type: custom:evcc-card
 mode: site
 ```
+![Site overview full](images/site_full.png)
 
 ```yaml
 type: custom:evcc-card
@@ -180,6 +181,7 @@ site_details: collapsed   # start with the detail table hidden
 ```
 
 ![Site overview](images/site.png)
+
 
 ---
 
@@ -219,7 +221,7 @@ Charging statistics with period selector and a matching bar chart:
 | **Total** | One bar per year | All available years |
 
 - Chart data is fetched lazily per tab on first access and cached for 5 minutes
-- The same three KPIs also appear as a compact footer row at the bottom of `site` and `grid` cards — the period shown there is controlled via the `stats_period` config option (default: `total`)
+- The same three KPIs also appear as a compact footer row at the bottom of `site` and `grid` cards — the period shown there is controlled via the `stats_period` config option (default: `total`). Set `stats_period: none` to hide the footer entirely. The label below the kWh value reflects the active period (e.g. *Total charged*, *30 days charged*, *This year charged*).
 
 The stat entities are auto-discovered using the pattern `sensor.{prefix}stat_*` (e.g. `sensor.evcc_stat_total_charged_kwh`). The bar chart always uses the cumulative `sensor.{prefix}stat_total_charged_kwh` entity from the HA Recorder, independent of which KPI period is selected.
 

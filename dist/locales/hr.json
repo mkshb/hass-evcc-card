@@ -58,6 +58,7 @@
   "phasesSingle": "1-faza",
   "phasesTriple": "3-faze",
   "statsTotalCharged": "Ukupno napunjeno",
+  "statsCharged": "napunjeno",
   "statsSolarShare": "Udio solarne energije",
   "statsAvgPrice": "Prosj. cijena/kWh",
   "statsLast14Days": "Zadnjih 14 dana",

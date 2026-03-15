@@ -58,6 +58,7 @@
   "phasesSingle": "Monofásico",
   "phasesTriple": "Trifásico",
   "statsTotalCharged": "Total cargado",
+  "statsCharged": "cargado",
   "statsSolarShare": "Porcentaje solar",
   "statsAvgPrice": "Precio medio/kWh",
   "statsLast14Days": "Últimos 14 días",
