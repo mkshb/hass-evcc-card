@@ -390,7 +390,7 @@ class EvccCard extends HTMLElement {
         const soc = parseFloat(stateVal(this._hass, entityId)) || 0;
         el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${unitStr(this._hass, entityId)}`;
       } else if (type === "power") {
-        el.textContent = `${stateVal(this._hass, entityId)} ${unitStr(this._hass, entityId)}`;
+        el.textContent = `${parseFloat(stateVal(this._hass, entityId)).toFixed(1)} ${unitStr(this._hass, entityId)}`;
       }
     });
   }
@@ -562,7 +562,7 @@ class EvccCard extends HTMLElement {
 
   _renderPowerRow(ents, charging) {
     if (!ents.charge_power) return "";
-    const power   = stateVal(this._hass, ents.charge_power);
+    const power   = parseFloat(stateVal(this._hass, ents.charge_power)).toFixed(1);
     const unit    = unitStr(this._hass, ents.charge_power);
     const current = ents.charge_current
       ? stateVal(this._hass, ents.charge_current) : null;
