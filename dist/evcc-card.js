@@ -166,6 +166,42 @@ function isOn(hass, entityId) {
   return s === "on" || s === "true";
 }
 
+function socFillGradient(soc, minSoc, limitSoc) {
+  const s   = Math.max(0.01, soc);
+  const min = Math.max(0, minSoc  || 0);
+  const lim = Math.min(100, limitSoc || 100);
+  const amber = "#f59e0b", blue = "#3b82f6", green = "#22c55e";
+  if (min <= 0 && lim >= 100) return blue;
+  const stops = [];
+  if (min > 0) {
+    const minRel = Math.min((min / s) * 100, 100).toFixed(1);
+    stops.push(`${amber} 0%`, `${amber} ${minRel}%`);
+    if (s > min) stops.push(`${blue} ${minRel}%`);
+  } else {
+    stops.push(`${blue} 0%`);
+  }
+  if (lim < 100 && s > lim) {
+    const limRel = Math.min((lim / s) * 100, 100).toFixed(1);
+    stops.push(`${blue} ${limRel}%`, `${green} ${limRel}%`, `${green} 100%`);
+  } else {
+    stops.push(`${blue} 100%`);
+  }
+  return `linear-gradient(to right, ${stops.join(", ")})`;
+}
+
+function socTrackBg(minSoc, limitSoc) {
+  const min = Math.max(0, minSoc  || 0);
+  const lim = Math.min(100, limitSoc || 100);
+  const base = "var(--divider-color, #e5e7eb)";
+  if (min <= 0 && lim >= 100) return base;
+  const stops = [];
+  if (min > 0) stops.push(`#f59e0b22 0%`, `#f59e0b22 ${min}%`, `${base} ${min}%`);
+  else         stops.push(`${base} 0%`);
+  if (lim < 100) stops.push(`${base} ${lim}%`, `#22c55e22 ${lim}%`, `#22c55e22 100%`);
+  else           stops.push(`${base} 100%`);
+  return `linear-gradient(to right, ${stops.join(", ")})`;
+}
+
 class EvccCard extends HTMLElement {
 
   constructor() {
@@ -383,9 +419,11 @@ class EvccCard extends HTMLElement {
       if (!entityId) return;
 
       if (type === "soc-fill") {
-        const soc = parseFloat(stateVal(this._hass, entityId)) || 0;
+        const soc      = parseFloat(stateVal(this._hass, entityId)) || 0;
+        const minSoc   = parseFloat(el.dataset.minSoc)   || 0;
+        const limitSoc = parseFloat(el.dataset.limitSoc) || 100;
         el.style.width      = `${soc}%`;
-        el.style.background = soc > 80 ? "#22c55e" : soc > 30 ? "#3b82f6" : "#f59e0b";
+        el.style.background = socFillGradient(soc, minSoc, limitSoc);
       } else if (type === "soc-pct") {
         const soc = parseFloat(stateVal(this._hass, entityId)) || 0;
         el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${unitStr(this._hass, entityId)}`;
@@ -538,9 +576,10 @@ class EvccCard extends HTMLElement {
     const soc   = ents.vehicle_soc ? parseFloat(stateVal(this._hass, ents.vehicle_soc)) || 0 : null;
     const range = ents.vehicle_range
       ? Math.round(parseFloat(stateVal(this._hass, ents.vehicle_range))) : null;
-    const limit = ents.limit_soc
-      ? parseFloat(stateVal(this._hass, ents.limit_soc)) : null;
-    const color = soc !== null ? (soc > 80 ? "#22c55e" : soc > 30 ? "#3b82f6" : "#f59e0b") : "#3b82f6";
+    const limit  = ents.limit_soc ? parseFloat(stateVal(this._hass, ents.limit_soc))  : null;
+    const minSoc = ents.min_soc   ? parseFloat(stateVal(this._hass, ents.min_soc))    : null;
+    const fillBg  = soc !== null ? socFillGradient(soc, minSoc ?? 0, limit ?? 100) : "#3b82f6";
+    const trackBg = socTrackBg(minSoc ?? 0, limit ?? 100);
 
     return `
       <div class="soc-section">
@@ -550,11 +589,13 @@ class EvccCard extends HTMLElement {
           ${range !== null ? `<span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M11.5 0L9 8H11V16H13V8H15L11.5 0M3 18V20H21V18L11.5 16L3 18Z"/></svg> ${range} km</span>` : ""}
         </div>
         ${soc !== null ? `
-        <div class="soc-track">
+        <div class="soc-track" style="background:${trackBg}">
           <div class="soc-fill ${charging ? 'charging' : ''}"
                data-live-entity="${ents.vehicle_soc}" data-live-type="soc-fill"
-               style="width:${soc}%;background:${color}"></div>
-          ${limit !== null ? `<div class="soc-limit-marker" style="left:${Math.min(limit,100)}%"></div>` : ""}
+               data-min-soc="${minSoc ?? 0}" data-limit-soc="${limit ?? 100}"
+               style="width:${soc}%;background:${fillBg}"></div>
+          ${minSoc !== null ? `<div class="soc-min-marker"   style="left:${Math.min(minSoc,100)}%"></div>` : ""}
+          ${limit  !== null ? `<div class="soc-limit-marker" style="left:${Math.min(limit,100)}%"></div>`  : ""}
         </div>` : ""}
       </div>
     `;
@@ -2084,7 +2125,11 @@ class EvccCard extends HTMLElement {
       .soc-fill.charging { animation: soc-pulse 1.4s ease-in-out infinite; }
       .soc-limit-marker {
         position: absolute; top: -3px; width: 3px; height: 14px;
-        background: var(--warning-color, #f59e0b); border-radius: 2px; transform: translateX(-50%);
+        background: #22c55e; border-radius: 2px; transform: translateX(-50%);
+      }
+      .soc-min-marker {
+        position: absolute; top: -3px; width: 3px; height: 14px;
+        background: #f59e0b; border-radius: 2px; transform: translateX(-50%);
       }
 
       .power-row { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 12px; color: var(--secondary-text-color); flex-wrap: wrap; }
