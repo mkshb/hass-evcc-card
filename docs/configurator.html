@@ -124,48 +124,6 @@
     /* ── Right column ─────────────────────────────── */
     .right-col { display: flex; flex-direction: column; gap: 20px; }
 
-    /* ── Preview container ────────────────────────── */
-    .preview-container {
-      padding: 16px;
-      background: #111318;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      min-height: 80px;
-
-      /* HA CSS variables the card needs */
-      --primary-color: #03a9f4;
-      --accent-color: #ff9800;
-      --primary-text-color: #e1e1e1;
-      --secondary-text-color: #9e9e9e;
-      --text-primary-color: #ffffff;
-      --disabled-text-color: #6b6b6b;
-      --divider-color: #2d2d2d;
-      --card-background-color: #1c1e26;
-      --ha-card-background: #1c1e26;
-      --ha-card-border-radius: 10px;
-      --ha-card-box-shadow: none;
-      --primary-background-color: #111318;
-      --secondary-background-color: #1c1e26;
-      --lovelace-background: #111318;
-      --sidebar-background-color: #1c1e26;
-      --mdc-theme-primary: #03a9f4;
-      color: var(--primary-text-color);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-    .preview-loading {
-      padding: 18px 20px;
-      font-size: .8rem;
-      color: var(--text-sec);
-      font-style: italic;
-    }
-    .preview-empty {
-      padding: 18px 20px;
-      font-size: .8rem;
-      color: var(--text-sec);
-      font-style: italic;
-    }
-
     /* ── Card ─────────────────────────────────────── */
     .card {
       background: var(--surface);
@@ -543,10 +501,6 @@
       <div id="yaml-output"></div>
     </div>
 
-    <div class="card" id="preview-section" style="display:none">
-      <div class="card-head" data-i18n="previewTitle">Preview</div>
-      <div id="preview-container" class="preview-container"></div>
-    </div>
   </div>
 
 </div><!-- /layout -->
@@ -574,8 +528,6 @@
       defaultPeriodTab: "Standard-Zeitraum Tab",
       chargePointFilter: "Ladepunkt (kommagetrennte Namen)",
       generatedYaml: "Generiertes YAML",
-      previewTitle: "Vorschau",
-      previewEmpty: "Keine Karte ausgewählt",
       copyCardBtn: "Kopieren",
       copiedBtn: "✓ Kopiert!",
       emptyHint: "# Oben mindestens eine Karte auswählen",
@@ -617,8 +569,6 @@
       defaultPeriodTab: "Default period tab",
       chargePointFilter: "Charge point (comma-separated names)",
       generatedYaml: "Generated YAML",
-      previewTitle: "Preview",
-      previewEmpty: "No card selected",
       copyCardBtn: "Copy",
       copiedBtn: "✓ Copied!",
       emptyHint: "# Select at least one card above",
@@ -660,8 +610,6 @@
       defaultPeriodTab: "Pestaña de período por defecto",
       chargePointFilter: "Punto de carga (nombres separados por comas)",
       generatedYaml: "YAML generado",
-      previewTitle: "Vista previa",
-      previewEmpty: "Ninguna tarjeta seleccionada",
       copyCardBtn: "Copiar",
       copiedBtn: "✓ ¡Copiado!",
       emptyHint: "# Selecciona al menos una tarjeta arriba",
@@ -703,8 +651,6 @@
       defaultPeriodTab: "Onglet de période par défaut",
       chargePointFilter: "Point de charge (noms séparés par des virgules)",
       generatedYaml: "YAML généré",
-      previewTitle: "Aperçu",
-      previewEmpty: "Aucune carte sélectionnée",
       copyCardBtn: "Copier",
       copiedBtn: "✓ Copié !",
       emptyHint: "# Sélectionnez au moins une carte ci-dessus",
@@ -746,8 +692,6 @@
       defaultPeriodTab: "Zadana kartica perioda",
       chargePointFilter: "Točka punjenja (nazivi odvojeni zarezima)",
       generatedYaml: "Generirani YAML",
-      previewTitle: "Pregled",
-      previewEmpty: "Nije odabrana nijedna kartica",
       copyCardBtn: "Kopiraj",
       copiedBtn: "✓ Kopirano!",
       emptyHint: "# Odaberite barem jednu karticu iznad",
@@ -789,8 +733,6 @@
       defaultPeriodTab: "Standaard periode-tab",
       chargePointFilter: "Laadpunt (kommagescheiden namen)",
       generatedYaml: "Gegenereerde YAML",
-      previewTitle: "Voorbeeld",
-      previewEmpty: "Geen kaart geselecteerd",
       copyCardBtn: "Kopiëren",
       copiedBtn: "✓ Gekopieerd!",
       emptyHint: "# Selecteer hierboven minstens één kaart",
@@ -832,8 +774,6 @@
       defaultPeriodTab: "Domyślna zakładka okresu",
       chargePointFilter: "Punkt ładowania (nazwy oddzielone przecinkami)",
       generatedYaml: "Wygenerowany YAML",
-      previewTitle: "Podgląd",
-      previewEmpty: "Nie wybrano karty",
       copyCardBtn: "Kopiuj",
       copiedBtn: "✓ Skopiowano!",
       emptyHint: "# Wybierz co najmniej jedną kartę powyżej",
@@ -875,8 +815,6 @@
       defaultPeriodTab: "Separador de período padrão",
       chargePointFilter: "Ponto de carga (nomes separados por vírgulas)",
       generatedYaml: "YAML gerado",
-      previewTitle: "Pré-visualização",
-      previewEmpty: "Nenhum cartão selecionado",
       copyCardBtn: "Copiar",
       copiedBtn: "✓ Copiado!",
       emptyHint: "# Selecione pelo menos um cartão acima",
@@ -1075,7 +1013,6 @@
     const out = document.getElementById('yaml-output');
     if (!blocks.length) {
       out.innerHTML = `<div class="yaml-empty"><span class="hl-cmt">${esc(t('emptyHint'))}</span></div>`;
-      updatePreview();
       return;
     }
 
@@ -1087,7 +1024,6 @@
         </div>
         <pre>${renderHighlight(block)}</pre>
       </div>`).join('');
-    updatePreview();
   }
 
   function copyBlock(idx) {
@@ -1105,166 +1041,6 @@
   }
 
 
-  /* ── Preview ──────────────────────────────────────────────────────── */
-  customElements.whenDefined('evcc-card').then(() => {
-    window._evccCardReady = true;
-    const section = document.getElementById('preview-section');
-    if (section) section.style.display = '';
-    updatePreview();
-  });
-
-  function buildConfig(mode) {
-    const config = {};
-    if (mode !== 'loadpoint') config.mode = mode;
-    const prefix = val('prefix') || 'evcc_';
-    const language = val('language');
-
-    if (mode === 'loadpoint' || mode === 'compact') {
-      if (mode === 'compact') config.mode = 'compact';
-      const pfx = mode === 'loadpoint' ? 'lp' : 'co';
-      const lps = listVal(`${pfx}-loadpoints`);
-      if (lps.length) config.loadpoints = lps;
-      const np = listVal(`${pfx}-no_plan`);
-      if (np.length) config.no_plan = np;
-      const ccs = val(`${pfx}-charge_current_settings`);
-      if (ccs) config.charge_current_settings = ccs;
-    }
-    if (mode === 'site') {
-      const sd = val('si-site_details');
-      if (sd) config.site_details = sd;
-      const sp = val('si-stats_period');
-      if (sp) config.stats_period = sp;
-    }
-    if (mode === 'grid') {
-      const sp = val('gr-stats_period');
-      if (sp) config.stats_period = sp;
-    }
-    if (mode === 'stats') {
-      const sp = val('st-stats_period');
-      if (sp) config.stats_period = sp;
-    }
-    if (mode === 'plan') {
-      const lps = listVal('pl-loadpoints');
-      if (lps.length) config.loadpoints = lps;
-    }
-    if (prefix !== 'evcc_') config.prefix = prefix;
-    if (language) config.language = language;
-    return config;
-  }
-
-  function getMockHass(prefix) {
-    const p = prefix || 'evcc_';
-    const s = (v, attrs = {}) => ({ state: String(v), attributes: attrs });
-    return {
-      language: val('language') || 'de',
-      states: {
-        // ── Site ─────────────────────────────────
-        [`sensor.${p}pv_power`]:              s(3250, { unit_of_measurement: 'W' }),
-        [`sensor.${p}pv_0_power`]:            s(2100, { unit_of_measurement: 'W', friendly_name: 'Dach Süd' }),
-        [`sensor.${p}pv_1_power`]:            s(1150, { unit_of_measurement: 'W', friendly_name: 'BKW' }),
-        [`sensor.${p}pv_0_energy`]:           s(4.2,  { unit_of_measurement: 'kWh' }),
-        [`sensor.${p}pv_1_energy`]:           s(1.8,  { unit_of_measurement: 'kWh' }),
-        [`sensor.${p}home_power`]:            s(820,  { unit_of_measurement: 'W' }),
-        [`sensor.${p}grid_power`]:            s(-450, { unit_of_measurement: 'W' }),
-        [`sensor.${p}battery_power`]:         s(-1200,{ unit_of_measurement: 'W' }),
-        [`sensor.${p}battery_soc`]:           s(67,   { unit_of_measurement: '%' }),
-        [`sensor.${p}battery_energy_charge`]: s(1.2,  { unit_of_measurement: 'kWh' }),
-        [`sensor.${p}battery_energy_discharge`]: s(0, { unit_of_measurement: 'kWh' }),
-        // ── Loadpoint "wallbox" ───────────────────
-        [`select.${p}wallbox_mode`]:          s('pv', { options: ['off','pv','minpv','now'] }),
-        [`sensor.${p}wallbox_charge_power`]:  s(2200, { unit_of_measurement: 'W' }),
-        [`sensor.${p}wallbox_charge_energy`]: s(8.5,  { unit_of_measurement: 'kWh' }),
-        [`sensor.${p}wallbox_charge_duration`]: s(5400, {}),
-        [`sensor.${p}wallbox_charge_cost`]:   s(1.23, { unit_of_measurement: '€' }),
-        [`sensor.${p}wallbox_vehicle_soc`]:   s(55,   { unit_of_measurement: '%' }),
-        [`sensor.${p}wallbox_vehicle_range`]: s(180,  { unit_of_measurement: 'km' }),
-        [`sensor.${p}wallbox_vehicle_name`]:  s('Tesla Model 3', {}),
-        [`sensor.${p}wallbox_status`]:        s('charging', {}),
-        [`sensor.${p}wallbox_charge_phases_active`]: s(1, {}),
-        [`binary_sensor.${p}wallbox_charging`]: s('on', {}),
-        [`number.${p}wallbox_limit_soc`]:     s(80,  { min: 0, max: 100, step: 5 }),
-        [`number.${p}wallbox_min_soc`]:       s(20,  { min: 0, max: 100, step: 5 }),
-        [`number.${p}wallbox_priority_soc`]:  s(50,  { min: 0, max: 100, step: 5 }),
-        [`number.${p}wallbox_min_current`]:   s(6,   { min: 6, max: 16, step: 1 }),
-        [`number.${p}wallbox_max_current`]:   s(16,  { min: 6, max: 32, step: 1 }),
-        [`select.${p}wallbox_phases`]:        s('auto', { options: ['auto','1','3'] }),
-        [`sensor.${p}wallbox_plan_time`]:     s('', {}),
-        [`sensor.${p}wallbox_plan_soc`]:      s(80, {}),
-        // ── Battery management ────────────────────
-        [`number.${p}battery_buffer_soc`]:    s(20,  { min: 0, max: 100, step: 5 }),
-        [`number.${p}battery_priority_soc`]:  s(90,  { min: 0, max: 100, step: 5 }),
-        [`switch.${p}battery_discharge_control`]: s('off', {}),
-        // ── Stats ─────────────────────────────────
-        [`sensor.${p}stat_total_charged_kwh`]:       s(1234.5, { unit_of_measurement: 'kWh' }),
-        [`sensor.${p}stat_total_solar_percentage`]:  s(78,  { unit_of_measurement: '%' }),
-        [`sensor.${p}stat_total_avg_price`]:         s(8.5, {}),
-        [`sensor.${p}stat_30d_charged_kwh`]:         s(120.3, { unit_of_measurement: 'kWh' }),
-        [`sensor.${p}stat_30d_solar_percentage`]:    s(82,  { unit_of_measurement: '%' }),
-        [`sensor.${p}stat_30d_avg_price`]:           s(6.2, {}),
-        [`sensor.${p}stat_365d_charged_kwh`]:        s(890.0, { unit_of_measurement: 'kWh' }),
-        [`sensor.${p}stat_365d_solar_percentage`]:   s(75,  { unit_of_measurement: '%' }),
-        [`sensor.${p}stat_365d_avg_price`]:          s(9.1, {}),
-        [`sensor.${p}stat_thisYear_charged_kwh`]:    s(456.0, { unit_of_measurement: 'kWh' }),
-        [`sensor.${p}stat_thisYear_solar_percentage`]: s(80, { unit_of_measurement: '%' }),
-        [`sensor.${p}stat_thisYear_avg_price`]:      s(7.3, {}),
-      },
-      callService: () => Promise.resolve(),
-      callApi:     () => Promise.resolve([]),
-      formatEntityState: (stateObj) => stateObj.state,
-      formatEntityAttributeValue: (stateObj, attr) => String(stateObj.attributes?.[attr] ?? ''),
-    };
-  }
-
-  // Keep card element instances by mode to allow hass updates without full re-creation
-  const _previewCards = {};
-
-  function updatePreview() {
-    if (!window._evccCardReady) return;
-    const container = document.getElementById('preview-container');
-    if (!container) return;
-
-    const selected = MODES.filter(m => document.getElementById(`card-${m}`)?.checked);
-
-    if (!selected.length) {
-      container.innerHTML = `<div class="preview-empty">${esc(t('previewEmpty'))}</div>`;
-      return;
-    }
-
-    const prefix  = val('prefix') || 'evcc_';
-    const mockHass = getMockHass(prefix);
-
-    // Remove cards for deselected modes
-    Object.keys(_previewCards).forEach(mode => {
-      if (!selected.includes(mode)) {
-        _previewCards[mode]?.remove();
-        delete _previewCards[mode];
-      }
-    });
-
-    // Remove empty hint if present
-    const empty = container.querySelector('.preview-empty');
-    if (empty) empty.remove();
-
-    selected.forEach(mode => {
-      const config = buildConfig(mode);
-      let card = _previewCards[mode];
-      if (!card) {
-        card = document.createElement('evcc-card');
-        container.appendChild(card);
-        _previewCards[mode] = card;
-      }
-      try {
-        card.setConfig(config);
-        card.hass = mockHass;
-      } catch(e) { /* ignore errors in preview */ }
-    });
-
-    // Ensure correct DOM order matches selected order
-    selected.forEach(mode => {
-      if (_previewCards[mode]) container.appendChild(_previewCards[mode]);
-    });
-  }
-
   /* ── Init ─────────────────────────────────────────────────────────── */
   document.getElementById('prefix').addEventListener('input', render);
   document.getElementById('language').addEventListener('change', render);
@@ -1272,6 +1048,5 @@
   applyLang();
   render();
 </script>
-<script type="module" src="../dist/evcc-card.js"></script>
 </body>
 </html>
