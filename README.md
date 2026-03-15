@@ -382,6 +382,14 @@ Contributions that are especially appreciated:
 
 ---
 
+## Video
+
+[![YouTube](https://img.shields.io/badge/YouTube-Watch-red?logo=youtube)](https://www.youtube.com/watch?v=nQyiFg1RPy8)
+
+The card was featured in a YouTube video — showing installation, configuration and usage in practice. Note: the video is in **German**.
+
+---
+
 ## Related projects
 
 - [EVCC](https://evcc.io/) — the EV charging controller this card is built for
