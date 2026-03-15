@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.4.0";
+const EVCC_CARD_VERSION = "0.4.1";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -170,7 +170,7 @@ function socFillGradient(soc, minSoc, limitSoc) {
   const s   = Math.max(0.01, soc);
   const min = Math.max(0, minSoc  || 0);
   const lim = Math.min(100, limitSoc || 100);
-  const amber = "#f59e0b", blue = "#3b82f6", green = "#22c55e";
+  const amber = "var(--evcc-amber)", blue = "var(--evcc-blue)", green = "var(--evcc-green)";
   if (min <= 0 && lim >= 100) return blue;
   const stops = [];
   if (min > 0) {
@@ -195,9 +195,9 @@ function socTrackBg(minSoc, limitSoc) {
   const base = "var(--divider-color, #e5e7eb)";
   if (min <= 0 && lim >= 100) return base;
   const stops = [];
-  if (min > 0) stops.push(`#f59e0b22 0%`, `#f59e0b22 ${min}%`, `${base} ${min}%`);
+  if (min > 0) stops.push(`rgba(245,158,11,.13) 0%`, `rgba(245,158,11,.13) ${min}%`, `${base} ${min}%`);
   else         stops.push(`${base} 0%`);
-  if (lim < 100) stops.push(`${base} ${lim}%`, `#22c55e22 ${lim}%`, `#22c55e22 100%`);
+  if (lim < 100) stops.push(`${base} ${lim}%`, `rgba(34,197,94,.13) ${lim}%`, `rgba(34,197,94,.13) 100%`);
   else           stops.push(`${base} 100%`);
   return `linear-gradient(to right, ${stops.join(", ")})`;
 }
@@ -387,7 +387,7 @@ class EvccCard extends HTMLElement {
             ? this._renderBatteryBlock(site)
             : this._config.mode === "site"
               ? this._renderSiteBlock(site, loadpoints)
-              : this._config.mode === "site2"
+              : (this._config.mode === "grid" || this._config.mode === "site2")
               ? this._renderSiteBlock2(site, loadpoints)
               : this._config.mode === "stats"
               ? this._renderStatsBlock()
@@ -437,7 +437,7 @@ class EvccCard extends HTMLElement {
     const charging   = ents.charging  ? isOn(this._hass, ents.charging)  : false;
     const connected  = ents.connected ? isOn(this._hass, ents.connected) : false;
     const statusLabel = charging ? this._t("charging") : connected ? this._t("connected") : this._t("ready");
-    const statusColor = charging ? "#22c55e" : connected ? "#3b82f6" : "#6b7280";
+    const statusClass = charging ? "charging" : connected ? "connected" : "ready";
 
     const noPlan = Array.isArray(this._config.no_plan) && this._config.no_plan.includes(lpName);
 
@@ -445,7 +445,7 @@ class EvccCard extends HTMLElement {
       <div class="loadpoint">
         <div class="lp-header">
           <span class="lp-name">${lpName}</span>
-          <span class="lp-badge" style="background:${statusColor}22;color:${statusColor}">
+          <span class="lp-badge ${statusClass}">
             ${statusLabel}
           </span>
         </div>
@@ -465,7 +465,7 @@ class EvccCard extends HTMLElement {
     const charging    = ents.charging  ? isOn(this._hass, ents.charging)  : false;
     const connected   = ents.connected ? isOn(this._hass, ents.connected) : false;
     const statusLabel = charging ? this._t("charging") : connected ? this._t("connected") : this._t("ready");
-    const statusColor = charging ? "#22c55e" : connected ? "#3b82f6" : "#6b7280";
+    const statusClass = charging ? "charging" : connected ? "connected" : "ready";
     const noPlan      = Array.isArray(this._config.no_plan) && this._config.no_plan.includes(lpName);
 
     if (this._tabState[lpName] === undefined) this._tabState[lpName] = 0;
@@ -512,7 +512,7 @@ class EvccCard extends HTMLElement {
       <div class="loadpoint" data-lp-compact="${lpName}">
         <div class="lp-header">
           <span class="lp-name">${lpName}</span>
-          <span class="lp-badge" style="background:${statusColor}22;color:${statusColor}">
+          <span class="lp-badge ${statusClass}">
             ${statusLabel}
           </span>
         </div>
@@ -542,7 +542,7 @@ class EvccCard extends HTMLElement {
       ? Math.round(parseFloat(stateVal(this._hass, ents.vehicle_range))) : null;
     const limit = ents.limit_soc
       ? parseFloat(stateVal(this._hass, ents.limit_soc)) : null;
-    const color = soc > 80 ? "#22c55e" : soc > 30 ? "#3b82f6" : "#f59e0b";
+    const color = soc > 80 ? "var(--evcc-green)" : soc > 30 ? "var(--evcc-blue)" : "var(--evcc-amber)";
 
     return `
       <div class="soc-section">
@@ -578,7 +578,7 @@ class EvccCard extends HTMLElement {
       ? Math.round(parseFloat(stateVal(this._hass, ents.vehicle_range))) : null;
     const limit  = ents.limit_soc ? parseFloat(stateVal(this._hass, ents.limit_soc))  : null;
     const minSoc = ents.min_soc   ? parseFloat(stateVal(this._hass, ents.min_soc))    : null;
-    const fillBg  = soc !== null ? socFillGradient(soc, minSoc ?? 0, limit ?? 100) : "#3b82f6";
+    const fillBg  = soc !== null ? socFillGradient(soc, minSoc ?? 0, limit ?? 100) : "var(--evcc-blue)";
     const trackBg = socTrackBg(minSoc ?? 0, limit ?? 100);
 
     return `
@@ -1098,9 +1098,9 @@ class EvccCard extends HTMLElement {
     const hasCharge = chargePow > 0.05;
 
     const segments = [
-      { cls: "seg-pv",      pct: pvPct,     label: fmtPow(pvPow),       color: "#22c55e", show: hasPV },
-      { cls: "seg-battd",   pct: battDPct,  label: fmtPow(battDischPow),color: "#f97316", show: battDischPow > 0.05 },
-      { cls: "seg-gridin",  pct: gridInPct, label: fmtPow(bezugPow),    color: "#ef4444", show: bezugPow > 0.05 },
+      { cls: "seg-pv",      pct: pvPct,     label: fmtPow(pvPow),       color: "var(--evcc-green)",  show: hasPV },
+      { cls: "seg-battd",   pct: battDPct,  label: fmtPow(battDischPow),color: "var(--evcc-orange)", show: battDischPow > 0.05 },
+      { cls: "seg-gridin",  pct: gridInPct, label: fmtPow(bezugPow),    color: "var(--evcc-red)",    show: bezugPow > 0.05 },
     ].filter(s => s.pct > 0);;
 
     const segTotal = segments.reduce((s, x) => s + x.pct, 0);
@@ -1343,7 +1343,7 @@ class EvccCard extends HTMLElement {
     return `
       <div class="site-block">
         <div class="lp-header">
-          <span class="lp-name">${this._t("overview")}</span>
+          <span class="lp-name">${this._t("energyFlow")}</span>
         </div>
         <div class="flow-wrap-clickable" role="button" tabindex="0"
              onclick="window.__evccCards.get('${this._cardId}')._toggleSite()"
@@ -1391,7 +1391,7 @@ class EvccCard extends HTMLElement {
 
     const importing = bezugPow > 0.05;
     const exporting = feedinPow > 0.05;
-    const netColor  = importing ? "#ef4444" : exporting ? "#22c55e" : "var(--secondary-text-color)";
+    const netColor  = importing ? "var(--evcc-red)" : exporting ? "var(--evcc-green)" : "var(--secondary-text-color)";
     const netAbs    = importing ? bezugPow : feedinPow;
     const netValStr = (importing || exporting)
       ? `${importing ? "+" : "−"}${fmtKw(netAbs)}`
@@ -1424,20 +1424,20 @@ class EvccCard extends HTMLElement {
         const soc   = ents.vehicle_soc
           ? `${Math.round(parseFloat(stateVal(this._hass, ents.vehicle_soc)) || 0)} ${unit}`
           : "";
-        return chip("#3b82f6", lpName.toUpperCase(), soc ? `${fmtKw(lpPow)} · ${soc}` : fmtKw(lpPow));
+        return chip("var(--evcc-blue)", lpName.toUpperCase(), soc ? `${fmtKw(lpPow)} · ${soc}` : fmtKw(lpPow));
       }).join("");
 
     const srcChips = [
-      pvPow        > 0.05 ? chip("#22c55e", this._t("generation"),    fmtKw(pvPow))        : "",
-      bezugPow     > 0.05 ? chip("#ef4444", this._t("gridImport"),    fmtKw(bezugPow))     : "",
-      battDischPow > 0.05 ? chip("#f97316", this._t("battDischarge"), fmtKw(battDischPow)) : "",
+      pvPow        > 0.05 ? chip("var(--evcc-green)",  this._t("generation"),    fmtKw(pvPow))        : "",
+      bezugPow     > 0.05 ? chip("var(--evcc-red)",   this._t("gridImport"),    fmtKw(bezugPow))     : "",
+      battDischPow > 0.05 ? chip("var(--evcc-orange)",this._t("battDischarge"), fmtKw(battDischPow)) : "",
     ].filter(Boolean).join("");
 
     const dstChips = [
       homePow      > 0.05 ? chip("var(--secondary-text-color)", this._t("consumption"), fmtKw(homePow))       : "",
       lpChips,
-      battChargePow > 0.05 ? chip("#f97316", this._t("battCharge"),  fmtKw(battChargePow)) : "",
-      feedinPow    > 0.05 ? chip("#eab308", this._t("gridExport"),   fmtKw(feedinPow))     : "",
+      battChargePow > 0.05 ? chip("var(--evcc-orange)", this._t("battCharge"),  fmtKw(battChargePow)) : "",
+      feedinPow    > 0.05 ? chip("var(--evcc-yellow)", this._t("gridExport"),   fmtKw(feedinPow))     : "",
     ].filter(Boolean).join("");
 
     const section = (labelKey, chips) => chips
@@ -1450,7 +1450,7 @@ class EvccCard extends HTMLElement {
     return `
       <div class="s2-block">
         <div class="lp-header">
-          <span class="lp-name">${this._t("overview")}</span>
+          <span class="lp-name">${this._t("energyFlow")}</span>
         </div>
         <div class="s2-net">
           <div class="s2-net-label">${this._t("gridStatus") || "Netzstatus"}</div>
@@ -1570,7 +1570,7 @@ class EvccCard extends HTMLElement {
 
     const items = [
       kwhId   ? `<span class="sf-item"><span class="sf-val">${Math.round(kwh)} kWh</span><span class="sf-lbl">${this._t("statsTotalCharged") || "Geladen"}</span></span>` : "",
-      solarId ? `<span class="sf-item"><span class="sf-val" style="color:#22c55e">${Math.round(solar)} %</span><span class="sf-lbl">${this._t("statsSolarShare") || "Solar"}</span></span>` : "",
+      solarId ? `<span class="sf-item"><span class="sf-val" style="color:var(--evcc-green)">${Math.round(solar)} %</span><span class="sf-lbl">${this._t("statsSolarShare") || "Solar"}</span></span>` : "",
       priceId ? `<span class="sf-item"><span class="sf-val">${(price * 100).toFixed(1)} ct</span><span class="sf-lbl">${this._t("statsAvgPrice") || "Ø ct/kWh"}</span></span>` : "",
     ].filter(Boolean);
 
@@ -1595,7 +1595,7 @@ class EvccCard extends HTMLElement {
 
     const kpis = [
       kpi(kwh,   this._t("statsTotalCharged") || "Geladen gesamt", v => `${Math.round(v)} kWh`, null),
-      kpi(solar, this._t("statsSolarShare")   || "Solaranteil",    v => `${Math.round(v)} %`,   solar > 0 ? "#22c55e" : null),
+      kpi(solar, this._t("statsSolarShare")   || "Solaranteil",    v => `${Math.round(v)} %`,   solar > 0 ? "var(--evcc-green)" : null),
       kpi(price, this._t("statsAvgPrice")     || "Ø Preis/kWh",    v => `${(v * 100).toFixed(1)} ct`, null),
     ].join("");
 
@@ -1610,7 +1610,7 @@ class EvccCard extends HTMLElement {
     return `
       <div>
         <div class="lp-header">
-          <span class="lp-name">${this._t("overview")}</span>
+          <span class="lp-name">${this._t("statistics")}</span>
         </div>
         <div class="stats-kpi-row">${kpis}</div>
         ${chart}
@@ -1631,7 +1631,7 @@ class EvccCard extends HTMLElement {
     const power       = powerId ? parseFloat(stateVal(this._hass, powerId)) || 0 : null;
     const cap         = capId   ? parseFloat(stateVal(this._hass, capId))   || 0 : null;
     const dischargeOn = dischargeId ? isOn(this._hass, dischargeId) : null;
-    const socColor    = soc > 80 ? "#22c55e" : soc > 30 ? "#3b82f6" : "#f59e0b";
+    const socColor    = soc > 80 ? "var(--evcc-green)" : soc > 30 ? "var(--evcc-blue)" : "var(--evcc-amber)";
 
     const getVal  = id => id ? (parseFloat(stateVal(this._hass, id)) || 0) : null;
     const getOpts = id => id ? (attr(this._hass, id, "options") ?? [])
@@ -1703,7 +1703,7 @@ class EvccCard extends HTMLElement {
           <div class="batt-text-col">
             ${bufferSocId ? `
             <div class="batt-text-item">
-              <span class="batt-text-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="#facc15"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg></span>
+              <span class="batt-text-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" style="fill:var(--evcc-bolt)"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg></span>
               <div>
                 <div class="batt-text-title">${this._t("battBoostTitle")}</div>
                 <div class="batt-text-desc">${this._t("battBoostDesc", { val: inlineSlider(bufferSocId, bufferVal) })}</div>
@@ -1711,7 +1711,7 @@ class EvccCard extends HTMLElement {
             </div>` : ""}
             ${prioritySocId ? `
             <div class="batt-text-item">
-              <span class="batt-text-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="#3b82f6"><path d="M16,6L19,10H5L8,6H16M16,4H8L3,10V16H5V18H8V16H16V18H19V16H21V10L16,4M7,12A1,1 0 0,1 8,11A1,1 0 0,1 9,12A1,1 0 0,1 8,13A1,1 0 0,1 7,12M15,12A1,1 0 0,1 16,11A1,1 0 0,1 17,12A1,1 0 0,1 16,13A1,1 0 0,1 15,12Z"/></svg></span>
+              <span class="batt-text-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" style="fill:var(--evcc-blue)"><path d="M16,6L19,10H5L8,6H16M16,4H8L3,10V16H5V18H8V16H16V18H19V16H21V10L16,4M7,12A1,1 0 0,1 8,11A1,1 0 0,1 9,12A1,1 0 0,1 8,13A1,1 0 0,1 7,12M15,12A1,1 0 0,1 16,11A1,1 0 0,1 17,12A1,1 0 0,1 16,13A1,1 0 0,1 15,12Z"/></svg></span>
               <div>
                 <div class="batt-text-title">${this._t("battCarPrioTitle")}</div>
                 <div class="batt-text-desc">${this._t("battCarPrioDesc", { val: inlineSlider(prioritySocId, priorityVal) })}</div>
@@ -2071,7 +2071,17 @@ class EvccCard extends HTMLElement {
 
   _styles() {
     return `
-      :host { display: block; }
+      :host {
+        display: block;
+        --evcc-green:  var(--success-color,  #22c55e);
+        --evcc-red:    var(--error-color,    #ef4444);
+        --evcc-amber:  var(--warning-color,  #f59e0b);
+        --evcc-blue:   #3b82f6;
+        --evcc-orange: #f97316;
+        --evcc-yellow: #eab308;
+        --evcc-gray:   var(--disabled-color, #6b7280);
+        --evcc-bolt:   #facc15;
+      }
       ha-card {
         background: var(--card-background-color);
         color: var(--primary-text-color);
@@ -2094,6 +2104,9 @@ class EvccCard extends HTMLElement {
         font-size: .75rem; font-weight: 600; padding: 2px 10px;
         border-radius: 999px; border: 1px solid currentColor;
       }
+      .lp-badge.charging  { color: var(--evcc-green);  background: color-mix(in srgb, var(--evcc-green)  15%, transparent); }
+      .lp-badge.connected { color: var(--evcc-blue);   background: color-mix(in srgb, var(--evcc-blue)   15%, transparent); }
+      .lp-badge.ready     { color: var(--evcc-gray);   background: color-mix(in srgb, var(--evcc-gray)   15%, transparent); }
 
       .mode-row { display: flex; gap: 6px; margin-bottom: 12px; }
       .mode-btn {
@@ -2345,7 +2358,7 @@ class EvccCard extends HTMLElement {
       .plan-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
       .plan-badge { font-size: .7rem; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--divider-color); color: var(--secondary-text-color); }
       .plan-badge.planned { background: rgba(0, 120, 180, 0.3); color: #60aaff; }
-      .plan-badge.active  { background: #22c55e22; color: #22c55e; border-color: #22c55e; }
+      .plan-badge.active  { background: color-mix(in srgb, var(--evcc-green) 15%, transparent); color: var(--evcc-green); border-color: var(--evcc-green); }
       .plan-projection { display: flex; flex-direction: column; gap: 3px; font-size: .78rem; color: var(--secondary-text-color); margin-bottom: 10px; padding: 7px 10px; background: var(--secondary-background-color, rgba(0,0,0,.08)); border-radius: 6px; }
       .plan-projection strong { color: var(--primary-text-color); }
       .plan-inputs { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }

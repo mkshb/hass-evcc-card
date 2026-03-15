@@ -20,6 +20,8 @@
   "chargePlan": "Ladeplanung",
   "chargeSession": "Ladevorgang",
   "overview": "Übersicht",
+  "energyFlow": "Energiefluss",
+  "statistics": "Statistik",
   "homeBattery": "Hausbatterie",
   "vehicle": "Fahrzeug",
   "finishBy": "Fertig bis",

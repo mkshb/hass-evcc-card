@@ -20,6 +20,8 @@
   "chargePlan": "Planification de charge",
   "chargeSession": "Session de charge",
   "overview": "Vue d'ensemble",
+  "energyFlow": "Flux d'énergie",
+  "statistics": "Statistiques",
   "homeBattery": "Batterie domestique",
   "vehicle": "Véhicule",
   "finishBy": "Terminer avant",

@@ -20,6 +20,8 @@
   "chargePlan": "Laadplanning",
   "chargeSession": "Laadsessie",
   "overview": "Overzicht",
+  "energyFlow": "Energiestroom",
+  "statistics": "Statistieken",
   "homeBattery": "Thuisbatterij",
   "vehicle": "Voertuig",
   "finishBy": "Gereed om",

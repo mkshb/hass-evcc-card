@@ -20,6 +20,8 @@
   "chargePlan": "Charge plan",
   "chargeSession": "Charge session",
   "overview": "Overview",
+  "energyFlow": "Energy Flow",
+  "statistics": "Statistics",
   "homeBattery": "Home battery",
   "vehicle": "Vehicle",
   "finishBy": "Finish by",
