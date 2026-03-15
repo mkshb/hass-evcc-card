@@ -6,8 +6,6 @@ A custom Lovelace card for [Home Assistant](https://www.home-assistant.io/) that
 
 All charge points and site entities are **automatically discovered** based on the integration's entity naming scheme — no manual entity mapping required.
 
-> **🛠️ Configurator:** Not sure which options you need? Use the interactive **[YAML Configurator](https://mkshb.github.io/hass-evcc-card/configurator.html)** to build your card configuration step by step.
-
 ---
 
 ## Modes
@@ -102,7 +100,7 @@ Then restart Home Assistant or reload the Lovelace resources.
 
 ## Configuration & Modes
 
-Add the card to any Lovelace dashboard using the YAML editor. The `mode` option controls what the card displays. Use the **[YAML Configurator](https://mkshb.github.io/hass-evcc-card/configurator.html)** to generate your configuration interactively.
+Add the card to any Lovelace dashboard using the YAML editor. The `mode` option controls what the card displays.
 
 ### Configuration options
 
