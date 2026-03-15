@@ -2337,6 +2337,8 @@ class EvccCard extends HTMLElement {
       .compact-tab-icon  { font-size: 1rem; line-height: 1; }
       .compact-tab-label { font-size: .68rem; }
       .compact-panel[hidden] { display: none; }
+      .compact-panel .plan-block,
+      .compact-panel .session-block { border-top: none; margin-top: 0; padding-top: 0; }
     `;
   }
 }
