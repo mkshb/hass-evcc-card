@@ -71,5 +71,8 @@
   "statsPeriodThisYear": "Este ano",
   "statsPeriodTotal": "Total",
   "statsNoData": "Período não ativado – ative nas definições da integração ha-evcc.",
-  "statsGrid": "Rede"
+  "statsGrid": "Rede",
+  "smartCostLimitCo2": "Limite de CO₂",
+  "smartCostLimitPrice": "Limite de preço",
+  "smartCostActive": "Carregamento inteligente ativo"
 }

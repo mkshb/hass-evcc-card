@@ -71,5 +71,8 @@
   "statsPeriodThisYear": "Dieses Jahr",
   "statsPeriodTotal": "Gesamt",
   "statsNoData": "Zeitraum nicht aktiviert – bitte in der ha-evcc Integration unter Einstellungen aktivieren.",
-  "statsGrid": "Netz"
+  "statsGrid": "Netz",
+  "smartCostLimitCo2": "CO₂-Limit",
+  "smartCostLimitPrice": "Preislimit",
+  "smartCostActive": "Smart Charging aktiv"
 }

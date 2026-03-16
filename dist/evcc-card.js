@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.4.2";
+const EVCC_CARD_VERSION = "0.4.3";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -651,6 +651,17 @@ class EvccCard extends HTMLElement {
       .filter(({ key }) => ents[key])
       .map(({ key, label }) => this._sliderRow(ents[key], label));
 
+    if (ents.smart_cost_limit) {
+      const unit   = attr(this._hass, ents.smart_cost_limit, "unit_of_measurement") ?? "";
+      const isCo2  = unit === "g/kWh";
+      const label  = isCo2 ? this._t("smartCostLimitCo2") : this._t("smartCostLimitPrice");
+      const active = ents.smart_cost_active && isOn(this._hass, ents.smart_cost_active);
+      rows.push(
+        this._sliderRow(ents.smart_cost_limit, label, this._t("modeOff")) +
+        (active ? `<div class="smart-active-hint">⚡ ${this._t("smartCostActive")}</div>` : "")
+      );
+    }
+
     return rows.length ? `<div class="sliders">${rows.join("")}</div>` : "";
   }
 
@@ -710,7 +721,7 @@ class EvccCard extends HTMLElement {
       </div>`;
   }
 
-  _sliderRow(entityId, label) {
+  _sliderRow(entityId, label, zeroLabel = null) {
     const domain  = entityId.split(".")[0];
     const val     = parseFloat(stateVal(this._hass, entityId)) || 0;
     const unit    = displayUnit(this._hass, entityId);
@@ -738,7 +749,7 @@ class EvccCard extends HTMLElement {
                  min="${min}" max="${max}" step="${step}" value="${val}"
                  data-entity="${entityId}"
                  data-domain="${domain}" />
-          <span class="slider-val">${val} ${unit}</span>
+          <span class="slider-val">${zeroLabel && val === 0 ? zeroLabel : `${val} ${unit}`}</span>
         </div>
       </div>`;
   }
@@ -2365,6 +2376,7 @@ class EvccCard extends HTMLElement {
       .slider-control { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 120px; }
       .slider-control input { flex: 1; min-width: 0; accent-color: var(--primary-color); }
       .slider-val { flex-shrink: 0; width: 52px; text-align: right; font-size: .8rem; }
+      .smart-active-hint { font-size: .75rem; color: var(--evcc-green); margin-top: -4px; margin-bottom: 8px; }
 
       .toggles { margin-bottom: 10px; }
       .toggle-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; flex-wrap: wrap; gap: 4px; }

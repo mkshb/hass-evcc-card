@@ -71,5 +71,8 @@
   "statsPeriodThisYear": "Ten rok",
   "statsPeriodTotal": "Łącznie",
   "statsNoData": "Okres nieaktywny – włącz go w ustawieniach integracji ha-evcc.",
-  "statsGrid": "Sieć"
+  "statsGrid": "Sieć",
+  "smartCostLimitCo2": "Limit CO₂",
+  "smartCostLimitPrice": "Limit cenowy",
+  "smartCostActive": "Inteligentne ładowanie aktywne"
 }

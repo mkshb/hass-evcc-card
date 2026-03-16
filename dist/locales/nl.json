@@ -71,5 +71,8 @@
   "statsPeriodThisYear": "Dit jaar",
   "statsPeriodTotal": "Totaal",
   "statsNoData": "Periode niet ingeschakeld – activeer deze in de ha-evcc integratie-instellingen.",
-  "statsGrid": "Net"
+  "statsGrid": "Net",
+  "smartCostLimitCo2": "CO₂-limiet",
+  "smartCostLimitPrice": "Prijslimiet",
+  "smartCostActive": "Slim laden actief"
 }
