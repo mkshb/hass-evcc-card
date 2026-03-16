@@ -16,7 +16,8 @@
   "maxCurrent": "Max current",
   "minCurrent": "Min current",
   "phases": "Phases",
-  "chargeCurrent": "Charge current",
+  "chargeCurrent": "Charge settings",
+  "chargeSettings": "Charge settings",
   "chargePlan": "Charge plan",
   "chargeSession": "Charge session",
   "overview": "Overview",
@@ -74,5 +75,6 @@
   "statsGrid": "Grid",
   "smartCostLimitCo2": "CO₂ limit",
   "smartCostLimitPrice": "Price limit",
+  "smartCostClear": "Clear limit",
   "smartCostActive": "Smart charging active"
 }

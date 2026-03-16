@@ -16,7 +16,8 @@
   "maxCurrent": "Maksymalny prąd",
   "minCurrent": "Minimalny prąd",
   "phases": "Fazy",
-  "chargeCurrent": "Prąd ładowania",
+  "chargeCurrent": "Ustawienia ładowania",
+  "chargeSettings": "Ustawienia ładowania",
   "chargePlan": "Plan ładowania",
   "chargeSession": "Sesja ładowania",
   "overview": "Przegląd",
@@ -74,5 +75,6 @@
   "statsGrid": "Sieć",
   "smartCostLimitCo2": "Limit CO₂",
   "smartCostLimitPrice": "Limit cenowy",
+  "smartCostClear": "Usuń limit",
   "smartCostActive": "Inteligentne ładowanie aktywne"
 }

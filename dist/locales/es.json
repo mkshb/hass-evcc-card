@@ -16,7 +16,8 @@
   "maxCurrent": "Corriente máx.",
   "minCurrent": "Corriente mín.",
   "phases": "Fases",
-  "chargeCurrent": "Corriente de carga",
+  "chargeCurrent": "Configuración de carga",
+  "chargeSettings": "Configuración de carga",
   "chargePlan": "Plan de carga",
   "chargeSession": "Sesión de carga",
   "overview": "Resumen",
@@ -74,5 +75,6 @@
   "statsGrid": "Red",
   "smartCostLimitCo2": "Límite CO₂",
   "smartCostLimitPrice": "Límite de precio",
+  "smartCostClear": "Borrar límite",
   "smartCostActive": "Carga inteligente activa"
 }

@@ -16,7 +16,8 @@
   "maxCurrent": "Max. stroom",
   "minCurrent": "Min. stroom",
   "phases": "Fases",
-  "chargeCurrent": "Laadstroom",
+  "chargeCurrent": "Laadinstellingen",
+  "chargeSettings": "Laadinstellingen",
   "chargePlan": "Laadplanning",
   "chargeSession": "Laadsessie",
   "overview": "Overzicht",
@@ -74,5 +75,6 @@
   "statsGrid": "Net",
   "smartCostLimitCo2": "CO₂-limiet",
   "smartCostLimitPrice": "Prijslimiet",
+  "smartCostClear": "Limiet wissen",
   "smartCostActive": "Slim laden actief"
 }

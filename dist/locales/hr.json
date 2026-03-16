@@ -16,7 +16,8 @@
   "maxCurrent": "Max struja",
   "minCurrent": "Min struja",
   "phases": "Faze",
-  "chargeCurrent": "Struja punjenja",
+  "chargeCurrent": "Postavke punjenja",
+  "chargeSettings": "Postavke punjenja",
   "chargePlan": "Plan punjenja",
   "chargeSession": "Postupak",
   "overview": "Pregled",
@@ -74,5 +75,6 @@
   "statsGrid": "Mreža",
   "smartCostLimitCo2": "CO₂ ograničenje",
   "smartCostLimitPrice": "Cjenovno ograničenje",
+  "smartCostClear": "Obriši ograničenje",
   "smartCostActive": "Pametno punjenje aktivno"
 }
