@@ -468,7 +468,7 @@ class EvccCard extends HTMLElement {
           </span>
         </div>
         ${this._renderModeSelector(ents)}
-        ${this._renderVehicleInfo(ents, charging)}
+        ${this._renderVehicleInfo(ents, charging, lpName)}
         ${this._renderPowerRow(ents, charging)}
         ${this._renderSliders(ents)}
         ${this._renderCurrentBlock(ents, lpName)}
@@ -510,7 +510,7 @@ class EvccCard extends HTMLElement {
     const tabContent = [
       `<div class="compact-panel" ${activeTab !== 0 ? 'hidden' : ''}>
         ${this._renderModeSelector(ents)}
-        ${this._renderVehicleInfo(ents, charging)}
+        ${this._renderVehicleInfo(ents, charging, lpName)}
         ${this._renderPowerRow(ents, charging)}
       </div>`,
       `<div class="compact-panel" ${activeTab !== 1 ? 'hidden' : ''}>
@@ -582,7 +582,7 @@ class EvccCard extends HTMLElement {
     `;
   }
 
-  _renderVehicleInfo(ents, charging = false) {
+  _renderVehicleInfo(ents, charging = false, lpName = "") {
     if (!ents.vehicle_soc && !ents.vehicle_name) return "";
     const vehicleAttrs = ents.vehicle_name
       ? (this._hass.states[ents.vehicle_name]?.attributes ?? {}) : {};
@@ -599,8 +599,8 @@ class EvccCard extends HTMLElement {
     const fillBg  = soc !== null ? socFillGradient(soc, minSoc ?? 0, limit ?? 100) : "var(--evcc-blue)";
     const trackBg = socTrackBg(minSoc ?? 0, limit ?? 100);
 
-    const smartLimit = ents.smart_cost_limit
-      ? parseFloat(stateVal(this._hass, ents.smart_cost_limit)) || 0 : null;
+    const _rawLimit  = ents.smart_cost_limit ? parseFloat(stateVal(this._hass, ents.smart_cost_limit)) : NaN;
+    const smartLimit = ents.smart_cost_limit && !isNaN(_rawLimit) ? _rawLimit : null;
     const smartUnit  = smartLimit !== null
       ? (attr(this._hass, ents.smart_cost_limit, "unit_of_measurement") ?? "") : "";
     const isCo2Chip  = smartUnit === "g/kWh";
@@ -610,10 +610,11 @@ class EvccCard extends HTMLElement {
     const smartActive = smartLimit !== null && !isNaN(tariffVal) && tariffVal <= smartLimit;
     const leafIcon   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3C21,5 14,5.25 9,6.25C4,7.25 2,11.5 2,13.5C2,15.5 3.75,17.25 3.75,17.25C7,8 17,8 17,8Z"/></svg>`;
     const euroIcon   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M15,18.5C12.49,18.5 10.32,17.08 9.24,15H15V13H8.58C8.53,12.67 8.5,12.34 8.5,12C8.5,11.66 8.53,11.33 8.58,11H15V9H9.24C10.32,6.92 12.5,5.5 15,5.5C16.61,5.5 18.09,6.09 19.23,7.07L21,5.3C19.41,3.87 17.3,3 15,3C11.08,3 7.76,5.51 6.52,9H3V11H6.06C6.02,11.33 6,11.66 6,12C6,12.34 6.02,12.67 6.06,13H3V15H6.52C7.76,18.49 11.08,21 15,21C17.31,21 19.41,20.13 21,18.7L19.22,16.93C18.09,17.91 16.61,18.5 15,18.5Z"/></svg>`;
-    const smartChip  = smartLimit !== null && smartLimit > 0 ? `
-      <span class="smart-cost-chip ${smartActive ? "active" : ""}">
+    const smartChip  = smartLimit !== null ? `
+      <button class="smart-cost-chip ${smartActive ? "active" : ""}"
+              data-lp-smart-cost-open="${lpName}">
         ${isCo2Chip ? leafIcon : euroIcon} ≤ ${smartLimit} ${isCo2Chip ? "g" : smartUnit}
-      </span>` : "";
+      </button>` : "";
 
     return `
       <div class="soc-section">
@@ -739,9 +740,11 @@ class EvccCard extends HTMLElement {
             const active     = !isNaN(scTariff) && scTariff <= parseFloat(stateVal(this._hass, ents.smart_cost_limit) || 0);
             const clearId   = ents.smart_cost_limit.replace(/^number\./, "button.");
             const hasClear  = !!this._hass.states[clearId];
-            return this._sliderRow(ents.smart_cost_limit, label) +
+            return `<div class="smart-cost-section" data-lp-smart-cost-section="${lpName}">` +
+              this._sliderRow(ents.smart_cost_limit, label) +
               (active ? `<div class="smart-active-hint">⚡ ${this._t("smartCostActive")}</div>` : "") +
-              (hasClear ? `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` : "");
+              (hasClear ? `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` : "") +
+              `</div>`;
           })() : ""}
         </div>
       </div>`;
@@ -749,7 +752,8 @@ class EvccCard extends HTMLElement {
 
   _sliderRow(entityId, label, zeroLabel = null) {
     const domain  = entityId.split(".")[0];
-    const val     = parseFloat(stateVal(this._hass, entityId)) || 0;
+    const _v      = parseFloat(stateVal(this._hass, entityId));
+    const val     = isNaN(_v) ? 0 : _v;
     const unit    = displayUnit(this._hass, entityId);
     let min, max, step;
 
@@ -2003,6 +2007,26 @@ class EvccCard extends HTMLElement {
       });
     });
 
+    this.shadowRoot.querySelectorAll("[data-lp-smart-cost-open]").forEach(chip => {
+      chip.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const lpName = chip.dataset.lpSmartCostOpen;
+        const block  = this.shadowRoot.querySelector(`[data-lp-current="${lpName}"]`);
+        if (!block) return;
+        const body = block.querySelector(".current-block-body");
+        if (body) body.removeAttribute("hidden");
+        this._currentBlockExpanded[lpName] = true;
+        const toggleBtn = block.querySelector("[data-lp-current-toggle]");
+        if (toggleBtn) toggleBtn.classList.add("active");
+        const section = block.querySelector(`[data-lp-smart-cost-section="${lpName}"]`);
+        if (section) {
+          section.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          section.classList.add("smart-cost-highlight");
+          setTimeout(() => section.classList.remove("smart-cost-highlight"), 1500);
+        }
+      });
+    });
+
     this.shadowRoot.querySelectorAll("button.compact-tab").forEach(btn => {
       btn.addEventListener("click", () => {
         const lpName   = btn.dataset.lp;
@@ -2397,12 +2421,16 @@ class EvccCard extends HTMLElement {
       .slider-control input { flex: 1; min-width: 0; accent-color: var(--primary-color); }
       .slider-val { flex-shrink: 0; width: 52px; text-align: right; font-size: .8rem; }
       .smart-active-hint { font-size: .75rem; color: var(--evcc-green); margin-top: -4px; margin-bottom: 8px; }
-      .smart-cost-clear-row { display: flex; justify-content: flex-end; margin-top: 2px; margin-bottom: 4px; }
-      .smart-cost-clear-btn { background: none; border: none; cursor: pointer; font-size: .75rem; color: var(--evcc-gray); padding: 0; }
-      .smart-cost-clear-btn:hover { color: var(--evcc-red); }
-      .smart-cost-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .72rem; color: var(--secondary-text-color); white-space: nowrap; }
+      .smart-cost-clear-row { display: flex; justify-content: flex-end; margin-top: 6px; margin-bottom: 2px; }
+      .smart-cost-clear-btn { background: none; border: 1px solid var(--divider-color, #555); border-radius: 4px; cursor: pointer; font-size: .75rem; color: var(--secondary-text-color); padding: 3px 8px; font-family: inherit; transition: border-color .15s, color .15s; }
+      .smart-cost-clear-btn:hover { border-color: var(--evcc-red); color: var(--evcc-red); }
+      .smart-cost-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .72rem; color: var(--secondary-text-color); white-space: nowrap; background: none; border: none; padding: 0; cursor: pointer; font-family: inherit; }
+      .smart-cost-chip:hover { color: var(--primary-color); }
       .smart-cost-chip.active { color: var(--evcc-green); }
+      .smart-cost-chip.active:hover { color: var(--evcc-green); filter: brightness(1.2); }
       .settings-divider { border: none; border-top: 1px solid var(--divider-color, #e5e7eb); margin: 8px 0; }
+      @keyframes smart-cost-pulse { 0%,100% { background: transparent; } 40% { background: color-mix(in srgb, var(--primary-color) 15%, transparent); } }
+      .smart-cost-highlight { border-radius: 6px; animation: smart-cost-pulse 1.5s ease; }
 
       .toggles { margin-bottom: 10px; }
       .toggle-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; flex-wrap: wrap; gap: 4px; }
