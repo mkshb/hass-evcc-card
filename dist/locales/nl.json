@@ -20,6 +20,8 @@
   "chargeSettings": "Laadinstellingen",
   "chargePlan": "Laadplanning",
   "chargeSession": "Laadsessie",
+  "chargeSessionCurrent": "Huidige sessie",
+  "chargeSessionLast": "Laatste sessie",
   "overview": "Overzicht",
   "energyFlow": "Energiestroom",
   "statistics": "Statistieken",
@@ -75,6 +77,9 @@
   "statsGrid": "Net",
   "smartCostLimitCo2": "CO₂-limiet",
   "smartCostLimitPrice": "Prijslimiet",
+  "sessionPricePerKwh": "Prijs/kWh",
+  "sessionCo2PerKwh": "CO\u2082/kWh",
+  "sessionSolar": "Zonne-aandeel",
   "smartCostClear": "Limiet wissen",
   "smartCostActive": "Slim laden actief"
 }

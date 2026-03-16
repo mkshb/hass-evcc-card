@@ -34,8 +34,11 @@ const FEATURES = [
   { suffix: "vehicle_soc",         domain: "sensor",        type: "soc",           lp: true  },
   { suffix: "vehicle_range",       domain: "sensor",        type: "range",         lp: true  },
   { suffix: "vehicle_odometer",    domain: "sensor",        type: "info",          lp: true  },
-  { suffix: "session_energy",      domain: "sensor",        type: "info",          lp: true  },
-  { suffix: "session_price",       domain: "sensor",        type: "info",          lp: true  },
+  { suffix: "session_energy",          domain: "sensor", type: "info", lp: true },
+  { suffix: "session_price",           domain: "sensor", type: "info", lp: true },
+  { suffix: "session_price_per_kwh",   domain: "sensor", type: "info", lp: true },
+  { suffix: "session_co2_per_kwh",     domain: "sensor", type: "info", lp: true },
+  { suffix: "session_solar_percentage",domain: "sensor", type: "info", lp: true },
   { suffix: "phases_active",       domain: "sensor",        type: "info",          lp: true  },
 
   { suffix: "effective_plan_soc",      domain: "sensor", type: "info", lp: true },
@@ -252,7 +255,7 @@ class EvccCard extends HTMLElement {
 
     let langs = ["de", "en"];
     try {
-      const idxResp = await fetch(`${base}index.json`);
+      const idxResp = await fetch(`${base}index.json?v=${EVCC_CARD_VERSION}`);
       if (idxResp.ok) langs = await idxResp.json();
       else console.warn("[evcc-card] locales/index.json not found, using fallback:", langs);
     } catch (e) {
@@ -261,7 +264,7 @@ class EvccCard extends HTMLElement {
 
     const results = await Promise.allSettled(
       langs.map(lang =>
-        fetch(`${base}${lang}.json`)
+        fetch(`${base}${lang}.json?v=${EVCC_CARD_VERSION}`)
           .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
           .then(data => ({ lang, data }))
       )
@@ -471,7 +474,7 @@ class EvccCard extends HTMLElement {
         ${this._renderCurrentBlock(ents, lpName)}
         ${this._renderToggles(ents)}
         ${noPlan ? "" : this._renderPlanBlock(lpName, ents)}
-        ${this._renderSessionInfo(ents)}
+        ${this._renderSessionInfo(ents, charging)}
       </div>
     `;
   }
@@ -519,7 +522,7 @@ class EvccCard extends HTMLElement {
         ${noPlan ? "" : this._renderPlanBlock(lpName, ents)}
       </div>`,
       `<div class="compact-panel" ${activeTab !== 3 ? 'hidden' : ''}>
-        ${this._renderSessionInfo(ents)}
+        ${this._renderSessionInfo(ents, charging)}
       </div>`,
     ].join("");
 
@@ -1005,53 +1008,40 @@ class EvccCard extends HTMLElement {
     `;
   }
 
-  _renderSessionInfo(ents) {
-    const hasAny = ents.session_energy || ents.session_price || ents.charge_duration;
+  _renderSessionInfo(ents, charging = false) {
+    const hasAny = ents.session_energy || ents.session_price || ents.session_price_per_kwh || ents.session_co2_per_kwh || ents.session_solar_percentage;
     if (!hasAny) return "";
 
-    const energy = ents.session_energy
-      ? (() => {
-          const v = parseFloat(stateVal(this._hass, ents.session_energy));
-          return isNaN(v) ? "—" : `${v.toFixed(2)} kWh`;
-        })() : null;
+    const fmtVal = (entityId, decimals = 2) => {
+      const v = parseFloat(stateVal(this._hass, entityId));
+      if (isNaN(v)) return "—";
+      const unit = unitStr(this._hass, entityId);
+      return `${v.toFixed(decimals)}${unit ? " " + unit : ""}`;
+    };
 
-    const price = ents.session_price
-      ? (() => {
-          const v    = parseFloat(stateVal(this._hass, ents.session_price));
-          const unit = unitStr(this._hass, ents.session_price) || "€";
-          return isNaN(v) ? "—" : `${v.toFixed(2)} ${unit}`;
-        })() : null;
-
-    const duration = ents.charge_duration
-      ? (() => {
-          const raw = stateVal(this._hass, ents.charge_duration);
-          let totalSec;
-          if (raw && raw.includes(":")) {
-            const parts = raw.split(":").map(Number);
-            totalSec = parts[0] * 3600 + parts[1] * 60 + (parts[2] || 0);
-          } else {
-            totalSec = parseFloat(raw) || 0;
-          }
-          const h   = Math.floor(totalSec / 3600);
-          const min = Math.floor((totalSec % 3600) / 60);
-          if (h > 0) return `${h} h ${min} min`;
-          if (min > 0) return `${min} min`;
-          return `< 1 min`;
-        })() : null;
-
-    const phases = ents.phases_active
-      ? stateVal(this._hass, ents.phases_active) : null;
+    const energy      = ents.session_energy          ? (() => { const v = parseFloat(stateVal(this._hass, ents.session_energy)); return isNaN(v) ? "—" : `${v.toFixed(2)} kWh`; })() : null;
+    const price       = ents.session_price           ? (() => { const v = parseFloat(stateVal(this._hass, ents.session_price)); const u = unitStr(this._hass, ents.session_price) || "€"; return isNaN(v) ? "—" : `${v.toFixed(2)} ${u}`; })() : null;
+    const fmtPerKwh = (entityId, decimals) => {
+      const v = parseFloat(stateVal(this._hass, entityId));
+      if (isNaN(v)) return "—";
+      const unit = (unitStr(this._hass, entityId) || "").replace("/kWh", "").trim();
+      return `${v.toFixed(decimals)}${unit ? " " + unit : ""}`;
+    };
+    const pricePerKwh = ents.session_price_per_kwh   ? fmtPerKwh(ents.session_price_per_kwh, 3) : null;
+    const co2PerKwh   = ents.session_co2_per_kwh     ? fmtPerKwh(ents.session_co2_per_kwh, 0)   : null;
+    const solar       = ents.session_solar_percentage? (() => { const v = parseFloat(stateVal(this._hass, ents.session_solar_percentage)); return isNaN(v) ? "—" : `${Math.round(v)} %`; })() : null;
 
     const items = [
-      energy   ? `<div class="session-item"><span class="si-label">${this._t("energy")}</span><span class="si-value">${energy}</span></div>`   : "",
-      price    ? `<div class="session-item"><span class="si-label">${this._t("cost")}</span><span class="si-value">${price}</span></div>`     : "",
-      duration ? `<div class="session-item"><span class="si-label">${this._t("duration")}</span><span class="si-value">${duration}</span></div>`   : "",
-      phases   ? `<div class="session-item"><span class="si-label">${this._t("phases")}</span><span class="si-value">${phases}</span></div>`    : "",
+      energy      ? `<div class="session-item"><span class="si-label">${this._t("energy")}</span><span class="si-value">${energy}</span></div>`          : "",
+      price       ? `<div class="session-item"><span class="si-label">${this._t("cost")}</span><span class="si-value">${price}</span></div>`              : "",
+      pricePerKwh ? `<div class="session-item"><span class="si-label">${this._t("sessionPricePerKwh")}</span><span class="si-value">${pricePerKwh}</span></div>` : "",
+      co2PerKwh   ? `<div class="session-item"><span class="si-label">${this._t("sessionCo2PerKwh")}</span><span class="si-value">${co2PerKwh}</span></div>`     : "",
+      solar       ? `<div class="session-item"><span class="si-label">${this._t("sessionSolar")}</span><span class="si-value">${solar}</span></div>`           : "",
     ].filter(Boolean);
 
     return `
       <div class="session-block">
-        <div class="session-title">${this._t("chargeSession")}</div>
+        <div class="session-title">${charging ? this._t("chargeSessionCurrent") : this._t("chargeSessionLast")}</div>
         <div class="session-grid">${items.join("")}</div>
       </div>
     `;
@@ -2627,7 +2617,7 @@ class EvccCard extends HTMLElement {
 
       .session-block { border-top: 1px solid var(--divider-color, #e5e7eb); margin-top: 10px; padding-top: 10px; }
       .session-title { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--secondary-text-color); margin-bottom: 8px; }
-      .session-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 6px; }
+      .session-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 6px; }
       .session-item { display: flex; flex-direction: column; gap: 2px; }
       .si-label { font-size: .7rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .05em; }
       .si-value { font-size: .95rem; font-weight: 600; color: var(--primary-text-color); }

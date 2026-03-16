@@ -20,6 +20,8 @@
   "chargeSettings": "Charge settings",
   "chargePlan": "Charge plan",
   "chargeSession": "Charge session",
+  "chargeSessionCurrent": "Current session",
+  "chargeSessionLast": "Last session",
   "overview": "Overview",
   "energyFlow": "Energy Flow",
   "statistics": "Statistics",
@@ -75,6 +77,9 @@
   "statsGrid": "Grid",
   "smartCostLimitCo2": "CO₂ limit",
   "smartCostLimitPrice": "Price limit",
+  "sessionPricePerKwh": "Price/kWh",
+  "sessionCo2PerKwh": "CO\u2082/kWh",
+  "sessionSolar": "Solar share",
   "smartCostClear": "Clear limit",
   "smartCostActive": "Smart charging active"
 }
