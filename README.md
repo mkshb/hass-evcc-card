@@ -107,6 +107,7 @@ Add the card to any Lovelace dashboard using the YAML editor. The `mode` option 
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `grid`, `stats`, `plan` |
+| `title` | `string` | *(auto)* | Replaces the default card header — the loadpoint name for `loadpoint`/`compact`/`plan` mode, or the mode label (e.g. `Overview`, `Statistics`) for all other modes |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language. Examples: `de`, `en`, `es`, `hr`, `nl` |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |

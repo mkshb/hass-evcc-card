@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EVCC Card Configurator</title>
+  <style>
+    :root {
+      --bg:         #f0f2f5;
+      --surface:    #ffffff;
+      --surface2:   #f8f9fa;
+      --border:     #e0e3e8;
+      --text:       #1a1a2e;
+      --text-sec:   #6b7280;
+      --accent:     #22c55e;
+      --accent-bg:  #f0fdf4;
+      --code-bg:    #0f1117;
+      --code-text:  #e2e8f0;
+      --code-key:   #7dd3fc;
+      --code-str:   #86efac;
+      --code-cmt:   #64748b;
+      --radius:     10px;
+      --shadow:     0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:        #0f1117;
+        --surface:   #1a1d27;
+        --surface2:  #141720;
+        --border:    #2d3148;
+        --text:      #e2e8f0;
+        --text-sec:  #8892a4;
+        --accent-bg: #052e16;
+        --code-bg:   #090b10;
+      }
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ── Header ───────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+    }
+    .header-inner {
+      max-width: 900px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .header-logo { font-size: 2rem; line-height: 1; flex-shrink: 0; }
+    .header-title { font-size: 1.2rem; font-weight: 700; }
+    .header-sub { font-size: .82rem; color: var(--text-sec); margin-top: 2px; }
+    .header-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .lang-switcher { display: flex; gap: 3px; }
+    .lang-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 4px 7px;
+      cursor: pointer;
+      font-size: .82rem;
+      line-height: 1.4;
+      color: var(--text-sec);
+      transition: border-color .12s, background .12s;
+    }
+    .lang-btn:hover   { border-color: var(--accent); }
+    .lang-btn.active  { border-color: var(--accent); background: var(--accent-bg); color: var(--text); font-weight: 600; }
+    .header-divider   { width: 1px; height: 22px; background: var(--border); }
+    .header-links     { display: flex; gap: 6px; align-items: center; }
+    .header-link {
+      font-size: .78rem;
+      color: var(--text-sec);
+      text-decoration: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 10px;
+      white-space: nowrap;
+      background: var(--surface2);
+    }
+    .header-link:hover { border-color: var(--accent); color: var(--accent); }
+    .header-version {
+      font-size: .75rem;
+      font-weight: 700;
+      color: var(--accent);
+      background: var(--accent-bg);
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      padding: 5px 10px;
+      white-space: nowrap;
+    }
+
+    /* ── Layout ───────────────────────────────────── */
+    .layout {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 16px 60px;
+      display: grid;
+      grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+      gap: 20px;
+      align-items: start;
+    }
+    /* Left column: form cards stacked */
+    .form-col { display: flex; flex-direction: column; gap: 20px; }
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+
+    /* ── Right column ─────────────────────────────── */
+    .right-col { display: flex; flex-direction: column; gap: 20px; }
+
+    /* ── Card ─────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .card-head {
+      padding: 12px 18px;
+      font-size: .72rem;
+      font-weight: 700;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      color: var(--text-sec);
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+    }
+    .card-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+
+    /* ── Form fields ──────────────────────────────── */
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    label { font-size: .82rem; font-weight: 600; color: var(--text-sec); }
+    input[type=text], select {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 10px;
+      font-size: .88rem;
+      color: var(--text);
+      width: 100%;
+      outline: none;
+      transition: border-color .15s;
+    }
+    input[type=text]:focus, select:focus { border-color: var(--accent); }
+    .field-hint { font-size: .74rem; color: var(--text-sec); line-height: 1.4; }
+    code { font-family: monospace; background: var(--surface2); border: 1px solid var(--border); border-radius: 3px; padding: 1px 4px; font-size: .85em; }
+
+    /* ── Mode tiles ───────────────────────────────── */
+    .mode-tile {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      transition: border-color .15s;
+    }
+    .mode-tile.active { border-color: var(--accent); }
+    .mode-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      user-select: none;
+      background: var(--surface2);
+    }
+    .mode-header:hover { background: var(--accent-bg); }
+    .mode-checkbox { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+    .mode-icon { font-size: 1.05rem; line-height: 1; }
+    .mode-name { font-weight: 600; font-size: .88rem; }
+    .mode-desc { font-size: .75rem; color: var(--text-sec); margin-left: auto; font-family: monospace; }
+    .mode-options {
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .mode-options.hidden { display: none; }
+
+    /* ── YAML output ──────────────────────────────── */
+    .yaml-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 18px;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+    }
+    .yaml-title { font-size: .72rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-sec); }
+    .copy-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: .8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s, background .15s;
+    }
+    .copy-btn:hover  { opacity: .85; }
+    .copy-btn.copied { background: #3b82f6; }
+
+    /* ── Per-block output ─────────────────────────── */
+    .yaml-block { border-bottom: 1px solid #1e2233; }
+    .yaml-block:last-child { border-bottom: none; }
+    .yaml-block-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px 8px 20px;
+      background: #161922;
+      border-bottom: 1px solid #1e2233;
+    }
+    .yaml-block-label {
+      font-size: .75rem;
+      font-weight: 600;
+      color: var(--code-cmt);
+      font-family: "Fira Code", "Cascadia Code", "Consolas", monospace;
+    }
+    .copy-block-btn {
+      background: none;
+      border: 1px solid #2d3a50;
+      border-radius: 5px;
+      padding: 3px 10px;
+      font-size: .75rem;
+      color: #7dd3fc;
+      cursor: pointer;
+      transition: border-color .12s, background .12s;
+    }
+    .copy-block-btn:hover  { border-color: var(--accent); color: var(--accent); }
+    .copy-block-btn.copied { border-color: #3b82f6; color: #3b82f6; }
+    pre {
+      background: var(--code-bg);
+      color: var(--code-text);
+      font-family: "Fira Code", "Cascadia Code", "Consolas", monospace;
+      font-size: .82rem;
+      line-height: 1.7;
+      padding: 14px 20px;
+      overflow-x: auto;
+      white-space: pre;
+      margin: 0;
+    }
+    .yaml-empty {
+      background: var(--code-bg);
+      padding: 18px 20px;
+      font-family: "Fira Code", "Cascadia Code", "Consolas", monospace;
+      font-size: .82rem;
+      min-height: 80px;
+    }
+    .hl-key  { color: var(--code-key); }
+    .hl-val  { color: var(--code-str); }
+    .hl-cmt  { color: var(--code-cmt); font-style: italic; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="header-logo">⚡</div>
+    <div>
+      <div class="header-title" data-i18n="title">EVCC Card Configurator</div>
+      <div class="header-sub" data-i18n="subtitle">Generate your Lovelace YAML configuration</div>
+    </div>
+    <div class="header-right">
+      <div class="lang-switcher" id="lang-switcher">
+        <button class="lang-btn" data-lang="de"  onclick="setLang('de')">🇩🇪 de</button>
+        <button class="lang-btn" data-lang="en"  onclick="setLang('en')">🇬🇧 en</button>
+        <button class="lang-btn" data-lang="es"  onclick="setLang('es')">🇪🇸 es</button>
+        <button class="lang-btn" data-lang="fr"  onclick="setLang('fr')">🇫🇷 fr</button>
+        <button class="lang-btn" data-lang="hr"  onclick="setLang('hr')">🇭🇷 hr</button>
+        <button class="lang-btn" data-lang="nl"  onclick="setLang('nl')">🇳🇱 nl</button>
+        <button class="lang-btn" data-lang="pl"  onclick="setLang('pl')">🇵🇱 pl</button>
+        <button class="lang-btn" data-lang="pt"  onclick="setLang('pt')">🇵🇹 pt</button>
+      </div>
+      <div class="header-divider"></div>
+      <div class="header-links">
+        <span class="header-version">v0.4.2</span>
+        <a class="header-link" href="https://github.com/mkshb/hass-evcc-card/releases" target="_blank" data-i18n="releases">Releases</a>
+        <a class="header-link" href="https://github.com/mkshb/hass-evcc-card" target="_blank">📖 GitHub</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+<div class="form-col">
+
+  <!-- Common Settings -->
+  <div class="card">
+    <div class="card-head" data-i18n="commonSettings">Common Settings</div>
+    <div class="card-body">
+      <div class="field">
+        <label for="prefix" data-i18n="entityPrefix">Entity prefix</label>
+        <input type="text" id="prefix" data-i18n-ph="prefixPlaceholder" placeholder="evcc_" value="">
+        <span class="field-hint" data-i18n-html="prefixHint"></span>
+      </div>
+      <div class="field">
+        <label for="language" data-i18n="languageLabel">Language</label>
+        <select id="language">
+          <option value="" data-i18n="langAuto">Auto-detect from Home Assistant</option>
+          <option value="de">🇩🇪 Deutsch</option>
+          <option value="en">🇬🇧 English</option>
+          <option value="es">🇪🇸 Español</option>
+          <option value="fr">🇫🇷 Français</option>
+          <option value="hr">🇭🇷 Hrvatski</option>
+          <option value="nl">🇳🇱 Nederlands</option>
+          <option value="pl">🇵🇱 Polski</option>
+          <option value="pt">🇵🇹 Português</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cards selection -->
+  <div class="card">
+    <div class="card-head" data-i18n="selectCards">Select Cards</div>
+    <div class="card-body" id="mode-list">
+
+      <!-- loadpoint -->
+      <div class="mode-tile" id="tile-loadpoint">
+        <div class="mode-header" onclick="toggleMode('loadpoint')">
+          <input type="checkbox" class="mode-checkbox" id="card-loadpoint" onchange="onModeChange('loadpoint')">
+          <span class="mode-icon">⚡</span>
+          <span class="mode-name" data-i18n="modeLoadpoint">Charge Point</span>
+          <span class="mode-desc">loadpoint</span>
+        </div>
+        <div class="mode-options hidden" id="opts-loadpoint">
+          <div class="field">
+            <label data-i18n="cardTitle">Card title</label>
+            <input type="text" id="lp-title" data-i18n-ph="cardTitlePlaceholder" placeholder="Wallbox" oninput="render()">
+          </div>
+          <div class="field">
+            <label data-i18n="filterLoadpoints">Filter charge points</label>
+            <input type="text" id="lp-loadpoints" data-i18n-ph="filterPlaceholder" placeholder="wallbox, openwb" oninput="render()">
+          </div>
+          <div class="field">
+            <label data-i18n="hidePlan">Hide charge plan for</label>
+            <input type="text" id="lp-no_plan" data-i18n-ph="hidePlanPlaceholder" placeholder="wallbox-garage" oninput="render()">
+          </div>
+          <div class="field">
+            <label data-i18n="chargeCurrentSettings">Charge current settings</label>
+            <select id="lp-charge_current_settings" onchange="render()">
+              <option value=""         data-i18n="optCollapsedDefault">collapsed (default)</option>
+              <option value="expanded" data-i18n="optExpanded">expanded</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- compact -->
+      <div class="mode-tile" id="tile-compact">
+        <div class="mode-header" onclick="toggleMode('compact')">
+          <input type="checkbox" class="mode-checkbox" id="card-compact" onchange="onModeChange('compact')">
+          <span class="mode-icon">📑</span>
+          <span class="mode-name" data-i18n="modeCompact">Compact</span>
+          <span class="mode-desc">compact</span>
+        </div>
+        <div class="mode-options hidden" id="opts-compact">
+          <div class="field">
+            <label data-i18n="cardTitle">Card title</label>
+            <input type="text" id="co-title" data-i18n-ph="cardTitlePlaceholder" placeholder="Wallbox" oninput="render()">
+          </div>
+          <div class="field">
+            <label data-i18n="filterLoadpoints">Filter charge points</label>
+            <input type="text" id="co-loadpoints" data-i18n-ph="filterPlaceholder" placeholder="wallbox, openwb" oninput="render()">
+          </div>
+          <div class="field">
+            <label data-i18n="hidePlan">Hide charge plan for</label>
+            <input type="text" id="co-no_plan" data-i18n-ph="hidePlanPlaceholder" placeholder="wallbox-garage" oninput="render()">
+          </div>
+          <div class="field">
+            <label data-i18n="chargeCurrentSettings">Charge current settings</label>
+            <select id="co-charge_current_settings" onchange="render()">
+              <option value=""         data-i18n="optCollapsedDefault">collapsed (default)</option>
+              <option value="expanded" data-i18n="optExpanded">expanded</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- site -->
+      <div class="mode-tile" id="tile-site">
+        <div class="mode-header" onclick="toggleMode('site')">
+          <input type="checkbox" class="mode-checkbox" id="card-site" onchange="onModeChange('site')">
+          <span class="mode-icon">☀️</span>
+          <span class="mode-name" data-i18n="modeSite">Site Overview</span>
+          <span class="mode-desc">site</span>
+        </div>
+        <div class="mode-options hidden" id="opts-site">
+          <div class="field">
+            <label data-i18n="cardTitle">Card title</label>
+            <input type="text" id="si-title" data-i18n-ph="cardTitlePlaceholder" placeholder="EVCC" oninput="render()">
+          </div>
+          <div class="field">
+            <label data-i18n="detailTable">Detail table (IN/OUT)</label>
+            <select id="si-site_details" onchange="render()">
+              <option value=""          data-i18n="optExpandedDefault">expanded (default)</option>
+              <option value="collapsed" data-i18n="optCollapsed">collapsed</option>
+            </select>
+          </div>
+          <div class="field">
+            <label data-i18n="statsFooterPeriod">Statistics footer period</label>
+            <select id="si-stats_period" onchange="render()">
+              <option value=""         data-i18n="optPeriodTotal">total (default)</option>
+              <option value="30d"      data-i18n="opt30d">30 days</option>
+              <option value="365d"     data-i18n="opt365d">365 days</option>
+              <option value="thisYear" data-i18n="optThisYear">This year</option>
+              <option value="none"     data-i18n="optNone">none (hide footer)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- grid -->
+      <div class="mode-tile" id="tile-grid">
+        <div class="mode-header" onclick="toggleMode('grid')">
+          <input type="checkbox" class="mode-checkbox" id="card-grid" onchange="onModeChange('grid')">
+          <span class="mode-icon">🔌</span>
+          <span class="mode-name" data-i18n="modeGrid">Grid</span>
+          <span class="mode-desc">grid</span>
+        </div>
+        <div class="mode-options hidden" id="opts-grid">
+          <div class="field">
+            <label data-i18n="cardTitle">Card title</label>
+            <input type="text" id="gr-title" data-i18n-ph="cardTitlePlaceholder" placeholder="EVCC" oninput="render()">
+          </div>
+          <div class="field">
+            <label data-i18n="statsFooterPeriod">Statistics footer period</label>
+            <select id="gr-stats_period" onchange="render()">
+              <option value=""         data-i18n="optPeriodTotal">total (default)</option>
+              <option value="30d"      data-i18n="opt30d">30 days</option>
+              <option value="365d"     data-i18n="opt365d">365 days</option>
+              <option value="thisYear" data-i18n="optThisYear">This year</option>
+              <option value="none"     data-i18n="optNone">none (hide footer)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- stats -->
+      <div class="mode-tile" id="tile-stats">
+        <div class="mode-header" onclick="toggleMode('stats')">
+          <input type="checkbox" class="mode-checkbox" id="card-stats" onchange="onModeChange('stats')">
+          <span class="mode-icon">📈</span>
+          <span class="mode-name" data-i18n="modeStats">Statistics</span>
+          <span class="mode-desc">stats</span>
+        </div>
+        <div class="mode-options hidden" id="opts-stats">
+          <div class="field">
+            <label data-i18n="cardTitle">Card title</label>
+            <input type="text" id="st-title" data-i18n-ph="cardTitlePlaceholder" placeholder="EVCC" oninput="render()">
+          </div>
+          <div class="field">
+            <label data-i18n="defaultPeriodTab">Default period tab</label>
+            <select id="st-stats_period" onchange="render()">
+              <option value=""         data-i18n="optPeriodTotal">total (default)</option>
+              <option value="30d"      data-i18n="opt30d">30 days</option>
+              <option value="365d"     data-i18n="opt365d">365 days</option>
+              <option value="thisYear" data-i18n="optThisYear">This year</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- battery -->
+      <div class="mode-tile" id="tile-battery">
+        <div class="mode-header" onclick="toggleMode('battery')">
+          <input type="checkbox" class="mode-checkbox" id="card-battery" onchange="onModeChange('battery')">
+          <span class="mode-icon">🏠</span>
+          <span class="mode-name" data-i18n="modeBattery">Battery</span>
+          <span class="mode-desc">battery</span>
+        </div>
+        <div class="mode-options hidden" id="opts-battery">
+          <div class="field">
+            <label data-i18n="cardTitle">Card title</label>
+            <input type="text" id="ba-title" data-i18n-ph="cardTitlePlaceholder" placeholder="EVCC" oninput="render()">
+          </div>
+        </div>
+      </div>
+
+      <!-- plan -->
+      <div class="mode-tile" id="tile-plan">
+        <div class="mode-header" onclick="toggleMode('plan')">
+          <input type="checkbox" class="mode-checkbox" id="card-plan" onchange="onModeChange('plan')">
+          <span class="mode-icon">📋</span>
+          <span class="mode-name" data-i18n="modePlan">Charge Plan</span>
+          <span class="mode-desc">plan</span>
+        </div>
+        <div class="mode-options hidden" id="opts-plan">
+          <div class="field">
+            <label data-i18n="cardTitle">Card title</label>
+            <input type="text" id="pl-title" data-i18n-ph="cardTitlePlaceholder" placeholder="EVCC" oninput="render()">
+          </div>
+          <div class="field">
+            <label data-i18n="chargePointFilter">Charge point</label>
+            <input type="text" id="pl-loadpoints" data-i18n-ph="filterPlaceholder" placeholder="openwb" oninput="render()">
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div><!-- /form-col -->
+
+  <!-- Right column -->
+  <div class="right-col">
+    <!-- YAML Output -->
+    <div class="card yaml-card">
+      <div class="yaml-head">
+        <span class="yaml-title" data-i18n="generatedYaml">Generated YAML</span>
+      </div>
+      <div id="yaml-output"></div>
+    </div>
+
+  </div>
+
+</div><!-- /layout -->
+
+<script>
+  /* ── Translations ─────────────────────────────────────────────────── */
+  const UI = {
+    de: {
+      title: "EVCC Card Konfigurator",
+      subtitle: "YAML-Konfiguration für Lovelace generieren",
+      commonSettings: "Allgemeine Einstellungen",
+      selectCards: "Karten auswählen",
+      entityPrefix: "Entity-Präfix",
+      prefixPlaceholder: "evcc_",
+      prefixHint: "Nur ändern bei mehreren EVCC-Instanzen (z.B. <code>evcc2_</code>). Standard: <code>evcc_</code>",
+      languageLabel: "Sprache",
+      langAuto: "Automatisch (aus Home Assistant)",
+      filterLoadpoints: "Ladepunkte filtern (kommagetrennt, leer = alle)",
+      filterPlaceholder: "wallbox, openwb",
+      hidePlan: "Ladeplan ausblenden für (kommagetrennte Namen)",
+      hidePlanPlaceholder: "wallbox-garage",
+      chargeCurrentSettings: "Ladestrom-Einstellungen",
+      detailTable: "Detailtabelle (Ein/Aus)",
+      statsFooterPeriod: "Statistik-Footer Zeitraum",
+      defaultPeriodTab: "Standard-Zeitraum Tab",
+      chargePointFilter: "Ladepunkt (kommagetrennte Namen)",
+      generatedYaml: "Generiertes YAML",
+      copyCardBtn: "Kopieren",
+      copiedBtn: "✓ Kopiert!",
+      emptyHint: "# Oben mindestens eine Karte auswählen",
+      releases: "Versionen",
+      modeLoadpoint: "Ladepunkt",
+      modeCompact: "Kompakt",
+      modeSite: "Übersicht",
+      modeGrid: "Netz",
+      modeStats: "Statistik",
+      modeBattery: "Hausbatterie",
+      modePlan: "Ladeplanung",
+      optCollapsedDefault: "eingeklappt (Standard)",
+      optExpanded: "ausgeklappt",
+      optExpandedDefault: "ausgeklappt (Standard)",
+      optCollapsed: "eingeklappt",
+      optPeriodTotal: "Gesamt (Standard)",
+      opt30d: "30 Tage",
+      opt365d: "365 Tage",
+      optThisYear: "Dieses Jahr",
+      optNone: "Keiner (Footer ausblenden)",
+      cardTitle: "Kartentitel (optional)",
+      cardTitlePlaceholder: "z.B. Wallbox Garage",
+    },
+    en: {
+      title: "EVCC Card Configurator",
+      subtitle: "Generate your Lovelace YAML configuration",
+      commonSettings: "Common Settings",
+      selectCards: "Select Cards",
+      entityPrefix: "Entity prefix",
+      prefixPlaceholder: "evcc_",
+      prefixHint: "Only change if you run multiple EVCC instances (e.g. <code>evcc2_</code>). Default: <code>evcc_</code>",
+      languageLabel: "Language",
+      langAuto: "Auto-detect from Home Assistant",
+      filterLoadpoints: "Filter charge points (comma-separated, empty = all)",
+      filterPlaceholder: "wallbox, openwb",
+      hidePlan: "Hide charge plan for (comma-separated names)",
+      hidePlanPlaceholder: "wallbox-garage",
+      chargeCurrentSettings: "Charge current settings",
+      detailTable: "Detail table (IN/OUT)",
+      statsFooterPeriod: "Statistics footer period",
+      defaultPeriodTab: "Default period tab",
+      chargePointFilter: "Charge point (comma-separated names)",
+      generatedYaml: "Generated YAML",
+      copyCardBtn: "Copy",
+      copiedBtn: "✓ Copied!",
+      emptyHint: "# Select at least one card above",
+      releases: "Releases",
+      modeLoadpoint: "Charge Point",
+      modeCompact: "Compact",
+      modeSite: "Site Overview",
+      modeGrid: "Grid",
+      modeStats: "Statistics",
+      modeBattery: "Battery",
+      modePlan: "Charge Plan",
+      optCollapsedDefault: "collapsed (default)",
+      optExpanded: "expanded",
+      optExpandedDefault: "expanded (default)",
+      optCollapsed: "collapsed",
+      optPeriodTotal: "total (default)",
+      opt30d: "30 days",
+      opt365d: "365 days",
+      optThisYear: "This year",
+      optNone: "none (hide footer)",
+      cardTitle: "Card title (optional)",
+      cardTitlePlaceholder: "e.g. Garage Wallbox",
+    },
+    es: {
+      title: "Configurador EVCC Card",
+      subtitle: "Genera tu configuración YAML para Lovelace",
+      commonSettings: "Configuración general",
+      selectCards: "Seleccionar tarjetas",
+      entityPrefix: "Prefijo de entidad",
+      prefixPlaceholder: "evcc_",
+      prefixHint: "Solo cambia si tienes varias instancias EVCC (p.ej. <code>evcc2_</code>). Por defecto: <code>evcc_</code>",
+      languageLabel: "Idioma",
+      langAuto: "Detección automática desde Home Assistant",
+      filterLoadpoints: "Filtrar puntos de carga (separados por comas, vacío = todos)",
+      filterPlaceholder: "wallbox, openwb",
+      hidePlan: "Ocultar plan de carga para (nombres separados por comas)",
+      hidePlanPlaceholder: "wallbox-garage",
+      chargeCurrentSettings: "Ajustes de corriente de carga",
+      detailTable: "Tabla de detalle (ENTRADA/SALIDA)",
+      statsFooterPeriod: "Período del pie de estadísticas",
+      defaultPeriodTab: "Pestaña de período por defecto",
+      chargePointFilter: "Punto de carga (nombres separados por comas)",
+      generatedYaml: "YAML generado",
+      copyCardBtn: "Copiar",
+      copiedBtn: "✓ ¡Copiado!",
+      emptyHint: "# Selecciona al menos una tarjeta arriba",
+      releases: "Versiones",
+      modeLoadpoint: "Punto de carga",
+      modeCompact: "Compacto",
+      modeSite: "Vista del sitio",
+      modeGrid: "Red",
+      modeStats: "Estadísticas",
+      modeBattery: "Batería doméstica",
+      modePlan: "Plan de carga",
+      optCollapsedDefault: "contraído (por defecto)",
+      optExpanded: "expandido",
+      optExpandedDefault: "expandido (por defecto)",
+      optCollapsed: "contraído",
+      optPeriodTotal: "total (por defecto)",
+      opt30d: "30 días",
+      opt365d: "365 días",
+      optThisYear: "Este año",
+      optNone: "ninguno (ocultar pie)",
+      cardTitle: "Título de tarjeta (opcional)",
+      cardTitlePlaceholder: "p.ej. Garaje Wallbox",
+    },
+    fr: {
+      title: "Configurateur EVCC Card",
+      subtitle: "Générez votre configuration YAML pour Lovelace",
+      commonSettings: "Paramètres communs",
+      selectCards: "Sélectionner les cartes",
+      entityPrefix: "Préfixe d'entité",
+      prefixPlaceholder: "evcc_",
+      prefixHint: "À modifier uniquement si vous avez plusieurs instances EVCC (ex. <code>evcc2_</code>). Par défaut : <code>evcc_</code>",
+      languageLabel: "Langue",
+      langAuto: "Détection automatique depuis Home Assistant",
+      filterLoadpoints: "Filtrer les points de charge (virgule, vide = tous)",
+      filterPlaceholder: "wallbox, openwb",
+      hidePlan: "Masquer le plan de charge pour (noms séparés par des virgules)",
+      hidePlanPlaceholder: "wallbox-garage",
+      chargeCurrentSettings: "Paramètres de courant de charge",
+      detailTable: "Table de détail (ENTRÉE/SORTIE)",
+      statsFooterPeriod: "Période du pied de statistiques",
+      defaultPeriodTab: "Onglet de période par défaut",
+      chargePointFilter: "Point de charge (noms séparés par des virgules)",
+      generatedYaml: "YAML généré",
+      copyCardBtn: "Copier",
+      copiedBtn: "✓ Copié !",
+      emptyHint: "# Sélectionnez au moins une carte ci-dessus",
+      releases: "Versions",
+      modeLoadpoint: "Point de charge",
+      modeCompact: "Compact",
+      modeSite: "Vue d'ensemble",
+      modeGrid: "Réseau",
+      modeStats: "Statistiques",
+      modeBattery: "Batterie domestique",
+      modePlan: "Planification de charge",
+      optCollapsedDefault: "réduit (par défaut)",
+      optExpanded: "déplié",
+      optExpandedDefault: "déplié (par défaut)",
+      optCollapsed: "réduit",
+      optPeriodTotal: "total (par défaut)",
+      opt30d: "30 jours",
+      opt365d: "365 jours",
+      optThisYear: "Cette année",
+      optNone: "aucun (masquer le pied)",
+      cardTitle: "Titre de la carte (optionnel)",
+      cardTitlePlaceholder: "ex. Wallbox Garage",
+    },
+    hr: {
+      title: "EVCC Card Konfigurator",
+      subtitle: "Generirajte svoju Lovelace YAML konfiguraciju",
+      commonSettings: "Opće postavke",
+      selectCards: "Odabir kartica",
+      entityPrefix: "Prefiks entiteta",
+      prefixPlaceholder: "evcc_",
+      prefixHint: "Mijenjajte samo ako koristite više EVCC instanci (npr. <code>evcc2_</code>). Zadano: <code>evcc_</code>",
+      languageLabel: "Jezik",
+      langAuto: "Automatski otkrivanje iz Home Assistanta",
+      filterLoadpoints: "Filtriraj točke punjenja (zarezima, prazno = sve)",
+      filterPlaceholder: "wallbox, openwb",
+      hidePlan: "Sakrij plan punjenja za (nazivi odvojeni zarezima)",
+      hidePlanPlaceholder: "wallbox-garage",
+      chargeCurrentSettings: "Postavke struje punjenja",
+      detailTable: "Tablica detalja (ULAZ/IZLAZ)",
+      statsFooterPeriod: "Razdoblje podnožja statistike",
+      defaultPeriodTab: "Zadana kartica perioda",
+      chargePointFilter: "Točka punjenja (nazivi odvojeni zarezima)",
+      generatedYaml: "Generirani YAML",
+      copyCardBtn: "Kopiraj",
+      copiedBtn: "✓ Kopirano!",
+      emptyHint: "# Odaberite barem jednu karticu iznad",
+      releases: "Izdanja",
+      modeLoadpoint: "Točka punjenja",
+      modeCompact: "Kompaktno",
+      modeSite: "Pregled",
+      modeGrid: "Mreža",
+      modeStats: "Statistike",
+      modeBattery: "Kućna baterija",
+      modePlan: "Plan punjenja",
+      optCollapsedDefault: "sažeto (zadano)",
+      optExpanded: "prošireno",
+      optExpandedDefault: "prošireno (zadano)",
+      optCollapsed: "sažeto",
+      optPeriodTotal: "ukupno (zadano)",
+      opt30d: "30 dana",
+      opt365d: "365 dana",
+      optThisYear: "Ova godina",
+      optNone: "nijedno (sakrij podnožje)",
+      cardTitle: "Naslov kartice (neobavezno)",
+      cardTitlePlaceholder: "npr. Wallbox Garaža",
+    },
+    nl: {
+      title: "EVCC Card Configurator",
+      subtitle: "Genereer uw Lovelace YAML-configuratie",
+      commonSettings: "Algemene instellingen",
+      selectCards: "Kaarten selecteren",
+      entityPrefix: "Entiteitprefix",
+      prefixPlaceholder: "evcc_",
+      prefixHint: "Alleen wijzigen bij meerdere EVCC-instanties (bijv. <code>evcc2_</code>). Standaard: <code>evcc_</code>",
+      languageLabel: "Taal",
+      langAuto: "Automatisch detecteren vanuit Home Assistant",
+      filterLoadpoints: "Laadpunten filteren (komma, leeg = alle)",
+      filterPlaceholder: "wallbox, openwb",
+      hidePlan: "Laadplanning verbergen voor (kommagescheiden namen)",
+      hidePlanPlaceholder: "wallbox-garage",
+      chargeCurrentSettings: "Laadstroominstellingen",
+      detailTable: "Detailtabel (IN/UIT)",
+      statsFooterPeriod: "Statistieken voettekst periode",
+      defaultPeriodTab: "Standaard periode-tab",
+      chargePointFilter: "Laadpunt (kommagescheiden namen)",
+      generatedYaml: "Gegenereerde YAML",
+      copyCardBtn: "Kopiëren",
+      copiedBtn: "✓ Gekopieerd!",
+      emptyHint: "# Selecteer hierboven minstens één kaart",
+      releases: "Releases",
+      modeLoadpoint: "Laadpunt",
+      modeCompact: "Compact",
+      modeSite: "Overzicht",
+      modeGrid: "Net",
+      modeStats: "Statistieken",
+      modeBattery: "Thuisbatterij",
+      modePlan: "Laadplanning",
+      optCollapsedDefault: "ingeklapt (standaard)",
+      optExpanded: "uitgeklapt",
+      optExpandedDefault: "uitgeklapt (standaard)",
+      optCollapsed: "ingeklapt",
+      optPeriodTotal: "totaal (standaard)",
+      opt30d: "30 dagen",
+      opt365d: "365 dagen",
+      optThisYear: "Dit jaar",
+      optNone: "geen (voettekst verbergen)",
+      cardTitle: "Kaarttitel (optioneel)",
+      cardTitlePlaceholder: "bijv. Wallbox Garage",
+    },
+    pl: {
+      title: "Konfigurator EVCC Card",
+      subtitle: "Wygeneruj konfigurację YAML dla Lovelace",
+      commonSettings: "Ustawienia ogólne",
+      selectCards: "Wybierz karty",
+      entityPrefix: "Prefiks encji",
+      prefixPlaceholder: "evcc_",
+      prefixHint: "Zmień tylko przy wielu instancjach EVCC (np. <code>evcc2_</code>). Domyślnie: <code>evcc_</code>",
+      languageLabel: "Język",
+      langAuto: "Automatyczne wykrywanie z Home Assistant",
+      filterLoadpoints: "Filtruj punkty ładowania (przecinek, puste = wszystkie)",
+      filterPlaceholder: "wallbox, openwb",
+      hidePlan: "Ukryj plan ładowania dla (nazwy oddzielone przecinkami)",
+      hidePlanPlaceholder: "wallbox-garage",
+      chargeCurrentSettings: "Ustawienia prądu ładowania",
+      detailTable: "Tabela szczegółów (WEJ/WYJ)",
+      statsFooterPeriod: "Okres stopki statystyk",
+      defaultPeriodTab: "Domyślna zakładka okresu",
+      chargePointFilter: "Punkt ładowania (nazwy oddzielone przecinkami)",
+      generatedYaml: "Wygenerowany YAML",
+      copyCardBtn: "Kopiuj",
+      copiedBtn: "✓ Skopiowano!",
+      emptyHint: "# Wybierz co najmniej jedną kartę powyżej",
+      releases: "Wydania",
+      modeLoadpoint: "Punkt ładowania",
+      modeCompact: "Kompaktowy",
+      modeSite: "Przegląd",
+      modeGrid: "Sieć",
+      modeStats: "Statystyki",
+      modeBattery: "Bateria domowa",
+      modePlan: "Plan ładowania",
+      optCollapsedDefault: "zwinięte (domyślnie)",
+      optExpanded: "rozwinięte",
+      optExpandedDefault: "rozwinięte (domyślnie)",
+      optCollapsed: "zwinięte",
+      optPeriodTotal: "łącznie (domyślnie)",
+      opt30d: "30 dni",
+      opt365d: "365 dni",
+      optThisYear: "Ten rok",
+      optNone: "brak (ukryj stopkę)",
+      cardTitle: "Tytuł karty (opcjonalnie)",
+      cardTitlePlaceholder: "np. Wallbox Garaż",
+    },
+    pt: {
+      title: "Configurador EVCC Card",
+      subtitle: "Gere a sua configuração YAML para o Lovelace",
+      commonSettings: "Definições comuns",
+      selectCards: "Selecionar cartões",
+      entityPrefix: "Prefixo de entidade",
+      prefixPlaceholder: "evcc_",
+      prefixHint: "Altere apenas se tiver várias instâncias EVCC (ex. <code>evcc2_</code>). Padrão: <code>evcc_</code>",
+      languageLabel: "Idioma",
+      langAuto: "Deteção automática do Home Assistant",
+      filterLoadpoints: "Filtrar pontos de carga (vírgula, vazio = todos)",
+      filterPlaceholder: "wallbox, openwb",
+      hidePlan: "Ocultar plano de carga para (nomes separados por vírgulas)",
+      hidePlanPlaceholder: "wallbox-garage",
+      chargeCurrentSettings: "Definições de corrente de carga",
+      detailTable: "Tabela de detalhe (ENTRADA/SAÍDA)",
+      statsFooterPeriod: "Período do rodapé de estatísticas",
+      defaultPeriodTab: "Separador de período padrão",
+      chargePointFilter: "Ponto de carga (nomes separados por vírgulas)",
+      generatedYaml: "YAML gerado",
+      copyCardBtn: "Copiar",
+      copiedBtn: "✓ Copiado!",
+      emptyHint: "# Selecione pelo menos um cartão acima",
+      releases: "Versões",
+      modeLoadpoint: "Ponto de carga",
+      modeCompact: "Compacto",
+      modeSite: "Visão geral",
+      modeGrid: "Rede",
+      modeStats: "Estatísticas",
+      modeBattery: "Bateria doméstica",
+      modePlan: "Plano de carga",
+      optCollapsedDefault: "recolhido (padrão)",
+      optExpanded: "expandido",
+      optExpandedDefault: "expandido (padrão)",
+      optCollapsed: "recolhido",
+      optPeriodTotal: "total (padrão)",
+      opt30d: "30 dias",
+      opt365d: "365 dias",
+      optThisYear: "Este ano",
+      optNone: "nenhum (ocultar rodapé)",
+      cardTitle: "Título do cartão (opcional)",
+      cardTitlePlaceholder: "ex. Wallbox Garagem",
+    },
+  };
+
+  /* ── Language handling ────────────────────────────────────────────── */
+  let currentLang = detectLang();
+
+  function detectLang() {
+    const saved = localStorage.getItem('evcc-cfg-lang');
+    if (saved && UI[saved]) return saved;
+    const browser = (navigator.language || 'en').split('-')[0];
+    return UI[browser] ? browser : 'en';
+  }
+
+  function t(key) {
+    return (UI[currentLang] || UI.en)[key] || (UI.en[key] || key);
+  }
+
+  function setLang(lang) {
+    currentLang = lang;
+    localStorage.setItem('evcc-cfg-lang', lang);
+    applyLang();
+    render();
+  }
+
+  function applyLang() {
+    // Update active button
+    document.querySelectorAll('.lang-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.lang === currentLang);
+    });
+    // Plain text elements
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      el.textContent = t(el.dataset.i18n);
+    });
+    // Re-label per-block copy buttons (rendered dynamically)
+    document.querySelectorAll('.copy-block-btn:not(.copied)').forEach(btn => {
+      btn.textContent = t('copyCardBtn');
+    });
+    // HTML elements (for <code> tags in hints)
+    document.querySelectorAll('[data-i18n-html]').forEach(el => {
+      el.innerHTML = t(el.dataset.i18nHtml);
+    });
+    // Placeholders
+    document.querySelectorAll('[data-i18n-ph]').forEach(el => {
+      el.placeholder = t(el.dataset.i18nPh);
+    });
+  }
+
+  /* ── Mode toggling ────────────────────────────────────────────────── */
+  const MODES = ['loadpoint','compact','site','grid','stats','battery','plan'];
+
+  function toggleMode(mode) {
+    const cb = document.getElementById(`card-${mode}`);
+    cb.checked = !cb.checked;
+    onModeChange(mode);
+  }
+
+  function onModeChange(mode) {
+    const checked = document.getElementById(`card-${mode}`).checked;
+    const opts    = document.getElementById(`opts-${mode}`);
+    const tile    = document.getElementById(`tile-${mode}`);
+    if (opts) opts.classList.toggle('hidden', !checked);
+    tile.classList.toggle('active', checked);
+    render();
+  }
+
+  /* ── YAML generation ──────────────────────────────────────────────── */
+  function val(id) {
+    const el = document.getElementById(id);
+    return el ? el.value.trim() : '';
+  }
+
+  function listVal(id) {
+    return val(id).split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  function buildBlock(mode) {
+    const prefix   = val('prefix') || 'evcc_';
+    const language = val('language');
+    const lines = [];
+
+    const modeLabels = {
+      loadpoint: `⚡ ${t('modeLoadpoint')}`,
+      compact:   `📑 ${t('modeCompact')}`,
+      site:      `☀️ ${t('modeSite')}`,
+      grid:      `🔌 ${t('modeGrid')}`,
+      stats:     `📈 ${t('modeStats')}`,
+      battery:   `🏠 ${t('modeBattery')}`,
+      plan:      `📋 ${t('modePlan')}`,
+    };
+
+    lines.push({ type: 'comment', val: modeLabels[mode] });
+    lines.push({ type: 'kv', key: 'type', val: 'custom:evcc-card' });
+    if (mode !== 'loadpoint') lines.push({ type: 'kv', key: 'mode', val: mode });
+
+    if (mode === 'loadpoint' || mode === 'compact') {
+      const pfx = mode === 'loadpoint' ? 'lp' : 'co';
+      const lps = listVal(`${pfx}-loadpoints`);
+      if (lps.length) lines.push({ type: 'list', key: 'loadpoints', val: lps });
+      const np = listVal(`${pfx}-no_plan`);
+      if (np.length) lines.push({ type: 'list', key: 'no_plan', val: np });
+      const ccs = val(`${pfx}-charge_current_settings`);
+      if (ccs) lines.push({ type: 'kv', key: 'charge_current_settings', val: ccs });
+    }
+    if (mode === 'site') {
+      const sd = val('si-site_details');
+      if (sd) lines.push({ type: 'kv', key: 'site_details', val: sd });
+      const sp = val('si-stats_period');
+      if (sp) lines.push({ type: 'kv', key: 'stats_period', val: sp });
+    }
+    if (mode === 'grid') {
+      const sp = val('gr-stats_period');
+      if (sp) lines.push({ type: 'kv', key: 'stats_period', val: sp });
+    }
+    if (mode === 'stats') {
+      const sp = val('st-stats_period');
+      if (sp) lines.push({ type: 'kv', key: 'stats_period', val: sp });
+    }
+    if (mode === 'plan') {
+      const lps = listVal('pl-loadpoints');
+      if (lps.length) lines.push({ type: 'list', key: 'loadpoints', val: lps });
+    }
+
+    const pfxMap = { loadpoint: 'lp', compact: 'co', site: 'si', grid: 'gr', stats: 'st', battery: 'ba', plan: 'pl' };
+    const title = val(`${pfxMap[mode]}-title`);
+    if (title) lines.push({ type: 'kv', key: 'title', val: title });
+
+    if (prefix !== 'evcc_') lines.push({ type: 'kv', key: 'prefix', val: prefix });
+    if (language)            lines.push({ type: 'kv', key: 'language', val: language });
+
+    return lines;
+  }
+
+  // Each block is always rendered without list prefix — suitable for pasting
+  // one card at a time into HA's "Add card → Manual" editor.
+  function blockToLines(block) {
+    const lines = [];
+    block.forEach(line => {
+      if (line.type === 'comment') return; // skip comments in the copy payload
+      if (line.type === 'kv') {
+        lines.push(`${line.key}: ${line.val}`);
+      } else if (line.type === 'list') {
+        lines.push(`${line.key}:`);
+        line.val.forEach(v => lines.push(`  - ${v}`));
+      }
+    });
+    return lines.join('\n');
+  }
+
+  function blockLabel(block) {
+    const cmt = block.find(l => l.type === 'comment');
+    return cmt ? cmt.val : '';
+  }
+
+  function renderHighlight(block) {
+    let html = '';
+    block.forEach(line => {
+      if (line.type === 'comment') return; // label shown in header, not in code
+      if (line.type === 'kv') {
+        html += `<span class="hl-key">${esc(line.key)}</span>: <span class="hl-val">${esc(line.val)}</span>\n`;
+      } else if (line.type === 'list') {
+        html += `<span class="hl-key">${esc(line.key)}</span>:\n`;
+        line.val.forEach(v => { html += `  - <span class="hl-val">${esc(v)}</span>\n`; });
+      }
+    });
+    return html;
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // Store plain-text YAML per block index for copy buttons
+  let _blockYamls = [];
+
+  function render() {
+    const selected = MODES.filter(m => document.getElementById(`card-${m}`)?.checked);
+    const blocks   = selected.map(buildBlock);
+    _blockYamls    = blocks.map(blockToLines);
+
+    const out = document.getElementById('yaml-output');
+    if (!blocks.length) {
+      out.innerHTML = `<div class="yaml-empty"><span class="hl-cmt">${esc(t('emptyHint'))}</span></div>`;
+      return;
+    }
+
+    out.innerHTML = blocks.map((block, i) => `
+      <div class="yaml-block">
+        <div class="yaml-block-head">
+          <span class="yaml-block-label">${esc(blockLabel(block))}</span>
+          <button class="copy-block-btn" id="copy-block-${i}" onclick="copyBlock(${i})">${esc(t('copyCardBtn'))}</button>
+        </div>
+        <pre>${renderHighlight(block)}</pre>
+      </div>`).join('');
+  }
+
+  function copyBlock(idx) {
+    const yaml = _blockYamls[idx];
+    if (!yaml) return;
+    navigator.clipboard.writeText(yaml).then(() => {
+      const btn = document.getElementById(`copy-block-${idx}`);
+      btn.textContent = t('copiedBtn');
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = t('copyCardBtn');
+        btn.classList.remove('copied');
+      }, 2000);
+    });
+  }
+
+
+  /* ── Init ─────────────────────────────────────────────────────────── */
+  document.getElementById('prefix').addEventListener('input', render);
+  document.getElementById('language').addEventListener('change', render);
+
+  applyLang();
+  render();
+</script>
+</body>
+</html>

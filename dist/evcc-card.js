@@ -462,7 +462,7 @@ class EvccCard extends HTMLElement {
     return `
       <div class="loadpoint">
         <div class="lp-header">
-          <span class="lp-name">${lpName}</span>
+          <span class="lp-name">${this._config.title || lpName}</span>
           <span class="lp-badge ${statusClass}">
             ${statusLabel}
           </span>
@@ -529,7 +529,7 @@ class EvccCard extends HTMLElement {
     return `
       <div class="loadpoint" data-lp-compact="${lpName}">
         <div class="lp-header">
-          <span class="lp-name">${lpName}</span>
+          <span class="lp-name">${this._config.title || lpName}</span>
           <span class="lp-badge ${statusClass}">
             ${statusLabel}
           </span>
@@ -1060,7 +1060,7 @@ class EvccCard extends HTMLElement {
       return `
         <div class="loadpoint">
           <div class="lp-header">
-            <span class="lp-name">${lpName}</span>
+            <span class="lp-name">${this._config.title || lpName}</span>
           </div>
           ${planHtml}
           ${sessionHtml}
@@ -1415,7 +1415,7 @@ class EvccCard extends HTMLElement {
     return `
       <div class="site-block">
         <div class="lp-header">
-          <span class="lp-name">${this._t("overview")}</span>
+          <span class="lp-name">${this._config.title || this._t("overview")}</span>
         </div>
         <div class="flow-wrap-clickable" role="button" tabindex="0"
              onclick="window.__evccCards.get('${this._cardId}')._toggleSite()"
@@ -1552,7 +1552,7 @@ class EvccCard extends HTMLElement {
     return `
       <div class="s2-block">
         <div class="lp-header">
-          <span class="lp-name">${this._t("energyFlow")}</span>
+          <span class="lp-name">${this._config.title || this._t("energyFlow")}</span>
         </div>
         <div class="s2-net">
           <div class="s2-net-label">${this._t("gridStatus") || "Netzstatus"}</div>
@@ -1836,7 +1836,7 @@ class EvccCard extends HTMLElement {
     return `
       <div>
         <div class="lp-header">
-          <span class="lp-name">${this._t("statistics")}</span>
+          <span class="lp-name">${this._config.title || this._t("statistics")}</span>
         </div>
         ${this._renderStatsPeriodTabs()}
         ${noDataHint}
@@ -1969,7 +1969,7 @@ class EvccCard extends HTMLElement {
     return `
       <div class="battery-block">
         <div class="lp-header">
-          <span class="lp-name">${this._t("homeBattery")}</span>
+          <span class="lp-name">${this._config.title || this._t("homeBattery")}</span>
         </div>
         ${tabUsage}
       </div>`;
