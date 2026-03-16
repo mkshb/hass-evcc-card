@@ -16,9 +16,12 @@
   "maxCurrent": "Courant max",
   "minCurrent": "Courant min",
   "phases": "Phases",
-  "chargeCurrent": "Courant de charge",
+  "chargeCurrent": "Paramètres de charge",
+  "chargeSettings": "Paramètres de charge",
   "chargePlan": "Planification de charge",
   "chargeSession": "Session de charge",
+  "chargeSessionCurrent": "Session en cours",
+  "chargeSessionLast": "Derni\u00e8re session",
   "overview": "Vue d'ensemble",
   "energyFlow": "Flux d'énergie",
   "statistics": "Statistiques",
@@ -71,5 +74,12 @@
   "statsPeriodThisYear": "Cette année",
   "statsPeriodTotal": "Total",
   "statsNoData": "Période non activée – veuillez l'activer dans les paramètres de l'intégration ha-evcc.",
-  "statsGrid": "Réseau"
+  "statsGrid": "Réseau",
+  "smartCostLimitCo2": "Limite CO₂",
+  "smartCostLimitPrice": "Limite de prix",
+  "sessionPricePerKwh": "Prix/kWh",
+  "sessionCo2PerKwh": "CO\u2082/kWh",
+  "sessionSolar": "Part solaire",
+  "smartCostClear": "Effacer la limite",
+  "smartCostActive": "Charge intelligente active"
 }

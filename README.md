@@ -29,7 +29,7 @@ All charge points and site entities are **automatically discovered** based on th
 | 🔍 **Auto-discovery** | Automatically detects all charge points and site entities — zero manual configuration |
 | 🔄 **Live updates** | Power, SoC and status update in real time without full re-render |
 | 🔋 **SoC display** | Vehicle state of charge as a progress bar with percentage and estimated range |
-| 🎚️ **Slider controls** | Adjust Target SoC, Min SoC, Priority, Max current and Min current inline |
+| 🎚️ **Slider controls** | Adjust Target SoC, Min SoC, Priority, smart charging limit, Max current and Min current inline |
 | 🔌 **Phase switching** | Auto / 1-phase / 3-phase control built in |
 | 🌍 **Multi-language** | Support for various languages — auto-detected from HA language setting, easily extensible |
 | 🎛️ **Filtering** | Select specific charge points via `loadpoints` config |
@@ -109,11 +109,12 @@ Add the card to any Lovelace dashboard using the YAML editor. The `mode` option 
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `grid`, `stats`, `plan` |
+| `title` | `string` | *(auto)* | Replaces the default card header — the loadpoint name for `loadpoint`/`compact`/`plan` mode, or the mode label (e.g. `Overview`, `Statistics`) for all other modes |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language. Examples: `de`, `en`, `es`, `hr`, `nl` |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
 | `site_details` | `string` | *(expanded)* | Set to `collapsed` to hide the IN/OUT detail table by default in `site` mode |
-| `charge_current_settings` | `string` | *(collapsed)* | Set to `expanded` to show the charge current block (phase switch, min/max current) expanded by default |
+| `charge_current_settings` | `string` | *(collapsed)* | Set to `expanded` to show the charge settings block (phase switch, min/max current, smart charging limit) expanded by default |
 | `prefix` | `string` | `evcc_` | Entity name prefix used by the integration — only needed if you run multiple EVCC instances with a custom prefix (e.g. `evcc2_`) |
 | `stats_period` | `string` | `total` | Default statistics period. For `site` and `grid` cards: controls the footer KPIs; allowed values: `total`, `30d`, `365d`, `thisYear`, `none` (hides the footer entirely). For the `stats` card: sets the initially selected tab; allowed values: `total`, `30d`, `365d`, `thisYear` (the user can still switch tabs interactively). |
 
@@ -126,11 +127,15 @@ The main charge point view. For each discovered charge point it shows:
 - Charge mode buttons (Off / PV / Min+PV / Now)
 - Vehicle SoC progress bar with percentage and estimated range
 - Current charging session: energy, cost, duration, phases
-- Sliders: Target SoC, Min SoC, Priority SoC, Min current, Max current
-- Phase switch: Auto / 1-phase / 3-phase
+- Sliders: Target SoC, Min SoC, Priority SoC
 - Charge plan block
 
-The **CHARGE CURRENT** section (phase switch, max current, min current) is collapsed by default and can be toggled at any time using the ⚙️ gear icon next to the section title. Use `charge_current_settings: expanded` to start it expanded instead.
+The **CHARGE SETTINGS** section is collapsed by default and can be toggled using the ⚙️ gear icon. It contains:
+- Phase switch: Auto / 1-phase / 3-phase
+- Max current / Min current sliders
+- Smart charging limit — threshold below which charging starts automatically; shows "Off" when set to 0; EVCC supports either CO₂-based (g/kWh) **or** price-based (€/kWh) — not both simultaneously; the active mode is reflected in the entity's unit
+
+Use `charge_current_settings: expanded` to start this section expanded by default.
 
 ```yaml
 type: custom:evcc-card
@@ -284,7 +289,7 @@ Same content as `loadpoint`, but organized into four tabs — ideal for dashboar
 | Tab | Contents |
 |---|---|
 | ⚡ **Control** | Charge mode buttons, vehicle SoC bar, current charging power |
-| 🎚️ **Settings** | Target SoC, Min SoC, Priority sliders, current limits, phase switch |
+| 🎚️ **Settings** | Target SoC, Min SoC, Priority sliders, phase switch, current limits, smart charging limit |
 | 📅 **Plan** | Charge plan: vehicle selector, target time, target SoC, activate/delete |
 | 📊 **Session** | Energy, cost, duration and phases of the current session |
 

@@ -16,9 +16,12 @@
   "maxCurrent": "Max. stroom",
   "minCurrent": "Min. stroom",
   "phases": "Fases",
-  "chargeCurrent": "Laadstroom",
+  "chargeCurrent": "Laadinstellingen",
+  "chargeSettings": "Laadinstellingen",
   "chargePlan": "Laadplanning",
   "chargeSession": "Laadsessie",
+  "chargeSessionCurrent": "Huidige sessie",
+  "chargeSessionLast": "Laatste sessie",
   "overview": "Overzicht",
   "energyFlow": "Energiestroom",
   "statistics": "Statistieken",
@@ -71,5 +74,12 @@
   "statsPeriodThisYear": "Dit jaar",
   "statsPeriodTotal": "Totaal",
   "statsNoData": "Periode niet ingeschakeld – activeer deze in de ha-evcc integratie-instellingen.",
-  "statsGrid": "Net"
+  "statsGrid": "Net",
+  "smartCostLimitCo2": "CO₂-limiet",
+  "smartCostLimitPrice": "Prijslimiet",
+  "sessionPricePerKwh": "Prijs/kWh",
+  "sessionCo2PerKwh": "CO\u2082/kWh",
+  "sessionSolar": "Zonne-aandeel",
+  "smartCostClear": "Limiet wissen",
+  "smartCostActive": "Slim laden actief"
 }

@@ -344,6 +344,10 @@
         </div>
         <div class="mode-options hidden" id="opts-loadpoint">
           <div class="field">
+            <label data-i18n="cardTitle">Card title</label>
+            <input type="text" id="lp-title" data-i18n-ph="cardTitlePlaceholder" placeholder="Wallbox" oninput="render()">
+          </div>
+          <div class="field">
             <label data-i18n="filterLoadpoints">Filter charge points</label>
             <input type="text" id="lp-loadpoints" data-i18n-ph="filterPlaceholder" placeholder="wallbox, openwb" oninput="render()">
           </div>
@@ -371,6 +375,10 @@
         </div>
         <div class="mode-options hidden" id="opts-compact">
           <div class="field">
+            <label data-i18n="cardTitle">Card title</label>
+            <input type="text" id="co-title" data-i18n-ph="cardTitlePlaceholder" placeholder="Wallbox" oninput="render()">
+          </div>
+          <div class="field">
             <label data-i18n="filterLoadpoints">Filter charge points</label>
             <input type="text" id="co-loadpoints" data-i18n-ph="filterPlaceholder" placeholder="wallbox, openwb" oninput="render()">
           </div>
@@ -397,6 +405,10 @@
           <span class="mode-desc">site</span>
         </div>
         <div class="mode-options hidden" id="opts-site">
+          <div class="field">
+            <label data-i18n="cardTitle">Card title</label>
+            <input type="text" id="si-title" data-i18n-ph="cardTitlePlaceholder" placeholder="EVCC" oninput="render()">
+          </div>
           <div class="field">
             <label data-i18n="detailTable">Detail table (IN/OUT)</label>
             <select id="si-site_details" onchange="render()">
@@ -427,6 +439,10 @@
         </div>
         <div class="mode-options hidden" id="opts-grid">
           <div class="field">
+            <label data-i18n="cardTitle">Card title</label>
+            <input type="text" id="gr-title" data-i18n-ph="cardTitlePlaceholder" placeholder="EVCC" oninput="render()">
+          </div>
+          <div class="field">
             <label data-i18n="statsFooterPeriod">Statistics footer period</label>
             <select id="gr-stats_period" onchange="render()">
               <option value=""         data-i18n="optPeriodTotal">total (default)</option>
@@ -449,6 +465,10 @@
         </div>
         <div class="mode-options hidden" id="opts-stats">
           <div class="field">
+            <label data-i18n="cardTitle">Card title</label>
+            <input type="text" id="st-title" data-i18n-ph="cardTitlePlaceholder" placeholder="EVCC" oninput="render()">
+          </div>
+          <div class="field">
             <label data-i18n="defaultPeriodTab">Default period tab</label>
             <select id="st-stats_period" onchange="render()">
               <option value=""         data-i18n="optPeriodTotal">total (default)</option>
@@ -468,6 +488,12 @@
           <span class="mode-name" data-i18n="modeBattery">Battery</span>
           <span class="mode-desc">battery</span>
         </div>
+        <div class="mode-options hidden" id="opts-battery">
+          <div class="field">
+            <label data-i18n="cardTitle">Card title</label>
+            <input type="text" id="ba-title" data-i18n-ph="cardTitlePlaceholder" placeholder="EVCC" oninput="render()">
+          </div>
+        </div>
       </div>
 
       <!-- plan -->
@@ -479,6 +505,10 @@
           <span class="mode-desc">plan</span>
         </div>
         <div class="mode-options hidden" id="opts-plan">
+          <div class="field">
+            <label data-i18n="cardTitle">Card title</label>
+            <input type="text" id="pl-title" data-i18n-ph="cardTitlePlaceholder" placeholder="EVCC" oninput="render()">
+          </div>
           <div class="field">
             <label data-i18n="chargePointFilter">Charge point</label>
             <input type="text" id="pl-loadpoints" data-i18n-ph="filterPlaceholder" placeholder="openwb" oninput="render()">
@@ -548,6 +578,8 @@
       opt365d: "365 Tage",
       optThisYear: "Dieses Jahr",
       optNone: "Keiner (Footer ausblenden)",
+      cardTitle: "Kartentitel (optional)",
+      cardTitlePlaceholder: "z.B. Wallbox Garage",
     },
     en: {
       title: "EVCC Card Configurator",
@@ -589,6 +621,8 @@
       opt365d: "365 days",
       optThisYear: "This year",
       optNone: "none (hide footer)",
+      cardTitle: "Card title (optional)",
+      cardTitlePlaceholder: "e.g. Garage Wallbox",
     },
     es: {
       title: "Configurador EVCC Card",
@@ -630,6 +664,8 @@
       opt365d: "365 días",
       optThisYear: "Este año",
       optNone: "ninguno (ocultar pie)",
+      cardTitle: "Título de tarjeta (opcional)",
+      cardTitlePlaceholder: "p.ej. Garaje Wallbox",
     },
     fr: {
       title: "Configurateur EVCC Card",
@@ -671,6 +707,8 @@
       opt365d: "365 jours",
       optThisYear: "Cette année",
       optNone: "aucun (masquer le pied)",
+      cardTitle: "Titre de la carte (optionnel)",
+      cardTitlePlaceholder: "ex. Wallbox Garage",
     },
     hr: {
       title: "EVCC Card Konfigurator",
@@ -712,6 +750,8 @@
       opt365d: "365 dana",
       optThisYear: "Ova godina",
       optNone: "nijedno (sakrij podnožje)",
+      cardTitle: "Naslov kartice (neobavezno)",
+      cardTitlePlaceholder: "npr. Wallbox Garaža",
     },
     nl: {
       title: "EVCC Card Configurator",
@@ -753,6 +793,8 @@
       opt365d: "365 dagen",
       optThisYear: "Dit jaar",
       optNone: "geen (voettekst verbergen)",
+      cardTitle: "Kaarttitel (optioneel)",
+      cardTitlePlaceholder: "bijv. Wallbox Garage",
     },
     pl: {
       title: "Konfigurator EVCC Card",
@@ -794,6 +836,8 @@
       opt365d: "365 dni",
       optThisYear: "Ten rok",
       optNone: "brak (ukryj stopkę)",
+      cardTitle: "Tytuł karty (opcjonalnie)",
+      cardTitlePlaceholder: "np. Wallbox Garaż",
     },
     pt: {
       title: "Configurador EVCC Card",
@@ -835,6 +879,8 @@
       opt365d: "365 dias",
       optThisYear: "Este ano",
       optNone: "nenhum (ocultar rodapé)",
+      cardTitle: "Título do cartão (opcional)",
+      cardTitlePlaceholder: "ex. Wallbox Garagem",
     },
   };
 
@@ -956,6 +1002,10 @@
       const lps = listVal('pl-loadpoints');
       if (lps.length) lines.push({ type: 'list', key: 'loadpoints', val: lps });
     }
+
+    const pfxMap = { loadpoint: 'lp', compact: 'co', site: 'si', grid: 'gr', stats: 'st', battery: 'ba', plan: 'pl' };
+    const title = val(`${pfxMap[mode]}-title`);
+    if (title) lines.push({ type: 'kv', key: 'title', val: title });
 
     if (prefix !== 'evcc_') lines.push({ type: 'kv', key: 'prefix', val: prefix });
     if (language)            lines.push({ type: 'kv', key: 'language', val: language });

@@ -16,9 +16,12 @@
   "maxCurrent": "Corrente máx",
   "minCurrent": "Corrente mín",
   "phases": "Fases",
-  "chargeCurrent": "Corrente de carga",
+  "chargeCurrent": "Definições de carga",
+  "chargeSettings": "Definições de carga",
   "chargePlan": "Planeamento de carga",
-  "chargeSession": "Sessão de carga",
+  "chargeSession": "Sess\u00e3o de carga",
+  "chargeSessionCurrent": "Sess\u00e3o atual",
+  "chargeSessionLast": "\u00daltima sess\u00e3o",
   "overview": "Visão geral",
   "energyFlow": "Fluxo de energia",
   "statistics": "Estatísticas",
@@ -71,5 +74,12 @@
   "statsPeriodThisYear": "Este ano",
   "statsPeriodTotal": "Total",
   "statsNoData": "Período não ativado – ative nas definições da integração ha-evcc.",
-  "statsGrid": "Rede"
+  "statsGrid": "Rede",
+  "smartCostLimitCo2": "Limite de CO₂",
+  "smartCostLimitPrice": "Limite de preço",
+  "sessionPricePerKwh": "Pre\u00e7o/kWh",
+  "sessionCo2PerKwh": "CO\u2082/kWh",
+  "sessionSolar": "Parcela solar",
+  "smartCostClear": "Limpar limite",
+  "smartCostActive": "Carregamento inteligente ativo"
 }

@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.4.2";
+const EVCC_CARD_VERSION = "0.4.3";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -34,8 +34,11 @@ const FEATURES = [
   { suffix: "vehicle_soc",         domain: "sensor",        type: "soc",           lp: true  },
   { suffix: "vehicle_range",       domain: "sensor",        type: "range",         lp: true  },
   { suffix: "vehicle_odometer",    domain: "sensor",        type: "info",          lp: true  },
-  { suffix: "session_energy",      domain: "sensor",        type: "info",          lp: true  },
-  { suffix: "session_price",       domain: "sensor",        type: "info",          lp: true  },
+  { suffix: "session_energy",          domain: "sensor", type: "info", lp: true },
+  { suffix: "session_price",           domain: "sensor", type: "info", lp: true },
+  { suffix: "session_price_per_kwh",   domain: "sensor", type: "info", lp: true },
+  { suffix: "session_co2_per_kwh",     domain: "sensor", type: "info", lp: true },
+  { suffix: "session_solar_percentage",domain: "sensor", type: "info", lp: true },
   { suffix: "phases_active",       domain: "sensor",        type: "info",          lp: true  },
 
   { suffix: "effective_plan_soc",      domain: "sensor", type: "info", lp: true },
@@ -252,7 +255,7 @@ class EvccCard extends HTMLElement {
 
     let langs = ["de", "en"];
     try {
-      const idxResp = await fetch(`${base}index.json`);
+      const idxResp = await fetch(`${base}index.json?v=${EVCC_CARD_VERSION}`);
       if (idxResp.ok) langs = await idxResp.json();
       else console.warn("[evcc-card] locales/index.json not found, using fallback:", langs);
     } catch (e) {
@@ -261,7 +264,7 @@ class EvccCard extends HTMLElement {
 
     const results = await Promise.allSettled(
       langs.map(lang =>
-        fetch(`${base}${lang}.json`)
+        fetch(`${base}${lang}.json?v=${EVCC_CARD_VERSION}`)
           .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
           .then(data => ({ lang, data }))
       )
@@ -459,19 +462,19 @@ class EvccCard extends HTMLElement {
     return `
       <div class="loadpoint">
         <div class="lp-header">
-          <span class="lp-name">${lpName}</span>
+          <span class="lp-name">${this._config.title || lpName}</span>
           <span class="lp-badge ${statusClass}">
             ${statusLabel}
           </span>
         </div>
         ${this._renderModeSelector(ents)}
-        ${this._renderVehicleInfo(ents, charging)}
+        ${this._renderVehicleInfo(ents, charging, lpName)}
         ${this._renderPowerRow(ents, charging)}
         ${this._renderSliders(ents)}
         ${this._renderCurrentBlock(ents, lpName)}
         ${this._renderToggles(ents)}
         ${noPlan ? "" : this._renderPlanBlock(lpName, ents)}
-        ${this._renderSessionInfo(ents)}
+        ${this._renderSessionInfo(ents, charging)}
       </div>
     `;
   }
@@ -507,7 +510,7 @@ class EvccCard extends HTMLElement {
     const tabContent = [
       `<div class="compact-panel" ${activeTab !== 0 ? 'hidden' : ''}>
         ${this._renderModeSelector(ents)}
-        ${this._renderVehicleInfo(ents, charging)}
+        ${this._renderVehicleInfo(ents, charging, lpName)}
         ${this._renderPowerRow(ents, charging)}
       </div>`,
       `<div class="compact-panel" ${activeTab !== 1 ? 'hidden' : ''}>
@@ -519,14 +522,14 @@ class EvccCard extends HTMLElement {
         ${noPlan ? "" : this._renderPlanBlock(lpName, ents)}
       </div>`,
       `<div class="compact-panel" ${activeTab !== 3 ? 'hidden' : ''}>
-        ${this._renderSessionInfo(ents)}
+        ${this._renderSessionInfo(ents, charging)}
       </div>`,
     ].join("");
 
     return `
       <div class="loadpoint" data-lp-compact="${lpName}">
         <div class="lp-header">
-          <span class="lp-name">${lpName}</span>
+          <span class="lp-name">${this._config.title || lpName}</span>
           <span class="lp-badge ${statusClass}">
             ${statusLabel}
           </span>
@@ -579,7 +582,7 @@ class EvccCard extends HTMLElement {
     `;
   }
 
-  _renderVehicleInfo(ents, charging = false) {
+  _renderVehicleInfo(ents, charging = false, lpName = "") {
     if (!ents.vehicle_soc && !ents.vehicle_name) return "";
     const vehicleAttrs = ents.vehicle_name
       ? (this._hass.states[ents.vehicle_name]?.attributes ?? {}) : {};
@@ -595,6 +598,23 @@ class EvccCard extends HTMLElement {
     const minSoc = ents.min_soc   ? parseFloat(stateVal(this._hass, ents.min_soc))    : null;
     const fillBg  = soc !== null ? socFillGradient(soc, minSoc ?? 0, limit ?? 100) : "var(--evcc-blue)";
     const trackBg = socTrackBg(minSoc ?? 0, limit ?? 100);
+
+    const _rawLimit  = ents.smart_cost_limit ? parseFloat(stateVal(this._hass, ents.smart_cost_limit)) : NaN;
+    const smartLimit = ents.smart_cost_limit && !isNaN(_rawLimit) ? _rawLimit : null;
+    const smartUnit  = smartLimit !== null
+      ? (attr(this._hass, ents.smart_cost_limit, "unit_of_measurement") ?? "") : "";
+    const isCo2Chip  = smartUnit === "g/kWh";
+    const prefix     = this._config?.prefix || "evcc_";
+    const tariffId   = isCo2Chip ? `sensor.${prefix}tariff_co2` : `sensor.${prefix}tariff_grid`;
+    const tariffVal  = parseFloat(this._hass.states[tariffId]?.state ?? "NaN");
+    const smartActive = smartLimit !== null && !isNaN(tariffVal) && tariffVal <= smartLimit;
+    const leafIcon   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3C21,5 14,5.25 9,6.25C4,7.25 2,11.5 2,13.5C2,15.5 3.75,17.25 3.75,17.25C7,8 17,8 17,8Z"/></svg>`;
+    const euroIcon   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M15,18.5C12.49,18.5 10.32,17.08 9.24,15H15V13H8.58C8.53,12.67 8.5,12.34 8.5,12C8.5,11.66 8.53,11.33 8.58,11H15V9H9.24C10.32,6.92 12.5,5.5 15,5.5C16.61,5.5 18.09,6.09 19.23,7.07L21,5.3C19.41,3.87 17.3,3 15,3C11.08,3 7.76,5.51 6.52,9H3V11H6.06C6.02,11.33 6,11.66 6,12C6,12.34 6.02,12.67 6.06,13H3V15H6.52C7.76,18.49 11.08,21 15,21C17.31,21 19.41,20.13 21,18.7L19.22,16.93C18.09,17.91 16.61,18.5 15,18.5Z"/></svg>`;
+    const smartChip  = smartLimit !== null ? `
+      <button class="smart-cost-chip ${smartActive ? "active" : ""}"
+              data-lp-smart-cost-open="${lpName}">
+        ${isCo2Chip ? leafIcon : euroIcon} ≤ ${smartLimit} ${isCo2Chip ? "g" : smartUnit}
+      </button>` : "";
 
     return `
       <div class="soc-section">
@@ -612,6 +632,7 @@ class EvccCard extends HTMLElement {
           ${minSoc !== null ? `<div class="soc-min-marker"   style="left:${Math.min(minSoc,100)}%"></div>` : ""}
           ${limit  !== null ? `<div class="soc-limit-marker" style="left:${Math.min(limit,100)}%"></div>`  : ""}
         </div>` : ""}
+        ${smartChip ? `<div class="smart-cost-row">${smartChip}</div>` : ""}
       </div>
     `;
   }
@@ -644,7 +665,6 @@ class EvccCard extends HTMLElement {
     const SLIDER_FEATURES = [
       { key: "limit_soc",   label: this._t("targetSoc") },
       { key: "min_soc",     label: this._t("minSoc")    },
-      { key: "priority",    label: this._t("priority")  },
     ];
 
     const rows = SLIDER_FEATURES
@@ -655,9 +675,11 @@ class EvccCard extends HTMLElement {
   }
 
   _renderCurrentBlock(ents, lpName = "") {
-    const hasPhases  = !!ents.phases_configured;
-    const hasCurrent = ents.min_current || ents.max_current;
-    if (!hasPhases && !hasCurrent) return "";
+    const hasPhases     = !!ents.phases_configured;
+    const hasCurrent    = ents.min_current || ents.max_current;
+    const hasSmartCost  = !!ents.smart_cost_limit;
+    const hasPriority   = !!ents.priority;
+    if (!hasPhases && !hasCurrent && !hasSmartCost && !hasPriority) return "";
 
     const configDefault = this._config.charge_current_settings === "expanded";
     const expanded = this._currentBlockExpanded[lpName] !== undefined
@@ -696,7 +718,7 @@ class EvccCard extends HTMLElement {
     return `
       <div class="current-block" data-lp-current="${lpName}">
         <div class="block-title-row">
-          <span class="block-title">${this._t("chargeCurrent")}</span>
+          <span class="block-title">${this._t("chargeSettings")}</span>
           <button class="current-toggle-btn ${expanded ? "active" : ""}"
                   data-lp-current-toggle="${lpName}"
                   title="${expanded ? "Hide settings" : "Show settings"}">
@@ -706,13 +728,32 @@ class EvccCard extends HTMLElement {
         <div class="current-block-body" ${expanded ? "" : "hidden"}>
           ${phasesHtml}
           ${currentRows}
+          ${(hasPhases || hasCurrent) && (hasPriority || hasSmartCost) ? `<hr class="settings-divider">` : ""}
+          ${hasPriority ? this._sliderRow(ents.priority, this._t("priority")) : ""}
+          ${hasPriority && hasSmartCost ? `<hr class="settings-divider">` : ""}
+          ${hasSmartCost ? (() => {
+            const unit      = attr(this._hass, ents.smart_cost_limit, "unit_of_measurement") ?? "";
+            const isCo2     = unit === "g/kWh";
+            const label     = isCo2 ? this._t("smartCostLimitCo2") : this._t("smartCostLimitPrice");
+            const scTariffId = isCo2 ? `sensor.${this._config?.prefix || "evcc_"}tariff_co2` : `sensor.${this._config?.prefix || "evcc_"}tariff_grid`;
+            const scTariff   = parseFloat(this._hass.states[scTariffId]?.state ?? "NaN");
+            const active     = !isNaN(scTariff) && scTariff <= parseFloat(stateVal(this._hass, ents.smart_cost_limit) || 0);
+            const clearId   = ents.smart_cost_limit.replace(/^number\./, "button.");
+            const hasClear  = !!this._hass.states[clearId];
+            return `<div class="smart-cost-section" data-lp-smart-cost-section="${lpName}">` +
+              this._sliderRow(ents.smart_cost_limit, label) +
+              (active ? `<div class="smart-active-hint">⚡ ${this._t("smartCostActive")}</div>` : "") +
+              (hasClear ? `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` : "") +
+              `</div>`;
+          })() : ""}
         </div>
       </div>`;
   }
 
-  _sliderRow(entityId, label) {
+  _sliderRow(entityId, label, zeroLabel = null) {
     const domain  = entityId.split(".")[0];
-    const val     = parseFloat(stateVal(this._hass, entityId)) || 0;
+    const _v      = parseFloat(stateVal(this._hass, entityId));
+    const val     = isNaN(_v) ? 0 : _v;
     const unit    = displayUnit(this._hass, entityId);
     let min, max, step;
 
@@ -738,7 +779,7 @@ class EvccCard extends HTMLElement {
                  min="${min}" max="${max}" step="${step}" value="${val}"
                  data-entity="${entityId}"
                  data-domain="${domain}" />
-          <span class="slider-val">${val} ${unit}</span>
+          <span class="slider-val">${zeroLabel && val === 0 ? zeroLabel : `${val} ${unit}`}</span>
         </div>
       </div>`;
   }
@@ -971,53 +1012,40 @@ class EvccCard extends HTMLElement {
     `;
   }
 
-  _renderSessionInfo(ents) {
-    const hasAny = ents.session_energy || ents.session_price || ents.charge_duration;
+  _renderSessionInfo(ents, charging = false) {
+    const hasAny = ents.session_energy || ents.session_price || ents.session_price_per_kwh || ents.session_co2_per_kwh || ents.session_solar_percentage;
     if (!hasAny) return "";
 
-    const energy = ents.session_energy
-      ? (() => {
-          const v = parseFloat(stateVal(this._hass, ents.session_energy));
-          return isNaN(v) ? "—" : `${v.toFixed(2)} kWh`;
-        })() : null;
+    const fmtVal = (entityId, decimals = 2) => {
+      const v = parseFloat(stateVal(this._hass, entityId));
+      if (isNaN(v)) return "—";
+      const unit = unitStr(this._hass, entityId);
+      return `${v.toFixed(decimals)}${unit ? " " + unit : ""}`;
+    };
 
-    const price = ents.session_price
-      ? (() => {
-          const v    = parseFloat(stateVal(this._hass, ents.session_price));
-          const unit = unitStr(this._hass, ents.session_price) || "€";
-          return isNaN(v) ? "—" : `${v.toFixed(2)} ${unit}`;
-        })() : null;
-
-    const duration = ents.charge_duration
-      ? (() => {
-          const raw = stateVal(this._hass, ents.charge_duration);
-          let totalSec;
-          if (raw && raw.includes(":")) {
-            const parts = raw.split(":").map(Number);
-            totalSec = parts[0] * 3600 + parts[1] * 60 + (parts[2] || 0);
-          } else {
-            totalSec = parseFloat(raw) || 0;
-          }
-          const h   = Math.floor(totalSec / 3600);
-          const min = Math.floor((totalSec % 3600) / 60);
-          if (h > 0) return `${h} h ${min} min`;
-          if (min > 0) return `${min} min`;
-          return `< 1 min`;
-        })() : null;
-
-    const phases = ents.phases_active
-      ? stateVal(this._hass, ents.phases_active) : null;
+    const energy      = ents.session_energy          ? (() => { const v = parseFloat(stateVal(this._hass, ents.session_energy)); return isNaN(v) ? "—" : `${v.toFixed(2)} kWh`; })() : null;
+    const price       = ents.session_price           ? (() => { const v = parseFloat(stateVal(this._hass, ents.session_price)); const u = unitStr(this._hass, ents.session_price) || "€"; return isNaN(v) ? "—" : `${v.toFixed(2)} ${u}`; })() : null;
+    const fmtPerKwh = (entityId, decimals) => {
+      const v = parseFloat(stateVal(this._hass, entityId));
+      if (isNaN(v)) return "—";
+      const unit = (unitStr(this._hass, entityId) || "").replace("/kWh", "").trim();
+      return `${v.toFixed(decimals)}${unit ? " " + unit : ""}`;
+    };
+    const pricePerKwh = ents.session_price_per_kwh   ? fmtPerKwh(ents.session_price_per_kwh, 3) : null;
+    const co2PerKwh   = ents.session_co2_per_kwh     ? fmtPerKwh(ents.session_co2_per_kwh, 0)   : null;
+    const solar       = ents.session_solar_percentage? (() => { const v = parseFloat(stateVal(this._hass, ents.session_solar_percentage)); return isNaN(v) ? "—" : `${Math.round(v)} %`; })() : null;
 
     const items = [
-      energy   ? `<div class="session-item"><span class="si-label">${this._t("energy")}</span><span class="si-value">${energy}</span></div>`   : "",
-      price    ? `<div class="session-item"><span class="si-label">${this._t("cost")}</span><span class="si-value">${price}</span></div>`     : "",
-      duration ? `<div class="session-item"><span class="si-label">${this._t("duration")}</span><span class="si-value">${duration}</span></div>`   : "",
-      phases   ? `<div class="session-item"><span class="si-label">${this._t("phases")}</span><span class="si-value">${phases}</span></div>`    : "",
+      energy      ? `<div class="session-item"><span class="si-label">${this._t("energy")}</span><span class="si-value">${energy}</span></div>`          : "",
+      price       ? `<div class="session-item"><span class="si-label">${this._t("cost")}</span><span class="si-value">${price}</span></div>`              : "",
+      pricePerKwh ? `<div class="session-item"><span class="si-label">${this._t("sessionPricePerKwh")}</span><span class="si-value">${pricePerKwh}</span></div>` : "",
+      co2PerKwh   ? `<div class="session-item"><span class="si-label">${this._t("sessionCo2PerKwh")}</span><span class="si-value">${co2PerKwh}</span></div>`     : "",
+      solar       ? `<div class="session-item"><span class="si-label">${this._t("sessionSolar")}</span><span class="si-value">${solar}</span></div>`           : "",
     ].filter(Boolean);
 
     return `
       <div class="session-block">
-        <div class="session-title">${this._t("chargeSession")}</div>
+        <div class="session-title">${charging ? this._t("chargeSessionCurrent") : this._t("chargeSessionLast")}</div>
         <div class="session-grid">${items.join("")}</div>
       </div>
     `;
@@ -1032,7 +1060,7 @@ class EvccCard extends HTMLElement {
       return `
         <div class="loadpoint">
           <div class="lp-header">
-            <span class="lp-name">${lpName}</span>
+            <span class="lp-name">${this._config.title || lpName}</span>
           </div>
           ${planHtml}
           ${sessionHtml}
@@ -1387,7 +1415,7 @@ class EvccCard extends HTMLElement {
     return `
       <div class="site-block">
         <div class="lp-header">
-          <span class="lp-name">${this._t("overview")}</span>
+          <span class="lp-name">${this._config.title || this._t("overview")}</span>
         </div>
         <div class="flow-wrap-clickable" role="button" tabindex="0"
              onclick="window.__evccCards.get('${this._cardId}')._toggleSite()"
@@ -1524,7 +1552,7 @@ class EvccCard extends HTMLElement {
     return `
       <div class="s2-block">
         <div class="lp-header">
-          <span class="lp-name">${this._t("energyFlow")}</span>
+          <span class="lp-name">${this._config.title || this._t("energyFlow")}</span>
         </div>
         <div class="s2-net">
           <div class="s2-net-label">${this._t("gridStatus") || "Netzstatus"}</div>
@@ -1808,7 +1836,7 @@ class EvccCard extends HTMLElement {
     return `
       <div>
         <div class="lp-header">
-          <span class="lp-name">${this._t("statistics")}</span>
+          <span class="lp-name">${this._config.title || this._t("statistics")}</span>
         </div>
         ${this._renderStatsPeriodTabs()}
         ${noDataHint}
@@ -1941,7 +1969,7 @@ class EvccCard extends HTMLElement {
     return `
       <div class="battery-block">
         <div class="lp-header">
-          <span class="lp-name">${this._t("homeBattery")}</span>
+          <span class="lp-name">${this._config.title || this._t("homeBattery")}</span>
         </div>
         ${tabUsage}
       </div>`;
@@ -1976,6 +2004,26 @@ class EvccCard extends HTMLElement {
           else body.setAttribute("hidden", "");
         }
         btn.classList.toggle("active", !expanded);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("[data-lp-smart-cost-open]").forEach(chip => {
+      chip.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const lpName = chip.dataset.lpSmartCostOpen;
+        const block  = this.shadowRoot.querySelector(`[data-lp-current="${lpName}"]`);
+        if (!block) return;
+        const body = block.querySelector(".current-block-body");
+        if (body) body.removeAttribute("hidden");
+        this._currentBlockExpanded[lpName] = true;
+        const toggleBtn = block.querySelector("[data-lp-current-toggle]");
+        if (toggleBtn) toggleBtn.classList.add("active");
+        const section = block.querySelector(`[data-lp-smart-cost-section="${lpName}"]`);
+        if (section) {
+          section.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          section.classList.add("smart-cost-highlight");
+          setTimeout(() => section.classList.remove("smart-cost-highlight"), 1500);
+        }
       });
     });
 
@@ -2243,6 +2291,12 @@ class EvccCard extends HTMLElement {
       });
     });
 
+    this.shadowRoot.querySelectorAll("button.smart-cost-clear-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._hass.callService("button", "press", { entity_id: btn.dataset.entity });
+      });
+    });
+
     this.shadowRoot.querySelectorAll("input[type=range]:not(.plan-soc-range):not([data-boost-entity])").forEach(input => {
       input.addEventListener("pointerdown", () => {
         this._isDragging    = true;
@@ -2334,6 +2388,7 @@ class EvccCard extends HTMLElement {
         font-size: .85rem; margin-bottom: 6px; color: var(--secondary-text-color);
       }
       .vehicle-name { font-weight: 500; color: var(--primary-text-color); }
+      .smart-cost-row { display: flex; justify-content: flex-end; margin-top: 4px; }
       .soc-track {
         position: relative; height: 8px;
         background: var(--divider-color, #e5e7eb); border-radius: 4px; overflow: visible;
@@ -2365,6 +2420,17 @@ class EvccCard extends HTMLElement {
       .slider-control { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 120px; }
       .slider-control input { flex: 1; min-width: 0; accent-color: var(--primary-color); }
       .slider-val { flex-shrink: 0; width: 52px; text-align: right; font-size: .8rem; }
+      .smart-active-hint { font-size: .75rem; color: var(--evcc-green); margin-top: -4px; margin-bottom: 8px; }
+      .smart-cost-clear-row { display: flex; justify-content: flex-end; margin-top: 6px; margin-bottom: 2px; }
+      .smart-cost-clear-btn { background: none; border: 1px solid var(--divider-color, #555); border-radius: 4px; cursor: pointer; font-size: .75rem; color: var(--secondary-text-color); padding: 3px 8px; font-family: inherit; transition: border-color .15s, color .15s; }
+      .smart-cost-clear-btn:hover { border-color: var(--evcc-red); color: var(--evcc-red); }
+      .smart-cost-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .72rem; color: var(--secondary-text-color); white-space: nowrap; background: none; border: none; padding: 0; cursor: pointer; font-family: inherit; }
+      .smart-cost-chip:hover { color: var(--primary-color); }
+      .smart-cost-chip.active { color: var(--evcc-green); }
+      .smart-cost-chip.active:hover { color: var(--evcc-green); filter: brightness(1.2); }
+      .settings-divider { border: none; border-top: 1px solid var(--divider-color, #e5e7eb); margin: 8px 0; }
+      @keyframes smart-cost-pulse { 0%,100% { background: transparent; } 40% { background: color-mix(in srgb, var(--primary-color) 15%, transparent); } }
+      .smart-cost-highlight { border-radius: 6px; animation: smart-cost-pulse 1.5s ease; }
 
       .toggles { margin-bottom: 10px; }
       .toggle-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; flex-wrap: wrap; gap: 4px; }
@@ -2579,7 +2645,7 @@ class EvccCard extends HTMLElement {
 
       .session-block { border-top: 1px solid var(--divider-color, #e5e7eb); margin-top: 10px; padding-top: 10px; }
       .session-title { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--secondary-text-color); margin-bottom: 8px; }
-      .session-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 6px; }
+      .session-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 6px; }
       .session-item { display: flex; flex-direction: column; gap: 2px; }
       .si-label { font-size: .7rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .05em; }
       .si-value { font-size: .95rem; font-weight: 600; color: var(--primary-text-color); }
