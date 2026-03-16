@@ -135,6 +135,12 @@ The **CHARGE SETTINGS** section is collapsed by default and can be toggled using
 - Max current / Min current sliders
 - Smart charging limit — threshold below which charging starts automatically; shows "Off" when set to 0; EVCC supports either CO₂-based (g/kWh) **or** price-based (€/kWh) — not both simultaneously; the active mode is reflected in the entity's unit
 
+> **⚠️ Price mode — slider range issues:** Two known issues can affect the smart charging price limit slider:
+>
+> 1. **Minimum too restrictive:** The current ha-evcc integration sets the minimum to `-0.05 €/kWh` (= -5 ct/kWh). Users with dynamic tariffs (e.g. Tibber, aWATTar, Nordpool) may experience prices well below this value and cannot set a low enough threshold. A fix has been submitted: [ha-evcc PR #250](https://github.com/marq24/ha-evcc/pull/250).
+>
+> 2. **Wrong range after switching from CO₂ to price mode:** When switching the smart charging mode in EVCC from CO₂-based to price-based, ha-evcc may not recreate the limit entity. The slider then still shows the CO₂ range (0–500 g/kWh) instead of the price range. To fix this, go to Settings → Devices & Services → ha-evcc → **Reconfigure**, and enable the option **"Remove and recreate all Devices"**. This forces ha-evcc to recreate all entities with the correct ranges and also removes any orphaned device entries. No historical data should be lost in the process — however, this is a feature of the ha-evcc integration and no guarantees can be made here.
+
 Use `charge_current_settings: expanded` to start this section expanded by default.
 
 ```yaml
