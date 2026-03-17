@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.4.4";
+const EVCC_CARD_VERSION = "0.4.5";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -1578,9 +1578,10 @@ class EvccCard extends HTMLElement {
     };
     const s = sufMap[per] ?? sufMap.total;
     return {
-      kwhId:   find(`${base}${s.kwh}`),
-      solarId: find(`${base}${s.solar}`),
-      priceId: find(`${base}${s.price}`),
+      kwhId:      find(`${base}${s.kwh}`),
+      solarId:    find(`${base}${s.solar}`),
+      priceId:    find(`${base}${s.price}`),
+      solarKwhId: find(`${base}stat_total_solar_k_wh_template`),
     };
   }
 
@@ -1608,7 +1609,7 @@ class EvccCard extends HTMLElement {
   }
 
   async _fetchChartData(period) {
-    const { kwhId } = this._getStatEntityIds("total"); // always use cumulative total entities
+    const { kwhId, solarKwhId } = this._getStatEntityIds("total"); // always use cumulative total entities
     if (!kwhId) return;
 
     const now   = new Date();
@@ -1631,22 +1632,25 @@ class EvccCard extends HTMLElement {
     }
 
     try {
+      const ids = [kwhId];
+      if (solarKwhId) ids.push(solarKwhId);
       const result = await this._hass.callWS({
         type: "recorder/statistics_during_period",
         start_time: startTime.toISOString(),
-        statistic_ids: [kwhId],
+        statistic_ids: ids,
         period: recorderPeriod,
         types: ["sum"],
       });
-      const stats = result[kwhId] ?? [];
+      const stats      = result[kwhId]      ?? [];
+      const solarStats = solarKwhId ? (result[solarKwhId] ?? []) : [];
 
-      if      (period === "30d")      this._chartCache[period] = this._computeDailyDeltas(stats, 30);
-      else if (period === "365d")     this._chartCache[period] = this._computeMonthlyDeltas(stats, 13);
-      else if (period === "thisYear") this._chartCache[period] = this._computeThisYearMonthly(stats);
+      if      (period === "30d")      this._chartCache[period] = this._computeDailyDeltas(stats, 30, solarStats);
+      else if (period === "365d")     this._chartCache[period] = this._computeMonthlyDeltas(stats, 13, solarStats);
+      else if (period === "thisYear") this._chartCache[period] = this._computeThisYearMonthly(stats, solarStats);
       else {
-        const yearly = this._computeYearlyTotals(stats);
+        const yearly = this._computeYearlyTotals(stats, solarStats);
         this._chartCache[period] = yearly.length <= 1
-          ? this._computeThisYearMonthly(stats)  // only one year of data → show months
+          ? this._computeThisYearMonthly(stats, solarStats)  // only one year of data → show months
           : yearly;
       }
 
@@ -1656,12 +1660,14 @@ class EvccCard extends HTMLElement {
     }
   }
 
-  _computeDailyDeltas(stats, days) {
+  _computeDailyDeltas(stats, days, solarStats = []) {
     const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
     const now = new Date();
     const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`; };
     const byKey = {};
     stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
+    const solarByKey = {};
+    solarStats.forEach(s => { solarByKey[toKey(s.start)] = s.sum; });
     const result = [];
     for (let i = days - 1; i >= 0; i--) {
       const day = new Date(now);
@@ -1672,18 +1678,23 @@ class EvccCard extends HTMLElement {
       const cur   = byKey[toKey(day)];
       const prev  = byKey[toKey(prevDay)];
       const delta = (cur != null && prev != null) ? Math.max(0, cur - prev) : null;
+      const sCur  = solarByKey[toKey(day)];
+      const sPrev = solarByKey[toKey(prevDay)];
+      const solarDelta = (sCur != null && sPrev != null) ? Math.max(0, sCur - sPrev) : null;
       const labelStr = day.toLocaleDateString(lang, { day: "numeric", month: "numeric" });
-      result.push({ delta, label: day, labelStr, isCurrent: i === 0 });
+      result.push({ delta, solarDelta, label: day, labelStr, isCurrent: i === 0 });
     }
     return result;
   }
 
-  _computeMonthlyDeltas(stats, count) {
+  _computeMonthlyDeltas(stats, count, solarStats = []) {
     const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
     const now = new Date();
     const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}`; };
     const byKey = {};
     stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
+    const solarByKey = {};
+    solarStats.forEach(s => { solarByKey[toKey(s.start)] = s.sum; });
     const result = [];
     for (let i = count - 1; i >= 0; i--) {
       const month     = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -1691,19 +1702,24 @@ class EvccCard extends HTMLElement {
       const cur   = byKey[toKey(month)];
       const prev  = byKey[toKey(prevMonth)];
       const delta = (cur != null && prev != null) ? Math.max(0, cur - prev) : null;
+      const sCur  = solarByKey[toKey(month)];
+      const sPrev = solarByKey[toKey(prevMonth)];
+      const solarDelta = (sCur != null && sPrev != null) ? Math.max(0, sCur - sPrev) : null;
       const labelStr = month.toLocaleDateString(lang, { month: "short" });
-      result.push({ delta, label: month, labelStr, isCurrent: i === 0 });
+      result.push({ delta, solarDelta, label: month, labelStr, isCurrent: i === 0 });
     }
     return result;
   }
 
-  _computeThisYearMonthly(stats) {
+  _computeThisYearMonthly(stats, solarStats = []) {
     const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
     const now  = new Date();
     const year = now.getFullYear();
     const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}`; };
     const byKey = {};
     stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
+    const solarByKey = {};
+    solarStats.forEach(s => { solarByKey[toKey(s.start)] = s.sum; });
     const result = [];
     for (let m = 0; m <= now.getMonth(); m++) {
       const month     = new Date(year, m, 1);
@@ -1711,26 +1727,39 @@ class EvccCard extends HTMLElement {
       const cur   = byKey[toKey(month)];
       const prev  = byKey[toKey(prevMonth)];
       const delta = (cur != null && prev != null) ? Math.max(0, cur - prev) : null;
+      const sCur  = solarByKey[toKey(month)];
+      const sPrev = solarByKey[toKey(prevMonth)];
+      const solarDelta = (sCur != null && sPrev != null) ? Math.max(0, sCur - sPrev) : null;
       const labelStr = month.toLocaleDateString(lang, { month: "short" });
-      result.push({ delta, label: month, labelStr, isCurrent: m === now.getMonth() });
+      result.push({ delta, solarDelta, label: month, labelStr, isCurrent: m === now.getMonth() });
     }
     return result;
   }
 
-  _computeYearlyTotals(stats) {
+  _computeYearlyTotals(stats, solarStats = []) {
     const now = new Date();
     const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}`; };
     const byKey = {};
     stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
+    const solarByKey = {};
+    solarStats.forEach(s => { solarByKey[toKey(s.start)] = s.sum; });
     const years = [...new Set(stats.map(s => new Date(s.start).getFullYear()))].sort();
     return years.map(year => {
       let yearTotal = 0, hasAny = false;
+      let solarTotal = 0, hasSolar = false;
       for (let m = 0; m <= 11; m++) {
         const cur  = byKey[`${year}-${m}`];
         const prev = byKey[m === 0 ? `${year - 1}-11` : `${year}-${m - 1}`];
         if (cur != null && prev != null) { yearTotal += Math.max(0, cur - prev); hasAny = true; }
+        const sCur  = solarByKey[`${year}-${m}`];
+        const sPrev = solarByKey[m === 0 ? `${year - 1}-11` : `${year}-${m - 1}`];
+        if (sCur != null && sPrev != null) { solarTotal += Math.max(0, sCur - sPrev); hasSolar = true; }
       }
-      return { delta: hasAny ? yearTotal : null, label: new Date(year, 0, 1), labelStr: String(year), isCurrent: year === now.getFullYear() };
+      return {
+        delta:      hasAny   ? yearTotal  : null,
+        solarDelta: hasSolar ? solarTotal : null,
+        label: new Date(year, 0, 1), labelStr: String(year), isCurrent: year === now.getFullYear(),
+      };
     });
   }
 
@@ -1757,10 +1786,20 @@ class EvccCard extends HTMLElement {
                 opacity="${isCurrent ? "1" : "0.75"}">${d.delta.toFixed(1)}</text>`
         : "";
 
-      const barRect = totalH > 0
-        ? `<rect x="${x}" y="${topY}" width="${barW}" height="${totalH}"
-                 fill="var(--primary-color,#3b82f6)" opacity="${opacity}" rx="1.5"/>`
-        : "";
+      let barRect = "";
+      if (totalH > 0) {
+        const hasSolar = d.solarDelta != null && d.delta > 0;
+        if (hasSolar) {
+          const solarH = Math.min(totalH, Math.round((d.solarDelta / d.delta) * totalH));
+          const gridH  = totalH - solarH;
+          barRect =
+            (solarH > 0 ? `<rect x="${x}" y="${topY}"           width="${barW}" height="${solarH}" fill="var(--evcc-green,#22c55e)"       opacity="${opacity}" rx="1.5"/>` : "") +
+            (gridH  > 0 ? `<rect x="${x}" y="${topY + solarH}"  width="${barW}" height="${gridH}"  fill="var(--primary-color,#3b82f6)"    opacity="${opacity}" rx="1.5"/>` : "");
+        } else {
+          barRect = `<rect x="${x}" y="${topY}" width="${barW}" height="${totalH}"
+                       fill="var(--primary-color,#3b82f6)" opacity="${opacity}" rx="1.5"/>`;
+        }
+      }
 
       const labelText = `<text transform="translate(${cx}, ${VALUE_H + BAR_H + 4}) rotate(90)"
                                text-anchor="start" font-size="7" fill="var(--secondary-text-color,#888)"
