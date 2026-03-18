@@ -19,32 +19,32 @@ All charge points and site entities are **automatically discovered** based on th
 </tr>
 <tr>
 <td>
-<picture>
+<a href="#loadpoint-default"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/loadpoint-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="images/loadpoint-light.png">
   <img src="images/loadpoint-dark.png">
-</picture>
+</picture></a>
 </td>
 <td>
-<picture>
+<a href="#site"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/site-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="images/site-light.png">
   <img src="images/site-dark.png">
-</picture>
+</picture></a>
 </td>
 <td>
-<picture>
+<a href="#grid"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/grid-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="images/grid-light.png">
   <img src="images/grid-dark.png">
-</picture>
+</picture></a>
 </td>
 <td>
-<picture>
+<a href="#stats"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/stats-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="images/stats-light.png">
   <img src="images/stats-dark.png">
-</picture>
+</picture></a>
 </td>
 </tr>
 <tr>
@@ -55,25 +55,25 @@ All charge points and site entities are **automatically discovered** based on th
 </tr>
 <tr>
 <td>
-<picture>
+<a href="#battery"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/battery-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="images/battery-light.png">
   <img src="images/battery-dark.png">
-</picture>
+</picture></a>
 </td>
 <td>
-<picture>
+<a href="#compact"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/compact-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="images/compact-light.png">
   <img src="images/compact-dark.png">
-</picture>
+</picture></a>
 </td>
 <td>
-<picture>
+<a href="#plan"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/plan-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="images/plan-light.png">
   <img src="images/plan-dark.png">
-</picture>
+</picture></a>
 </td>
 <td></td>
 </tr>
