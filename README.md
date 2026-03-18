@@ -2,11 +2,82 @@
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![HACS Validate](https://github.com/mkshb/hass-evcc-card/actions/workflows/validate.yaml/badge.svg)](https://github.com/mkshb/hass-evcc-card/actions/workflows/validate.yaml) <!-- LANGUAGES_START -->![Supported languages](https://img.shields.io/badge/languages-de%20%7C%20en%20%7C%20es%20%7C%20fr%20%7C%20hr%20%7C%20nl%20%7C%20pl%20%7C%20pt-blue)<!-- LANGUAGES_END --> [![GitHub Stars](https://img.shields.io/github/stars/mkshb/hass-evcc-card?style=flat)](https://github.com/mkshb/hass-evcc-card/stargazers) [![Last Commit](https://img.shields.io/github/last-commit/mkshb/hass-evcc-card)](https://github.com/mkshb/hass-evcc-card/commits/main) [![Open Issues](https://img.shields.io/github/issues/mkshb/hass-evcc-card)](https://github.com/mkshb/hass-evcc-card/issues)
 
-A custom Lovelace card for [Home Assistant](https://www.home-assistant.io/) that provides a comprehensive dashboard for [EVCC](https://evcc.io/) — the open-source EV charging controller — using the [ha-evcc integration](https://github.com/marq24/ha-evcc).
+A custom Lovelace card for [Home Assistant](https://www.home-assistant.io/) that provides a comprehensive dashboard for [EVCC](https://evcc.io/) - the open-source EV charging controller - using the [ha-evcc integration](https://github.com/marq24/ha-evcc).
 
-All charge points and site entities are **automatically discovered** based on the integration's entity naming scheme — no manual entity mapping required.
+All charge points and site entities are **automatically discovered** based on the integration's entity naming scheme - no manual entity mapping required.
 
-> **🛠️ Configurator:** Not sure which options you need? Use the interactive **[YAML Configurator](https://mkshb.github.io/hass-evcc-card/configurator.html)** to build your card configuration step by step.
+---
+
+## Screenshots
+
+<table>
+<tr>
+<td align="center"><b>⚡ Charge Point</b></td>
+<td align="center"><b>☀️ Site</b></td>
+<td align="center"><b>🔌 Grid</b></td>
+<td align="center"><b>📈 Statistics</b></td>
+</tr>
+<tr>
+<td>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/loadpoint-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/loadpoint-light.png">
+  <img src="images/loadpoint-dark.png">
+</picture>
+</td>
+<td>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/site-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/site-light.png">
+  <img src="images/site-dark.png">
+</picture>
+</td>
+<td>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/grid-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/grid-light.png">
+  <img src="images/grid-dark.png">
+</picture>
+</td>
+<td>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/stats-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/stats-light.png">
+  <img src="images/stats-dark.png">
+</picture>
+</td>
+</tr>
+<tr>
+<td align="center"><b>🏠 Battery</b></td>
+<td align="center"><b>📑 Compact</b></td>
+<td align="center"><b>📋 Plan</b></td>
+<td align="center"></td>
+</tr>
+<tr>
+<td>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/battery-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/battery-light.png">
+  <img src="images/battery-dark.png">
+</picture>
+</td>
+<td>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/compact-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/compact-light.png">
+  <img src="images/compact-dark.png">
+</picture>
+</td>
+<td>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/plan-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/plan-light.png">
+  <img src="images/plan-dark.png">
+</picture>
+</td>
+<td></td>
+</tr>
+</table>
 
 ---
 
@@ -14,24 +85,24 @@ All charge points and site entities are **automatically discovered** based on th
 
 | Mode | Description |
 |---|---|
-| ⚡ [`loadpoint`](#loadpoint-default) | Main charge point view — mode buttons, SoC bar, session, sliders, phase switch, charge plan |
-| ☀️ [`site`](#site) | Full site energy overview — PV bar, individual strings, live In/Out table with battery & charge point details |
-| 🔌 [`grid`](#grid) | Compact grid focus — large net value with color coding, solar share badge, source and consumer chips |
-| 📈 [`stats`](#stats) | Charging statistics — KPIs with period selector (30d / 365d / this year / total) and solar trend bar chart |
-| 🏠 [`battery`](#battery) | Home battery block — SoC indicator, buffer & priority sliders, discharge lock |
-| 📑 [`compact`](#compact) | Tab layout of `loadpoint` — Control / Settings / Plan / Session, ideal for space-constrained dashboards |
-| 📋 [`plan`](#plan) | Minimalist charge plan only — vehicle selector, target time & SoC, activate / delete |
+| ⚡ [`loadpoint`](#loadpoint-default) | Main charge point view - mode buttons, SoC bar, session, sliders, phase switch, charge plan |
+| ☀️ [`site`](#site) | Full site energy overview - PV bar, individual strings, live In/Out table with battery & charge point details |
+| 🔌 [`grid`](#grid) | Compact grid focus - large net value with color coding, solar share badge, source and consumer chips |
+| 📈 [`stats`](#stats) | Charging statistics - KPIs with period selector (30d / 365d / this year / total) and solar trend bar chart |
+| 🏠 [`battery`](#battery) | Home battery block - SoC indicator, buffer & priority sliders, discharge lock |
+| 📑 [`compact`](#compact) | Tab layout of `loadpoint` - Control / Settings / Plan / Session, ideal for space-constrained dashboards |
+| 📋 [`plan`](#plan) | Minimalist charge plan only - vehicle selector, target time & SoC, activate / delete |
 
 ## General Features
 
 | Feature | Description |
 |---|---|
-| 🔍 **Auto-discovery** | Automatically detects all charge points and site entities — zero manual configuration |
+| 🔍 **Auto-discovery** | Automatically detects all charge points and site entities - zero manual configuration |
 | 🔄 **Live updates** | Power, SoC and status update in real time without full re-render |
 | 🔋 **SoC display** | Vehicle state of charge as a progress bar with percentage and estimated range |
 | 🎚️ **Slider controls** | Adjust Target SoC, Min SoC, Priority, smart charging limit, Max current and Min current inline |
 | 🔌 **Phase switching** | Auto / 1-phase / 3-phase control built in |
-| 🌍 **Multi-language** | Support for various languages — auto-detected from HA language setting, easily extensible |
+| 🌍 **Multi-language** | Support for various languages - auto-detected from HA language setting, easily extensible |
 | 🎛️ **Filtering** | Select specific charge points via `loadpoints` config |
 
 ---
@@ -54,7 +125,7 @@ All charge points and site entities are **automatically discovered** based on th
 4. Search for **EVCC Card** and click **Install**
 5. Reload your browser
 
-> **Note for YAML mode users:** If your Lovelace is configured with `mode: yaml` in `configuration.yaml`, HACS cannot register the resource automatically. Add the resource entry manually — see [Manual resource registration](#manual-resource-registration) below.
+> **Note for YAML mode users:** If your Lovelace is configured with `mode: yaml` in `configuration.yaml`, HACS cannot register the resource automatically. Add the resource entry manually - see [Manual resource registration](#manual-resource-registration) below.
 
 ### Manual installation
 
@@ -69,7 +140,7 @@ config/www/hass-evcc-card/
     └── *.json
 ```
 
-3. Register the resource — see [Manual resource registration](#manual-resource-registration) below.
+3. Register the resource - see [Manual resource registration](#manual-resource-registration) below.
 4. Reload your browser
 
 ### Manual resource registration
@@ -100,6 +171,16 @@ Then restart Home Assistant or reload the Lovelace resources.
 
 ---
 
+## YAML Configurator
+
+Not sure which options you need? The interactive **[YAML Configurator](https://mkshb.github.io/hass-evcc-card/configurator.html)** lets you build your card configuration step by step — select your mode, toggle options, and copy the result directly into Home Assistant. No guesswork, no manual reading required.
+
+<a href="https://mkshb.github.io/hass-evcc-card/configurator.html" target="_blank">
+  <img src="images/configurator-dark.png" width="480">
+</a>
+
+---
+
 ## Configuration & Modes
 
 Add the card to any Lovelace dashboard using the YAML editor. The `mode` option controls what the card displays. Use the **[YAML Configurator](https://mkshb.github.io/hass-evcc-card/configurator.html)** to generate your configuration interactively.
@@ -109,13 +190,13 @@ Add the card to any Lovelace dashboard using the YAML editor. The `mode` option 
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `grid`, `stats`, `plan` |
-| `title` | `string` | *(auto)* | Replaces the default card header — the loadpoint name for `loadpoint`/`compact`/`plan` mode, or the mode label (e.g. `Overview`, `Statistics`) for all other modes |
+| `title` | `string` | *(auto)* | Replaces the default card header - the loadpoint name for `loadpoint`/`compact`/`plan` mode, or the mode label (e.g. `Overview`, `Statistics`) for all other modes |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language. Examples: `de`, `en`, `es`, `hr`, `nl` |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
 | `site_details` | `string` | *(expanded)* | Set to `collapsed` to hide the IN/OUT detail table by default in `site` mode |
 | `charge_current_settings` | `string` | *(collapsed)* | Set to `expanded` to show the charge settings block (phase switch, min/max current, smart charging limit) expanded by default |
-| `prefix` | `string` | `evcc_` | Entity name prefix used by the integration — only needed if you run multiple EVCC instances with a custom prefix (e.g. `evcc2_`) |
+| `prefix` | `string` | `evcc_` | Entity name prefix used by the integration - only needed if you run multiple EVCC instances with a custom prefix (e.g. `evcc2_`) |
 | `stats_period` | `string` | `total` | Default statistics period. For `site` and `grid` cards: controls the footer KPIs; allowed values: `total`, `30d`, `365d`, `thisYear`, `none` (hides the footer entirely). For the `stats` card: sets the initially selected tab; allowed values: `total`, `30d`, `365d`, `thisYear` (the user can still switch tabs interactively). |
 
 ---
@@ -133,13 +214,9 @@ The main charge point view. For each discovered charge point it shows:
 The **CHARGE SETTINGS** section is collapsed by default and can be toggled using the ⚙️ gear icon. It contains:
 - Phase switch: Auto / 1-phase / 3-phase
 - Max current / Min current sliders
-- Smart charging limit — threshold below which charging starts automatically; shows "Off" when set to 0; EVCC supports either CO₂-based (g/kWh) **or** price-based (€/kWh) — not both simultaneously; the active mode is reflected in the entity's unit
+- Smart charging limit - threshold below which charging starts automatically; shows "Off" when set to 0; EVCC supports either CO₂-based (g/kWh) **or** price-based (€/kWh) - not both simultaneously; the active mode is reflected in the entity's unit
 
-> **⚠️ Price mode — slider range issues:** Two known issues can affect the smart charging price limit slider:
->
-> 1. **Minimum too restrictive:** The current ha-evcc integration sets the minimum to `-0.05 €/kWh` (= -5 ct/kWh). Users with dynamic tariffs (e.g. Tibber, aWATTar, Nordpool) may experience prices well below this value and cannot set a low enough threshold. A fix has been submitted: [ha-evcc PR #250](https://github.com/marq24/ha-evcc/pull/250).
->
-> 2. **Wrong range after switching from CO₂ to price mode:** When switching the smart charging mode in EVCC from CO₂-based to price-based, ha-evcc may not recreate the limit entity. The slider then still shows the CO₂ range (0–500 g/kWh) instead of the price range. To fix this, go to Settings → Devices & Services → ha-evcc → **Reconfigure**, and enable the option **"Remove and recreate all Devices"**. This forces ha-evcc to recreate all entities with the correct ranges and also removes any orphaned device entries. No historical data should be lost in the process — however, this is a feature of the ha-evcc integration and no guarantees can be made here.
+> **⚠️ Price mode - slider range issue:** When switching the smart charging mode in EVCC from CO₂-based to price-based, ha-evcc may not recreate the limit entity. The slider then still shows the CO₂ range (0–500 g/kWh) instead of the price range. To fix this, go to Settings → Devices & Services → ha-evcc → **Reconfigure**, and enable the option **"Remove and recreate all Devices"**. This forces ha-evcc to recreate all entities with the correct ranges and also removes any orphaned device entries. No historical data should be lost in the process - however, this is a feature of the ha-evcc integration and no guarantees can be made here.
 
 Use `charge_current_settings: expanded` to start this section expanded by default.
 
@@ -165,7 +242,11 @@ no_plan:
   - wallbox-garage   # hide the charge plan block for this charge point
 ```
 
-![Loadpoint block](images/chargepoint.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/loadpoint-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/loadpoint-light.png">
+  <img src="images/loadpoint-dark.png">
+</picture>
 
 ---
 
@@ -185,7 +266,6 @@ The IN/OUT detail table can be toggled by clicking the power bar. It opens expan
 type: custom:evcc-card
 mode: site
 ```
-![Site overview full](images/site_full.png)
 
 ```yaml
 type: custom:evcc-card
@@ -193,8 +273,11 @@ mode: site
 site_details: collapsed   # start with the detail table hidden
 ```
 
-![Site overview](images/site.png)
-
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/site-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/site-light.png">
+  <img src="images/site-dark.png">
+</picture>
 
 ---
 
@@ -212,7 +295,11 @@ type: custom:evcc-card
 mode: grid
 ```
 
-![Grid overview](images/site2.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/grid-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/grid-light.png">
+  <img src="images/grid-dark.png">
+</picture>
 
 > **⚠️ Deprecation notice:** `mode: site2` still works but is deprecated and will be removed in a future release. Please migrate to `mode: grid`.
 
@@ -222,7 +309,7 @@ mode: grid
 
 Charging statistics with period selector and a matching bar chart:
 
-- **Period tabs:** 30 days · 365 days · This year · Total — switch with a single tap; the selection is remembered for the session
+- **Period tabs:** 30 days · 365 days · This year · Total - switch with a single tap; the selection is remembered for the session
 - Three KPIs per period: charged energy (kWh), solar share (%), average price (ct/kWh)
 - The bar chart adapts to the selected period:
 
@@ -234,19 +321,26 @@ Charging statistics with period selector and a matching bar chart:
 | **Total** | One bar per year | All available years |
 
 - Chart data is fetched lazily per tab on first access and cached for 5 minutes
-- The same three KPIs also appear as a compact footer row at the bottom of `site` and `grid` cards — the period shown there is controlled via the `stats_period` config option (default: `total`). Set `stats_period: none` to hide the footer entirely. The label below the kWh value reflects the active period (e.g. *Total charged*, *30 days charged*, *This year charged*).
+- The same three KPIs also appear as a compact footer row at the bottom of `site` and `grid` cards - the period shown there is controlled via the `stats_period` config option (default: `total`). Set `stats_period: none` to hide the footer entirely. The label below the kWh value reflects the active period (e.g. *Total charged*, *30 days charged*, *This year charged*).
 
 The stat entities are auto-discovered using the pattern `sensor.{prefix}stat_*` (e.g. `sensor.evcc_stat_total_charged_kwh`). The bar chart always uses the cumulative `sensor.{prefix}stat_total_charged_kwh` entity from the HA Recorder, independent of which KPI period is selected.
 
+**Solar breakdown in the bar chart:** When `sensor.{prefix}stat_total_solar_k_wh_template` is available, each bar is split into a **green** (solar) and **blue** (grid) portion. This sensor was recently added to [ha-evcc](https://github.com/marq24/ha-evcc) - thanks to [@marq24](https://github.com/marq24) for adding it! The sensor needs at least 3 days of HA Recorder history before the split appears. Until then, the card shows a hint message below the chart. No configuration is needed - once enough history has been collected, the solar breakdown appears automatically.
+
 > **ℹ️ Note:** The **Total** period is enabled by default in ha-evcc. The periods **30 days**, **365 days** and **This year** must be **manually enabled** in the ha-evcc integration settings (Settings → Devices & Services → ha-evcc → Configure). If a period is not yet activated, the card shows a hint with instructions directly inside the card.
 
-> **ℹ️ Single-year fallback:** If the **Total** tab detects that only one calendar year of data is available in the HA Recorder, it automatically falls back to showing the monthly breakdown of the current year — identical to the **This year** chart.
+> **ℹ️ Single-year fallback:** If the **Total** tab detects that only one calendar year of data is available in the HA Recorder, it automatically falls back to showing the monthly breakdown of the current year - identical to the **This year** chart.
 
 ```yaml
 type: custom:evcc-card
 mode: stats
 ```
-![Stats](images/stats.png)
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/stats-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/stats-light.png">
+  <img src="images/stats-dark.png">
+</picture>
 
 ---
 
@@ -264,7 +358,11 @@ type: custom:evcc-card
 mode: battery
 ```
 
-![Battery block](images/battery.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/battery-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/battery-light.png">
+  <img src="images/battery-dark.png">
+</picture>
 
 ---
 
@@ -284,13 +382,17 @@ loadpoints:
   - openwb
 ```
 
-![Plan block](images/plan.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/plan-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/plan-light.png">
+  <img src="images/plan-dark.png">
+</picture>
 
 ---
 
 ### `compact`
 
-Same content as `loadpoint`, but organized into four tabs — ideal for dashboards where vertical space is limited or multiple charge points are shown side by side:
+Same content as `loadpoint`, but organized into four tabs - ideal for dashboards where vertical space is limited or multiple charge points are shown side by side:
 
 | Tab | Contents |
 |---|---|
@@ -314,7 +416,11 @@ loadpoints:
   - wallbox-garage
 ```
 
-![Compact mode](images/compact.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/compact-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/compact-light.png">
+  <img src="images/compact-dark.png">
+</picture>
 
 ---
 
@@ -333,7 +439,7 @@ language: en   # or other available language
 
 ## Icons
 
-All icons throughout the card use inline [Material Design Icons](https://pictogrammers.com/library/mdi/) (MDI) rendered as embedded SVG paths — no external icon font, no `ha-icon` dependency, no `foreignObject`. This ensures correct rendering in all HA themes and browsers.
+All icons throughout the card use inline [Material Design Icons](https://pictogrammers.com/library/mdi/) (MDI) rendered as embedded SVG paths - no external icon font, no `ha-icon` dependency, no `foreignObject`. This ensures correct rendering in all HA themes and browsers.
 
 Key icon assignments:
 
@@ -370,7 +476,7 @@ Translations are stored as simple JSON files in the `dist/locales/` folder. Addi
 ["de", "en", "es", "fr", "hr", "nl", "pl", "pt"]
 ```
 
-That's it — no changes to `evcc-card.js` required.
+That's it - no changes to `evcc-card.js` required.
 
 **Want to contribute a translation?** Pull requests for new languages are very welcome! Have a look at [`dist/locales/en.json`](dist/locales/en.json) as a starting point and open a PR with your new language file.
 
@@ -387,7 +493,7 @@ number.evcc_<loadpoint_name>_limit_soc
 ...
 ```
 
-As long as you use the standard ha-evcc integration, no additional configuration is needed — the card discovers all entities automatically.
+As long as you use the standard ha-evcc integration, no additional configuration is needed - the card discovers all entities automatically.
 
 If you run **multiple EVCC instances** and your integration uses a custom prefix (e.g. `evcc2_`), set the `prefix` option accordingly:
 
@@ -410,7 +516,7 @@ Pull requests are welcome! Please open an issue first to discuss what you'd like
 
 Contributions that are especially appreciated:
 
-- 🌍 **New translations** — see the [Translations](#translations) section above
+- 🌍 **New translations** - see the [Translations](#translations) section above
 - 🐛 **Bug reports and fixes**
 - 💡 **Feature suggestions and implementations**
 
@@ -426,11 +532,11 @@ Contributions that are especially appreciated:
 
 [![YouTube](https://img.shields.io/badge/YouTube-Watch-red?logo=youtube)](https://www.youtube.com/watch?v=nQyiFg1RPy8)
 
-The card was featured in a YouTube video — showing installation, configuration and usage in practice. Note: the video is in **German**.
+The card was featured in a YouTube video - showing installation, configuration and usage in practice. Note: the video is in **German**.
 
 ---
 
 ## Related projects
 
-- [EVCC](https://evcc.io/) — the EV charging controller this card is built for
-- [ha-evcc](https://github.com/marq24/ha-evcc) — the Home Assistant integration providing all entities
+- [EVCC](https://evcc.io/) - the EV charging controller this card is built for
+- [ha-evcc](https://github.com/marq24/ha-evcc) - the Home Assistant integration providing all entities
