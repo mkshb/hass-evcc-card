@@ -102,6 +102,32 @@ const CHARGE_MODES = {
   "now":   { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>`,  tKey: "modeNow"  },
 };
 
+async function detectPrefix(hass) {
+  try {
+    const entities = await hass.callWS({ type: "config/entity_registry/list" });
+    const evccEnts = entities.filter(e => e.platform === "evcc_intg");
+    if (evccEnts.length === 0) return "evcc_";
+
+    const siteSuffixes = FEATURES.filter(f => !f.lp);
+    for (const ent of evccEnts) {
+      const dotIdx = ent.entity_id.indexOf(".");
+      const domain = ent.entity_id.slice(0, dotIdx);
+      const slug   = ent.entity_id.slice(dotIdx + 1);
+
+      for (const feat of siteSuffixes) {
+        if (feat.domain === domain && slug.endsWith(feat.suffix)) {
+          const prefix = slug.slice(0, slug.length - feat.suffix.length);
+          if (prefix.length > 0) return prefix;
+        }
+      }
+    }
+    return "evcc_";
+  } catch (e) {
+    console.warn("[evcc-card] Could not detect prefix from entity registry:", e);
+    return "evcc_";
+  }
+}
+
 function discoverEntities(hass, prefix = "evcc_") {
   const sortedFeatures = [...FEATURES].sort((a, b) => b.suffix.length - a.suffix.length);
   const prefixLen = prefix.length;
@@ -234,6 +260,7 @@ class EvccCard extends HTMLElement {
 
     this._siteTableExpanded = undefined; // undefined = use config default
     this._currentBlockExpanded = {};
+    this._detectedPrefix = null;
 
     this._onPlanReset = (e) => {
       const lpName = e.detail?.lpName;
@@ -281,8 +308,25 @@ class EvccCard extends HTMLElement {
     this._translationsReady = true;
   }
 
+  _getPrefix() {
+    return this._config.prefix || this._detectedPrefix || "evcc_";
+  }
+
   set hass(hass) {
     this._hass = hass;
+
+    if (!this._detectedPrefix && !this._detectingPrefix && !this._config.prefix) {
+      this._detectingPrefix = true;
+      detectPrefix(hass).then(p => {
+        this._detectingPrefix = false;
+        if (p !== this._detectedPrefix) {
+          this._detectedPrefix = p;
+          this._lastRenderKey = null;
+          this._render();
+        }
+      });
+    }
+
     if (this._isDragging) {
       this._pendingRender = true;
       this._updateLiveValues();
@@ -301,7 +345,7 @@ class EvccCard extends HTMLElement {
 
   _buildRenderKey(hass) {
     if (!hass) return "";
-    const prefix = this._config.prefix || "evcc_";
+    const prefix = this._getPrefix();
     const evccIds = Object.keys(hass.states).filter(id => {
       const slug = id.split(".")[1] ?? "";
       return slug.startsWith(prefix);
@@ -392,7 +436,7 @@ class EvccCard extends HTMLElement {
       return;
     }
 
-    const prefix = this._config.prefix || "evcc_";
+    const prefix = this._getPrefix();
     const { loadpoints, site } = discoverEntities(this._hass, prefix);
 
     const filterRaw = this._config.loadpoints;
@@ -612,7 +656,7 @@ class EvccCard extends HTMLElement {
     const smartUnit  = smartLimit !== null
       ? (attr(this._hass, ents.smart_cost_limit, "unit_of_measurement") ?? "") : "";
     const isCo2Chip  = smartUnit === "g/kWh";
-    const prefix     = this._config?.prefix || "evcc_";
+    const prefix     = this._getPrefix();
     const tariffId   = isCo2Chip ? `sensor.${prefix}tariff_co2` : `sensor.${prefix}tariff_grid`;
     const tariffVal  = parseFloat(this._hass.states[tariffId]?.state ?? "NaN");
     const smartActive = smartLimit !== null && !isNaN(tariffVal) && tariffVal <= smartLimit;
@@ -743,7 +787,7 @@ class EvccCard extends HTMLElement {
             const unit      = attr(this._hass, ents.smart_cost_limit, "unit_of_measurement") ?? "";
             const isCo2     = unit === "g/kWh";
             const label     = isCo2 ? this._t("smartCostLimitCo2") : this._t("smartCostLimitPrice");
-            const scTariffId = isCo2 ? `sensor.${this._config?.prefix || "evcc_"}tariff_co2` : `sensor.${this._config?.prefix || "evcc_"}tariff_grid`;
+            const scTariffId = isCo2 ? `sensor.${this._getPrefix()}tariff_co2` : `sensor.${this._getPrefix()}tariff_grid`;
             const scTariff   = parseFloat(this._hass.states[scTariffId]?.state ?? "NaN");
             const active     = !isNaN(scTariff) && scTariff <= parseFloat(stateVal(this._hass, ents.smart_cost_limit) || 0);
             const clearId   = ents.smart_cost_limit.replace(/^number\./, "button.");
@@ -1577,7 +1621,7 @@ class EvccCard extends HTMLElement {
 
   _getStatEntityIds(period) {
     const per    = period ?? this._statsPeriod ?? "total";
-    const base   = `sensor.${this._config.prefix || "evcc_"}`;
+    const base   = `sensor.${this._getPrefix()}`;
     const find   = id => this._hass?.states[id] ? id : null;
     const sufMap = {
       total:    { kwh: "stat_total_charged_kwh",    solar: "stat_total_solar_percentage",    price: "stat_total_avg_price"    },
@@ -2905,10 +2949,21 @@ class EvccCardEditor extends HTMLElement {
     this._config = {};
     this._hass = null;
     this._availableLoadpoints = [];
+    this._detectedPrefix = null;
+    this._detectingPrefix = false;
   }
 
   set hass(hass) {
     this._hass = hass;
+    if (!this._detectedPrefix && !this._detectingPrefix) {
+      this._detectingPrefix = true;
+      detectPrefix(hass).then(p => {
+        this._detectingPrefix = false;
+        this._detectedPrefix = p;
+        this._discoverLoadpoints();
+        this._render();
+      });
+    }
     const prev = this._availableLoadpoints.join(",");
     this._discoverLoadpoints();
     const next = this._availableLoadpoints.join(",");
@@ -2922,9 +2977,13 @@ class EvccCardEditor extends HTMLElement {
     this._render();
   }
 
+  _getPrefix() {
+    return this._config.prefix || this._detectedPrefix || "evcc_";
+  }
+
   _discoverLoadpoints() {
     if (!this._hass) return;
-    const prefix = this._config.prefix || "evcc_";
+    const prefix = this._getPrefix();
     const { loadpoints } = discoverEntities(this._hass, prefix);
     this._availableLoadpoints = Object.keys(loadpoints).sort();
   }
@@ -3019,11 +3078,6 @@ class EvccCardEditor extends HTMLElement {
           <input id="title" class="ha-input" type="text" value="${this._esc(c.title || "")}" placeholder="${titlePlaceholder}">
         </div>
         <div class="field">
-          <label class="field-label" for="prefix">Entity-Prefix</label>
-          <input id="prefix" class="ha-input" type="text" value="${this._esc(c.prefix || "evcc_")}" placeholder="evcc_">
-          <div class="hint">Standard: evcc_ — nur ändern wenn nötig</div>
-        </div>
-        <div class="field">
           <label class="field-label" for="language">Sprache</label>
           ${this._sel("language", [
             ["",   "Automatisch (aus HA)"],
@@ -3097,21 +3151,14 @@ class EvccCardEditor extends HTMLElement {
       });
     });
 
-    ["title", "prefix"].forEach(id => {
-      const el = this.shadowRoot.getElementById(id);
-      if (!el) return;
-      el.addEventListener("input", () => {
-        const val = el.value.trim();
-        this._config = { ...this._config, [id]: val || undefined };
+    const titleEl = this.shadowRoot.getElementById("title");
+    if (titleEl) {
+      titleEl.addEventListener("input", () => {
+        const val = titleEl.value.trim();
+        this._config = { ...this._config, title: val || undefined };
         this._fire();
       });
-      el.addEventListener("change", () => {
-        if (id === "prefix") {
-          this._discoverLoadpoints();
-          this._render();
-        }
-      });
-    });
+    }
 
     this.shadowRoot.querySelectorAll("input[type=checkbox]").forEach(cb => {
       cb.addEventListener("change", () => {
