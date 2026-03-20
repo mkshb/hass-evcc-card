@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.4.4";
+const EVCC_CARD_VERSION = "0.4.5";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -929,7 +929,7 @@ class EvccCard extends HTMLElement {
 
     const vehicleEntityId    = ents.vehicle_name || null;
     const vehicleAttrs       = vehicleEntityId ? (this._hass.states[vehicleEntityId]?.attributes ?? {}) : {};
-    const allOptions         = (vehicleAttrs.options ?? []).filter(o => o !== "null" && o !== "");
+    const allOptions         = (vehicleAttrs.options ?? []).filter(o => o !== "null");
     const vehicleAttr        = vehicleAttrs.vehicle ?? null;
 
     const dbIdToName = {};
@@ -1578,9 +1578,10 @@ class EvccCard extends HTMLElement {
     };
     const s = sufMap[per] ?? sufMap.total;
     return {
-      kwhId:   find(`${base}${s.kwh}`),
-      solarId: find(`${base}${s.solar}`),
-      priceId: find(`${base}${s.price}`),
+      kwhId:      find(`${base}${s.kwh}`),
+      solarId:    find(`${base}${s.solar}`),
+      priceId:    find(`${base}${s.price}`),
+      solarKwhId: find(`${base}stat_total_solar_k_wh_template`),
     };
   }
 
@@ -1608,7 +1609,7 @@ class EvccCard extends HTMLElement {
   }
 
   async _fetchChartData(period) {
-    const { kwhId } = this._getStatEntityIds("total"); // always use cumulative total entities
+    const { kwhId, solarKwhId } = this._getStatEntityIds("total"); // always use cumulative total entities
     if (!kwhId) return;
 
     const now   = new Date();
@@ -1631,22 +1632,37 @@ class EvccCard extends HTMLElement {
     }
 
     try {
+      const ids = [kwhId];
+      if (solarKwhId) ids.push(solarKwhId);
       const result = await this._hass.callWS({
         type: "recorder/statistics_during_period",
         start_time: startTime.toISOString(),
-        statistic_ids: [kwhId],
+        statistic_ids: ids,
         period: recorderPeriod,
         types: ["sum"],
       });
-      const stats = result[kwhId] ?? [];
+      const stats      = result[kwhId]      ?? [];
+      let   solarStats = solarKwhId ? (result[solarKwhId] ?? []) : [];
 
-      if      (period === "30d")      this._chartCache[period] = this._computeDailyDeltas(stats, 30);
-      else if (period === "365d")     this._chartCache[period] = this._computeMonthlyDeltas(stats, 13);
-      else if (period === "thisYear") this._chartCache[period] = this._computeThisYearMonthly(stats);
+      // Template sensor exists but has too few data points yet → no solar split until it has history
+      // Only count on daily queries (most granular), don't overwrite with monthly bucket counts
+      if (recorderPeriod === "day") {
+        this._solarDataPoints = solarKwhId ? solarStats.length : null;
+      } else if (this._solarDataPoints === undefined) {
+        this._solarDataPoints = solarKwhId ? solarStats.length : null;
+      }
+      if (solarStats.length < 3) solarStats = [];
+
+      const liveKwh      = parseFloat(this._hass.states[kwhId]?.state);
+      const liveSolarKwh = solarKwhId ? parseFloat(this._hass.states[solarKwhId]?.state) : NaN;
+
+      if      (period === "30d")      this._chartCache[period] = this._computeDailyDeltas(stats, 30, solarStats, isNaN(liveKwh) ? null : liveKwh, isNaN(liveSolarKwh) ? null : liveSolarKwh);
+      else if (period === "365d")     this._chartCache[period] = this._computeMonthlyDeltas(stats, 13, solarStats);
+      else if (period === "thisYear") this._chartCache[period] = this._computeThisYearMonthly(stats, solarStats);
       else {
-        const yearly = this._computeYearlyTotals(stats);
+        const yearly = this._computeYearlyTotals(stats, solarStats);
         this._chartCache[period] = yearly.length <= 1
-          ? this._computeThisYearMonthly(stats)  // only one year of data → show months
+          ? this._computeThisYearMonthly(stats, solarStats)  // only one year of data → show months
           : yearly;
       }
 
@@ -1656,12 +1672,14 @@ class EvccCard extends HTMLElement {
     }
   }
 
-  _computeDailyDeltas(stats, days) {
+  _computeDailyDeltas(stats, days, solarStats = [], liveKwh = null, liveSolarKwh = null) {
     const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
     const now = new Date();
     const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`; };
     const byKey = {};
     stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
+    const solarByKey = {};
+    solarStats.forEach(s => { solarByKey[toKey(s.start)] = s.sum; });
     const result = [];
     for (let i = days - 1; i >= 0; i--) {
       const day = new Date(now);
@@ -1669,21 +1687,26 @@ class EvccCard extends HTMLElement {
       day.setHours(0, 0, 0, 0);
       const prevDay = new Date(day);
       prevDay.setDate(prevDay.getDate() - 1);
-      const cur   = byKey[toKey(day)];
+      const cur   = byKey[toKey(day)] ?? (i === 0 ? liveKwh : null);
       const prev  = byKey[toKey(prevDay)];
       const delta = (cur != null && prev != null) ? Math.max(0, cur - prev) : null;
+      const sCur  = solarByKey[toKey(day)] ?? (i === 0 ? liveSolarKwh : null);
+      const sPrev = solarByKey[toKey(prevDay)];
+      const solarDelta = (sCur != null && sPrev != null) ? Math.max(0, sCur - sPrev) : null;
       const labelStr = day.toLocaleDateString(lang, { day: "numeric", month: "numeric" });
-      result.push({ delta, label: day, labelStr, isCurrent: i === 0 });
+      result.push({ delta, solarDelta, label: day, labelStr, isCurrent: i === 0 });
     }
     return result;
   }
 
-  _computeMonthlyDeltas(stats, count) {
+  _computeMonthlyDeltas(stats, count, solarStats = []) {
     const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
     const now = new Date();
     const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}`; };
     const byKey = {};
     stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
+    const solarByKey = {};
+    solarStats.forEach(s => { solarByKey[toKey(s.start)] = s.sum; });
     const result = [];
     for (let i = count - 1; i >= 0; i--) {
       const month     = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -1691,19 +1714,24 @@ class EvccCard extends HTMLElement {
       const cur   = byKey[toKey(month)];
       const prev  = byKey[toKey(prevMonth)];
       const delta = (cur != null && prev != null) ? Math.max(0, cur - prev) : null;
+      const sCur  = solarByKey[toKey(month)];
+      const sPrev = solarByKey[toKey(prevMonth)];
+      const solarDelta = (sCur != null && sPrev != null) ? Math.max(0, sCur - sPrev) : null;
       const labelStr = month.toLocaleDateString(lang, { month: "short" });
-      result.push({ delta, label: month, labelStr, isCurrent: i === 0 });
+      result.push({ delta, solarDelta, label: month, labelStr, isCurrent: i === 0 });
     }
     return result;
   }
 
-  _computeThisYearMonthly(stats) {
+  _computeThisYearMonthly(stats, solarStats = []) {
     const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
     const now  = new Date();
     const year = now.getFullYear();
     const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}`; };
     const byKey = {};
     stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
+    const solarByKey = {};
+    solarStats.forEach(s => { solarByKey[toKey(s.start)] = s.sum; });
     const result = [];
     for (let m = 0; m <= now.getMonth(); m++) {
       const month     = new Date(year, m, 1);
@@ -1711,65 +1739,130 @@ class EvccCard extends HTMLElement {
       const cur   = byKey[toKey(month)];
       const prev  = byKey[toKey(prevMonth)];
       const delta = (cur != null && prev != null) ? Math.max(0, cur - prev) : null;
+      const sCur  = solarByKey[toKey(month)];
+      const sPrev = solarByKey[toKey(prevMonth)];
+      const solarDelta = (sCur != null && sPrev != null) ? Math.max(0, sCur - sPrev) : null;
       const labelStr = month.toLocaleDateString(lang, { month: "short" });
-      result.push({ delta, label: month, labelStr, isCurrent: m === now.getMonth() });
+      result.push({ delta, solarDelta, label: month, labelStr, isCurrent: m === now.getMonth() });
     }
     return result;
   }
 
-  _computeYearlyTotals(stats) {
+  _computeYearlyTotals(stats, solarStats = []) {
     const now = new Date();
     const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}`; };
     const byKey = {};
     stats.forEach(s => { byKey[toKey(s.start)] = s.sum; });
+    const solarByKey = {};
+    solarStats.forEach(s => { solarByKey[toKey(s.start)] = s.sum; });
     const years = [...new Set(stats.map(s => new Date(s.start).getFullYear()))].sort();
     return years.map(year => {
       let yearTotal = 0, hasAny = false;
+      let solarTotal = 0, hasSolar = false;
       for (let m = 0; m <= 11; m++) {
         const cur  = byKey[`${year}-${m}`];
         const prev = byKey[m === 0 ? `${year - 1}-11` : `${year}-${m - 1}`];
         if (cur != null && prev != null) { yearTotal += Math.max(0, cur - prev); hasAny = true; }
+        const sCur  = solarByKey[`${year}-${m}`];
+        const sPrev = solarByKey[m === 0 ? `${year - 1}-11` : `${year}-${m - 1}`];
+        if (sCur != null && sPrev != null) { solarTotal += Math.max(0, sCur - sPrev); hasSolar = true; }
       }
-      return { delta: hasAny ? yearTotal : null, label: new Date(year, 0, 1), labelStr: String(year), isCurrent: year === now.getFullYear() };
+      return {
+        delta:      hasAny   ? yearTotal  : null,
+        solarDelta: hasSolar ? solarTotal : null,
+        label: new Date(year, 0, 1), labelStr: String(year), isCurrent: year === now.getFullYear(),
+      };
     });
   }
 
   _renderBarChart(data) {
-    const W = 280, VALUE_H = 22, BAR_H = 55, LABEL_H = 32, TOTAL_H = VALUE_H + BAR_H + LABEL_H + 4;
-    const n = data.length, GAP = 2;
-    const barW = Math.floor((W - (n - 1) * GAP) / n);
+    const ML = 22, MR = 6, MT = 20, MB = 18;
+    const W = 280, H = 110;
+    const CW = W - ML - MR, CH = H - MT - MB;
+    const n = data.length;
+    const GAP = n > 20 ? 1 : 2;
+    // Uniform bar width; center the bar group within CW
+    const bw     = Math.floor((CW - GAP * (n - 1)) / n);
+    const offset = Math.round((CW - (bw * n + GAP * (n - 1))) / 2);
+    const barX0  = i => ML + offset + i * (bw + GAP);
+    const barX1  = i => barX0(i) + bw;
     const maxVal = Math.max(...data.map(d => d.delta ?? 0), 0.1);
 
-    const bars = data.map((d, i) => {
-      const x         = i * (barW + GAP);
-      const cx        = x + barW / 2;
-      const isCurrent = d.isCurrent ?? (i === n - 1);
-      const opacity   = isCurrent ? "0.75" : "0.35";
-      let totalH = 0, topY = VALUE_H + BAR_H;
-      if (d.delta !== null && d.delta > 0) {
-        totalH = Math.max(2, Math.round((d.delta / maxVal) * BAR_H));
-        topY   = VALUE_H + BAR_H - totalH;
-      }
+    // Nice Y-axis: round step up to 1/2/5/10/20/50… then derive tick count
+    const rawStep  = maxVal / 5;
+    const stepExp  = Math.floor(Math.log10(Math.max(rawStep, 0.001)));
+    const stepBase = Math.pow(10, stepExp);
+    const stepF    = rawStep / stepBase;
+    const tickStep = (stepF <= 1 ? 1 : stepF <= 2 ? 2 : stepF <= 5 ? 5 : 10) * stepBase;
+    const numTicks = Math.ceil(maxVal / tickStep);
+    const niceMax  = tickStep * numTicks;
+    const toY = v => MT + CH - Math.round((v / niceMax) * CH);
 
-      const valLabel = (d.delta !== null && d.delta > 0)
-        ? `<text transform="translate(${cx}, ${topY - 2}) rotate(-45)"
-                text-anchor="start" font-size="6.5" fill="var(--secondary-text-color,#888)"
-                opacity="${isCurrent ? "1" : "0.75"}">${d.delta.toFixed(1)}</text>`
-        : "";
-
-      const barRect = totalH > 0
-        ? `<rect x="${x}" y="${topY}" width="${barW}" height="${totalH}"
-                 fill="var(--primary-color,#3b82f6)" opacity="${opacity}" rx="1.5"/>`
-        : "";
-
-      const labelText = `<text transform="translate(${cx}, ${VALUE_H + BAR_H + 4}) rotate(90)"
-                               text-anchor="start" font-size="7" fill="var(--secondary-text-color,#888)"
-                               opacity="${isCurrent ? "1" : "0.75"}">${d.labelStr}</text>`;
-
-      return `${valLabel}${barRect}${labelText}`;
+    // Grid lines + Y-axis labels (labels left-external, right-aligned)
+    const grid = Array.from({ length: numTicks + 1 }, (_, i) => {
+      const v = i * tickStep;
+      const y = toY(v);
+      const lbl = tickStep >= 1 ? Math.round(v) : v.toFixed(1);
+      return `<line x1="${ML}" y1="${y}" x2="${W - MR}" y2="${y}"
+                stroke="var(--divider-color,#374151)" stroke-width="${i === 0 ? 1 : 0.5}"
+                opacity="${i === 0 ? 0.9 : 0.35}"/>
+              <text x="${ML - 3}" y="${y + 3}" text-anchor="end" font-size="6.5"
+                fill="var(--secondary-text-color,#888)">${lbl}</text>`;
     }).join("");
 
-    return `<svg viewBox="0 0 ${W} ${TOTAL_H}" style="width:100%;display:block">${bars}</svg>`;
+    // "kWh" above the topmost tick, like HA
+    const kwhLbl = `<text x="${ML - 3}" y="${MT - 8}" text-anchor="end" font-size="6.5"
+      fill="var(--secondary-text-color,#888)">kWh</text>`;
+
+    // X-axis label spacing
+    const showEvery = n > 15 ? Math.ceil(n / 7) : 1;
+
+    const bars = data.map((d, i) => {
+      const x0        = barX0(i);
+      const x1        = barX1(i);
+      const cx        = (x0 + x1) / 2;
+      const isCurrent = d.isCurrent ?? (i === n - 1);
+      const opacity   = isCurrent ? "0.9" : "0.55";
+      const R         = bw >= 4 ? 1.5 : 0;
+
+      let barRect = "";
+      if (d.delta != null && d.delta > 0) {
+        const totalPx = Math.max(2, Math.round((d.delta / niceMax) * CH));
+        const topY    = toY(d.delta);
+        const hasSolar = d.solarDelta != null && d.solarDelta > 0;
+        if (hasSolar) {
+          const solarPx = Math.min(totalPx, Math.round((d.solarDelta / d.delta) * totalPx));
+          const gridPx  = totalPx - solarPx;
+          barRect =
+            (solarPx > 0 ? `<rect x="${x0}" y="${topY}"            width="${bw}" height="${solarPx}" fill="var(--evcc-green,#22c55e)"    opacity="${opacity}" rx="${R}"/>` : "") +
+            (gridPx  > 0 ? `<rect x="${x0}" y="${topY + solarPx}"  width="${bw}" height="${gridPx}"  fill="var(--primary-color,#3b82f6)" opacity="${opacity}" rx="${R}"/>` : "");
+        } else {
+          barRect = `<rect x="${x0}" y="${topY}" width="${bw}" height="${totalPx}"
+            fill="var(--primary-color,#3b82f6)" opacity="${opacity}" rx="${R}"/>`;
+        }
+      }
+
+      const showLabel = (i % showEvery === 0) || i === n - 1;
+      const labelSvg  = showLabel
+        ? `<text x="${cx}" y="${H - MB + 12}" text-anchor="middle" font-size="6.5"
+             fill="var(--secondary-text-color,#888)" opacity="${isCurrent ? "1" : "0.75"}">${d.labelStr}</text>`
+        : "";
+
+      const hitRect = `<rect class="evcc-bar" x="${x0}" y="${MT}" width="${bw}" height="${CH}"
+        fill="transparent" style="cursor:pointer"
+        data-label="${d.labelStr.replace(/"/g, "&quot;")}"
+        data-total="${d.delta != null ? d.delta.toFixed(1) : ""}"
+        data-solar="${d.solarDelta != null ? d.solarDelta.toFixed(1) : ""}"/>`;
+
+      return `${barRect}${hitRect}${labelSvg}`;
+    }).join("");
+
+    return `<div class="evcc-chart-wrap">
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">
+        ${grid}${kwhLbl}${bars}
+      </svg>
+      <div class="evcc-chart-tooltip" hidden></div>
+    </div>`;
   }
 
   _renderStatsFooter() {
@@ -1830,7 +1923,15 @@ class EvccCard extends HTMLElement {
       </div>` : "";
 
     const noDataHint = (!kwhId && !solarId && !priceId && this._statsPeriod !== "total")
-      ? `<div class="stats-no-data">${this._t("statsNoData")}</div>`
+      ? `<div class="stats-no-data">${this._t("statsNoData")} <a class="stats-no-data-link" href="https://github.com/mkshb/hass-evcc-card#enabling-stat-periods" target="_blank" rel="noopener">📖 ${this._t("statsNoDataLink") || "More info"}</a></div>`
+      : "";
+
+    const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
+    const solarHint = (this._solarDataPoints != null && this._solarDataPoints < 3)
+      ? `<div class="stats-solar-hint">${lang === "de"
+          ? `☀️ Solar-Aufschlüsselung verfügbar sobald mehr Verlaufsdaten vorliegen (${this._solarDataPoints} von mind. 3 Tagen).`
+          : `☀️ Solar breakdown available once more history is collected (${this._solarDataPoints} of min. 3 days).`
+        }</div>`
       : "";
 
     return `
@@ -1842,6 +1943,7 @@ class EvccCard extends HTMLElement {
         ${noDataHint}
         <div class="stats-kpi-row">${kpis}</div>
         ${chart}
+        ${solarHint}
       </div>`;
   }
 
@@ -2057,6 +2159,53 @@ class EvccCard extends HTMLElement {
       });
     });
 
+    const chartWrap = this.shadowRoot.querySelector(".evcc-chart-wrap");
+    if (chartWrap) {
+      const tooltip = chartWrap.querySelector(".evcc-chart-tooltip");
+      const showTooltip = (bar) => {
+        const total = bar.dataset.total;
+        if (!total) { tooltip.hidden = true; return; }
+        const solar = bar.dataset.solar ? parseFloat(bar.dataset.solar) : null;
+        const grid  = solar != null ? (parseFloat(total) - solar).toFixed(1) : null;
+        const dot = (color) => `<span class="ectt-dot" style="background:${color}"></span>`;
+        const solarColor = getComputedStyle(chartWrap).getPropertyValue("--evcc-green").trim() || "#22c55e";
+        const gridColor  = getComputedStyle(chartWrap).getPropertyValue("--primary-color").trim() || "#3b82f6";
+        tooltip.innerHTML =
+          `<div class="ectt-header">${bar.dataset.label}</div>` +
+          (solar != null ? `<div class="ectt-row">${dot(solarColor)}<span class="ectt-name">Solar</span><span class="ectt-val">${bar.dataset.solar} kWh</span></div>` : "") +
+          (grid  != null ? `<div class="ectt-row">${dot(gridColor)}<span class="ectt-name">Netz</span><span class="ectt-val">${grid} kWh</span></div>` : "") +
+          `<div class="ectt-summary">${total} kWh gesamt</div>`;
+        const barRect  = bar.getBoundingClientRect();
+        const wrapRect = chartWrap.getBoundingClientRect();
+        const rawLeft  = barRect.left - wrapRect.left + barRect.width / 2;
+        tooltip.hidden = false;
+        const ttW  = tooltip.getBoundingClientRect().width;
+        const left = Math.min(wrapRect.width - ttW / 2 - 4, Math.max(ttW / 2 + 4, rawLeft));
+        tooltip.style.left = `${left}px`;
+        tooltip.dataset.activeBar = bar.dataset.label + bar.dataset.total;
+      };
+      chartWrap.addEventListener("mouseover", (e) => {
+        const bar = e.target.closest(".evcc-bar");
+        if (bar) showTooltip(bar);
+      });
+      chartWrap.addEventListener("mouseout", (e) => {
+        if (e.target.closest(".evcc-bar")) tooltip.hidden = true;
+      });
+      chartWrap.addEventListener("click", (e) => {
+        const bar = e.target.closest(".evcc-bar");
+        if (bar) {
+          const key = bar.dataset.label + bar.dataset.total;
+          if (!tooltip.hidden && tooltip.dataset.activeBar === key) {
+            tooltip.hidden = true;
+          } else {
+            showTooltip(bar);
+          }
+        } else {
+          tooltip.hidden = true;
+        }
+      });
+    }
+
     this.shadowRoot.querySelectorAll("button.batt-tab").forEach(btn => {
       btn.addEventListener("click", () => {
         block.querySelectorAll("button.batt-tab").forEach((b, i) =>
@@ -2251,7 +2400,7 @@ class EvccCard extends HTMLElement {
           if (badge) { badge.textContent = this._t("planned"); badge.classList.remove("active"); badge.classList.add("planned"); }
         };
 
-        const vehicleDbId = state.vehicle || null;
+        const vehicleDbId = (state.vehicle && state.vehicle !== "null") ? state.vehicle : null;
         const dt  = new Date(dtValue);
         const pad = n => String(n).padStart(2, "0");
         const startdate = `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())} ` +
@@ -2283,7 +2432,7 @@ class EvccCard extends HTMLElement {
       btn.addEventListener("click", () => {
         const lpName      = btn.dataset.lp;
         const planSt      = this._planState[lpName] || {};
-        const vehicleDbId = planSt.vehicle || null;
+        const vehicleDbId = (planSt.vehicle && planSt.vehicle !== "null") ? planSt.vehicle : null;
         const block       = btn.closest(".plan-block");
         const resetBadge  = () => {
           const badge = block?.querySelector(".plan-badge");
@@ -2593,11 +2742,16 @@ class EvccCard extends HTMLElement {
       .sf-sep  { width: 1px; height: 28px; background: var(--divider-color, #333); flex-shrink: 0; }
 
       .stats-no-data {
-        font-size: .76rem; color: var(--secondary-text-color);
-        background: var(--secondary-background-color, rgba(255,255,255,.04));
-        border: 1px solid var(--divider-color, #333);
-        border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; line-height: 1.4;
+        font-size: .76rem; color: var(--warning-color, #f4b942);
+        background: rgba(244,185,66,.08);
+        border: 1px solid var(--warning-color, #f4b942);
+        border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; line-height: 1.6;
       }
+      .stats-no-data-link {
+        display: inline-block; margin-top: 4px; color: var(--primary-color);
+        text-decoration: none; font-weight: 600;
+      }
+      .stats-no-data-link:hover { text-decoration: underline; }
 
       .stats-kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
       .stats-kpi {
@@ -2608,6 +2762,21 @@ class EvccCard extends HTMLElement {
       .stats-kpi-val { font-size: 1.1rem; font-weight: 800; line-height: 1; }
       .stats-kpi-lbl { font-size: .58rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
       .stats-chart-section { margin-top: 4px; }
+      .evcc-chart-wrap { position: relative; margin-left: -16px; margin-right: 0; }
+      .evcc-chart-tooltip {
+        position: absolute; top: 0; transform: translateX(-50%);
+        background: var(--ha-card-background, var(--card-background-color, #1f2937));
+        border-radius: 8px; padding: 8px 12px;
+        font-size: 12px; line-height: 1.6; white-space: nowrap;
+        pointer-events: none; z-index: 10;
+        box-shadow: 0 4px 16px rgba(0,0,0,.35);
+      }
+      .ectt-header { font-weight: 700; margin-bottom: 4px; }
+      .ectt-row { display: flex; align-items: center; gap: 6px; }
+      .ectt-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+      .ectt-name { flex: 1; color: var(--primary-text-color); }
+      .ectt-val { font-weight: 600; margin-left: 12px; }
+      .ectt-summary { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--divider-color, #374151); font-weight: 700; }
       .stats-chart-title {
         font-size: .58rem; font-weight: 700; letter-spacing: .12em;
         text-transform: uppercase; color: var(--secondary-text-color); opacity: .55; margin-bottom: 8px;
@@ -2615,6 +2784,13 @@ class EvccCard extends HTMLElement {
       .stats-chart-loading {
         height: 75px; display: flex; align-items: center; justify-content: center;
         color: var(--secondary-text-color); font-size: .75rem; opacity: .5;
+      }
+      .stats-solar-hint {
+        font-size: .72rem; color: var(--secondary-text-color);
+        margin-top: 10px; padding: 6px 10px;
+        background: color-mix(in srgb, var(--evcc-green) 8%, transparent);
+        border: 1px solid color-mix(in srgb, var(--evcc-green) 25%, transparent);
+        border-radius: 6px; line-height: 1.4;
       }
 
       .battery-block { padding: 0; }
