@@ -933,10 +933,11 @@ class EvccCard extends HTMLElement {
     const vehicleAttr        = vehicleAttrs.vehicle ?? null;
 
     const dbIdToName = {};
-    if (vehicleAttr?.evccName && vehicleAttr?.name) {
-      dbIdToName[vehicleAttr.evccName] = vehicleAttr.name;
-    }
-    allOptions.forEach(id => { if (!dbIdToName[id]) dbIdToName[id] = id; });
+    allOptions.forEach(id => {
+      const path = `component.evcc_intg.entity.select.vehiclename.state.${id}`;
+      const translated = this._hass.localize(path);
+      dbIdToName[id] = translated || id;
+    });
 
     if (!this._planState[lpName].vehicle && vehicleAttr?.evccName) {
       this._planState[lpName].vehicle = vehicleAttr.evccName;
