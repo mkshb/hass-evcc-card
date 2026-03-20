@@ -1924,7 +1924,7 @@ class EvccCard extends HTMLElement {
       </div>` : "";
 
     const noDataHint = (!kwhId && !solarId && !priceId && this._statsPeriod !== "total")
-      ? `<div class="stats-no-data">${this._t("statsNoData")}</div>`
+      ? `<div class="stats-no-data">${this._t("statsNoData")} <a class="stats-no-data-link" href="https://github.com/mkshb/hass-evcc-card#enabling-stat-periods" target="_blank" rel="noopener">📖 ${this._t("statsNoDataLink") || "More info"}</a></div>`
       : "";
 
     const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
@@ -2743,11 +2743,16 @@ class EvccCard extends HTMLElement {
       .sf-sep  { width: 1px; height: 28px; background: var(--divider-color, #333); flex-shrink: 0; }
 
       .stats-no-data {
-        font-size: .76rem; color: var(--secondary-text-color);
-        background: var(--secondary-background-color, rgba(255,255,255,.04));
-        border: 1px solid var(--divider-color, #333);
-        border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; line-height: 1.4;
+        font-size: .76rem; color: var(--warning-color, #f4b942);
+        background: rgba(244,185,66,.08);
+        border: 1px solid var(--warning-color, #f4b942);
+        border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; line-height: 1.6;
       }
+      .stats-no-data-link {
+        display: inline-block; margin-top: 4px; color: var(--primary-color);
+        text-decoration: none; font-weight: 600;
+      }
+      .stats-no-data-link:hover { text-decoration: underline; }
 
       .stats-kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
       .stats-kpi {

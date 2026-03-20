@@ -326,7 +326,23 @@ The stat entities are auto-discovered using the pattern `sensor.{prefix}stat_*` 
 
 **Solar breakdown in the bar chart:** When `sensor.{prefix}stat_total_solar_k_wh_template` is available, each bar is split into a **green** (solar) and **blue** (grid) portion. This sensor was recently added to [ha-evcc](https://github.com/marq24/ha-evcc) - thanks to [@marq24](https://github.com/marq24) for adding it! The sensor needs at least 3 days of HA Recorder history before the split appears. Until then, the card shows a hint message below the chart. No configuration is needed - once enough history has been collected, the solar breakdown appears automatically.
 
-> **ℹ️ Note:** The **Total** period is enabled by default in ha-evcc. The periods **30 days**, **365 days** and **This year** must be **manually enabled** in the ha-evcc integration settings (Settings → Devices & Services → ha-evcc → Configure). If a period is not yet activated, the card shows a hint with instructions directly inside the card.
+<a name="enabling-stat-periods"></a>
+
+> **⚠️ Periods not showing data?** The **Total** period is enabled by default in ha-evcc. The sensor entities for **30 days**, **365 days** and **This year** are **disabled by default** in Home Assistant and must be enabled manually. If a period tab shows a warning instead of statistics, follow the steps below.
+
+#### Enabling the stat entities in Home Assistant
+
+The stat sensors exist in your ha-evcc integration but are disabled by default. To enable them:
+
+1. In Home Assistant, open **Settings** → **Devices & Services**
+2. Click on the **ha-evcc** integration
+3. Open your evcc device (e.g. *"evcc ☀️🚘 Solar Charging [evcc]"*)
+4. Scroll down to the section that says **"X disabled entities"** and click on it
+5. Enable the statistics entities for the periods you want: **30 days** (`stat30_*`), **365 days** (`stat365_*`) and/or **This year** (`stat_this_year_*`)
+6. Each period has three entities: `_charged_kwh`, `_solar_percentage` and `_avg_price` — enable all three for full statistics. Since ha-evcc **2026.2** there is also `_solar_k_wh_template` which is needed for the solar/grid split in the bar chart
+7. Wait a moment or reload the ha-evcc integration — the stat periods should then appear in the card
+
+> **Note:** After enabling, it may take a few minutes until the first values appear, as Home Assistant needs to record the initial data points for these entities.
 
 > **ℹ️ Single-year fallback:** If the **Total** tab detects that only one calendar year of data is available in the HA Recorder, it automatically falls back to showing the monthly breakdown of the current year - identical to the **This year** chart.
 
