@@ -587,8 +587,7 @@ class EvccCard extends HTMLElement {
     const vehicleAttrs = ents.vehicle_name
       ? (this._hass.states[ents.vehicle_name]?.attributes ?? {}) : {};
     const vehicleName  = vehicleAttrs.vehicle?.name || null;
-    const isGuest      = ents.vehicle_name && this._hass.states[ents.vehicle_name]?.state === "null";
-    const validName    = vehicleName && vehicleName !== "null" ? vehicleName : (isGuest ? this._t("guestVehicle") : null);
+    const validName    = vehicleName && vehicleName !== "null" ? vehicleName : null;
 
     if (!ents.vehicle_soc && !validName) return "";
 
