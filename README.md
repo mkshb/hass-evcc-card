@@ -551,6 +551,14 @@ The card was featured in a YouTube video - showing installation, configuration a
 
 ---
 
+## FAQ
+
+### Why does the solar share show 0 % or nothing for older charging sessions?
+
+The solar share visualization in the stats chart requires `sensor.{prefix}stat_total_solar_k_wh_template`, which was introduced in [ha-evcc](https://github.com/marq24/ha-evcc) version **2026.3.3**. Historical sessions recorded before that version are missing the underlying data, so a correct solar share cannot be calculated retroactively. Only sessions recorded after upgrading to ha-evcc 2026.2 or later will show solar share data.
+
+---
+
 ## Related projects
 
 - [EVCC](https://evcc.io/) - the EV charging controller this card is built for
