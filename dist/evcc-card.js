@@ -2493,6 +2493,7 @@ class EvccCard extends HTMLElement {
     return `
       :host {
         display: block;
+        container-type: inline-size;
         --evcc-green:  var(--success-color,  #22c55e);
         --evcc-red:    var(--error-color,    #ef4444);
         --evcc-amber:  var(--warning-color,  #f59e0b);
@@ -2502,6 +2503,8 @@ class EvccCard extends HTMLElement {
         --evcc-gray:   var(--disabled-color, #6b7280);
         --evcc-bolt:   #facc15;
       }
+      @container (min-width: 450px) { ha-card { zoom: 1.15; } }
+      @container (min-width: 650px) { ha-card { zoom: 1.3;  } }
       ha-card {
         background: var(--card-background-color);
         color: var(--primary-text-color);
