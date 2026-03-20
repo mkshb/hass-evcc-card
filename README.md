@@ -97,7 +97,7 @@ All charge points and site entities are **automatically discovered** based on th
 
 | Feature | Description |
 |---|---|
-| 🔍 **Auto-discovery** | Automatically detects all charge points and site entities - zero manual configuration |
+| 🔍 **Auto-discovery** | Automatically detects all charge points and site entities via the HA entity registry - zero manual configuration |
 | 🔄 **Live updates** | Power, SoC and status update in real time without full re-render |
 | 🔋 **SoC display** | Vehicle state of charge as a progress bar with percentage and estimated range |
 | 🎚️ **Slider controls** | Adjust Target SoC, Min SoC, Priority, smart charging limit, Max current and Min current inline |
@@ -182,7 +182,7 @@ Not sure which options you need? The interactive **[YAML Configurator](https://m
 
 ## Configuration & Modes
 
-Add the card to any Lovelace dashboard using the YAML editor. The `mode` option controls what the card displays. Use the **[YAML Configurator](https://mkshb.github.io/hass-evcc-card/configurator.html)** to generate your configuration interactively.
+Add the card to any Lovelace dashboard. Starting with v0.5.0, the card includes a **native card editor** — simply use the visual editor in Home Assistant to configure all options interactively. The YAML editor and the **[YAML Configurator](https://mkshb.github.io/hass-evcc-card/configurator.html)** remain available as alternatives.
 
 ### Configuration options
 
@@ -195,8 +195,8 @@ Add the card to any Lovelace dashboard using the YAML editor. The `mode` option 
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
 | `site_details` | `string` | *(expanded)* | Set to `collapsed` to hide the IN/OUT detail table by default in `site` mode |
 | `charge_current_settings` | `string` | *(collapsed)* | Set to `expanded` to show the charge settings block (phase switch, min/max current, smart charging limit) expanded by default |
-| `prefix` | `string` | `evcc_` | Entity name prefix used by the integration - only needed if you run multiple EVCC instances with a custom prefix (e.g. `evcc2_`) |
 | `stats_period` | `string` | `total` | Default statistics period. For `site` and `grid` cards: controls the footer KPIs; allowed values: `total`, `30d`, `365d`, `thisYear`, `none` (hides the footer entirely). For the `stats` card: sets the initially selected tab; allowed values: `total`, `30d`, `365d`, `thisYear` (the user can still switch tabs interactively). |
+| `prefix` | `string` | *(auto)* | **YAML only** — Entity name prefix, auto-detected from the ha-evcc integration. Only needed in edge cases, e.g. when running multiple EVCC instances with a custom prefix (`evcc2_`). |
 
 ---
 
@@ -322,9 +322,9 @@ Charging statistics with period selector and a matching bar chart:
 - Chart data is fetched lazily per tab on first access and cached for 5 minutes
 - The same three KPIs also appear as a compact footer row at the bottom of `site` and `grid` cards - the period shown there is controlled via the `stats_period` config option (default: `total`). Set `stats_period: none` to hide the footer entirely. The label below the kWh value reflects the active period (e.g. *Total charged*, *30 days charged*, *This year charged*).
 
-The stat entities are auto-discovered using the pattern `sensor.{prefix}stat_*` (e.g. `sensor.evcc_stat_total_charged_kwh`). The bar chart always uses the cumulative `sensor.{prefix}stat_total_charged_kwh` entity from the HA Recorder, independent of which KPI period is selected.
+The stat entities are auto-discovered using the pattern `sensor.evcc_stat_*` (e.g. `sensor.evcc_stat_total_charged_kwh`). The bar chart always uses the cumulative `sensor.evcc_stat_total_charged_kwh` entity from the HA Recorder, independent of which KPI period is selected.
 
-**Solar breakdown in the bar chart:** When `sensor.{prefix}stat_total_solar_k_wh_template` is available, each bar is split into a **green** (solar) and **blue** (grid) portion. This sensor was recently added to [ha-evcc](https://github.com/marq24/ha-evcc) - thanks to [@marq24](https://github.com/marq24) for adding it! The sensor needs at least 3 days of HA Recorder history before the split appears. Until then, the card shows a hint message below the chart. No configuration is needed - once enough history has been collected, the solar breakdown appears automatically.
+**Solar breakdown in the bar chart:** When `sensor.evcc_stat_total_solar_k_wh_template` is available, each bar is split into a **green** (solar) and **blue** (grid) portion. This sensor was recently added to [ha-evcc](https://github.com/marq24/ha-evcc) - thanks to [@marq24](https://github.com/marq24) for adding it! The sensor needs at least 3 days of HA Recorder history before the split appears. Until then, the card shows a hint message below the chart. No configuration is needed - once enough history has been collected, the solar breakdown appears automatically.
 
 <a name="enabling-stat-periods"></a>
 
@@ -497,9 +497,11 @@ That's it - no changes to `evcc-card.js` required.
 
 ---
 
-## Entity naming scheme
+## Entity detection
 
-This card relies on the entity naming convention used by [ha-evcc](https://github.com/marq24/ha-evcc). Entities follow the pattern:
+Starting with v0.5.0, the card automatically detects all ha-evcc entities via the **Home Assistant entity registry** (`platform: evcc_intg`). The entity prefix is derived automatically — no configuration needed.
+
+Entities follow the [ha-evcc](https://github.com/marq24/ha-evcc) naming convention:
 
 ```
 sensor.evcc_<loadpoint_name>_<entity_type>
@@ -508,14 +510,12 @@ number.evcc_<loadpoint_name>_limit_soc
 ...
 ```
 
-As long as you use the standard ha-evcc integration, no additional configuration is needed - the card discovers all entities automatically.
-
-If you run **multiple EVCC instances** and your integration uses a custom prefix (e.g. `evcc2_`), set the `prefix` option accordingly:
-
-```yaml
-type: custom:evcc-card
-prefix: evcc2_
-```
+> **Edge case:** If you run **multiple EVCC instances** with a custom prefix (e.g. `evcc2_`), you can override the auto-detection via YAML:
+>
+> ```yaml
+> type: custom:evcc-card
+> prefix: evcc2_
+> ```
 
 ---
 
