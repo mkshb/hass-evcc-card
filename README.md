@@ -14,68 +14,50 @@ All charge points and site entities are **automatically discovered** via the HA 
 <tr>
 <td align="center"><b>Charge Point</b></td>
 <td align="center"><b>Site</b></td>
+<td align="center"><b>Flow</b></td>
 <td align="center"><b>Grid</b></td>
+</tr>
+<tr>
+<td>
+<a href="#loadpoint-default"><img src="images/loadpoint-dark.png" width="200"></a>
+<a href="#loadpoint-default"><img src="images/loadpoint-light.png" width="200"></a>
+</td>
+<td>
+<a href="#site"><img src="images/site-dark.png" width="200"></a>
+<a href="#site"><img src="images/site-light.png" width="200"></a>
+</td>
+<td>
+<a href="#flow"><img src="images/flow-dark.png" width="200"></a>
+<a href="#flow"><img src="images/flow-light.png" width="200"></a>
+</td>
+<td>
+<a href="#grid"><img src="images/grid-dark.png" width="200"></a>
+<a href="#grid"><img src="images/grid-light.png" width="200"></a>
+</td>
+</tr>
+<tr>
 <td align="center"><b>Statistics</b></td>
-</tr>
-<tr>
-<td>
-<a href="#loadpoint-default"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/loadpoint-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="images/loadpoint-light.png">
-  <img src="images/loadpoint-dark.png">
-</picture></a>
-</td>
-<td>
-<a href="#site"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/site-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="images/site-light.png">
-  <img src="images/site-dark.png">
-</picture></a>
-</td>
-<td>
-<a href="#grid"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/grid-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="images/grid-light.png">
-  <img src="images/grid-dark.png">
-</picture></a>
-</td>
-<td>
-<a href="#stats"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/stats-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="images/stats-light.png">
-  <img src="images/stats-dark.png">
-</picture></a>
-</td>
-</tr>
-<tr>
 <td align="center"><b>Battery</b></td>
 <td align="center"><b>Compact</b></td>
 <td align="center"><b>Plan</b></td>
-<td align="center"></td>
 </tr>
 <tr>
 <td>
-<a href="#battery"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/battery-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="images/battery-light.png">
-  <img src="images/battery-dark.png">
-</picture></a>
+<a href="#stats"><img src="images/stats-dark.png" width="200"></a>
+<a href="#stats"><img src="images/stats-light.png" width="200"></a>
 </td>
 <td>
-<a href="#compact"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/compact-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="images/compact-light.png">
-  <img src="images/compact-dark.png">
-</picture></a>
+<a href="#battery"><img src="images/battery-dark.png" width="200"></a>
+<a href="#battery"><img src="images/battery-light.png" width="200"></a>
 </td>
 <td>
-<a href="#plan"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/plan-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="images/plan-light.png">
-  <img src="images/plan-dark.png">
-</picture></a>
+<a href="#compact"><img src="images/compact-dark.png" width="200"></a>
+<a href="#compact"><img src="images/compact-light.png" width="200"></a>
 </td>
-<td></td>
+<td>
+<a href="#plan"><img src="images/plan-dark.png" width="200"></a>
+<a href="#plan"><img src="images/plan-light.png" width="200"></a>
+</td>
 </tr>
 </table>
 
@@ -167,7 +149,7 @@ Add the card to any Lovelace dashboard and use the **visual editor** to configur
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `grid`, `stats`, `plan` |
+| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan` |
 | `title` | `string` | *(auto)* | Replaces the default card header |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language |
@@ -200,11 +182,7 @@ The **CHARGE SETTINGS** section is collapsed by default and can be toggled using
 
 > **Price mode - slider range issue:** When switching the smart charging mode in EVCC from CO2-based to price-based, ha-evcc may not recreate the limit entity. The slider then still shows the CO2 range (0-500 g/kWh) instead of the price range. To fix this, go to Settings -> Devices & Services -> ha-evcc -> **Reconfigure**, and enable the option **"Remove and recreate all Devices"**.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/loadpoint-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="images/loadpoint-light.png">
-  <img src="images/loadpoint-dark.png">
-</picture>
+<img src="images/loadpoint-dark.png" width="400"> <img src="images/loadpoint-light.png" width="400">
 
 ---
 
@@ -220,11 +198,22 @@ Full site energy overview:
 
 The IN/OUT detail table can be toggled by clicking the power bar. It opens expanded by default; set `site_details` to `collapsed` in the editor to start collapsed instead.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/site-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="images/site-light.png">
-  <img src="images/site-dark.png">
-</picture>
+<img src="images/site-dark.png" width="400"> <img src="images/site-light.png" width="400">
+
+---
+
+### `flow`
+
+Sankey-style energy flow diagram showing how energy is distributed from sources to consumers in real time:
+
+- **Sources** (left): PV strings, battery (discharging), grid import — each as a colored node
+- **Consumers** (right): home consumption, individual charge points, battery (charging), grid export
+- Flowing bands connect sources to consumers, with width proportional to power — PV is distributed first, then battery, then grid
+- Each node shows an MDI icon and current power value; battery and vehicle nodes include SoC as a sub-label
+- All nodes are clickable to open the Home Assistant entity detail dialog
+- Collapsible IN/OUT detail table below (same as `site` mode)
+
+<img src="images/flow-dark.png" width="400"> <img src="images/flow-light.png" width="400">
 
 ---
 
@@ -239,11 +228,7 @@ Compact site energy overview with a focus on the current grid status:
 
 > **Deprecation notice:** `mode: site2` still works but is deprecated and will be removed in a future release. Please migrate to `mode: grid`.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/grid-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="images/grid-light.png">
-  <img src="images/grid-dark.png">
-</picture>
+<img src="images/grid-dark.png" width="400"> <img src="images/grid-light.png" width="400">
 
 ---
 
@@ -287,11 +272,7 @@ The stat sensors exist in your ha-evcc integration but are disabled by default. 
 
 > **Single-year fallback:** If the **Total** tab detects that only one calendar year of data is available in the HA Recorder, it automatically falls back to showing the monthly breakdown of the current year - identical to the **This year** chart.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/stats-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="images/stats-light.png">
-  <img src="images/stats-dark.png">
-</picture>
+<img src="images/stats-dark.png" width="400"> <img src="images/stats-light.png" width="400">
 
 ---
 
@@ -304,11 +285,7 @@ Home battery management block:
 - Priority SoC slider
 - Discharge lock toggle
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/battery-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="images/battery-light.png">
-  <img src="images/battery-dark.png">
-</picture>
+<img src="images/battery-dark.png" width="400"> <img src="images/battery-light.png" width="400">
 
 ---
 
@@ -325,11 +302,7 @@ Same content as `loadpoint`, but organized into four tabs - ideal for dashboards
 
 The selected tab is remembered per charge point across re-renders.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/compact-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="images/compact-light.png">
-  <img src="images/compact-dark.png">
-</picture>
+<img src="images/compact-dark.png" width="400"> <img src="images/compact-light.png" width="400">
 
 ---
 
@@ -342,11 +315,7 @@ Minimalist charge plan view:
 - Target SoC slider
 - Activate / delete plan
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/plan-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="images/plan-light.png">
-  <img src="images/plan-dark.png">
-</picture>
+<img src="images/plan-dark.png" width="400"> <img src="images/plan-light.png" width="400">
 
 ---
 
