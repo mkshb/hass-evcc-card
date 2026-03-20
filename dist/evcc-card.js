@@ -310,6 +310,14 @@ class EvccCard extends HTMLElement {
     return lang + "|" + evccIds.map(id => `${id}=${hass.states[id]?.state}`).join("|");
   }
 
+  static getConfigElement() {
+    return document.createElement("evcc-card-editor");
+  }
+
+  static getStubConfig() {
+    return { mode: "loadpoint" };
+  }
+
   setConfig(config) {
     this._config = config || {};
     const validPeriods = ["30d", "365d", "thisYear", "total"];
@@ -2890,6 +2898,240 @@ class EvccCard extends HTMLElement {
   }
 }
 
+class EvccCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+    this._hass = null;
+    this._availableLoadpoints = [];
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    const prev = this._availableLoadpoints.join(",");
+    this._discoverLoadpoints();
+    const next = this._availableLoadpoints.join(",");
+    if (prev !== next) this._render();
+  }
+
+  setConfig(config) {
+    this._config = { ...config };
+    if (this.shadowRoot?.activeElement?.tagName === "INPUT") return;
+    this._discoverLoadpoints();
+    this._render();
+  }
+
+  _discoverLoadpoints() {
+    if (!this._hass) return;
+    const prefix = this._config.prefix || "evcc_";
+    const { loadpoints } = discoverEntities(this._hass, prefix);
+    this._availableLoadpoints = Object.keys(loadpoints).sort();
+  }
+
+  _esc(str) {
+    return String(str).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  _fire() {
+    this.dispatchEvent(new CustomEvent("config-changed", {
+      detail: { config: { ...this._config } },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  _sel(id, options, current) {
+    return `<select id="${id}" class="ha-select">
+      ${options.map(([val, label]) =>
+        `<option value="${val}"${current === val ? " selected" : ""}>${label}</option>`
+      ).join("")}
+    </select>`;
+  }
+
+  _checkboxes(type, selected) {
+    const lps = this._availableLoadpoints;
+    if (lps.length === 0) return `<div class="hint">Keine Ladepunkte gefunden</div>`;
+    return lps.map(lp => `
+      <label class="cb-row">
+        <input type="checkbox" data-field="${type}" data-lp="${this._esc(lp)}" ${selected.includes(lp) ? "checked" : ""}>
+        <span>${this._esc(lp)}</span>
+      </label>
+    `).join("");
+  }
+
+  _render() {
+    const c    = this._config;
+    const mode = c.mode || "loadpoint";
+    const selLps = Array.isArray(c.loadpoints) ? c.loadpoints : [];
+    const noPlan  = Array.isArray(c.no_plan)   ? c.no_plan   : [];
+
+    const showLoadpoints    = ["loadpoint", "compact", "plan"].includes(mode);
+    const showNoPlan        = ["loadpoint", "compact"].includes(mode);
+    const showChargeCurrent = ["loadpoint", "compact"].includes(mode);
+    const showSiteDetails   = mode === "site";
+    const showStatsPeriod   = mode === "stats";
+
+    const titlePlaceholder = {
+      loadpoint: "Standard: Ladepoint-Name",
+      compact:   "Standard: Ladepoint-Name",
+      plan:      "Standard: Ladepoint-Name",
+      site:      "Standard: Übersicht",
+      grid:      "Standard: Energiefluss",
+      stats:     "Standard: Statistik",
+      battery:   "Standard: Hausbatterie",
+    }[mode] || "Standard: Ladepoint-Name";
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host { display: block; }
+        .form { display: flex; flex-direction: column; gap: 16px; }
+        .field { display: flex; flex-direction: column; gap: 4px; }
+        .field-label { font-size: .875rem; font-weight: 500; color: var(--primary-text-color); }
+        .section-title { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--secondary-text-color); }
+        .hint { font-size: .75rem; color: var(--secondary-text-color); }
+        .ha-select, .ha-input {
+          width: 100%; padding: 8px 12px; border-radius: 4px; font-size: 1rem;
+          background: var(--card-background-color, #fff);
+          color: var(--primary-text-color);
+          border: 1px solid var(--divider-color, #e0e0e0);
+          box-sizing: border-box; font-family: inherit;
+        }
+        .ha-select:focus, .ha-input:focus { outline: none; border-color: var(--primary-color); }
+        .cb-row { display: flex; align-items: center; gap: 8px; font-size: .875rem; cursor: pointer; padding: 4px 0; }
+        .cb-row input[type="checkbox"] { accent-color: var(--primary-color); width: 16px; height: 16px; cursor: pointer; }
+      </style>
+      <div class="form">
+        <div class="field">
+          <label class="field-label" for="mode">Modus</label>
+          ${this._sel("mode", [
+            ["loadpoint", "Ladepunkt (loadpoint)"],
+            ["compact",   "Kompakt (compact)"],
+            ["site",      "Übersicht (site)"],
+            ["grid",      "Netz (grid)"],
+            ["battery",   "Batterie (battery)"],
+            ["stats",     "Statistik (stats)"],
+            ["plan",      "Plan (plan)"],
+          ], mode)}
+        </div>
+        <div class="field">
+          <label class="field-label" for="title">Titel <span class="hint" style="display:inline">(optional)</span></label>
+          <input id="title" class="ha-input" type="text" value="${this._esc(c.title || "")}" placeholder="${titlePlaceholder}">
+        </div>
+        <div class="field">
+          <label class="field-label" for="prefix">Entity-Prefix</label>
+          <input id="prefix" class="ha-input" type="text" value="${this._esc(c.prefix || "evcc_")}" placeholder="evcc_">
+          <div class="hint">Standard: evcc_ — nur ändern wenn nötig</div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="language">Sprache</label>
+          ${this._sel("language", [
+            ["",   "Automatisch (aus HA)"],
+            ["de", "Deutsch"],
+            ["en", "English"],
+            ["es", "Español"],
+            ["fr", "Français"],
+            ["hr", "Hrvatski"],
+            ["nl", "Nederlands"],
+            ["pl", "Polski"],
+            ["pt", "Português"],
+          ], c.language || "")}
+        </div>
+        ${showLoadpoints ? `
+        <div class="field">
+          <div class="section-title">Ladepunkte anzeigen</div>
+          <div class="hint">Leer = alle anzeigen</div>
+          ${this._checkboxes("loadpoints", selLps)}
+        </div>
+        ` : ""}
+        ${showNoPlan ? `
+        <div class="field">
+          <div class="section-title">Kein Ladeplan für</div>
+          ${this._checkboxes("no_plan", noPlan)}
+        </div>
+        ` : ""}
+        ${showChargeCurrent ? `
+        <div class="field">
+          <label class="field-label" for="charge_current_settings">Ladestrom-Einstellungen</label>
+          ${this._sel("charge_current_settings", [
+            ["collapsed", "Eingeklappt"],
+            ["expanded",  "Aufgeklappt"],
+          ], c.charge_current_settings || "collapsed")}
+        </div>
+        ` : ""}
+        ${showSiteDetails ? `
+        <div class="field">
+          <label class="field-label" for="site_details">Site-Details</label>
+          ${this._sel("site_details", [
+            ["expanded",  "Aufgeklappt"],
+            ["collapsed", "Eingeklappt"],
+          ], c.site_details || "expanded")}
+        </div>
+        ` : ""}
+        ${showStatsPeriod ? `
+        <div class="field">
+          <label class="field-label" for="stats_period">Statistik-Zeitraum</label>
+          ${this._sel("stats_period", [
+            ["total",    "Gesamt"],
+            ["30d",      "30 Tage"],
+            ["365d",     "365 Tage"],
+            ["thisYear", "Dieses Jahr"],
+            ["none",     "Keiner"],
+          ], c.stats_period || "total")}
+        </div>
+        ` : ""}
+      </div>
+    `;
+
+    this._addListeners();
+  }
+
+  _addListeners() {
+    ["mode", "language", "site_details", "charge_current_settings", "stats_period"].forEach(id => {
+      const el = this.shadowRoot.getElementById(id);
+      if (!el) return;
+      el.addEventListener("change", () => {
+        this._config = { ...this._config, [id]: el.value || undefined };
+        this._fire();
+        if (id === "mode") this._render();
+      });
+    });
+
+    ["title", "prefix"].forEach(id => {
+      const el = this.shadowRoot.getElementById(id);
+      if (!el) return;
+      el.addEventListener("input", () => {
+        const val = el.value.trim();
+        this._config = { ...this._config, [id]: val || undefined };
+        this._fire();
+      });
+      el.addEventListener("change", () => {
+        if (id === "prefix") {
+          this._discoverLoadpoints();
+          this._render();
+        }
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("input[type=checkbox]").forEach(cb => {
+      cb.addEventListener("change", () => {
+        const field = cb.dataset.field;
+        const lp    = cb.dataset.lp;
+        const current = Array.isArray(this._config[field]) ? [...this._config[field]] : [];
+        if (cb.checked) {
+          if (!current.includes(lp)) current.push(lp);
+        } else {
+          const idx = current.indexOf(lp);
+          if (idx > -1) current.splice(idx, 1);
+        }
+        this._config = { ...this._config, [field]: current.length > 0 ? current : undefined };
+        this._fire();
+      });
+    });
+  }
+}
+
+customElements.define("evcc-card-editor", EvccCardEditor);
 customElements.define("evcc-card", EvccCard);
 window.__evccCards = window.__evccCards || new Map();
 
