@@ -36,6 +36,7 @@
   "duration": "Duur",
   "generation": "Opwekking",
   "consumption": "Verbruik",
+  "grid": "Net",
   "gridImport": "Netafname",
   "gridExport": "Teruglevering",
   "gridStatus": "Netstatus",

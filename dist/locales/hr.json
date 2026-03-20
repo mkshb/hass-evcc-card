@@ -36,6 +36,7 @@
   "duration": "Trajanje",
   "generation": "Proizvodnja",
   "consumption": "Potrošnja",
+  "grid": "Mreža",
   "gridImport": "Uvoz s mreže",
   "gridExport": "Izvoz u mrežu",
   "gridStatus": "Status mreže",

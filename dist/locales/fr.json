@@ -36,6 +36,7 @@
   "duration": "Durée",
   "generation": "Production",
   "consumption": "Consommation",
+  "grid": "Réseau",
   "gridImport": "Soutirage réseau",
   "gridExport": "Injection réseau",
   "gridStatus": "État du réseau",

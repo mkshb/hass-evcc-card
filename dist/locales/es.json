@@ -36,6 +36,7 @@
   "duration": "Duración",
   "generation": "Generación",
   "consumption": "Consumo",
+  "grid": "Red",
   "gridImport": "Importación de red",
   "gridExport": "Exportación de red",
   "gridStatus": "Estado de red",

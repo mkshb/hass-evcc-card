@@ -36,6 +36,7 @@
   "duration": "Duration",
   "generation": "Generation",
   "consumption": "Consumption",
+  "grid": "Grid",
   "gridImport": "Grid import",
   "gridExport": "Grid export",
   "gridStatus": "Grid status",

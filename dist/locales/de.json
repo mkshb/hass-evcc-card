@@ -36,6 +36,7 @@
   "duration": "Dauer",
   "generation": "Erzeugung",
   "consumption": "Verbrauch",
+  "grid": "Netz",
   "gridImport": "Netzbezug",
   "gridExport": "Einspeisung",
   "gridStatus": "Netzstatus",
