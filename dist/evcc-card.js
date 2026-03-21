@@ -415,12 +415,12 @@ class EvccCard extends HTMLElement {
   }
 
   _t(key, replacements = {}) {
-    const lang = (this._config.language
-      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
-
-    const strings = this._translations[lang]
-      || this._translations["en"]
-      || {};
+    // Use pre-resolved strings from current render cycle; fall back to resolving on demand
+    const strings = this._renderStrings ?? (() => {
+      const lang = (this._config.language
+        || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+      return this._translations[lang] || this._translations["en"] || {};
+    })();
 
     let val = strings[key] ?? key;
 
@@ -446,6 +446,11 @@ class EvccCard extends HTMLElement {
         <ha-card><div class="loading">⏳</div></ha-card>`;
       return;
     }
+
+    // Resolve language strings once per render — reused by all _t() calls
+    const lang = (this._config.language
+      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+    this._renderStrings = this._translations[lang] || this._translations["en"] || {};
 
     const prefix = this._getPrefix();
 
