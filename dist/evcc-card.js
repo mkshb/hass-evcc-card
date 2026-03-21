@@ -267,6 +267,8 @@ class EvccCard extends HTMLElement {
     this._siteTableExpanded = undefined; // undefined = use config default
     this._currentBlockExpanded = {};
     this._detectedPrefix = null;
+    this._cachedEntities   = null;  // { loadpoints, site } — invalidated when entity IDs change
+    this._cachedEntityIdKey = null; // sorted join of evcc entity IDs + prefix
 
     this._onPlanReset = (e) => {
       const lpName = e.detail?.lpName;
@@ -447,7 +449,16 @@ class EvccCard extends HTMLElement {
     }
 
     const prefix = this._getPrefix();
-    const { loadpoints, site } = discoverEntities(this._hass, prefix);
+
+    // Cache discoverEntities() — only re-run when the set of entity IDs changes (not on value updates)
+    const evccIdKey = prefix + "|" + Object.keys(this._hass.states)
+      .filter(id => id.split(".")[1]?.startsWith(prefix))
+      .sort().join(",");
+    if (evccIdKey !== this._cachedEntityIdKey) {
+      this._cachedEntityIdKey = evccIdKey;
+      this._cachedEntities    = discoverEntities(this._hass, prefix);
+    }
+    const { loadpoints, site } = this._cachedEntities;
 
     const filterRaw = this._config.loadpoints;
     const filter = filterRaw
