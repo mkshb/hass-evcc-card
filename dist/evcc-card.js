@@ -960,15 +960,20 @@ class EvccCard extends HTMLElement {
     if (!ents.effective_plan_soc || !this._hass.states[ents.effective_plan_soc]) return "";
     if (!force && !hasVehicle && !planActive) return "";
 
+    const vehicleEntityId    = ents.vehicle_name || null;
+    const vehicleAttrs       = vehicleEntityId ? (this._hass.states[vehicleEntityId]?.attributes ?? {}) : {};
+    const allOptions         = (vehicleAttrs.options ?? []).filter(o => o !== "null");
+    const vehicleAttr        = vehicleAttrs.vehicle ?? null;
+
     if (!this._planState[lpName]) {
-      const limitSoc = ents.effective_limit_soc
+      const vehicleLimitSoc  = vehicleAttr?.limitSoc > 0 ? vehicleAttr.limitSoc : null;
+      const entityLimitSoc   = ents.effective_limit_soc
         ? Math.round(parseFloat(stateVal(this._hass, ents.effective_limit_soc))) : null;
-      
-      const initSoc = (planSoc && planSoc !== "unknown" && planSoc !== "unavailable")
-        ? Math.round(parseFloat(planSoc))
-        : (limitSoc && limitSoc > 0)
-          ? limitSoc
-          : 80;
+
+      const parsedPlanSoc = parseFloat(planSoc);
+      const initSoc = (parsedPlanSoc > 0)
+        ? Math.round(parsedPlanSoc)
+        : vehicleLimitSoc ?? (entityLimitSoc > 0 ? entityLimitSoc : 80);
       let initDt = "";
       if (planTime && planTime !== "unknown" && planTime !== "unavailable") {
         try {
@@ -989,11 +994,6 @@ class EvccCard extends HTMLElement {
 
     const defaultSoc     = this._planState[lpName].soc;
     const defaultDt      = this._planState[lpName].time;
-
-    const vehicleEntityId    = ents.vehicle_name || null;
-    const vehicleAttrs       = vehicleEntityId ? (this._hass.states[vehicleEntityId]?.attributes ?? {}) : {};
-    const allOptions         = (vehicleAttrs.options ?? []).filter(o => o !== "null");
-    const vehicleAttr        = vehicleAttrs.vehicle ?? null;
 
     const dbIdToName = {};
     allOptions.forEach(id => {
@@ -1165,7 +1165,7 @@ class EvccCard extends HTMLElement {
       { key: "battery_3_power", socKey: "battery_3_soc", idx: 3 },
     ].filter(s => site[s.key]).map(s => ({
       ...s,
-      label: pvNameFromEntity(site[s.key]) ?? `Batterie ${s.idx + 1}`,
+      label: pvNameFromEntity(site[s.key]) ?? `${this._t("battery")} ${s.idx + 1}`,
     }));
     const gridPow = kw(site.grid_power);
     const battPow = kw(site.battery_power);
@@ -1524,7 +1524,7 @@ class EvccCard extends HTMLElement {
       { key: "battery_3_power", socKey: "battery_3_soc", idx: 3 },
     ].filter(s => site[s.key]).map(s => ({
       ...s,
-      label: pvNameFromEntity(site[s.key]) ?? `Batterie ${s.idx + 1}`,
+      label: pvNameFromEntity(site[s.key]) ?? `${this._t("battery")} ${s.idx + 1}`,
     }));
     const gridPow = kw(site.grid_power);
     const battPow = kw(site.battery_power);
@@ -1911,7 +1911,7 @@ class EvccCard extends HTMLElement {
       { key: "battery_3_power", socKey: "battery_3_soc", idx: 3 },
     ].filter(s => site[s.key]).map(s => ({
       ...s,
-      label: (site[s.key] ? (attr(this._hass, site[s.key], "title") ?? null) : null) ?? `Batterie ${s.idx + 1}`,
+      label: (site[s.key] ? (attr(this._hass, site[s.key], "title") ?? null) : null) ?? `${this._t("battery")} ${s.idx + 1}`,
     }));
 
     const pvPow         = pvSources.length > 0
@@ -2388,10 +2388,7 @@ class EvccCard extends HTMLElement {
 
     const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
     const solarHint = (this._solarDataPoints != null && this._solarDataPoints < 3)
-      ? `<div class="stats-solar-hint">${lang === "de"
-          ? `☀️ Solar-Aufschlüsselung verfügbar sobald mehr Verlaufsdaten vorliegen (${this._solarDataPoints} von mind. 3 Tagen).`
-          : `☀️ Solar breakdown available once more history is collected (${this._solarDataPoints} of min. 3 days).`
-        }</div>`
+      ? `<div class="stats-solar-hint">${this._t("solarHint", { n: this._solarDataPoints })}</div>`
       : "";
 
     return `
@@ -2632,9 +2629,9 @@ class EvccCard extends HTMLElement {
         const gridColor  = getComputedStyle(chartWrap).getPropertyValue("--primary-color").trim() || "#3b82f6";
         tooltip.innerHTML =
           `<div class="ectt-header">${bar.dataset.label}</div>` +
-          (solar != null ? `<div class="ectt-row">${dot(solarColor)}<span class="ectt-name">Solar</span><span class="ectt-val">${bar.dataset.solar} kWh</span></div>` : "") +
-          (grid  != null ? `<div class="ectt-row">${dot(gridColor)}<span class="ectt-name">Netz</span><span class="ectt-val">${grid} kWh</span></div>` : "") +
-          `<div class="ectt-summary">${total} kWh gesamt</div>`;
+          (solar != null ? `<div class="ectt-row">${dot(solarColor)}<span class="ectt-name">${this._t("solar")}</span><span class="ectt-val">${bar.dataset.solar} kWh</span></div>` : "") +
+          (grid  != null ? `<div class="ectt-row">${dot(gridColor)}<span class="ectt-name">${this._t("grid")}</span><span class="ectt-val">${grid} kWh</span></div>` : "") +
+          `<div class="ectt-summary">${total} kWh ${this._t("total")}</div>`;
         const barRect  = bar.getBoundingClientRect();
         const wrapRect = chartWrap.getBoundingClientRect();
         const rawLeft  = barRect.left - wrapRect.left + barRect.width / 2;
@@ -2830,7 +2827,11 @@ class EvccCard extends HTMLElement {
       });
       sel.addEventListener("change", () => {
         const lpName = sel.dataset.lp;
-        if (this._planState[lpName]) this._planState[lpName].vehicle = sel.value;
+        const eid    = sel.dataset.entity;
+        if (eid && this._hass) {
+          this._hass.callService("select", "select_option", { entity_id: eid, option: sel.value });
+          window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } }));
+        }
       });
     });
 
