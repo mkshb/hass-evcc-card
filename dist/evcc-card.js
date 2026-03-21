@@ -102,6 +102,12 @@ const CHARGE_MODES = {
   "now":   { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>`,  tKey: "modeNow"  },
 };
 
+const _chevron = (up) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="${
+    up ? "M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
+       : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"
+  }"/></svg>`;
+
 async function detectPrefix(hass) {
   try {
     const entities = await hass.callWS({ type: "config/entity_registry/list" });
@@ -391,15 +397,10 @@ class EvccCard extends HTMLElement {
     if (wrap) {
       wrap.title = !wasExpanded ? this._tInline("siteCollapse") : this._tInline("siteExpand");
     }
-    const toggle = root?.querySelector(".sankey-toggle");
-    if (toggle) {
-      const iconEl  = toggle.querySelector(".sankey-toggle-icon");
-      const labelEl = toggle.querySelector(".sankey-toggle-label");
-      if (iconEl)  iconEl.textContent  = !wasExpanded ? "▼" : "▲";
-      if (labelEl) labelEl.textContent = !wasExpanded
-        ? (this._tInline("siteExpand") || "Details einblenden")
-        : (this._tInline("siteCollapse") || "Details ausblenden");
-    }
+    const chevronPath = root?.querySelector(".sankey-center-chevron path");
+    if (chevronPath) chevronPath.setAttribute("d", !wasExpanded
+      ? "M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
+      : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z");
   }
 
   _tInline(key) {
@@ -1755,13 +1756,28 @@ class EvccCard extends HTMLElement {
         : inner;
     }).join("");
 
+    const siteExpanded = this._siteTableExpanded !== undefined
+      ? this._siteTableExpanded
+      : (this._config.site_details !== "collapsed");
+
+    const chevronX = srcLabelW + NODE_W + FLOW_GAP / 2 - 9;
+    const chevronY = SVG_H / 2 - 9;
+    const chevronD = siteExpanded
+      ? "M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
+      : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z";
+
     const sankeySvg = `
-      <div class="sankey-wrap">
+      <div class="sankey-wrap" role="button" tabindex="0" style="cursor:pointer"
+           onclick="if(!event.target.closest('[data-more-info]'))window.__evccCards.get('${this._cardId}')._toggleSite()">
         <svg viewBox="0 0 ${SVG_W} ${SVG_H}" width="100%" preserveAspectRatio="xMidYMid meet"
              style="display:block;overflow:visible;font-family:inherit">
           ${flowPaths.join("")}
           ${srcGroups}
           ${dstGroups}
+          <g class="sankey-center-chevron" transform="translate(${chevronX},${chevronY}) scale(0.75)"
+             style="fill:var(--primary-text-color);opacity:0.35;pointer-events:none">
+            <path d="${chevronD}"/>
+          </g>
         </svg>
       </div>
     `;
@@ -1866,22 +1882,12 @@ class EvccCard extends HTMLElement {
         ? row(svgIcon(MDI.tower), this._t("gridExport"), "", feedinPow, "site-pw-yellow", false, site.grid_power) : "",
     ].join(""));
 
-    const siteExpanded = this._siteTableExpanded !== undefined
-      ? this._siteTableExpanded
-      : (this._config.site_details !== "collapsed");
-
     return `
       <div class="site-block">
         <div class="lp-header">
           <span class="lp-name">${this._config.title || this._t("energyFlow") || this._t("overview")}</span>
         </div>
         ${sankeySvg}
-        <div class="sankey-toggle" role="button" tabindex="0"
-             onclick="window.__evccCards.get('${this._cardId}')._toggleSite()"
-             title="${siteExpanded ? this._tInline("siteCollapse") : this._tInline("siteExpand")}">
-          <span class="sankey-toggle-icon">${siteExpanded ? "▲" : "▼"}</span>
-          <span class="sankey-toggle-label">${siteExpanded ? (this._t("siteCollapse") || "Details ausblenden") : (this._t("siteExpand") || "Details einblenden")}</span>
-        </div>
         <div class="site-table" style="${siteExpanded ? '' : 'display:none'}">
           ${inSection}
           <div class="site-section-gap"></div>
@@ -1947,7 +1953,7 @@ class EvccCard extends HTMLElement {
     const pvBadge = pvShare > 0
       ? `<div class="s2-pv-badge">
            <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor"><path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z"/></svg>
-           ${pvShare} % Solar
+           ${pvShare} % ${this._t("solar") || "Solar"}
          </div>`
       : "";
 
@@ -3154,14 +3160,8 @@ class EvccCard extends HTMLElement {
       .sankey-wrap svg { overflow: visible; }
       .sankey-node { opacity: 1; transition: opacity .15s; }
       .sankey-node:hover { opacity: 0.7; }
-      .sankey-toggle {
-        display: flex; align-items: center; justify-content: center; gap: 6px;
-        cursor: pointer; padding: 8px 0 4px; font-size: .72rem;
-        color: var(--secondary-text-color); opacity: 0.7;
-        transition: opacity .15s;
-      }
-      .sankey-toggle:hover { opacity: 1; }
-      .sankey-toggle-icon { font-size: .6rem; }
+      .sankey-center-chevron { transition: opacity .15s; }
+      .sankey-wrap:hover .sankey-center-chevron { opacity: 0.7 !important; }
 
       .s2-net {
         text-align: center; padding: 14px 0 16px;
