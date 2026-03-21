@@ -353,13 +353,18 @@ class EvccCard extends HTMLElement {
 
   _buildRenderKey(hass) {
     if (!hass) return "";
-    const prefix = this._getPrefix();
-    const evccIds = Object.keys(hass.states).filter(id => {
-      const slug = id.split(".")[1] ?? "";
-      return slug.startsWith(prefix);
-    });
+    const prefix     = this._getPrefix();
+    const stateCount = Object.keys(hass.states).length;
+
+    // Re-filter evcc entity IDs only when entity count or prefix changes (not on every value update)
+    if (!this._evccIds || this._evccIdsCount !== stateCount || this._evccIdsPrefix !== prefix) {
+      this._evccIdsCount  = stateCount;
+      this._evccIdsPrefix = prefix;
+      this._evccIds       = Object.keys(hass.states).filter(id => id.split(".")[1]?.startsWith(prefix));
+    }
+
     const lang = this._config.language || (hass.language ?? "de");
-    return lang + "|" + evccIds.map(id => `${id}=${hass.states[id]?.state}`).join("|");
+    return lang + "|" + this._evccIds.map(id => `${id}=${hass.states[id]?.state}`).join("|");
   }
 
   static getConfigElement() {
