@@ -154,7 +154,7 @@ Add the card to any Lovelace dashboard and use the **visual editor** to configur
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
-| `site_details` | `string` | `expanded` | `collapsed` to hide the IN/OUT detail table by default in `site` mode |
+| `site_details` | `string` | `expanded` | `collapsed` to hide the IN/OUT detail table by default in `site` and `flow` mode |
 | `charge_current_settings` | `string` | `collapsed` | `expanded` to show charge settings expanded by default |
 | `stats_period` | `string` | `total` | Default statistics period: `total`, `30d`, `365d`, `thisYear`, `none` |
 | `prefix` | `string` | *(auto)* | **YAML only** — Entity prefix, auto-detected from ha-evcc. Only needed for multiple EVCC instances with custom prefixes. |
@@ -211,7 +211,7 @@ Sankey-style energy flow diagram showing how energy is distributed from sources 
 - Flowing bands connect sources to consumers, with width proportional to power — PV is distributed first, then battery, then grid
 - Each node shows an MDI icon and current power value; battery and vehicle nodes include SoC as a sub-label
 - All nodes are clickable to open the Home Assistant entity detail dialog
-- Collapsible IN/OUT detail table below (same as `site` mode)
+- Collapsible IN/OUT detail table below — click the diagram to toggle (same as `site` mode)
 
 <img src="images/flow-dark.png" width="400"> <img src="images/flow-light.png" width="400">
 

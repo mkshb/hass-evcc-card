@@ -3640,10 +3640,10 @@ window.__evccCards = window.__evccCards || new Map();
     if (myRes.url === expectedUrl) return;
 
     await ha.hass.callWS({
-      type:   "lovelace/resources/update",
-      res_id: myRes.id,
-      res_type: myRes.type || "module",
-      url:    expectedUrl,
+      type:        "lovelace/resources/update",
+      resource_id: myRes.id,
+      res_type:    myRes.type || "module",
+      url:         expectedUrl,
     });
     console.info(`[evcc-card] Cache URL updated -> ${expectedUrl}. Reloading page.`);
     setTimeout(() => location.reload(), 500);
