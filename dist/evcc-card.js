@@ -2857,8 +2857,10 @@ class EvccCard extends HTMLElement {
       sel.addEventListener("change", () => {
         const lpName = sel.dataset.lp;
         const eid    = sel.dataset.entity;
+        const val    = sel.value;
+        if (this._planState[lpName]) this._planState[lpName].vehicle = val;
         if (eid && this._hass) {
-          this._hass.callService("select", "select_option", { entity_id: eid, option: sel.value });
+          this._hass.callService("select", "select_option", { entity_id: eid, option: val });
           window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } }));
         }
       });
