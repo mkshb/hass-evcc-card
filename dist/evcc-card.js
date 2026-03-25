@@ -967,14 +967,20 @@ class EvccCard extends HTMLElement {
     const vehicleAttr        = vehicleAttrs.vehicle ?? null;
 
     if (!this._planState[lpName]) {
-      const vehicleLimitSoc  = vehicleAttr?.limitSoc > 0 ? vehicleAttr.limitSoc : null;
-      const entityLimitSoc   = ents.effective_limit_soc
-        ? Math.round(parseFloat(stateVal(this._hass, ents.effective_limit_soc))) : null;
+      this._planState[lpName] = { soc: null, time: null, vehicle: null };
+    }
 
+    if (this._planState[lpName].soc == null) {
+      const vehicleLimitSoc = vehicleAttr?.limitSoc > 0 ? vehicleAttr.limitSoc : null;
+      const entityLimitSoc  = ents.effective_limit_soc
+        ? Math.round(parseFloat(stateVal(this._hass, ents.effective_limit_soc))) : null;
       const parsedPlanSoc = parseFloat(planSoc);
-      const initSoc = (parsedPlanSoc > 0)
+      this._planState[lpName].soc = (parsedPlanSoc > 0)
         ? Math.round(parsedPlanSoc)
         : vehicleLimitSoc ?? (entityLimitSoc > 0 ? entityLimitSoc : 80);
+    }
+
+    if (this._planState[lpName].time == null) {
       let initDt = "";
       if (planTime && planTime !== "unknown" && planTime !== "unavailable") {
         try {
@@ -990,7 +996,7 @@ class EvccCard extends HTMLElement {
         const offset = tomorrow.getTimezoneOffset() * 60000;
         initDt = new Date(tomorrow - offset).toISOString().slice(0, 16);
       }
-      this._planState[lpName] = { soc: initSoc, time: initDt, vehicle: null };
+      this._planState[lpName].time = initDt;
     }
 
     const defaultSoc     = this._planState[lpName].soc;
@@ -1003,8 +1009,11 @@ class EvccCard extends HTMLElement {
       dbIdToName[id] = translated || id;
     });
 
-    if (!this._planState[lpName].vehicle && vehicleAttr?.evccName) {
-      this._planState[lpName].vehicle = vehicleAttr.evccName;
+    if (!this._planState[lpName].vehicle) {
+      const currentVehicleId = vehicleEntityId ? this._hass.states[vehicleEntityId]?.state : null;
+      if (currentVehicleId && currentVehicleId !== "null") {
+        this._planState[lpName].vehicle = currentVehicleId;
+      }
     }
     const defaultVehicle = this._planState[lpName].vehicle;
 
@@ -2834,9 +2843,14 @@ class EvccCard extends HTMLElement {
       sel.addEventListener("change", () => {
         const lpName = sel.dataset.lp;
         const eid    = sel.dataset.entity;
+        const val    = sel.value;
+        if (this._planState[lpName]) {
+          this._planState[lpName].vehicle = val;
+          this._planState[lpName].soc     = null;
+          this._planState[lpName].time    = null;
+        }
         if (eid && this._hass) {
-          this._hass.callService("select", "select_option", { entity_id: eid, option: sel.value });
-          window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } }));
+          this._hass.callService("select", "select_option", { entity_id: eid, option: val });
         }
       });
     });
