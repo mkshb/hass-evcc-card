@@ -1202,6 +1202,11 @@ class EvccCard extends HTMLElement {
     const battCPct  = Math.round(battChargePow / totalOut * 100);
     const feedinPct = Math.round(feedinPow     / totalOut * 100);
 
+    const pvSurplusPow = Math.min(feedinPow, pvPow);
+    const pvSelfPow    = Math.max(pvPow - pvSurplusPow, 0);
+    const pvSelfPct    = Math.round(pvSelfPow    / totalIn * 100);
+    const pvSurplusPct = Math.round(pvSurplusPow / totalIn * 100);
+
     const fmt     = v => v < 10 ? v.toFixed(1) : Math.round(v).toString();
     const useWatt = Math.max(totalIn, totalOut) < 1;
     const fmtPow  = v => useWatt ? `${Math.round(v * 1000)} W` : `${fmt(v)} kW`;
@@ -1224,7 +1229,8 @@ class EvccCard extends HTMLElement {
     const hasCharge = chargePow > 0.05;
 
     const segments = [
-      { cls: "seg-pv",      pct: pvPct,     label: fmtPow(pvPow),       color: "var(--evcc-green)",  show: hasPV },
+      { cls: "seg-pv",         pct: pvSelfPct,    label: fmtPow(pvSelfPow),    color: "var(--evcc-green)",  show: pvSelfPow > 0.05 },
+      { cls: "seg-pv-surplus", pct: pvSurplusPct, label: fmtPow(pvSurplusPow), color: "var(--evcc-yellow)", show: pvSurplusPow > 0.05 },
       { cls: "seg-battd",   pct: battDPct,  label: fmtPow(battDischPow),color: "var(--evcc-orange)", show: battDischPow > 0.05 },
       { cls: "seg-gridin",  pct: gridInPct, label: fmtPow(bezugPow),    color: "var(--evcc-red)",    show: bezugPow > 0.05 },
     ].filter(s => s.pct > 0);;
