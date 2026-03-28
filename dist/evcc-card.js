@@ -256,8 +256,10 @@ class EvccCard extends HTMLElement {
     this._pendingRender = false;
     this._renderTimer   = null;
     this._lastRenderKey = null;
-    this._planState     = {};
-    this._tabState      = {};
+    this._planState          = {};
+    this._tabState           = {};
+    this._vehicleChanging    = false;
+    this._vehicleChangeTimer = null;
     this._statsPeriod   = "total";
     this._chartCache     = {};
     this._chartCacheTime = {};
@@ -333,7 +335,7 @@ class EvccCard extends HTMLElement {
       });
     }
 
-    if (this._isDragging) {
+    if (this._isDragging || this._vehicleChanging) {
       this._pendingRender = true;
       this._updateLiveValues();
       return;
@@ -461,7 +463,7 @@ class EvccCard extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>${this._styles()}</style>
-      <ha-card>
+      <div class="evcc-scale-wrap"><ha-card>
         <div class="card-content">
         ${this._config.mode === "battery"
             ? this._renderBatteryBlock(site)
@@ -488,7 +490,7 @@ class EvccCard extends HTMLElement {
                   .join("")
           }
         </div>
-      </ha-card>
+      </ha-card></div>
     `;
     this._attachListeners();
   }
@@ -2857,6 +2859,14 @@ class EvccCard extends HTMLElement {
         }
         if (eid && this._hass) {
           this._hass.callService("select", "select_option", { entity_id: eid, option: val });
+          this._vehicleChanging = true;
+          clearTimeout(this._vehicleChangeTimer);
+          this._vehicleChangeTimer = setTimeout(() => {
+            this._vehicleChanging    = false;
+            this._vehicleChangeTimer = null;
+            this._lastRenderKey      = this._buildRenderKey(this._hass);
+            this._render();
+          }, 1500);
         }
       });
     });
@@ -2982,7 +2992,6 @@ class EvccCard extends HTMLElement {
     return `
       :host {
         display: block;
-        container-type: inline-size;
         --evcc-green:  var(--success-color,  #22c55e);
         --evcc-red:    var(--error-color,    #ef4444);
         --evcc-amber:  var(--warning-color,  #f59e0b);
@@ -2992,8 +3001,9 @@ class EvccCard extends HTMLElement {
         --evcc-gray:   var(--disabled-color, #6b7280);
         --evcc-bolt:   #facc15;
       }
-      @container (min-width: 450px) { ha-card { zoom: 1.15; } }
-      @container (min-width: 650px) { ha-card { zoom: 1.3;  } }
+      .evcc-scale-wrap { container-type: inline-size; }
+      @container (min-width: 450px) { .evcc-scale-wrap { zoom: 1.15; } }
+      @container (min-width: 650px) { .evcc-scale-wrap { zoom: 1.3;  } }
       ha-card {
         color: var(--primary-text-color);
         font-family: var(--paper-font-body1_-_font-family, sans-serif);
