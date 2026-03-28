@@ -440,7 +440,7 @@ class EvccCard extends HTMLElement {
 
     if (!this._translationsReady) {
       this.shadowRoot.innerHTML = `
-        <style>:host{display:block} ha-card{background:var(--card-background-color)}
+        <style>:host{display:block}
         .loading{padding:24px;text-align:center;color:var(--secondary-text-color);font-size:.9rem}</style>
         <ha-card><div class="loading">⏳</div></ha-card>`;
       return;
@@ -2989,7 +2989,6 @@ class EvccCard extends HTMLElement {
       @container (min-width: 450px) { ha-card { zoom: 1.15; } }
       @container (min-width: 650px) { ha-card { zoom: 1.3;  } }
       ha-card {
-        background: var(--card-background-color);
         color: var(--primary-text-color);
         font-family: var(--paper-font-body1_-_font-family, sans-serif);
       }
