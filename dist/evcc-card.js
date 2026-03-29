@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.4.5";
+const EVCC_CARD_VERSION = "0.5.1";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -269,6 +269,8 @@ class EvccCard extends HTMLElement {
     this._siteTableExpanded = undefined; // undefined = use config default
     this._currentBlockExpanded = {};
     this._detectedPrefix = null;
+    this._cachedEntities   = null;  // { loadpoints, site } — invalidated when entity IDs change
+    this._cachedEntityIdKey = null; // sorted join of evcc entity IDs + prefix
 
     this._onPlanReset = (e) => {
       const lpName = e.detail?.lpName;
@@ -353,13 +355,18 @@ class EvccCard extends HTMLElement {
 
   _buildRenderKey(hass) {
     if (!hass) return "";
-    const prefix = this._getPrefix();
-    const evccIds = Object.keys(hass.states).filter(id => {
-      const slug = id.split(".")[1] ?? "";
-      return slug.startsWith(prefix);
-    });
+    const prefix     = this._getPrefix();
+    const stateCount = Object.keys(hass.states).length;
+
+    // Re-filter evcc entity IDs only when entity count or prefix changes (not on every value update)
+    if (!this._evccIds || this._evccIdsCount !== stateCount || this._evccIdsPrefix !== prefix) {
+      this._evccIdsCount  = stateCount;
+      this._evccIdsPrefix = prefix;
+      this._evccIds       = Object.keys(hass.states).filter(id => id.split(".")[1]?.startsWith(prefix));
+    }
+
     const lang = this._config.language || (hass.language ?? "de");
-    return lang + "|" + evccIds.map(id => `${id}=${hass.states[id]?.state}`).join("|");
+    return lang + "|" + this._evccIds.map(id => `${id}=${hass.states[id]?.state}`).join("|");
   }
 
   static getConfigElement() {
@@ -406,22 +413,16 @@ class EvccCard extends HTMLElement {
   }
 
   _tInline(key) {
-    const lang = (this._config.language
-      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
-    const map = {
-      siteCollapse: { de: "Einklappen", en: "Collapse" },
-      siteExpand:   { de: "Ausklappen", en: "Expand" },
-    };
-    return (map[key]?.[lang]) ?? (map[key]?.["en"]) ?? key;
+    return this._t(key);
   }
 
   _t(key, replacements = {}) {
-    const lang = (this._config.language
-      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
-
-    const strings = this._translations[lang]
-      || this._translations["en"]
-      || {};
+    // Use pre-resolved strings from current render cycle; fall back to resolving on demand
+    const strings = this._renderStrings ?? (() => {
+      const lang = (this._config.language
+        || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+      return this._translations[lang] || this._translations["en"] || {};
+    })();
 
     let val = strings[key] ?? key;
 
@@ -448,8 +449,22 @@ class EvccCard extends HTMLElement {
       return;
     }
 
+    // Resolve language strings once per render — reused by all _t() calls
+    const lang = (this._config.language
+      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+    this._renderStrings = this._translations[lang] || this._translations["en"] || {};
+
     const prefix = this._getPrefix();
-    const { loadpoints, site } = discoverEntities(this._hass, prefix);
+
+    // Cache discoverEntities() — only re-run when the set of entity IDs changes (not on value updates)
+    const evccIdKey = prefix + "|" + Object.keys(this._hass.states)
+      .filter(id => id.split(".")[1]?.startsWith(prefix))
+      .sort().join(",");
+    if (evccIdKey !== this._cachedEntityIdKey) {
+      this._cachedEntityIdKey = evccIdKey;
+      this._cachedEntities    = discoverEntities(this._hass, prefix);
+    }
+    const { loadpoints, site } = this._cachedEntities;
 
     const filterRaw = this._config.loadpoints;
     const filter = filterRaw
