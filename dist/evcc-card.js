@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.5.2";
+const EVCC_CARD_VERSION = "0.5.3";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -256,10 +256,8 @@ class EvccCard extends HTMLElement {
     this._pendingRender = false;
     this._renderTimer   = null;
     this._lastRenderKey = null;
-    this._planState          = {};
-    this._tabState           = {};
-    this._vehicleChanging    = false;
-    this._vehicleChangeTimer = null;
+    this._planState     = {};
+    this._tabState      = {};
     this._statsPeriod   = "total";
     this._chartCache     = {};
     this._chartCacheTime = {};
@@ -337,7 +335,7 @@ class EvccCard extends HTMLElement {
       });
     }
 
-    if (this._isDragging || this._vehicleChanging) {
+    if (this._isDragging) {
       this._pendingRender = true;
       this._updateLiveValues();
       return;
@@ -1026,11 +1024,13 @@ class EvccCard extends HTMLElement {
       dbIdToName[id] = translated || id;
     });
 
-    if (!this._planState[lpName].vehicle) {
-      const currentVehicleId = vehicleEntityId ? this._hass.states[vehicleEntityId]?.state : null;
-      if (currentVehicleId && currentVehicleId !== "null") {
-        this._planState[lpName].vehicle = currentVehicleId;
+    const currentVehicleId = vehicleEntityId ? this._hass.states[vehicleEntityId]?.state : null;
+    if (currentVehicleId && currentVehicleId !== "null") {
+      if (this._planState[lpName].vehicle && this._planState[lpName].vehicle !== currentVehicleId) {
+        this._planState[lpName].soc  = null;
+        this._planState[lpName].time = null;
       }
+      this._planState[lpName].vehicle = currentVehicleId;
     }
     const defaultVehicle = this._planState[lpName].vehicle;
 
@@ -2874,14 +2874,6 @@ class EvccCard extends HTMLElement {
         }
         if (eid && this._hass) {
           this._hass.callService("select", "select_option", { entity_id: eid, option: val });
-          this._vehicleChanging = true;
-          clearTimeout(this._vehicleChangeTimer);
-          this._vehicleChangeTimer = setTimeout(() => {
-            this._vehicleChanging    = false;
-            this._vehicleChangeTimer = null;
-            this._lastRenderKey      = this._buildRenderKey(this._hass);
-            this._render();
-          }, 1500);
         }
       });
     });
