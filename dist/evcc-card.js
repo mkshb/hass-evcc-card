@@ -256,8 +256,10 @@ class EvccCard extends HTMLElement {
     this._pendingRender = false;
     this._renderTimer   = null;
     this._lastRenderKey = null;
-    this._planState     = {};
-    this._tabState      = {};
+    this._planState          = {};
+    this._tabState           = {};
+    this._vehicleChanging    = false;
+    this._vehicleChangeTimer = null;
     this._statsPeriod   = "total";
     this._chartCache     = {};
     this._chartCacheTime = {};
@@ -335,7 +337,7 @@ class EvccCard extends HTMLElement {
       });
     }
 
-    if (this._isDragging) {
+    if (this._isDragging || this._vehicleChanging) {
       this._pendingRender = true;
       this._updateLiveValues();
       return;
@@ -441,7 +443,7 @@ class EvccCard extends HTMLElement {
 
     if (!this._translationsReady) {
       this.shadowRoot.innerHTML = `
-        <style>:host{display:block} ha-card{background:var(--card-background-color)}
+        <style>:host{display:block}
         .loading{padding:24px;text-align:center;color:var(--secondary-text-color);font-size:.9rem}</style>
         <ha-card><div class="loading">⏳</div></ha-card>`;
       return;
@@ -474,45 +476,37 @@ class EvccCard extends HTMLElement {
         )
       : loadpoints;
 
-    // Inject static styles once — avoids regenerating ~400 lines of CSS on every render
-    if (!this.shadowRoot.querySelector("style.evcc-main-styles")) {
-      const styleEl = document.createElement("style");
-      styleEl.className = "evcc-main-styles";
-      styleEl.textContent = this._styles();
-      this.shadowRoot.prepend(styleEl);
-    }
-
-    const contentHtml = this._config.mode === "battery"
-      ? this._renderBatteryBlock(site)
-      : this._config.mode === "site"
-        ? this._renderSiteBlock(site, loadpoints)
-        : this._config.mode === "flow"
-        ? this._renderFlowBlock(site, loadpoints)
-        : (this._config.mode === "grid" || this._config.mode === "site2")
-        ? this._renderSiteBlock2(site, loadpoints)
-        : this._config.mode === "stats"
-        ? this._renderStatsBlock()
-        : this._config.mode === "plan"
-          ? this._renderPlanMode(visible)
-          : this._config.mode === "compact"
-            ? (Object.keys(visible).length === 0
-                ? this._renderEmpty(loadpoints)
-                : Object.entries(visible)
-                    .map(([lp, ents]) => this._renderCompactLoadpoint(lp, ents))
-                    .join(""))
-            : Object.keys(visible).length === 0
-        ? this._renderEmpty(loadpoints)
-        : Object.entries(visible)
-            .map(([lp, ents]) => this._renderLoadpoint(lp, ents))
-            .join("");
-
-    let card = this.shadowRoot.querySelector("ha-card");
-    if (!card) {
-      card = document.createElement("ha-card");
-      this.shadowRoot.appendChild(card);
-    }
-    card.innerHTML = `<div class="card-content">${contentHtml}</div>`;
-
+    this.shadowRoot.innerHTML = `
+      <style>${this._styles()}</style>
+      <div class="evcc-scale-wrap"><ha-card>
+        <div class="card-content">
+        ${this._config.mode === "battery"
+            ? this._renderBatteryBlock(site)
+            : this._config.mode === "site"
+              ? this._renderSiteBlock(site, loadpoints)
+              : this._config.mode === "flow"
+              ? this._renderFlowBlock(site, loadpoints)
+              : (this._config.mode === "grid" || this._config.mode === "site2")
+              ? this._renderSiteBlock2(site, loadpoints)
+              : this._config.mode === "stats"
+              ? this._renderStatsBlock()
+              : this._config.mode === "plan"
+                ? this._renderPlanMode(visible)
+                : this._config.mode === "compact"
+                  ? (Object.keys(visible).length === 0
+                      ? this._renderEmpty(loadpoints)
+                      : Object.entries(visible)
+                          .map(([lp, ents]) => this._renderCompactLoadpoint(lp, ents))
+                          .join(""))
+                  : Object.keys(visible).length === 0
+              ? this._renderEmpty(loadpoints)
+              : Object.entries(visible)
+                  .map(([lp, ents]) => this._renderLoadpoint(lp, ents))
+                  .join("")
+          }
+        </div>
+      </ha-card></div>
+    `;
     this._attachListeners();
   }
 
@@ -990,14 +984,20 @@ class EvccCard extends HTMLElement {
     const vehicleAttr        = vehicleAttrs.vehicle ?? null;
 
     if (!this._planState[lpName]) {
-      const vehicleLimitSoc  = vehicleAttr?.limitSoc > 0 ? vehicleAttr.limitSoc : null;
-      const entityLimitSoc   = ents.effective_limit_soc
-        ? Math.round(parseFloat(stateVal(this._hass, ents.effective_limit_soc))) : null;
+      this._planState[lpName] = { soc: null, time: null, vehicle: null };
+    }
 
+    if (this._planState[lpName].soc == null) {
+      const vehicleLimitSoc = vehicleAttr?.limitSoc > 0 ? vehicleAttr.limitSoc : null;
+      const entityLimitSoc  = ents.effective_limit_soc
+        ? Math.round(parseFloat(stateVal(this._hass, ents.effective_limit_soc))) : null;
       const parsedPlanSoc = parseFloat(planSoc);
-      const initSoc = (parsedPlanSoc > 0)
+      this._planState[lpName].soc = (parsedPlanSoc > 0)
         ? Math.round(parsedPlanSoc)
         : vehicleLimitSoc ?? (entityLimitSoc > 0 ? entityLimitSoc : 80);
+    }
+
+    if (this._planState[lpName].time == null) {
       let initDt = "";
       if (planTime && planTime !== "unknown" && planTime !== "unavailable") {
         try {
@@ -1013,7 +1013,7 @@ class EvccCard extends HTMLElement {
         const offset = tomorrow.getTimezoneOffset() * 60000;
         initDt = new Date(tomorrow - offset).toISOString().slice(0, 16);
       }
-      this._planState[lpName] = { soc: initSoc, time: initDt, vehicle: null };
+      this._planState[lpName].time = initDt;
     }
 
     const defaultSoc     = this._planState[lpName].soc;
@@ -1026,8 +1026,11 @@ class EvccCard extends HTMLElement {
       dbIdToName[id] = translated || id;
     });
 
-    if (!this._planState[lpName].vehicle && vehicleAttr?.evccName) {
-      this._planState[lpName].vehicle = vehicleAttr.evccName;
+    if (!this._planState[lpName].vehicle) {
+      const currentVehicleId = vehicleEntityId ? this._hass.states[vehicleEntityId]?.state : null;
+      if (currentVehicleId && currentVehicleId !== "null") {
+        this._planState[lpName].vehicle = currentVehicleId;
+      }
     }
     const defaultVehicle = this._planState[lpName].vehicle;
 
@@ -1216,6 +1219,11 @@ class EvccCard extends HTMLElement {
     const battCPct  = Math.round(battChargePow / totalOut * 100);
     const feedinPct = Math.round(feedinPow     / totalOut * 100);
 
+    const pvSurplusPow = Math.min(feedinPow, pvPow);
+    const pvSelfPow    = Math.max(pvPow - pvSurplusPow, 0);
+    const pvSelfPct    = Math.round(pvSelfPow    / totalIn * 100);
+    const pvSurplusPct = Math.round(pvSurplusPow / totalIn * 100);
+
     const fmt     = v => v < 10 ? v.toFixed(1) : Math.round(v).toString();
     const useWatt = Math.max(totalIn, totalOut) < 1;
     const fmtPow  = v => useWatt ? `${Math.round(v * 1000)} W` : `${fmt(v)} kW`;
@@ -1238,7 +1246,8 @@ class EvccCard extends HTMLElement {
     const hasCharge = chargePow > 0.05;
 
     const segments = [
-      { cls: "seg-pv",      pct: pvPct,     label: fmtPow(pvPow),       color: "var(--evcc-green)",  show: hasPV },
+      { cls: "seg-pv",         pct: pvSelfPct,    label: fmtPow(pvSelfPow),    color: "var(--evcc-green)",  show: pvSelfPow > 0.05 },
+      { cls: "seg-pv-surplus", pct: pvSurplusPct, label: fmtPow(pvSurplusPow), color: "var(--evcc-yellow)", show: pvSurplusPow > 0.05 },
       { cls: "seg-battd",   pct: battDPct,  label: fmtPow(battDischPow),color: "var(--evcc-orange)", show: battDischPow > 0.05 },
       { cls: "seg-gridin",  pct: gridInPct, label: fmtPow(bezugPow),    color: "var(--evcc-red)",    show: bezugPow > 0.05 },
     ].filter(s => s.pct > 0);;
@@ -2858,10 +2867,21 @@ class EvccCard extends HTMLElement {
         const lpName = sel.dataset.lp;
         const eid    = sel.dataset.entity;
         const val    = sel.value;
-        if (this._planState[lpName]) this._planState[lpName].vehicle = val;
+        if (this._planState[lpName]) {
+          this._planState[lpName].vehicle = val;
+          this._planState[lpName].soc     = null;
+          this._planState[lpName].time    = null;
+        }
         if (eid && this._hass) {
           this._hass.callService("select", "select_option", { entity_id: eid, option: val });
-          window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } }));
+          this._vehicleChanging = true;
+          clearTimeout(this._vehicleChangeTimer);
+          this._vehicleChangeTimer = setTimeout(() => {
+            this._vehicleChanging    = false;
+            this._vehicleChangeTimer = null;
+            this._lastRenderKey      = this._buildRenderKey(this._hass);
+            this._render();
+          }, 1500);
         }
       });
     });
@@ -2987,7 +3007,6 @@ class EvccCard extends HTMLElement {
     return `
       :host {
         display: block;
-        container-type: inline-size;
         --evcc-green:  var(--success-color,  #22c55e);
         --evcc-red:    var(--error-color,    #ef4444);
         --evcc-amber:  var(--warning-color,  #f59e0b);
@@ -2997,10 +3016,10 @@ class EvccCard extends HTMLElement {
         --evcc-gray:   var(--disabled-color, #6b7280);
         --evcc-bolt:   #facc15;
       }
-      @container (min-width: 450px) { ha-card { zoom: 1.15; } }
-      @container (min-width: 650px) { ha-card { zoom: 1.3;  } }
+      .evcc-scale-wrap { container-type: inline-size; }
+      @container (min-width: 450px) { .evcc-scale-wrap { zoom: 1.15; } }
+      @container (min-width: 650px) { .evcc-scale-wrap { zoom: 1.3;  } }
       ha-card {
-        background: var(--card-background-color);
         color: var(--primary-text-color);
         font-family: var(--paper-font-body1_-_font-family, sans-serif);
       }
