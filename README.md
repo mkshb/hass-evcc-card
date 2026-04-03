@@ -384,11 +384,28 @@ Contributions that are especially appreciated:
 
 ---
 
-## Video
+## Videos & Blog Posts
 
-[![YouTube](https://img.shields.io/badge/YouTube-Watch-red?logo=youtube)](https://www.youtube.com/watch?v=nQyiFg1RPy8)
+The card was featured in YouTube videos - showing installation, configuration and usage in practice. Note: the videos are in **German**.
 
-The card was featured in a YouTube video - showing installation, configuration and usage in practice. Note: the video is in **German**.
+<table>
+<tr>
+<td align="center">
+<a href="https://www.youtube.com/watch?v=o-EA3kuslmQ">
+<img src="images/yt-o-EA3kuslmQ.jpg" width="360">
+</a>
+</td>
+<td align="center">
+<a href="https://www.youtube.com/watch?v=nQyiFg1RPy8">
+<img src="images/yt-nQyiFg1RPy8.jpg" width="360">
+</a>
+</td>
+</tr>
+</table>
+
+[![Blog](https://img.shields.io/badge/Blog-smarterkram.de-blue)](https://smarterkram.de/9659/evcc-card-fuer-home-assistant/)
+
+A detailed blog post about the card is available on [smarterkram.de](https://smarterkram.de/9659/evcc-card-fuer-home-assistant/) (German).
 
 ---
 
