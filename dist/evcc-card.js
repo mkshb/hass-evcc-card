@@ -1371,7 +1371,30 @@ class EvccCard extends HTMLElement {
 
     const SVG_ICON_HALF = 12;
 
-    const topBraces = segsWithX.map(s => {
+    // PV-Segmente (seg-pv + seg-pv-surplus) zu einer gemeinsamen Klammer zusammenführen
+    const topBraceGroups = [];
+    let ti = 0;
+    while (ti < segsWithX.length) {
+      const s = segsWithX[ti];
+      if (s.cls === "seg-pv" || s.cls === "seg-pv-surplus") {
+        let tj = ti;
+        while (tj < segsWithX.length &&
+               (segsWithX[tj].cls === "seg-pv" || segsWithX[tj].cls === "seg-pv-surplus")) tj++;
+        const grp = segsWithX.slice(ti, tj);
+        topBraceGroups.push({
+          x0: grp[0].x0,
+          x1: grp[grp.length - 1].x1,
+          xMid: (grp[0].x0 + grp[grp.length - 1].x1) / 2,
+          srcPath: MDI.solar,
+        });
+        ti = tj;
+      } else {
+        topBraceGroups.push(s);
+        ti++;
+      }
+    }
+
+    const topBraces = topBraceGroups.map(s => {
       const path  = bracePath(s.x0 + 2, s.x1 - 2, BAR_Y, TOP_TIP_Y);
       const ix = s.xMid - SVG_ICON_HALF, iy = TOP_TIP_Y - SVG_ICON_HALF;
       return `
