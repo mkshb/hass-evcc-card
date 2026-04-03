@@ -86,5 +86,6 @@
   "solar": "Solar",
   "battery": "Bateria",
   "total": "total",
-  "solarHint": "☀️ Detalhamento solar disponível quando houver mais dados históricos ({n} de mín. 3 dias)."
+  "solarHint": "☀️ Detalhamento solar disponível quando houver mais dados históricos ({n} de mín. 3 dias).",
+  "phaseCurrentsHint": "Ativar sensores de corrente de fase no HA para valores precisos"
 }

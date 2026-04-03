@@ -86,5 +86,6 @@
   "solar": "Solar",
   "battery": "Batterie",
   "total": "gesamt",
-  "solarHint": "☀️ Solar-Aufschlüsselung verfügbar sobald mehr Verlaufsdaten vorliegen ({n} von mind. 3 Tagen)."
+  "solarHint": "☀️ Solar-Aufschlüsselung verfügbar sobald mehr Verlaufsdaten vorliegen ({n} von mind. 3 Tagen).",
+  "phaseCurrentsHint": "Phasenstrom-Sensoren in HA aktivieren für genaue Stromwerte"
 }

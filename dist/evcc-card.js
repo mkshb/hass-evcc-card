@@ -28,6 +28,9 @@ const FEATURES = [
 
   { suffix: "charge_power",        domain: "sensor",        type: "power",         lp: true  },
   { suffix: "charge_current",      domain: "sensor",        type: "current",       lp: true  },
+  { suffix: "charge_currents_0",   domain: "sensor",        type: "current",       lp: true  },
+  { suffix: "charge_currents_1",   domain: "sensor",        type: "current",       lp: true  },
+  { suffix: "charge_currents_2",   domain: "sensor",        type: "current",       lp: true  },
   { suffix: "charge_duration",     domain: "sensor",        type: "info",          lp: true  },
   { suffix: "charged_energy",      domain: "sensor",        type: "energy",        lp: true  },
   { suffix: "effective_limit_soc", domain: "sensor",        type: "info",          lp: true  },
@@ -718,15 +721,41 @@ class EvccCard extends HTMLElement {
 
   _renderPowerRow(ents, charging) {
     if (!ents.charge_power) return "";
-    const power   = parseFloat(stateVal(this._hass, ents.charge_power)).toFixed(1);
-    const unit    = unitStr(this._hass, ents.charge_power);
-    const current = ents.charge_current
+    const power = parseFloat(stateVal(this._hass, ents.charge_power)).toFixed(1);
+    const unit  = unitStr(this._hass, ents.charge_power);
+
+    // Phasenstrom-Sensoren (echte Messwerte, standardmäßig deaktiviert)
+    const hasPhaseCurrents = ents.charge_currents_0 || ents.charge_currents_1 || ents.charge_currents_2;
+    const phaseCurrents = hasPhaseCurrents
+      ? [0, 1, 2].map(i => {
+          const val = ents[`charge_currents_${i}`]
+            ? parseFloat(stateVal(this._hass, ents[`charge_currents_${i}`]))
+            : null;
+          return (val === null || isNaN(val)) ? null : val;
+        })
+      : null;
+
+    // Fallback: offeredCurrent (wenn keine Phasenstrom-Sensoren vorhanden)
+    const current = !hasPhaseCurrents && ents.charge_current
       ? stateVal(this._hass, ents.charge_current) : null;
-    const phases  = ents.phases_active
+
+    // Phasen-Label nur wenn keine Einzelwerte sichtbar
+    const phases = !hasPhaseCurrents && ents.phases_active
       ? parseInt(stateVal(this._hass, ents.phases_active)) || null : null;
     const phasesLabel = phases === 1 ? this._t("phasesSingle")
                       : phases === 3 ? this._t("phasesTriple")
                       : phases !== null ? `${phases}` : null;
+
+    // Nur Phasen mit Strom > 0 anzeigen (robust gegen beliebige Phase-Belegung)
+    const activePhases = phaseCurrents ? phaseCurrents.filter(v => v !== null && v > 0) : null;
+    const phaseStr = activePhases && activePhases.length > 0
+      ? activePhases.map(v => Math.round(v)).join(" / ") + " A"
+      : null;
+
+    // Hinweis wenn offeredCurrent gezeigt wird (keine Phasenstrom-Entities verfügbar)
+    const hint = current !== null
+      ? `<div class="power-currents-hint">${this._t("phaseCurrentsHint")}</div>`
+      : "";
 
     return `
       <div class="power-row ${charging ? "charging" : ""}">
@@ -734,9 +763,11 @@ class EvccCard extends HTMLElement {
               data-live-entity="${ents.charge_power}" data-live-type="power">
           ${power} ${unit}
         </span>
+        ${phaseStr ? `<span class="power-sep">·</span><span class="power-current">${phaseStr}</span>` : ""}
         ${current !== null ? `<span class="power-sep">·</span><span class="power-current">${current} A</span>` : ""}
         ${phasesLabel !== null ? `<span class="power-sep">·</span><span class="power-phases">${phasesLabel}</span>` : ""}
       </div>
+      ${hint}
     `;
   }
 
@@ -3103,6 +3134,7 @@ class EvccCard extends HTMLElement {
       .power-sep { font-size: .8rem; color: var(--secondary-text-color); align-self: flex-end; padding-bottom: .2rem; }
       .power-current { font-size: .82rem; align-self: flex-end; padding-bottom: .2rem; }
       .power-phases  { font-size: .82rem; align-self: flex-end; padding-bottom: .2rem; }
+      .power-currents-hint { font-size: .72rem; color: var(--secondary-text-color, #757575); margin-top: 2px; opacity: .8; }
 
       .sliders { margin-bottom: 10px; }
       .slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: .83rem; flex-wrap: wrap; }

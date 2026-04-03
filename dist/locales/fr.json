@@ -86,5 +86,6 @@
   "solar": "Solaire",
   "battery": "Batterie",
   "total": "total",
-  "solarHint": "☀️ Répartition solaire disponible dès que plus d'historique sera disponible ({n} sur min. 3 jours)."
+  "solarHint": "☀️ Répartition solaire disponible dès que plus d'historique sera disponible ({n} sur min. 3 jours).",
+  "phaseCurrentsHint": "Activer les capteurs de courant de phase dans HA pour des valeurs précises"
 }

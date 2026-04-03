@@ -86,5 +86,6 @@
   "solar": "Solar",
   "battery": "Baterija",
   "total": "ukupno",
-  "solarHint": "☀️ Raščlamba solarne energije dostupna kada bude više podataka ({n} od min. 3 dana)."
+  "solarHint": "☀️ Raščlamba solarne energije dostupna kada bude više podataka ({n} od min. 3 dana).",
+  "phaseCurrentsHint": "Aktivirajte senzore fazne struje u HA za točne vrijednosti"
 }
