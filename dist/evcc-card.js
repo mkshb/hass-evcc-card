@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.5.5";
+const EVCC_CARD_VERSION = "0.5.6";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -2501,8 +2501,9 @@ class EvccCard extends HTMLElement {
     const powerId       = site.battery_power;
     const capId         = site.battery_capacity;
     const dischargeId   = site.battery_discharge_control;
-    const prioritySocId = site.priority_soc;
-    const bufferSocId   = site.buffer_soc;
+    const prioritySocId      = site.priority_soc;
+    const bufferSocId        = site.buffer_soc;
+    const bufferStartSocId   = site.buffer_start_soc;
 
     if (!socId) return "";
 
@@ -2516,10 +2517,11 @@ class EvccCard extends HTMLElement {
     const getOpts = id => id ? (attr(this._hass, id, "options") ?? [])
       .map(o => parseFloat(o)).filter(o => !isNaN(o)).sort((a, b) => a - b) : [];
 
-    const priorityVal = getVal(prioritySocId);
-    const bufferVal   = getVal(bufferSocId);
+    const priorityVal      = getVal(prioritySocId);
+    const bufferVal        = getVal(bufferSocId);
+    const bufferStartVal   = getVal(bufferStartSocId);
 
-    const inlineSlider = (entityId, val) => {
+    const inlineSlider = (entityId, val, label) => {
       if (!entityId || val === null) return "";
       const opts = getOpts(entityId);
       const min  = opts[0] ?? 0;
@@ -2528,7 +2530,7 @@ class EvccCard extends HTMLElement {
       return `<span class="batt-inline-val"
                     data-batt-inline="${entityId}"
                     data-min="${min}" data-max="${max}" data-step="${step}"
-                    data-val="${val}">${val} %</span>`;
+                    data-val="${val}">${label ?? `${val} %`}</span>`;
     };
 
     const splitPct    = priorityVal ?? 0;
@@ -2586,6 +2588,7 @@ class EvccCard extends HTMLElement {
               <div>
                 <div class="batt-text-title">${this._t("battBoostTitle")}</div>
                 <div class="batt-text-desc">${this._t("battBoostDesc", { val: inlineSlider(bufferSocId, bufferVal) })}</div>
+                ${bufferStartSocId ? `<div class="batt-text-desc">${this._t("battBufferStartDesc", { val: inlineSlider(bufferStartSocId, bufferStartVal, bufferStartVal === 0 ? this._t("battBufferStartSocZero") : `${bufferStartVal} %`) })}</div>` : ""}
               </div>
             </div>` : ""}
             ${prioritySocId ? `

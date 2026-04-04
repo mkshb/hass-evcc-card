@@ -49,6 +49,8 @@
   "battReady": "Bereit",
   "battBoostTitle": "Batterieunterstütztes Fahrzeugladen",
   "battBoostDesc": "wenn Hausbatterie über {val} ist.",
+  "battBufferStartDesc": "Starte automatisch {val}.",
+  "battBufferStartSocZero": "nur mit genug PV-Überschuss",
   "battCarPrioTitle": "Priorisiere Fahrzeugladen,",
   "battCarPrioDesc": "wenn Hausbatterie über {val} ist.",
   "battHomePrioTitle": "Priorisiere die Hausbatterie",

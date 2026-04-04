@@ -49,6 +49,8 @@
   "battReady": "Prêt",
   "battBoostTitle": "Charge véhicule assistée par batterie",
   "battBoostDesc": "si la batterie domestique dépasse {val}.",
+  "battBufferStartDesc": "Démarrer automatiquement {val}.",
+  "battBufferStartSocZero": "uniquement avec suffisamment de surplus PV",
   "battCarPrioTitle": "Prioriser la charge du véhicule,",
   "battCarPrioDesc": "si la batterie domestique dépasse {val}.",
   "battHomePrioTitle": "Prioriser la batterie domestique",

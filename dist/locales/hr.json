@@ -49,6 +49,8 @@
   "battReady": "Spremno",
   "battBoostTitle": "Punjenje vozila baterijom",
   "battBoostDesc": "kada je kućna baterija preko {val}.",
+  "battBufferStartDesc": "Pokrenuti automatski {val}.",
+  "battBufferStartSocZero": "samo s dovoljno PV viška",
   "battCarPrioTitle": "Prioritet punjenju vozila,",
   "battCarPrioDesc": "kada je kućna baterija preko {val}.",
   "battHomePrioTitle": "Prioritet kućnoj bateriji",

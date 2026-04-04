@@ -49,6 +49,8 @@
   "battReady": "Ready",
   "battBoostTitle": "Battery-assisted vehicle charging",
   "battBoostDesc": "when home battery is above {val}.",
+  "battBufferStartDesc": "Start automatically {val}.",
+  "battBufferStartSocZero": "only with enough PV surplus",
   "battCarPrioTitle": "Prioritize vehicle charging,",
   "battCarPrioDesc": "when home battery is above {val}.",
   "battHomePrioTitle": "Prioritize home battery",

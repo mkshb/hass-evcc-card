@@ -49,6 +49,8 @@
   "battReady": "Gotowa",
   "battBoostTitle": "Ładowanie pojazdu z pomocą baterii domowej",
   "battBoostDesc": "gdy bateria domowa jest powyżej {val}.",
+  "battBufferStartDesc": "Uruchom automatycznie {val}.",
+  "battBufferStartSocZero": "tylko z wystarczającą nadwyżką PV",
   "battCarPrioTitle": "Priorytet ładowania pojazdu,",
   "battCarPrioDesc": "gdy bateria domowa jest powyżej {val}.",
   "battHomePrioTitle": "Priorytet ładowania baterii domowej",
