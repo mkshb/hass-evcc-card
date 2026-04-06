@@ -90,5 +90,18 @@
   "battery": "Baterija",
   "total": "ukupno",
   "solarHint": "☀️ Raščlamba solarne energije dostupna kada bude više podataka ({n} od min. 3 dana).",
-  "phaseCurrentsHint": "Aktivirajte senzore fazne struje u HA za točne vrijednosti"
+  "phaseCurrentsHint": "Aktivirajte senzore fazne struje u HA za točne vrijednosti",
+  "editorElementModeSelector": "Mode selector",
+  "editorElementVehicleInfo": "Vehicle / SoC",
+  "editorElementPowerRow": "Power & current",
+  "editorElementSliders": "SoC slider",
+  "editorElementChargeSettings": "Charge current settings",
+  "editorElementPlanBlock": "Charge plan",
+  "editorElementSessionInfo": "Charge session",
+  "editorElementEnergyOverview": "Energy visualization",
+  "editorElementDetailTable": "Detail table (IN/OUT)",
+  "editorElementGridStatus": "Grid status block",
+  "editorElementGenerationChips": "Generation chips",
+  "editorElementConsumptionChips": "Consumption chips",
+  "editorElementStatsFooter": "Statistics footer"
 }

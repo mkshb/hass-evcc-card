@@ -90,5 +90,18 @@
   "battery": "Batería",
   "total": "total",
   "solarHint": "☀️ Desglose solar disponible cuando haya más datos históricos ({n} de mín. 3 días).",
-  "phaseCurrentsHint": "Activar sensores de corriente de fase en HA para valores precisos"
+  "phaseCurrentsHint": "Activar sensores de corriente de fase en HA para valores precisos",
+  "editorElementModeSelector": "Mode selector",
+  "editorElementVehicleInfo": "Vehicle / SoC",
+  "editorElementPowerRow": "Power & current",
+  "editorElementSliders": "SoC slider",
+  "editorElementChargeSettings": "Charge current settings",
+  "editorElementPlanBlock": "Charge plan",
+  "editorElementSessionInfo": "Charge session",
+  "editorElementEnergyOverview": "Energy visualization",
+  "editorElementDetailTable": "Detail table (IN/OUT)",
+  "editorElementGridStatus": "Grid status block",
+  "editorElementGenerationChips": "Generation chips",
+  "editorElementConsumptionChips": "Consumption chips",
+  "editorElementStatsFooter": "Statistics footer"
 }

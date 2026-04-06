@@ -3478,10 +3478,21 @@ class EvccCardEditor extends HTMLElement {
     this._availableLoadpoints = [];
     this._detectedPrefix = null;
     this._detectingPrefix = false;
+    this._translations = {};
+    this._translationsReady = false;
+    this._loadingTranslations = false;
+    this._renderStrings = {};
   }
 
   set hass(hass) {
     this._hass = hass;
+    if (!this._translationsReady && !this._loadingTranslations) {
+      this._loadingTranslations = true;
+      this._loadTranslations().then(() => {
+        this._loadingTranslations = false;
+        this._render();
+      });
+    }
     if (!this._detectedPrefix && !this._detectingPrefix) {
       this._detectingPrefix = true;
       detectPrefix(hass).then(p => {
@@ -3499,6 +3510,13 @@ class EvccCardEditor extends HTMLElement {
 
   setConfig(config) {
     this._config = { ...config };
+    if (!this._translationsReady && !this._loadingTranslations) {
+      this._loadingTranslations = true;
+      this._loadTranslations().then(() => {
+        this._loadingTranslations = false;
+        this._render();
+      });
+    }
     if (this.shadowRoot?.activeElement?.tagName === "INPUT") return;
     this._discoverLoadpoints();
     this._render();
@@ -3527,6 +3545,40 @@ class EvccCardEditor extends HTMLElement {
     }));
   }
 
+  async _loadTranslations() {
+    const base = new URL("locales/", import.meta.url).href;
+
+    let langs = ["de", "en"];
+    try {
+      const idxResp = await fetch(`${base}index.json?v=${EVCC_CARD_VERSION}`);
+      if (idxResp.ok) langs = await idxResp.json();
+    } catch (_e) {}
+
+    const results = await Promise.allSettled(
+      langs.map(lang =>
+        fetch(`${base}${lang}.json?v=${EVCC_CARD_VERSION}`)
+          .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+          .then(data => ({ lang, data }))
+      )
+    );
+
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        this._translations[result.value.lang] = result.value.data;
+      }
+    }
+
+    this._translationsReady = true;
+  }
+
+  _t(key) {
+    const strings = this._renderStrings ?? (() => {
+      const lang = (this._config.language || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+      return this._translations[lang] || this._translations.en || {};
+    })();
+    return strings[key] ?? this._translations.en?.[key] ?? key;
+  }
+
   _sel(id, options, current) {
     return `<select id="${id}" class="ha-select">
       ${options.map(([val, label]) =>
@@ -3548,19 +3600,19 @@ class EvccCardEditor extends HTMLElement {
 
   _elementOptions() {
     const allOptions = [
-      ["mode_selector", "Modus-Auswahl"],
-      ["vehicle_info", "Fahrzeug / SoC"],
-      ["power_row", "Leistung & Strom"],
-      ["sliders", "SoC-Slider"],
-      ["charge_settings", "Ladestrom-Einstellungen"],
-      ["plan_block", "Ladeplan"],
-      ["session_info", "Ladesitzung"],
-      ["energy_overview", "Energie-Visualisierung"],
-      ["detail_table", "Detail-Tabelle (IN/OUT)"],
-      ["grid_status", "Netzstatus-Block"],
-      ["generation_chips", "Erzeugung-Chips"],
-      ["consumption_chips", "Verbrauch-Chips"],
-      ["stats_footer", "Statistik-Footer"],
+      ["mode_selector", this._t("editorElementModeSelector")],
+      ["vehicle_info", this._t("editorElementVehicleInfo")],
+      ["power_row", this._t("editorElementPowerRow")],
+      ["sliders", this._t("editorElementSliders")],
+      ["charge_settings", this._t("editorElementChargeSettings")],
+      ["plan_block", this._t("editorElementPlanBlock")],
+      ["session_info", this._t("editorElementSessionInfo")],
+      ["energy_overview", this._t("editorElementEnergyOverview")],
+      ["detail_table", this._t("editorElementDetailTable")],
+      ["grid_status", this._t("editorElementGridStatus")],
+      ["generation_chips", this._t("editorElementGenerationChips")],
+      ["consumption_chips", this._t("editorElementConsumptionChips")],
+      ["stats_footer", this._t("editorElementStatsFooter")],
     ];
     return allOptions;
   }
@@ -3577,6 +3629,9 @@ class EvccCardEditor extends HTMLElement {
   }
 
   _render() {
+    const lang = (this._config.language || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+    this._renderStrings = this._translations[lang] || this._translations.en || {};
+
     const c    = this._config;
     const mode = c.mode || "loadpoint";
     const selLps = Array.isArray(c.loadpoints) ? c.loadpoints : [];

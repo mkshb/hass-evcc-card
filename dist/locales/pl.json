@@ -90,5 +90,18 @@
   "battery": "Akumulator",
   "total": "łącznie",
   "solarHint": "☀️ Podział słoneczny dostępny gdy będzie więcej danych historycznych ({n} z min. 3 dni).",
-  "phaseCurrentsHint": "Włącz czujniki prądu fazowego w HA dla dokładnych wartości"
+  "phaseCurrentsHint": "Włącz czujniki prądu fazowego w HA dla dokładnych wartości",
+  "editorElementModeSelector": "Mode selector",
+  "editorElementVehicleInfo": "Vehicle / SoC",
+  "editorElementPowerRow": "Power & current",
+  "editorElementSliders": "SoC slider",
+  "editorElementChargeSettings": "Charge current settings",
+  "editorElementPlanBlock": "Charge plan",
+  "editorElementSessionInfo": "Charge session",
+  "editorElementEnergyOverview": "Energy visualization",
+  "editorElementDetailTable": "Detail table (IN/OUT)",
+  "editorElementGridStatus": "Grid status block",
+  "editorElementGenerationChips": "Generation chips",
+  "editorElementConsumptionChips": "Consumption chips",
+  "editorElementStatsFooter": "Statistics footer"
 }

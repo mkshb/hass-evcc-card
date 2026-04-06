@@ -90,5 +90,18 @@
   "battery": "Batterie",
   "total": "gesamt",
   "solarHint": "☀️ Solar-Aufschlüsselung verfügbar sobald mehr Verlaufsdaten vorliegen ({n} von mind. 3 Tagen).",
-  "phaseCurrentsHint": "Phasenstrom-Sensoren in HA aktivieren für genaue Stromwerte"
+  "phaseCurrentsHint": "Phasenstrom-Sensoren in HA aktivieren für genaue Stromwerte",
+  "editorElementModeSelector": "Modus-Auswahl",
+  "editorElementVehicleInfo": "Fahrzeug / SoC",
+  "editorElementPowerRow": "Leistung & Strom",
+  "editorElementSliders": "SoC-Slider",
+  "editorElementChargeSettings": "Ladestrom-Einstellungen",
+  "editorElementPlanBlock": "Ladeplan",
+  "editorElementSessionInfo": "Ladesitzung",
+  "editorElementEnergyOverview": "Energie-Visualisierung",
+  "editorElementDetailTable": "Detail-Tabelle (IN/OUT)",
+  "editorElementGridStatus": "Netzstatus-Block",
+  "editorElementGenerationChips": "Erzeugung-Chips",
+  "editorElementConsumptionChips": "Verbrauch-Chips",
+  "editorElementStatsFooter": "Statistik-Footer"
 }
