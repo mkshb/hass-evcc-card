@@ -143,7 +143,7 @@ Then restart Home Assistant or reload the Lovelace resources.
 
 ## Configuration
 
-Add the card to any Lovelace dashboard and use the **visual editor** to configure it - all options are available interactively, and the editor shows only the options relevant to the selected mode.
+Add the card to any Lovelace dashboard and use the **visual editor** to configure it - all options are available interactively and are shown directly during initial card setup.
 
 ### Configuration options
 
@@ -157,9 +157,19 @@ Add the card to any Lovelace dashboard and use the **visual editor** to configur
 | `site_details` | `string` | `expanded` | `collapsed` to hide the IN/OUT detail table by default in `site` and `flow` mode |
 | `charge_current_settings` | `string` | `collapsed` | `expanded` to show charge settings expanded by default |
 | `stats_period` | `string` | `total` | Default statistics period: `total`, `30d`, `365d`, `thisYear`, `none` |
+| `hidden_elements` | `list` | *(none)* | Hide selected UI blocks per mode (configured in the visual editor via **Visible elements**) |
 | `prefix` | `string` | *(auto)* | **YAML only** — Entity prefix, auto-detected from ha-evcc. Only needed for multiple EVCC instances with custom prefixes. |
 
 > **YAML Configurator:** For users who prefer YAML configuration, the interactive **[YAML Configurator](https://mkshb.github.io/hass-evcc-card/configurator.html)** is still available to generate card configurations for special cases.
+
+### Element visibility (`hidden_elements`)
+
+You can hide specific blocks in the card. In the visual editor this is available as **Visible elements**; in YAML use `hidden_elements` with one or more keys.
+
+Supported keys depend on the selected mode:
+- `loadpoint` / `compact`: `mode_selector`, `vehicle_info`, `power_row`, `sliders`, `charge_settings`, `plan_block`, `session_info`
+- `site` / `flow`: `energy_overview`, `detail_table`, `stats_footer`
+- `grid`: `grid_status`, `generation_chips`, `consumption_chips`, `stats_footer`
 
 ---
 
