@@ -339,6 +339,14 @@ class EvccCard extends HTMLElement {
     return this._config.prefix || this._detectedPrefix || "evcc_";
   }
 
+  _isHiddenElement(key) {
+    return Array.isArray(this._config.hidden_elements) && this._config.hidden_elements.includes(key);
+  }
+
+  _showElement(key) {
+    return !this._isHiddenElement(key);
+  }
+
   set hass(hass) {
     this._hass = hass;
 
@@ -565,14 +573,14 @@ class EvccCard extends HTMLElement {
             ${statusLabel}
           </span>
         </div>
-        ${this._renderModeSelector(ents)}
-        ${this._renderVehicleInfo(ents, charging, lpName)}
-        ${this._renderPowerRow(ents, charging)}
-        ${this._renderSliders(ents)}
-        ${this._renderCurrentBlock(ents, lpName)}
+        ${this._showElement("mode_selector") ? this._renderModeSelector(ents) : ""}
+        ${this._showElement("vehicle_info") ? this._renderVehicleInfo(ents, charging, lpName) : ""}
+        ${this._showElement("power_row") ? this._renderPowerRow(ents, charging) : ""}
+        ${this._showElement("sliders") ? this._renderSliders(ents) : ""}
+        ${this._showElement("charge_settings") ? this._renderCurrentBlock(ents, lpName) : ""}
         ${this._renderToggles(ents)}
-        ${noPlan ? "" : this._renderPlanBlock(lpName, ents)}
-        ${this._renderSessionInfo(ents, charging)}
+        ${(noPlan || !this._showElement("plan_block")) ? "" : this._renderPlanBlock(lpName, ents)}
+        ${this._showElement("session_info") ? this._renderSessionInfo(ents, charging) : ""}
       </div>
     `;
   }
@@ -585,14 +593,52 @@ class EvccCard extends HTMLElement {
     const noPlan      = Array.isArray(this._config.no_plan) && this._config.no_plan.includes(lpName);
 
     if (this._tabState[lpName] === undefined) this._tabState[lpName] = 0;
-    const activeTab = this._tabState[lpName];
-
     const tabs = [
-      { key: "tabControl",  icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>` },
-      { key: "tabSettings", icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3,17V19H9V17H3M3,5V7H13V5H3M13,21V19H21V17H13V15H11V21H13M7,9V11H3V13H7V15H9V9H7M21,13V11H11V13H21M15,9H17V7H21V5H17V3H15V9Z"/></svg>` },
-      { key: "tabPlan",     icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19,3H18V1H16V3H8V1H6V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M19,19H5V8H19V19Z"/></svg>` },
-      { key: "tabSession",  icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M22,21H2V3H4V19H6V17H10V19H12V16H16V19H18V17H22V21Z"/></svg>` },
-    ];
+      (this._showElement("mode_selector") || this._showElement("vehicle_info") || this._showElement("power_row")) ? {
+        key: "tabControl",
+        icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>`,
+        content: `
+          ${this._showElement("mode_selector") ? this._renderModeSelector(ents) : ""}
+          ${this._showElement("vehicle_info") ? this._renderVehicleInfo(ents, charging, lpName) : ""}
+          ${this._showElement("power_row") ? this._renderPowerRow(ents, charging) : ""}
+        `,
+      } : null,
+      (this._showElement("sliders") || this._showElement("charge_settings")) ? {
+        key: "tabSettings",
+        icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3,17V19H9V17H3M3,5V7H13V5H3M13,21V19H21V17H13V15H11V21H13M7,9V11H3V13H7V15H9V9H7M21,13V11H11V13H21M15,9H17V7H21V5H17V3H15V9Z"/></svg>`,
+        content: `
+          ${this._showElement("sliders") ? this._renderSliders(ents) : ""}
+          ${this._showElement("charge_settings") ? this._renderCurrentBlock(ents, lpName) : ""}
+          ${this._renderToggles(ents)}
+        `,
+      } : null,
+      (this._showElement("plan_block") && !noPlan) ? {
+        key: "tabPlan",
+        icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19,3H18V1H16V3H8V1H6V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M19,19H5V8H19V19Z"/></svg>`,
+        content: `${this._renderPlanBlock(lpName, ents)}`,
+      } : null,
+      this._showElement("session_info") ? {
+        key: "tabSession",
+        icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M22,21H2V3H4V19H6V17H10V19H12V16H16V19H18V17H22V21Z"/></svg>`,
+        content: `${this._renderSessionInfo(ents, charging)}`,
+      } : null,
+    ].filter(Boolean);
+
+    if (tabs.length === 0) {
+      return `
+        <div class="loadpoint" data-lp-compact="${lpName}">
+          <div class="lp-header">
+            <span class="lp-name">${this._config.title || lpName}</span>
+            <span class="lp-badge ${statusClass}">
+              ${statusLabel}
+            </span>
+          </div>
+        </div>
+      `;
+    }
+
+    if (this._tabState[lpName] >= tabs.length) this._tabState[lpName] = 0;
+    const activeTab = this._tabState[lpName];
 
     const tabBar = `
       <div class="compact-tabs">
@@ -605,24 +651,11 @@ class EvccCard extends HTMLElement {
         `).join("")}
       </div>`;
 
-    const tabContent = [
-      `<div class="compact-panel" ${activeTab !== 0 ? 'hidden' : ''}>
-        ${this._renderModeSelector(ents)}
-        ${this._renderVehicleInfo(ents, charging, lpName)}
-        ${this._renderPowerRow(ents, charging)}
-      </div>`,
-      `<div class="compact-panel" ${activeTab !== 1 ? 'hidden' : ''}>
-        ${this._renderSliders(ents)}
-        ${this._renderCurrentBlock(ents, lpName)}
-        ${this._renderToggles(ents)}
-      </div>`,
-      `<div class="compact-panel" ${activeTab !== 2 ? 'hidden' : ''}>
-        ${noPlan ? "" : this._renderPlanBlock(lpName, ents)}
-      </div>`,
-      `<div class="compact-panel" ${activeTab !== 3 ? 'hidden' : ''}>
-        ${this._renderSessionInfo(ents, charging)}
-      </div>`,
-    ].join("");
+    const tabContent = tabs.map((tab, i) => `
+      <div class="compact-panel" ${activeTab !== i ? "hidden" : ""}>
+        ${tab.content}
+      </div>
+    `).join("");
 
     return `
       <div class="loadpoint" data-lp-compact="${lpName}">
@@ -1600,17 +1633,21 @@ class EvccCard extends HTMLElement {
         <div class="lp-header">
           <span class="lp-name">${this._config.title || this._t("overview")}</span>
         </div>
-        <div class="flow-wrap-clickable" role="button" tabindex="0"
-             onclick="window.__evccCards.get('${this._cardId}')._toggleSite()"
-             title="${siteExpanded ? this._tInline("siteCollapse") : this._tInline("siteExpand")}">
-          ${flowBar}
-        </div>
-        <div class="site-table" style="${siteExpanded ? '' : 'display:none'}">
-          ${inSection}
-          <div class="site-section-gap"></div>
-          ${outSection}
-        </div>
-        ${this._renderStatsFooter()}
+        ${this._showElement("energy_overview") ? `
+          <div class="flow-wrap-clickable" role="button" tabindex="0"
+              onclick="window.__evccCards.get('${this._cardId}')._toggleSite()"
+              title="${siteExpanded ? this._tInline("siteCollapse") : this._tInline("siteExpand")}">
+            ${flowBar}
+          </div>
+        ` : ""}
+        ${this._showElement("detail_table") ? `
+          <div class="site-table" style="${siteExpanded ? '' : 'display:none'}">
+            ${inSection}
+            <div class="site-section-gap"></div>
+            ${outSection}
+          </div>
+        ` : ""}
+        ${this._showElement("stats_footer") ? this._renderStatsFooter() : ""}
       </div>`;
   }
 
@@ -1996,13 +2033,15 @@ class EvccCard extends HTMLElement {
         <div class="lp-header">
           <span class="lp-name">${this._config.title || this._t("energyFlow") || this._t("overview")}</span>
         </div>
-        ${sankeySvg}
-        <div class="site-table" style="${siteExpanded ? '' : 'display:none'}">
-          ${inSection}
-          <div class="site-section-gap"></div>
-          ${outSection}
-        </div>
-        ${this._renderStatsFooter()}
+        ${this._showElement("energy_overview") ? sankeySvg : ""}
+        ${this._showElement("detail_table") ? `
+          <div class="site-table" style="${siteExpanded ? '' : 'display:none'}">
+            ${inSection}
+            <div class="site-section-gap"></div>
+            ${outSection}
+          </div>
+        ` : ""}
+        ${this._showElement("stats_footer") ? this._renderStatsFooter() : ""}
       </div>`;
   }
 
@@ -2122,15 +2161,17 @@ class EvccCard extends HTMLElement {
         <div class="lp-header">
           <span class="lp-name">${this._config.title || this._t("grid")}</span>
         </div>
-        <div class="s2-net">
-          <div class="s2-net-label">${this._t("gridStatus") || "Netzstatus"}</div>
-          <div class="s2-net-value" style="color:${netColor}">${netValStr}</div>
-          <div class="s2-net-status" style="color:${netColor}">${netLabel}</div>
-          ${pvBadge}
-        </div>
-        ${section("generation", srcChips)}
-        ${section("consumption", dstChips)}
-        ${this._renderStatsFooter()}
+        ${this._showElement("grid_status") ? `
+          <div class="s2-net">
+            <div class="s2-net-label">${this._t("gridStatus") || "Netzstatus"}</div>
+            <div class="s2-net-value" style="color:${netColor}">${netValStr}</div>
+            <div class="s2-net-status" style="color:${netColor}">${netLabel}</div>
+            ${pvBadge}
+          </div>
+        ` : ""}
+        ${this._showElement("generation_chips") ? section("generation", srcChips) : ""}
+        ${this._showElement("consumption_chips") ? section("consumption", dstChips) : ""}
+        ${this._showElement("stats_footer") ? this._renderStatsFooter() : ""}
       </div>`;
   }
 
@@ -3505,17 +3546,42 @@ class EvccCardEditor extends HTMLElement {
     `).join("");
   }
 
+  _elementOptions() {
+    const allOptions = [
+      ["mode_selector", "Modus-Auswahl"],
+      ["vehicle_info", "Fahrzeug / SoC"],
+      ["power_row", "Leistung & Strom"],
+      ["sliders", "SoC-Slider"],
+      ["charge_settings", "Ladestrom-Einstellungen"],
+      ["plan_block", "Ladeplan"],
+      ["session_info", "Ladesitzung"],
+      ["energy_overview", "Energie-Visualisierung"],
+      ["detail_table", "Detail-Tabelle (IN/OUT)"],
+      ["grid_status", "Netzstatus-Block"],
+      ["generation_chips", "Erzeugung-Chips"],
+      ["consumption_chips", "Verbrauch-Chips"],
+      ["stats_footer", "Statistik-Footer"],
+    ];
+    return allOptions;
+  }
+
+  _elementCheckboxes(hiddenElements) {
+    const options = this._elementOptions();
+    if (options.length === 0) return "";
+    return options.map(([key, label]) => `
+      <label class="cb-row">
+        <input type="checkbox" data-element="${key}" ${hiddenElements.includes(key) ? "" : "checked"}>
+        <span>${label}</span>
+      </label>
+    `).join("");
+  }
+
   _render() {
     const c    = this._config;
     const mode = c.mode || "loadpoint";
     const selLps = Array.isArray(c.loadpoints) ? c.loadpoints : [];
     const noPlan  = Array.isArray(c.no_plan)   ? c.no_plan   : [];
-
-    const showLoadpoints    = ["loadpoint", "compact", "plan"].includes(mode);
-    const showNoPlan        = ["loadpoint", "compact"].includes(mode);
-    const showChargeCurrent = ["loadpoint", "compact"].includes(mode);
-    const showSiteDetails   = ["site", "flow"].includes(mode);
-    const showStatsPeriod   = ["stats", "site", "flow", "grid"].includes(mode);
+    const hiddenElements = Array.isArray(c.hidden_elements) ? c.hidden_elements : [];
 
     const titlePlaceholder = {
       loadpoint: "Standard: Ladepoint-Name",
@@ -3579,20 +3645,20 @@ class EvccCardEditor extends HTMLElement {
             ["pt", "Português"],
           ], c.language || "")}
         </div>
-        ${showLoadpoints ? `
+        <div class="field">
+          <div class="section-title">Sichtbare Elemente</div>
+          <div class="hint">Je nach Modus werden nur relevante Elemente im Frontend verwendet.</div>
+          ${this._elementCheckboxes(hiddenElements)}
+        </div>
         <div class="field">
           <div class="section-title">Ladepunkte anzeigen</div>
           <div class="hint">Leer = alle anzeigen</div>
           ${this._checkboxes("loadpoints", selLps)}
         </div>
-        ` : ""}
-        ${showNoPlan ? `
         <div class="field">
           <div class="section-title">Kein Ladeplan für</div>
           ${this._checkboxes("no_plan", noPlan)}
         </div>
-        ` : ""}
-        ${showChargeCurrent ? `
         <div class="field">
           <label class="field-label" for="charge_current_settings">Ladestrom-Einstellungen</label>
           ${this._sel("charge_current_settings", [
@@ -3600,8 +3666,6 @@ class EvccCardEditor extends HTMLElement {
             ["expanded",  "Aufgeklappt"],
           ], c.charge_current_settings || "collapsed")}
         </div>
-        ` : ""}
-        ${showSiteDetails ? `
         <div class="field">
           <label class="field-label" for="site_details">Site-Details</label>
           ${this._sel("site_details", [
@@ -3609,8 +3673,6 @@ class EvccCardEditor extends HTMLElement {
             ["collapsed", "Eingeklappt"],
           ], c.site_details || "expanded")}
         </div>
-        ` : ""}
-        ${showStatsPeriod ? `
         <div class="field">
           <label class="field-label" for="stats_period">Statistik-Zeitraum</label>
           ${this._sel("stats_period", [
@@ -3621,7 +3683,6 @@ class EvccCardEditor extends HTMLElement {
             ["none",     "Keiner"],
           ], c.stats_period || "total")}
         </div>
-        ` : ""}
       </div>
     `;
 
@@ -3650,6 +3711,20 @@ class EvccCardEditor extends HTMLElement {
 
     this.shadowRoot.querySelectorAll("input[type=checkbox]").forEach(cb => {
       cb.addEventListener("change", () => {
+        const elementKey = cb.dataset.element;
+        if (elementKey) {
+          const hidden = Array.isArray(this._config.hidden_elements) ? [...this._config.hidden_elements] : [];
+          if (cb.checked) {
+            const idx = hidden.indexOf(elementKey);
+            if (idx > -1) hidden.splice(idx, 1);
+          } else if (!hidden.includes(elementKey)) {
+            hidden.push(elementKey);
+          }
+          this._config = { ...this._config, hidden_elements: hidden.length > 0 ? hidden : undefined };
+          this._fire();
+          return;
+        }
+
         const field = cb.dataset.field;
         const lp    = cb.dataset.lp;
         const current = Array.isArray(this._config[field]) ? [...this._config[field]] : [];
