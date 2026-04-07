@@ -90,5 +90,14 @@
   "battery": "Akumulator",
   "total": "łącznie",
   "solarHint": "☀️ Podział słoneczny dostępny gdy będzie więcej danych historycznych ({n} z min. 3 dni).",
-  "phaseCurrentsHint": "Włącz czujniki prądu fazowego w HA dla dokładnych wartości"
+  "phaseCurrentsHint": "Włącz czujniki prądu fazowego w HA dla dokładnych wartości",
+  "showSettings": "Show settings",
+  "hideSettings": "Hide settings",
+  "batteryBoost": "Battery boost",
+  "toggleOn": "On",
+  "toggleOff": "Off",
+  "fullDischarge": "full discharge",
+  "planStart": "Start",
+  "planEnd": "End",
+  "phaseAuto": "Auto"
 }

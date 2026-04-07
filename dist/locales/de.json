@@ -90,5 +90,14 @@
   "battery": "Batterie",
   "total": "gesamt",
   "solarHint": "☀️ Solar-Aufschlüsselung verfügbar sobald mehr Verlaufsdaten vorliegen ({n} von mind. 3 Tagen).",
-  "phaseCurrentsHint": "Phasenstrom-Sensoren in HA aktivieren für genaue Stromwerte"
+  "phaseCurrentsHint": "Phasenstrom-Sensoren in HA aktivieren für genaue Stromwerte",
+  "showSettings": "Einstellungen anzeigen",
+  "hideSettings": "Einstellungen ausblenden",
+  "batteryBoost": "Batterie-Boost",
+  "toggleOn": "Ein",
+  "toggleOff": "Aus",
+  "fullDischarge": "vollständige Entladung",
+  "planStart": "Start",
+  "planEnd": "Ende",
+  "phaseAuto": "Auto"
 }
