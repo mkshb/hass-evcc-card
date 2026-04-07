@@ -264,6 +264,46 @@ function socTrackBg(minSoc, limitSoc) {
   return `linear-gradient(to right, ${stops.join(", ")})`;
 }
 
+/* ── Shared translation cache (used by both EvccCard and EvccCardEditor) ── */
+let _sharedTranslations = {};
+let _sharedTranslationsReady = false;
+let _sharedTranslationsLoading = null;   // Promise while loading, null otherwise
+
+async function _loadSharedTranslations() {
+  if (_sharedTranslationsReady) return;
+  if (_sharedTranslationsLoading) return _sharedTranslationsLoading;
+
+  _sharedTranslationsLoading = (async () => {
+    const base = new URL("locales/", import.meta.url).href;
+    let langs = ["de", "en"];
+    try {
+      const idxResp = await fetch(`${base}index.json?v=${EVCC_CARD_VERSION}`);
+      if (idxResp.ok) langs = await idxResp.json();
+      else console.warn("[evcc-card] locales/index.json not found, using fallback:", langs);
+    } catch (e) {
+      console.warn("[evcc-card] Could not load locales/index.json, using fallback:", langs);
+    }
+    const results = await Promise.allSettled(
+      langs.map(lang =>
+        fetch(`${base}${lang}.json?v=${EVCC_CARD_VERSION}`)
+          .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+          .then(data => ({ lang, data }))
+      )
+    );
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        _sharedTranslations[result.value.lang] = result.value.data;
+      } else {
+        console.warn("[evcc-card] Failed to load translation:", result.reason);
+      }
+    }
+    _sharedTranslationsReady = true;
+    _sharedTranslationsLoading = null;
+  })();
+
+  return _sharedTranslationsLoading;
+}
+
 class EvccCard extends HTMLElement {
 
   constructor() {
@@ -280,7 +320,7 @@ class EvccCard extends HTMLElement {
     this._statsPeriod   = "total";
     this._chartCache     = {};
     this._chartCacheTime = {};
-    this._translations  = {};
+    this._translations  = _sharedTranslations;
     this._translationsReady = false;
 
     this._siteTableExpanded = undefined; // undefined = use config default
@@ -305,33 +345,8 @@ class EvccCard extends HTMLElement {
   }
 
   async _loadTranslations() {
-    const base = new URL("locales/", import.meta.url).href;
-
-    let langs = ["de", "en"];
-    try {
-      const idxResp = await fetch(`${base}index.json?v=${EVCC_CARD_VERSION}`);
-      if (idxResp.ok) langs = await idxResp.json();
-      else console.warn("[evcc-card] locales/index.json not found, using fallback:", langs);
-    } catch (e) {
-      console.warn("[evcc-card] Could not load locales/index.json, using fallback:", langs);
-    }
-
-    const results = await Promise.allSettled(
-      langs.map(lang =>
-        fetch(`${base}${lang}.json?v=${EVCC_CARD_VERSION}`)
-          .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-          .then(data => ({ lang, data }))
-      )
-    );
-
-    for (const result of results) {
-      if (result.status === "fulfilled") {
-        this._translations[result.value.lang] = result.value.data;
-      } else {
-        console.warn("[evcc-card] Failed to load translation:", result.reason);
-      }
-    }
-
+    await _loadSharedTranslations();
+    this._translations = _sharedTranslations;
     this._translationsReady = true;
   }
 
@@ -3439,8 +3454,18 @@ class EvccCardEditor extends HTMLElement {
     this._detectingPrefix = false;
   }
 
+  _t(key) {
+    const lang = (this._config?.language
+      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+    const strings = _sharedTranslations[lang] || _sharedTranslations["en"] || {};
+    return strings[key] ?? key;
+  }
+
   set hass(hass) {
     this._hass = hass;
+    if (!_sharedTranslationsReady) {
+      _loadSharedTranslations().then(() => this._render());
+    }
     if (!this._detectedPrefix && !this._detectingPrefix) {
       this._detectingPrefix = true;
       detectPrefix(hass).then(p => {
@@ -3496,7 +3521,7 @@ class EvccCardEditor extends HTMLElement {
 
   _checkboxes(type, selected) {
     const lps = this._availableLoadpoints;
-    if (lps.length === 0) return `<div class="hint">Keine Ladepunkte gefunden</div>`;
+    if (lps.length === 0) return `<div class="hint">${this._t("editorNoLoadpointsFound")}</div>`;
     return lps.map(lp => `
       <label class="cb-row">
         <input type="checkbox" data-field="${type}" data-lp="${this._esc(lp)}" ${selected.includes(lp) ? "checked" : ""}>
@@ -3518,15 +3543,15 @@ class EvccCardEditor extends HTMLElement {
     const showStatsPeriod   = ["stats", "site", "flow", "grid"].includes(mode);
 
     const titlePlaceholder = {
-      loadpoint: "Standard: Ladepoint-Name",
-      compact:   "Standard: Ladepoint-Name",
-      plan:      "Standard: Ladepoint-Name",
-      site:      "Standard: Übersicht",
-      flow:      "Standard: Energiefluss",
-      grid:      "Standard: Netz",
-      stats:     "Standard: Statistik",
-      battery:   "Standard: Hausbatterie",
-    }[mode] || "Standard: Ladepoint-Name";
+      loadpoint: this._t("editorTitlePlaceholderLoadpoint"),
+      compact:   this._t("editorTitlePlaceholderCompact"),
+      plan:      this._t("editorTitlePlaceholderPlan"),
+      site:      this._t("editorTitlePlaceholderSite"),
+      flow:      this._t("editorTitlePlaceholderFlow"),
+      grid:      this._t("editorTitlePlaceholderGrid"),
+      stats:     this._t("editorTitlePlaceholderStats"),
+      battery:   this._t("editorTitlePlaceholderBattery"),
+    }[mode] || this._t("editorTitlePlaceholderLoadpoint");
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -3549,76 +3574,76 @@ class EvccCardEditor extends HTMLElement {
       </style>
       <div class="form">
         <div class="field">
-          <label class="field-label" for="mode">Modus</label>
+          <label class="field-label" for="mode">${this._t("editorModeLabel")}</label>
           ${this._sel("mode", [
-            ["loadpoint", "Ladepunkt (loadpoint)"],
-            ["compact",   "Kompakt (compact)"],
-            ["site",      "Übersicht (site)"],
-            ["flow",      "Energiefluss (flow)"],
-            ["grid",      "Netz (grid)"],
-            ["battery",   "Batterie (battery)"],
-            ["stats",     "Statistik (stats)"],
-            ["plan",      "Plan (plan)"],
+            ["loadpoint", this._t("editorModeLoadpoint")],
+            ["compact",   this._t("editorModeCompact")],
+            ["site",      this._t("editorModeSite")],
+            ["flow",      this._t("editorModeFlow")],
+            ["grid",      this._t("editorModeGrid")],
+            ["battery",   this._t("editorModeBattery")],
+            ["stats",     this._t("editorModeStats")],
+            ["plan",      this._t("editorModePlan")],
           ], mode)}
         </div>
         <div class="field">
-          <label class="field-label" for="title">Titel <span class="hint" style="display:inline">(optional)</span></label>
+          <label class="field-label" for="title">${this._t("editorTitleLabel")} <span class="hint" style="display:inline">(${this._t("editorOptional")})</span></label>
           <input id="title" class="ha-input" type="text" value="${this._esc(c.title || "")}" placeholder="${titlePlaceholder}">
         </div>
         <div class="field">
-          <label class="field-label" for="language">Sprache</label>
+          <label class="field-label" for="language">${this._t("editorLanguageLabel")}</label>
           ${this._sel("language", [
-            ["",   "Automatisch (aus HA)"],
-            ["de", "Deutsch"],
-            ["en", "English"],
-            ["es", "Español"],
-            ["fr", "Français"],
-            ["hr", "Hrvatski"],
-            ["nl", "Nederlands"],
-            ["pl", "Polski"],
-            ["pt", "Português"],
+            ["",   this._t("editorLanguageAuto")],
+            ["de", this._t("editorLanguageNameDe")],
+            ["en", this._t("editorLanguageNameEn")],
+            ["es", this._t("editorLanguageNameEs")],
+            ["fr", this._t("editorLanguageNameFr")],
+            ["hr", this._t("editorLanguageNameHr")],
+            ["nl", this._t("editorLanguageNameNl")],
+            ["pl", this._t("editorLanguageNamePl")],
+            ["pt", this._t("editorLanguageNamePt")],
           ], c.language || "")}
         </div>
         ${showLoadpoints ? `
         <div class="field">
-          <div class="section-title">Ladepunkte anzeigen</div>
-          <div class="hint">Leer = alle anzeigen</div>
+          <div class="section-title">${this._t("editorShowLoadpointsTitle")}</div>
+          <div class="hint">${this._t("editorShowLoadpointsHint")}</div>
           ${this._checkboxes("loadpoints", selLps)}
         </div>
         ` : ""}
         ${showNoPlan ? `
         <div class="field">
-          <div class="section-title">Kein Ladeplan für</div>
+          <div class="section-title">${this._t("editorNoPlanForTitle")}</div>
           ${this._checkboxes("no_plan", noPlan)}
         </div>
         ` : ""}
         ${showChargeCurrent ? `
         <div class="field">
-          <label class="field-label" for="charge_current_settings">Ladestrom-Einstellungen</label>
+          <label class="field-label" for="charge_current_settings">${this._t("editorChargeCurrentSettingsLabel")}</label>
           ${this._sel("charge_current_settings", [
-            ["collapsed", "Eingeklappt"],
-            ["expanded",  "Aufgeklappt"],
+            ["collapsed", this._t("editorCollapsed")],
+            ["expanded",  this._t("editorExpanded")],
           ], c.charge_current_settings || "collapsed")}
         </div>
         ` : ""}
         ${showSiteDetails ? `
         <div class="field">
-          <label class="field-label" for="site_details">Site-Details</label>
+          <label class="field-label" for="site_details">${this._t("editorSiteDetailsLabel")}</label>
           ${this._sel("site_details", [
-            ["expanded",  "Aufgeklappt"],
-            ["collapsed", "Eingeklappt"],
+            ["expanded",  this._t("editorExpanded")],
+            ["collapsed", this._t("editorCollapsed")],
           ], c.site_details || "expanded")}
         </div>
         ` : ""}
         ${showStatsPeriod ? `
         <div class="field">
-          <label class="field-label" for="stats_period">Statistik-Zeitraum</label>
+          <label class="field-label" for="stats_period">${this._t("editorStatsPeriodLabel")}</label>
           ${this._sel("stats_period", [
-            ["total",    "Gesamt"],
-            ["30d",      "30 Tage"],
-            ["365d",     "365 Tage"],
-            ["thisYear", "Dieses Jahr"],
-            ["none",     "Keiner"],
+            ["total",    this._t("editorStatsPeriodTotal")],
+            ["30d",      this._t("editorStatsPeriod30d")],
+            ["365d",     this._t("editorStatsPeriod365d")],
+            ["thisYear", this._t("editorStatsPeriodThisYear")],
+            ["none",     this._t("editorStatsPeriodNone")],
           ], c.stats_period || "total")}
         </div>
         ` : ""}
