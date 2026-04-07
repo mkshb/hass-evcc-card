@@ -90,5 +90,18 @@
   "battery": "Battery",
   "total": "total",
   "solarHint": "☀️ Solar breakdown available once more history is collected ({n} of min. 3 days).",
-  "phaseCurrentsHint": "Enable phase current sensors in HA for accurate values"
+  "phaseCurrentsHint": "Enable phase current sensors in HA for accurate values",
+  "editorElementModeSelector": "Mode selector",
+  "editorElementVehicleInfo": "Vehicle / SoC",
+  "editorElementPowerRow": "Power & current",
+  "editorElementSliders": "SoC slider",
+  "editorElementChargeSettings": "Charge current settings",
+  "editorElementPlanBlock": "Charge plan",
+  "editorElementSessionInfo": "Charge session",
+  "editorElementEnergyOverview": "Energy visualization",
+  "editorElementDetailTable": "Detail table (IN/OUT)",
+  "editorElementGridStatus": "Grid status block",
+  "editorElementGenerationChips": "Generation chips",
+  "editorElementConsumptionChips": "Consumption chips",
+  "editorElementStatsFooter": "Statistics footer"
 }
