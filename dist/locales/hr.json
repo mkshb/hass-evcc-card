@@ -90,5 +90,14 @@
   "battery": "Baterija",
   "total": "ukupno",
   "solarHint": "☀️ Raščlamba solarne energije dostupna kada bude više podataka ({n} od min. 3 dana).",
-  "phaseCurrentsHint": "Aktivirajte senzore fazne struje u HA za točne vrijednosti"
+  "phaseCurrentsHint": "Aktivirajte senzore fazne struje u HA za točne vrijednosti",
+  "showSettings": "Show settings",
+  "hideSettings": "Hide settings",
+  "batteryBoost": "Battery boost",
+  "toggleOn": "On",
+  "toggleOff": "Off",
+  "fullDischarge": "full discharge",
+  "planStart": "Start",
+  "planEnd": "End",
+  "phaseAuto": "Auto"
 }

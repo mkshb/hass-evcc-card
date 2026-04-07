@@ -762,13 +762,13 @@ class EvccCard extends HTMLElement {
                       : phases === 3 ? this._t("phasesTriple")
                       : phases !== null ? `${phases}` : null;
 
-    // Nur Phasen mit Strom > 0 anzeigen (robust gegen beliebige Phase-Belegung)
+    // Show only phases with current > 0 (robust for arbitrary phase assignments).
     const activePhases = phaseCurrents ? phaseCurrents.filter(v => v !== null && v > 0) : null;
     const phaseStr = activePhases && activePhases.length > 0
       ? activePhases.map(v => Math.round(v)).join(" / ") + " A"
       : null;
 
-    // Hinweis wenn offeredCurrent gezeigt wird (keine Phasenstrom-Entities verfügbar)
+    // Show hint when offeredCurrent is displayed (no phase current entities available).
     const hint = current !== null
       ? `<div class="power-currents-hint">${this._t("phaseCurrentsHint")}</div>`
       : "";
@@ -818,7 +818,7 @@ class EvccCard extends HTMLElement {
       const current  = stateVal(this._hass, entityId);
       const options  = this._hass.states[entityId]?.attributes?.options ?? [];
       const PHASE_LABELS = {
-        "automatischer Wechsel": "Auto", "automatic": "Auto", "auto": "Auto", "0": "Auto",
+        "automatischer Wechsel": this._t("phaseAuto"), "automatic": this._t("phaseAuto"), "auto": this._t("phaseAuto"), "0": this._t("phaseAuto"),
         "1-phasig": "1", "1": "1",
         "3-phasig": "3", "3": "3",
       };
@@ -847,7 +847,7 @@ class EvccCard extends HTMLElement {
           <span class="block-title">${this._t("chargeSettings")}</span>
           <button class="current-toggle-btn ${expanded ? "active" : ""}"
                   data-lp-current-toggle="${lpName}"
-                  title="${expanded ? "Hide settings" : "Show settings"}">
+                  title="${expanded ? this._t("hideSettings") : this._t("showSettings")}">
             ${gearIcon}
           </button>
         </div>
@@ -941,10 +941,10 @@ class EvccCard extends HTMLElement {
       const max      = pctOpts[pctOpts.length - 1] ?? 100;
       const step     = pctOpts.length > 1 ? (pctOpts[1] - pctOpts[0]) : 5;
       const curPct   = (!current || current === "unknown") ? 100 : parseInt(current);
-      const label    = curPct === 100 ? "Off" : curPct === 0 ? "0 % (full discharge)" : `${curPct} %`;
+      const label    = curPct === 100 ? this._t("toggleOff") : curPct === 0 ? `0 % (${this._t("fullDischarge")})` : `${curPct} %`;
       return `
         <div class="slider-row">
-          <label>Battery boost</label>
+          <label>${this._t("batteryBoost")}</label>
           <div class="slider-control">
             <input type="range"
                    min="${min}" max="${max}" step="${step}" value="${curPct}"
@@ -972,7 +972,7 @@ class EvccCard extends HTMLElement {
                     data-entity="${entityId}"
                     data-domain="${domain}"
                     data-on="${on}">
-              ${on ? "On" : "Off"}
+              ${on ? this._t("toggleOn") : this._t("toggleOff")}
             </button>
           </div>
         `;
@@ -985,7 +985,7 @@ class EvccCard extends HTMLElement {
       { key: "phases_configured", label: this._t("phases") },
     ];
     const PHASE_LABELS = {
-      "automatischer Wechsel": "Auto", "automatic": "Auto", "auto": "Auto", "0": "Auto",
+      "automatischer Wechsel": this._t("phaseAuto"), "automatic": this._t("phaseAuto"), "auto": this._t("phaseAuto"), "0": this._t("phaseAuto"),
       "1-phasig": "1", "1": "1", "3-phasig": "3", "3": "3",
     };
     const rows = SELECT_FEATURES
@@ -1112,8 +1112,8 @@ class EvccCard extends HTMLElement {
 
     const projectionHtml = (startStr || endStr) ? `
       <div class="plan-projection">
-        ${startStr ? `<span style="display:flex;align-items:center;gap:4px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M16.06,3.5L17.5,2.08L18.92,3.5L17.5,4.92L16.06,3.5M7.06,3.5L5.64,2.08L4.22,3.5L5.64,4.92L7.06,3.5M12,6A4,4 0 0,1 16,10V16H13V22H11V16H8V10A4,4 0 0,1 12,6Z"/></svg> Start: <strong>${startStr}</strong></span>` : ""}
-        ${endStr   ? `<span>✅ End: <strong>${endStr}</strong></span>`      : ""}
+        ${startStr ? `<span style="display:flex;align-items:center;gap:4px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M16.06,3.5L17.5,2.08L18.92,3.5L17.5,4.92L16.06,3.5M7.06,3.5L5.64,2.08L4.22,3.5L5.64,4.92L7.06,3.5M12,6A4,4 0 0,1 16,10V16H13V22H11V16H8V10A4,4 0 0,1 12,6Z"/></svg> ${this._t("planStart")}: <strong>${startStr}</strong></span>` : ""}
+        ${endStr   ? `<span>✅ ${this._t("planEnd")}: <strong>${endStr}</strong></span>`      : ""}
       </div>` : "";
 
     return `
@@ -1566,7 +1566,7 @@ class EvccCard extends HTMLElement {
         }).join("")
       : "";
 
-    const inSection = section(this._t("in") || "In", inTotal, [
+    const inSection = section(this._t("in"), inTotal, [
       row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z\"/></svg>", this._t("generation"), "", pvPow, "site-pw-green", false, site.pv_power),
       pvRows,
       battDischPow > 0.05
@@ -1578,7 +1578,7 @@ class EvccCard extends HTMLElement {
         ? row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M11,7.5L9.5,3H14.5L13,7.5H15L18,3H21L15,12H17L21,21H15L12,15L9,21H3L7,12H9L3,3H6L9,7.5H11M12,13.5L13.9,19H10.1L12,13.5Z\"/></svg>", this._t("gridImport"), "", bezugPow, "", false, site.grid_power) : "",
     ].join(""));
 
-    const outSection = section(this._t("out") || "Out", outTotal, [
+    const outSection = section(this._t("out"), outTotal, [
       row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z\"/></svg>", this._t("consumption"), "", homePow, "", false, site.home_power),
       chargePow > 0.05
         ? row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M19.77,7.23L19.78,7.22L16.06,3.5L15,4.56L17.11,6.67C16.17,7.03 15.5,7.93 15.5,9A2.5,2.5 0 0,0 18,11.5C18.36,11.5 18.69,11.42 19,11.29V18.5A1,1 0 0,1 18,19.5A1,1 0 0,1 17,18.5V14A2,2 0 0,0 15,12H14V5A2,2 0 0,0 12,3H6A2,2 0 0,0 4,5V21H14V13.5H15.5V18.5A2.5,2.5 0 0,0 18,21A2.5,2.5 0 0,0 20.5,18.5V9C20.5,8.31 20.22,7.68 19.77,7.23M18,10A1,1 0 0,1 17,9A1,1 0 0,1 18,8A1,1 0 0,1 19,9A1,1 0 0,1 18,10M12,10H6V5H12V10Z\"/></svg>", this._t("chargePoint"), "", chargePow, "site-pw-blue") + lpRows : "",
@@ -1966,7 +1966,7 @@ class EvccCard extends HTMLElement {
 
     const svgIcon = (path) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="vertical-align:middle"><path d="${path}"/></svg>`;
 
-    const inSection = section(this._t("in") || "In", inTotal, [
+    const inSection = section(this._t("in"), inTotal, [
       row(svgIcon(MDI.solar), this._t("generation"), "", pvPow, "site-pw-green", false, site.pv_power),
       pvRows,
       battDischPow > 0.05
@@ -1978,7 +1978,7 @@ class EvccCard extends HTMLElement {
         ? row(svgIcon(MDI.tower), this._t("gridImport"), "", bezugPow, "", false, site.grid_power) : "",
     ].join(""));
 
-    const outSection = section(this._t("out") || "Out", outTotal, [
+    const outSection = section(this._t("out"), outTotal, [
       row(svgIcon(MDI.home), this._t("consumption"), "", homePow, "", false, site.home_power),
       chargePow > 0.05
         ? row(svgIcon(MDI.ev), this._t("chargePoint"), "", chargePow, "site-pw-blue") + lpRows : "",
@@ -2054,7 +2054,7 @@ class EvccCard extends HTMLElement {
     const pvBadge = pvShare > 0
       ? `<div class="s2-pv-badge">
            <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor"><path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z"/></svg>
-           ${pvShare} % ${this._t("solar") || "Solar"}
+           ${pvShare} % ${this._t("solar")}
          </div>`
       : "";
 
@@ -2123,7 +2123,7 @@ class EvccCard extends HTMLElement {
           <span class="lp-name">${this._config.title || this._t("grid")}</span>
         </div>
         <div class="s2-net">
-          <div class="s2-net-label">${this._t("gridStatus") || "Netzstatus"}</div>
+          <div class="s2-net-label">${this._t("gridStatus")}</div>
           <div class="s2-net-value" style="color:${netColor}">${netValStr}</div>
           <div class="s2-net-status" style="color:${netColor}">${netLabel}</div>
           ${pvBadge}
@@ -2473,9 +2473,9 @@ class EvccCard extends HTMLElement {
       </div>`;
 
     const kpis = [
-      kpi(kwh,   this._t("statsTotalCharged") || "Geladen gesamt", v => `${Math.round(v)} kWh`, null),
-      kpi(solar, this._t("statsSolarShare")   || "Solaranteil",    v => `${Math.round(v)} %`,   solar > 0 ? "var(--evcc-green)" : null),
-      kpi(price, this._t("statsAvgPrice")     || "Ø Preis/kWh",    v => `${(v * 100).toFixed(1)} ct`, null),
+      kpi(kwh,   this._t("statsTotalCharged"), v => `${Math.round(v)} kWh`, null),
+      kpi(solar, this._t("statsSolarShare"),   v => `${Math.round(v)} %`,   solar > 0 ? "var(--evcc-green)" : null),
+      kpi(price, this._t("statsAvgPrice"),     v => `${(v * 100).toFixed(1)} ct`, null),
     ].join("");
 
     const { kwhId: chartKwhId } = this._getStatEntityIds("total");
@@ -2491,7 +2491,7 @@ class EvccCard extends HTMLElement {
       </div>` : "";
 
     const noDataHint = (!kwhId && !solarId && !priceId && this._statsPeriod !== "total")
-      ? `<div class="stats-no-data">${this._t("statsNoData")} <a class="stats-no-data-link" href="https://github.com/mkshb/hass-evcc-card#enabling-stat-periods" target="_blank" rel="noopener">📖 ${this._t("statsNoDataLink") || "More info"}</a></div>`
+      ? `<div class="stats-no-data">${this._t("statsNoData")} <a class="stats-no-data-link" href="https://github.com/mkshb/hass-evcc-card#enabling-stat-periods" target="_blank" rel="noopener">📖 ${this._t("statsNoDataLink")}</a></div>`
       : "";
 
     const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
@@ -2840,9 +2840,9 @@ class EvccCard extends HTMLElement {
         const display = input.nextElementSibling;
         if (!display) return;
         if (input.dataset.boostType === "switch") {
-          display.textContent = val >= 50 ? "On" : "Off";
+          display.textContent = val >= 50 ? this._t("toggleOn") : this._t("toggleOff");
         } else {
-          display.textContent = val === 100 ? "Off" : val === 0 ? "0 % (full discharge)" : `${val} %`;
+          display.textContent = val === 100 ? this._t("toggleOff") : val === 0 ? `0 % (${this._t("fullDischarge")})` : `${val} %`;
         }
       });
       input.addEventListener("pointerup",  () => this._boostCommit(input));

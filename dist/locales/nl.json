@@ -90,5 +90,14 @@
   "battery": "Batterij",
   "total": "totaal",
   "solarHint": "☀️ Zonne-uitsplitsing beschikbaar zodra er meer historische gegevens zijn ({n} van min. 3 dagen).",
-  "phaseCurrentsHint": "Schakel fasestromsensoren in HA in voor nauwkeurige waarden"
+  "phaseCurrentsHint": "Schakel fasestromsensoren in HA in voor nauwkeurige waarden",
+  "showSettings": "Show settings",
+  "hideSettings": "Hide settings",
+  "batteryBoost": "Battery boost",
+  "toggleOn": "On",
+  "toggleOff": "Off",
+  "fullDischarge": "full discharge",
+  "planStart": "Start",
+  "planEnd": "End",
+  "phaseAuto": "Auto"
 }
