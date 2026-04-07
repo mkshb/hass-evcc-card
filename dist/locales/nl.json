@@ -90,5 +90,9 @@
   "battery": "Batterij",
   "total": "totaal",
   "solarHint": "☀️ Zonne-uitsplitsing beschikbaar zodra er meer historische gegevens zijn ({n} van min. 3 dagen).",
-  "phaseCurrentsHint": "Schakel fasestromsensoren in HA in voor nauwkeurige waarden"
+  "phaseCurrentsHint": "Schakel fasestromsensoren in HA in voor nauwkeurige waarden",
+  "priorityOrderTitle": "Priority order",
+  "priorityOrderHint": "Drag & drop to quickly reprioritize loadpoints.",
+  "moveUp": "Move up",
+  "moveDown": "Move down"
 }

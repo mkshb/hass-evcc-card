@@ -517,7 +517,7 @@ class EvccCard extends HTMLElement {
                           .join(""))
                   : Object.keys(visible).length === 0
               ? this._renderEmpty(loadpoints)
-              : Object.entries(visible)
+              : this._renderPriorityManager(visible) + Object.entries(visible)
                   .map(([lp, ents]) => this._renderLoadpoint(lp, ents))
                   .join("")
           }
@@ -874,6 +874,102 @@ class EvccCard extends HTMLElement {
           })() : ""}
         </div>
       </div>`;
+  }
+
+  _priorityValue(entityId) {
+    const val = parseFloat(stateVal(this._hass, entityId));
+    return isNaN(val) ? null : val;
+  }
+
+  _priorityOptions(entityId) {
+    if (!entityId) return [];
+    const domain = entityId.split(".")[0];
+    if (domain === "select") {
+      return (attr(this._hass, entityId, "options") ?? [])
+        .map(o => parseFloat(o))
+        .filter(o => !isNaN(o))
+        .sort((a, b) => b - a);
+    }
+    const min = parseFloat(attr(this._hass, entityId, "min"));
+    const max = parseFloat(attr(this._hass, entityId, "max"));
+    const step = parseFloat(attr(this._hass, entityId, "step")) || 1;
+    if ([min, max].some(v => isNaN(v)) || step <= 0) return [];
+    const values = [];
+    for (let value = max; value >= min; value -= step) {
+      values.push(Number(value.toFixed(6)));
+      if (values.length > 100) break;
+    }
+    return values;
+  }
+
+  _getPriorityItems(loadpoints = {}) {
+    const rows = Object.entries(loadpoints)
+      .map(([lpName, ents]) => {
+        if (!ents.priority) return null;
+        const value = this._priorityValue(ents.priority);
+        if (value === null) return null;
+        const title = this._hass?.states[ents.mode]?.attributes?.loadpoint_title ?? lpName;
+        return { lpName, title, entityId: ents.priority, value };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.value - a.value || a.title.localeCompare(b.title));
+    return rows;
+  }
+
+  _renderPriorityManager(loadpoints = {}) {
+    const rows = this._getPriorityItems(loadpoints);
+    if (rows.length < 2) return "";
+    return `
+      <div class="priority-manager">
+        <div class="priority-manager-title">${this._t("priorityOrderTitle")}</div>
+        <div class="priority-manager-subtitle">${this._t("priorityOrderHint")}</div>
+        <div class="priority-list">
+          ${rows.map((row, index) => `
+            <div class="priority-row"
+                 draggable="true"
+                 data-priority-lp="${row.lpName}"
+                 data-priority-entity="${row.entityId}">
+              <span class="priority-rank">${index + 1}</span>
+              <span class="priority-name">${row.title}</span>
+              <span class="priority-value">${row.value}</span>
+              <div class="priority-actions">
+                <button class="priority-move-btn" data-priority-move="up" data-priority-lp="${row.lpName}" title="${this._t("moveUp")}">↑</button>
+                <button class="priority-move-btn" data-priority-move="down" data-priority-lp="${row.lpName}" title="${this._t("moveDown")}">↓</button>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  _setPriorityEntityValue(entityId, value) {
+    const domain = entityId.split(".")[0];
+    if (domain === "select") {
+      this._hass.callService("select", "select_option", { entity_id: entityId, option: String(value) });
+    } else {
+      this._hass.callService("number", "set_value", { entity_id: entityId, value });
+    }
+  }
+
+  _applyPriorityOrder(orderLps, loadpoints = {}) {
+    if (!Array.isArray(orderLps) || orderLps.length < 2) return;
+    const items = this._getPriorityItems(loadpoints);
+    if (items.length < 2) return;
+    const mapped = orderLps
+      .map(lpName => items.find(item => item.lpName === lpName))
+      .filter(Boolean);
+    if (mapped.length < 2) return;
+
+    const optionPool = this._priorityOptions(mapped[0].entityId);
+    const fallbackPool = mapped.map(item => item.value).sort((a, b) => b - a);
+    const valuePool = optionPool.length >= mapped.length ? optionPool : fallbackPool;
+
+    mapped.forEach((item, index) => {
+      const nextValue = valuePool[index] ?? valuePool[valuePool.length - 1];
+      if (nextValue === undefined || nextValue === item.value) return;
+      this._setPriorityEntityValue(item.entityId, nextValue);
+    });
   }
 
   _sliderRow(entityId, label, zeroLabel = null) {
@@ -2656,6 +2752,8 @@ class EvccCard extends HTMLElement {
   }
 
   _attachListeners() {
+    let draggedPriorityLp = null;
+
     this.shadowRoot.querySelectorAll("[data-more-info]").forEach(el => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -2700,6 +2798,53 @@ class EvccCard extends HTMLElement {
           section.classList.add("smart-cost-highlight");
           setTimeout(() => section.classList.remove("smart-cost-highlight"), 1500);
         }
+      });
+    });
+
+    this.shadowRoot.querySelectorAll(".priority-row").forEach(row => {
+      row.addEventListener("dragstart", () => {
+        draggedPriorityLp = row.dataset.priorityLp;
+        row.classList.add("dragging");
+      });
+      row.addEventListener("dragend", () => {
+        row.classList.remove("dragging");
+        draggedPriorityLp = null;
+      });
+      row.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        row.classList.add("drag-over");
+      });
+      row.addEventListener("dragleave", () => {
+        row.classList.remove("drag-over");
+      });
+      row.addEventListener("drop", (e) => {
+        e.preventDefault();
+        row.classList.remove("drag-over");
+        const targetLp = row.dataset.priorityLp;
+        if (!draggedPriorityLp || !targetLp || draggedPriorityLp === targetLp) return;
+        const list = this.shadowRoot.querySelector(".priority-list");
+        const dragged = list?.querySelector(`[data-priority-lp="${draggedPriorityLp}"]`);
+        const target = list?.querySelector(`[data-priority-lp="${targetLp}"]`);
+        if (!list || !dragged || !target) return;
+        list.insertBefore(dragged, target);
+        const newOrder = Array.from(list.querySelectorAll(".priority-row")).map(el => el.dataset.priorityLp);
+        this._applyPriorityOrder(newOrder, this._cachedEntities?.loadpoints ?? {});
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.priority-move-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const direction = btn.dataset.priorityMove;
+        const lpName = btn.dataset.priorityLp;
+        const list = this.shadowRoot.querySelector(".priority-list");
+        const row = list?.querySelector(`[data-priority-lp="${lpName}"]`);
+        if (!list || !row) return;
+        const sibling = direction === "up" ? row.previousElementSibling : row.nextElementSibling;
+        if (!sibling) return;
+        if (direction === "up") list.insertBefore(row, sibling);
+        else list.insertBefore(sibling, row);
+        const newOrder = Array.from(list.querySelectorAll(".priority-row")).map(el => el.dataset.priorityLp);
+        this._applyPriorityOrder(newOrder, this._cachedEntities?.loadpoints ?? {});
       });
     });
 
@@ -3041,6 +3186,70 @@ class EvccCard extends HTMLElement {
         font-family: var(--paper-font-body1_-_font-family, sans-serif);
       }
       .card-content { padding: 12px 16px 16px; }
+      .priority-manager {
+        margin-bottom: 12px;
+        border: 1px solid var(--divider-color, #e5e7eb);
+        border-radius: 12px;
+        padding: 10px;
+        background: color-mix(in srgb, var(--card-background-color, #fff) 92%, var(--primary-color) 8%);
+      }
+      .priority-manager-title {
+        font-weight: 600;
+        font-size: .92rem;
+      }
+      .priority-manager-subtitle {
+        font-size: .78rem;
+        color: var(--secondary-text-color);
+        margin-top: 2px;
+      }
+      .priority-list {
+        margin-top: 10px;
+        display: grid;
+        gap: 6px;
+      }
+      .priority-row {
+        display: grid;
+        grid-template-columns: 22px 1fr auto auto;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        border-radius: 8px;
+        border: 1px solid var(--divider-color, #e5e7eb);
+        background: var(--card-background-color, #fff);
+        cursor: grab;
+      }
+      .priority-row.dragging { opacity: .65; }
+      .priority-row.drag-over { outline: 2px dashed var(--primary-color, #3b82f6); }
+      .priority-rank {
+        text-align: center;
+        color: var(--secondary-text-color);
+        font-size: .78rem;
+      }
+      .priority-name {
+        font-size: .88rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .priority-value {
+        font-weight: 600;
+        font-size: .82rem;
+        color: var(--secondary-text-color);
+      }
+      .priority-actions {
+        display: inline-flex;
+        gap: 4px;
+      }
+      .priority-move-btn {
+        border: 1px solid var(--divider-color, #e5e7eb);
+        background: transparent;
+        color: var(--primary-text-color);
+        border-radius: 6px;
+        width: 24px;
+        height: 24px;
+        line-height: 1;
+        cursor: pointer;
+      }
 
       .loadpoint {
         padding: 12px 0;

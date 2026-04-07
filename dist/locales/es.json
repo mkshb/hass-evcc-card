@@ -90,5 +90,9 @@
   "battery": "Batería",
   "total": "total",
   "solarHint": "☀️ Desglose solar disponible cuando haya más datos históricos ({n} de mín. 3 días).",
-  "phaseCurrentsHint": "Activar sensores de corriente de fase en HA para valores precisos"
+  "phaseCurrentsHint": "Activar sensores de corriente de fase en HA para valores precisos",
+  "priorityOrderTitle": "Priority order",
+  "priorityOrderHint": "Drag & drop to quickly reprioritize loadpoints.",
+  "moveUp": "Move up",
+  "moveDown": "Move down"
 }

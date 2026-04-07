@@ -90,5 +90,9 @@
   "battery": "Batterie",
   "total": "gesamt",
   "solarHint": "☀️ Solar-Aufschlüsselung verfügbar sobald mehr Verlaufsdaten vorliegen ({n} von mind. 3 Tagen).",
-  "phaseCurrentsHint": "Phasenstrom-Sensoren in HA aktivieren für genaue Stromwerte"
+  "phaseCurrentsHint": "Phasenstrom-Sensoren in HA aktivieren für genaue Stromwerte",
+  "priorityOrderTitle": "Prioritäten-Reihenfolge",
+  "priorityOrderHint": "Per Drag & Drop Ladepunkte schnell umpriorisieren.",
+  "moveUp": "Nach oben",
+  "moveDown": "Nach unten"
 }
