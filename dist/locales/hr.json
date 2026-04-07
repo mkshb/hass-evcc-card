@@ -90,5 +90,10 @@
   "battery": "Baterija",
   "total": "ukupno",
   "solarHint": "☀️ Raščlamba solarne energije dostupna kada bude više podataka ({n} od min. 3 dana).",
-  "phaseCurrentsHint": "Aktivirajte senzore fazne struje u HA za točne vrijednosti"
+  "phaseCurrentsHint": "Aktivirajte senzore fazne struje u HA za točne vrijednosti",
+  "priorityOrderTitle": "Priority order",
+  "priorityOrderHint": "Drag & drop to quickly reprioritize loadpoints.",
+  "moveUp": "Move up",
+  "moveDown": "Move down",
+  "priorityOrderNeedTwo": "Show at least two visible loadpoints to reorder priorities."
 }

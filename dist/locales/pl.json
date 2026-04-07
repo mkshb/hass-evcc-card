@@ -90,5 +90,10 @@
   "battery": "Akumulator",
   "total": "łącznie",
   "solarHint": "☀️ Podział słoneczny dostępny gdy będzie więcej danych historycznych ({n} z min. 3 dni).",
-  "phaseCurrentsHint": "Włącz czujniki prądu fazowego w HA dla dokładnych wartości"
+  "phaseCurrentsHint": "Włącz czujniki prądu fazowego w HA dla dokładnych wartości",
+  "priorityOrderTitle": "Priority order",
+  "priorityOrderHint": "Drag & drop to quickly reprioritize loadpoints.",
+  "moveUp": "Move up",
+  "moveDown": "Move down",
+  "priorityOrderNeedTwo": "Show at least two visible loadpoints to reorder priorities."
 }

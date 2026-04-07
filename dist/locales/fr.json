@@ -90,5 +90,10 @@
   "battery": "Batterie",
   "total": "total",
   "solarHint": "☀️ Répartition solaire disponible dès que plus d'historique sera disponible ({n} sur min. 3 jours).",
-  "phaseCurrentsHint": "Activer les capteurs de courant de phase dans HA pour des valeurs précises"
+  "phaseCurrentsHint": "Activer les capteurs de courant de phase dans HA pour des valeurs précises",
+  "priorityOrderTitle": "Priority order",
+  "priorityOrderHint": "Drag & drop to quickly reprioritize loadpoints.",
+  "moveUp": "Move up",
+  "moveDown": "Move down",
+  "priorityOrderNeedTwo": "Show at least two visible loadpoints to reorder priorities."
 }
