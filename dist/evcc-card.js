@@ -181,7 +181,7 @@ function discoverEntities(hass, prefix = "evcc_") {
     }
   }
 
-  const CORE_FEATURES = ["mode", "charge_power", "connected", "charging", "vehicle_soc"];
+  const CORE_FEATURES = ["mode", "charge_power", "connected", "charging", "vehicle_soc", "priority"];
   for (const lpName of Object.keys(loadpoints)) {
     const hasCore = CORE_FEATURES.some(f => loadpoints[lpName][f]);
     if (!hasCore) delete loadpoints[lpName];
@@ -918,7 +918,22 @@ class EvccCard extends HTMLElement {
 
   _renderPriorityManager(loadpoints = {}) {
     const rows = this._getPriorityItems(loadpoints);
-    if (rows.length < 2) return "";
+    if (rows.length === 0) return "";
+    if (rows.length === 1) {
+      return `
+        <div class="priority-manager">
+          <div class="priority-manager-title">${this._t("priorityOrderTitle")}</div>
+          <div class="priority-manager-subtitle">${this._t("priorityOrderNeedTwo")}</div>
+          <div class="priority-list">
+            <div class="priority-row single">
+              <span class="priority-rank">1</span>
+              <span class="priority-name">${rows[0].title}</span>
+              <span class="priority-value">${rows[0].value}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
     return `
       <div class="priority-manager">
         <div class="priority-manager-title">${this._t("priorityOrderTitle")}</div>
@@ -3220,6 +3235,7 @@ class EvccCard extends HTMLElement {
       }
       .priority-row.dragging { opacity: .65; }
       .priority-row.drag-over { outline: 2px dashed var(--primary-color, #3b82f6); }
+      .priority-row.single { cursor: default; grid-template-columns: 22px 1fr auto; }
       .priority-rank {
         text-align: center;
         color: var(--secondary-text-color);

@@ -94,5 +94,6 @@
   "priorityOrderTitle": "Prioritäten-Reihenfolge",
   "priorityOrderHint": "Per Drag & Drop Ladepunkte schnell umpriorisieren.",
   "moveUp": "Nach oben",
-  "moveDown": "Nach unten"
+  "moveDown": "Nach unten",
+  "priorityOrderNeedTwo": "Zum Umsortieren mindestens zwei sichtbare Ladepunkte anzeigen."
 }
