@@ -2465,7 +2465,7 @@ class EvccCard extends HTMLElement {
     const items = [
       kwhId   ? `<span class="sf-item"><span class="sf-val">${Math.round(kwh)} kWh</span><span class="sf-lbl">${this._t("statsCharged")}</span></span>` : "",
       solarId ? `<span class="sf-item"><span class="sf-val" style="color:var(--evcc-green)">${Math.round(solar)} %</span><span class="sf-lbl">${this._t("statsSolarShare")}</span></span>` : "",
-      priceId ? `<span class="sf-item"><span class="sf-val">${(price * 100).toFixed(1)} ct</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
+      priceId ? `<span class="sf-item"><span class="sf-val">${price.toFixed(2)} ${unitStr(this._hass, priceId)}</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
     ].filter(Boolean);
 
     if (items.length === 0) return "";
@@ -2490,7 +2490,7 @@ class EvccCard extends HTMLElement {
     const kpis = [
       kpi(kwh,   this._t("statsTotalCharged"), v => `${Math.round(v)} kWh`, null),
       kpi(solar, this._t("statsSolarShare"),   v => `${Math.round(v)} %`,   solar > 0 ? "var(--evcc-green)" : null),
-      kpi(price, this._t("statsAvgPrice"),     v => `${(v * 100).toFixed(1)} ct`, null),
+      kpi(price, this._t("statsAvgPrice"),     v => `${v.toFixed(2)} ${unitStr(this._hass, priceId)}`, null),
     ].join("");
 
     const { kwhId: chartKwhId } = this._getStatEntityIds("total");
