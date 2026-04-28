@@ -2,6 +2,7 @@
   "charging": "Laden",
   "connected": "Verbonden",
   "ready": "Klaar",
+  "remaining": "Resterende laadtijd",
   "chargingByPlan": "Laden volgens planning",
   "planned": "Gepland",
   "noPlan": "Geen planning",

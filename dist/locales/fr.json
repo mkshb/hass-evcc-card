@@ -2,6 +2,7 @@
   "charging": "En charge",
   "connected": "Connecté",
   "ready": "Prêt",
+  "remaining": "Temps de charge restant",
   "chargingByPlan": "Charge selon le plan",
   "planned": "Planifié",
   "noPlan": "Aucun plan",

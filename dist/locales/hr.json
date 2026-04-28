@@ -2,6 +2,7 @@
   "charging": "Punjenje",
   "connected": "Povezano",
   "ready": "Spremno",
+  "remaining": "Preostalo vrijeme punjenja",
   "chargingByPlan": "Punjenje prema planu",
   "planned": "Planirano",
   "noPlan": "Bez plana",
