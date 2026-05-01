@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.5.11";
+const EVCC_CARD_VERSION = "0.5.12";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -613,7 +613,6 @@ class EvccCard extends HTMLElement {
         ${this._renderSliders(ents)}
         ${this._renderCurrentBlock(ents, lpName)}
         ${this._renderToggles(ents)}
-        ${this._renderBatteryBoost(ents)}
         ${noPlan ? "" : this._renderPlanBlock(lpName, ents)}
         ${this._renderSessionInfo(ents, charging)}
       </div>
@@ -658,7 +657,6 @@ class EvccCard extends HTMLElement {
         ${this._renderSliders(ents)}
         ${this._renderCurrentBlock(ents, lpName)}
         ${this._renderToggles(ents)}
-        ${this._renderBatteryBoost(ents)}
       </div>`,
       `<div class="compact-panel" ${activeTab !== 2 ? 'hidden' : ''}>
         ${noPlan ? "" : this._renderPlanBlock(lpName, ents)}
@@ -902,7 +900,9 @@ class EvccCard extends HTMLElement {
         <div class="current-block-body" ${expanded ? "" : "hidden"}>
           ${phasesHtml}
           ${currentRows}
-          ${(hasPhases || hasCurrent) && (hasPriority || hasSmartCost) ? `<hr class="settings-divider">` : ""}
+          ${(hasPhases || hasCurrent) && (hasBoost || hasPriority || hasSmartCost) ? `<hr class="settings-divider">` : ""}
+          ${hasBoost ? this._renderBatteryBoost(ents) : ""}
+          ${hasBoost && (hasPriority || hasSmartCost) ? `<hr class="settings-divider">` : ""}
           ${hasPriority ? this._sliderRow(ents.priority, this._t("priority")) : ""}
           ${hasPriority && hasSmartCost ? `<hr class="settings-divider">` : ""}
           ${hasSmartCost ? (() => {
@@ -920,8 +920,6 @@ class EvccCard extends HTMLElement {
               (hasClear ? `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` : "") +
               `</div>`;
           })() : ""}
-          ${hasBoost && (hasPhases || hasCurrent || hasPriority || hasSmartCost) ? `<hr class="settings-divider">` : ""}
-          ${hasBoost ? this._renderBatteryBoost(ents) : ""}
         </div>
       </div>`;
   }
