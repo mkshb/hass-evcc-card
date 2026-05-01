@@ -24,8 +24,6 @@ const FEATURES = [
   { suffix: "vehicle_name",        domain: "select",        type: "select",        lp: true  },
   { suffix: "battery_boost_limit", domain: "select",        type: "select_slider", lp: true  },
 
-  { suffix: "battery_boost",       domain: "switch",        type: "toggle",        lp: true  },
-
   { suffix: "charge_power",        domain: "sensor",        type: "power",         lp: true  },
   { suffix: "charge_current",      domain: "sensor",        type: "current",       lp: true  },
   { suffix: "charge_currents_0",   domain: "sensor",        type: "current",       lp: true  },
@@ -850,7 +848,7 @@ class EvccCard extends HTMLElement {
     const hasCurrent    = ents.min_current || ents.max_current;
     const hasSmartCost  = !!ents.smart_cost_limit;
     const hasPriority   = !!ents.priority;
-    const hasBoost      = !!(ents.battery_boost || ents.battery_boost_limit);
+    const hasBoost      = !!ents.battery_boost_limit;
     if (!hasPhases && !hasCurrent && !hasSmartCost && !hasPriority && !hasBoost) return "";
 
     const configDefault = this._config.charge_current_settings === "expanded";
@@ -960,25 +958,10 @@ class EvccCard extends HTMLElement {
 
   _boostCommit(input) {
     this._isDragging = false;
-    if (this._pendingRender) { this._pendingRender = false; this._render(); return; }
     const val      = parseInt(input.value, 10);
     const entityId = input.dataset.boostEntity;
-    const switchId = input.dataset.boostSwitch;
 
-    if (input.dataset.boostType === "switch") {
-      this._hass.callService("switch", val >= 50 ? "turn_on" : "turn_off", { entity_id: entityId });
-      return;
-    }
-
-    if (switchId && val >= 100) {
-      this._hass.callService("switch", "turn_off", { entity_id: switchId });
-      return;
-    }
-
-    if (switchId && !isOn(this._hass, switchId)) {
-      this._hass.callService("switch", "turn_on", { entity_id: switchId });
-    }
-
+    this._boostPending = { entityId, val, ts: Date.now() };
     const options = JSON.parse(input.dataset.options || "[]");
     const numOpts = options.map(o => parseInt(o)).filter(o => !isNaN(o));
     const nearest = numOpts.reduce((p, c) =>
@@ -987,29 +970,14 @@ class EvccCard extends HTMLElement {
       entity_id: entityId,
       option:    String(nearest),
     });
+
+    if (this._pendingRender) { this._pendingRender = false; this._render(); }
   }
 
   _renderBatteryBoost(ents) {
-    if (!ents.battery_boost && !ents.battery_boost_limit) return "";
-
-    if (ents.battery_boost && !ents.battery_boost_limit) {
-      const entityId = ents.battery_boost;
-      const on = isOn(this._hass, entityId);
-      return `
-        <div class="toggle-row">
-          <span>${this._t("batteryBoost")}</span>
-          <button class="toggle ${on ? "on" : ""}"
-                  data-entity="${entityId}"
-                  data-domain="switch"
-                  data-on="${on}">
-            ${on ? this._t("toggleOn") : this._t("toggleOff")}
-          </button>
-        </div>`;
-    }
+    if (!ents.battery_boost_limit) return "";
 
     const limitId  = ents.battery_boost_limit;
-    const switchId = ents.battery_boost || "";
-    const switchOn = switchId ? isOn(this._hass, switchId) : true;
     const current  = stateVal(this._hass, limitId);
     const options  = this._hass.states[limitId]?.attributes?.options ?? [];
     const pctOpts  = options.map(o => parseInt(o)).filter(o => !isNaN(o)).sort((a, b) => a - b);
@@ -1017,7 +985,11 @@ class EvccCard extends HTMLElement {
     const max      = pctOpts[pctOpts.length - 1] ?? 100;
     const step     = pctOpts.length > 1 ? (pctOpts[1] - pctOpts[0]) : 5;
     const limitPct = (!current || current === "unknown") ? 100 : parseInt(current);
-    const curPct   = (switchId && !switchOn) ? 100 : limitPct;
+    let   curPct   = limitPct;
+    if (this._boostPending && this._boostPending.entityId === limitId &&
+        Date.now() - this._boostPending.ts < 2500) {
+      curPct = this._boostPending.val;
+    }
     const label    = curPct === 100 ? this._t("toggleOff") : curPct === 0 ? `0 % (${this._t("fullDischarge")})` : `${curPct} %`;
     return `
       <div class="slider-row">
@@ -1026,7 +998,6 @@ class EvccCard extends HTMLElement {
           <input type="range"
                  min="${min}" max="${max}" step="${step}" value="${curPct}"
                  data-boost-entity="${limitId}"
-                 ${switchId ? `data-boost-switch="${switchId}"` : ""}
                  data-options='${JSON.stringify(options)}' />
           <span class="slider-val boost-val">${label}</span>
         </div>
@@ -2915,11 +2886,7 @@ class EvccCard extends HTMLElement {
         const val     = parseInt(input.value, 10);
         const display = input.nextElementSibling;
         if (!display) return;
-        if (input.dataset.boostType === "switch") {
-          display.textContent = val >= 50 ? this._t("toggleOn") : this._t("toggleOff");
-        } else {
-          display.textContent = val === 100 ? this._t("toggleOff") : val === 0 ? `0 % (${this._t("fullDischarge")})` : `${val} %`;
-        }
+        display.textContent = val === 100 ? this._t("toggleOff") : val === 0 ? `0 % (${this._t("fullDischarge")})` : `${val} %`;
       });
       input.addEventListener("pointerup",  () => this._boostCommit(input));
       input.addEventListener("blur",       () => this._boostCommit(input));
