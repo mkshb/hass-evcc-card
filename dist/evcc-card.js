@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.5.6";
+const EVCC_CARD_VERSION = "0.5.10";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -32,6 +32,7 @@ const FEATURES = [
   { suffix: "charge_currents_1",   domain: "sensor",        type: "current",       lp: true  },
   { suffix: "charge_currents_2",   domain: "sensor",        type: "current",       lp: true  },
   { suffix: "charge_duration",     domain: "sensor",        type: "info",          lp: true  },
+  { suffix: "charge_remaining_duration", domain: "sensor",  type: "info",          lp: true  },
   { suffix: "charged_energy",      domain: "sensor",        type: "energy",        lp: true  },
   { suffix: "effective_limit_soc", domain: "sensor",        type: "info",          lp: true  },
   { suffix: "vehicle_soc",         domain: "sensor",        type: "soc",           lp: true  },
@@ -228,6 +229,21 @@ function isOn(hass, entityId) {
   return s === "on" || s === "true";
 }
 
+function fmtRemainingDuration(hass, entityId) {
+  if (!entityId || !hass) return "";
+  const raw = parseFloat(stateVal(hass, entityId));
+  if (isNaN(raw) || raw <= 0) return "";
+  const unit = (unitStr(hass, entityId) || "").toLowerCase();
+  const seconds = unit.startsWith("min") ? raw * 60
+                : unit.startsWith("h")   ? raw * 3600
+                                         : raw;
+  const totalMin = Math.round(seconds / 60);
+  if (totalMin <= 0) return "";
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h > 0 ? `${h}h ${m}min` : `${m}min`;
+}
+
 function socFillGradient(soc, minSoc, limitSoc) {
   const s   = Math.max(0.01, soc);
   const min = Math.max(0, minSoc  || 0);
@@ -364,6 +380,10 @@ class EvccCard extends HTMLElement {
         if (p !== this._detectedPrefix) {
           this._detectedPrefix = p;
           this._lastRenderKey = null;
+          if (this._renderTimer) {
+            clearTimeout(this._renderTimer);
+            this._renderTimer = null;
+          }
           this._render();
         }
       });
@@ -422,6 +442,9 @@ class EvccCard extends HTMLElement {
         this._loadingTranslations = false;
         if (this._hass) this._render();
       });
+    } else if (this._hass && this._translationsReady) {
+      this._lastRenderKey = null;
+      this._render();
     }
   }
 
@@ -474,10 +497,12 @@ class EvccCard extends HTMLElement {
     }
 
     if (!this._translationsReady) {
-      this.shadowRoot.innerHTML = `
-        <style>:host{display:block}
-        .loading{padding:24px;text-align:center;color:var(--secondary-text-color);font-size:.9rem}</style>
-        <ha-card><div class="loading">⏳</div></ha-card>`;
+      if (!this.shadowRoot.firstChild) {
+        this.shadowRoot.innerHTML = `
+          <style>:host{display:block}
+          .loading{padding:24px;text-align:center;color:var(--secondary-text-color);font-size:.9rem}</style>
+          <ha-card><div class="loading">⏳</div></ha-card>`;
+      }
       return;
     }
 
@@ -571,11 +596,13 @@ class EvccCard extends HTMLElement {
     const statusClass = charging ? "charging" : connected ? "connected" : "ready";
 
     const noPlan = Array.isArray(this._config.no_plan) && this._config.no_plan.includes(lpName);
+    const remaining = charging ? fmtRemainingDuration(this._hass, ents.charge_remaining_duration) : "";
 
     return `
       <div class="loadpoint">
         <div class="lp-header">
           <span class="lp-name">${this._config.title || lpName}</span>
+          ${remaining ? `<span class="lp-remaining" title="${this._tInline("remaining")}">${remaining}</span>` : ""}
           <span class="lp-badge ${statusClass}">
             ${statusLabel}
           </span>
@@ -639,10 +666,13 @@ class EvccCard extends HTMLElement {
       </div>`,
     ].join("");
 
+    const remaining = charging ? fmtRemainingDuration(this._hass, ents.charge_remaining_duration) : "";
+
     return `
       <div class="loadpoint" data-lp-compact="${lpName}">
         <div class="lp-header">
           <span class="lp-name">${this._config.title || lpName}</span>
+          ${remaining ? `<span class="lp-remaining" title="${this._tInline("remaining")}">${remaining}</span>` : ""}
           <span class="lp-badge ${statusClass}">
             ${statusLabel}
           </span>
@@ -3075,6 +3105,10 @@ class EvccCard extends HTMLElement {
       .lp-badge.charging  { color: var(--evcc-green);  background: color-mix(in srgb, var(--evcc-green)  15%, transparent); }
       .lp-badge.connected { color: var(--evcc-blue);   background: color-mix(in srgb, var(--evcc-blue)   15%, transparent); }
       .lp-badge.ready     { color: var(--evcc-gray);   background: color-mix(in srgb, var(--evcc-gray)   15%, transparent); }
+      .lp-remaining {
+        font-size: .85em; color: var(--secondary-text-color);
+        margin-right: 8px; white-space: nowrap;
+      }
 
       .mode-row { display: flex; gap: 6px; margin-bottom: 12px; }
       .mode-btn {
@@ -3474,6 +3508,7 @@ class EvccCardEditor extends HTMLElement {
         this._discoverLoadpoints();
         this._render();
       });
+      return;
     }
     const prev = this._availableLoadpoints.join(",");
     this._discoverLoadpoints();
