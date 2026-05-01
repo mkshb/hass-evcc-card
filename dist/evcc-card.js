@@ -613,7 +613,6 @@ class EvccCard extends HTMLElement {
         ${this._renderSliders(ents)}
         ${this._renderCurrentBlock(ents, lpName)}
         ${this._renderToggles(ents)}
-        ${this._renderBatteryBoost(ents)}
         ${noPlan ? "" : this._renderPlanBlock(lpName, ents)}
         ${this._renderSessionInfo(ents, charging)}
       </div>
@@ -658,7 +657,6 @@ class EvccCard extends HTMLElement {
         ${this._renderSliders(ents)}
         ${this._renderCurrentBlock(ents, lpName)}
         ${this._renderToggles(ents)}
-        ${this._renderBatteryBoost(ents)}
       </div>`,
       `<div class="compact-panel" ${activeTab !== 2 ? 'hidden' : ''}>
         ${noPlan ? "" : this._renderPlanBlock(lpName, ents)}
@@ -852,7 +850,8 @@ class EvccCard extends HTMLElement {
     const hasCurrent    = ents.min_current || ents.max_current;
     const hasSmartCost  = !!ents.smart_cost_limit;
     const hasPriority   = !!ents.priority;
-    if (!hasPhases && !hasCurrent && !hasSmartCost && !hasPriority) return "";
+    const hasBoost      = !!(ents.battery_boost || ents.battery_boost_limit);
+    if (!hasPhases && !hasCurrent && !hasSmartCost && !hasPriority && !hasBoost) return "";
 
     const configDefault = this._config.charge_current_settings === "expanded";
     const expanded = this._currentBlockExpanded[lpName] !== undefined
@@ -919,6 +918,8 @@ class EvccCard extends HTMLElement {
               (hasClear ? `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` : "") +
               `</div>`;
           })() : ""}
+          ${hasBoost && (hasPhases || hasCurrent || hasPriority || hasSmartCost) ? `<hr class="settings-divider">` : ""}
+          ${hasBoost ? this._renderBatteryBoost(ents) : ""}
         </div>
       </div>`;
   }
@@ -962,10 +963,20 @@ class EvccCard extends HTMLElement {
     if (this._pendingRender) { this._pendingRender = false; this._render(); return; }
     const val      = parseInt(input.value, 10);
     const entityId = input.dataset.boostEntity;
+    const switchId = input.dataset.boostSwitch;
 
     if (input.dataset.boostType === "switch") {
       this._hass.callService("switch", val >= 50 ? "turn_on" : "turn_off", { entity_id: entityId });
       return;
+    }
+
+    if (switchId && val >= 100) {
+      this._hass.callService("switch", "turn_off", { entity_id: switchId });
+      return;
+    }
+
+    if (switchId && !isOn(this._hass, switchId)) {
+      this._hass.callService("switch", "turn_on", { entity_id: switchId });
     }
 
     const options = JSON.parse(input.dataset.options || "[]");
@@ -981,12 +992,10 @@ class EvccCard extends HTMLElement {
   _renderBatteryBoost(ents) {
     if (!ents.battery_boost && !ents.battery_boost_limit) return "";
 
-    let html = "";
-
-    if (ents.battery_boost) {
+    if (ents.battery_boost && !ents.battery_boost_limit) {
       const entityId = ents.battery_boost;
       const on = isOn(this._hass, entityId);
-      html += `
+      return `
         <div class="toggle-row">
           <span>${this._t("batteryBoost")}</span>
           <button class="toggle ${on ? "on" : ""}"
@@ -998,31 +1007,30 @@ class EvccCard extends HTMLElement {
         </div>`;
     }
 
-    if (ents.battery_boost_limit) {
-      const entityId = ents.battery_boost_limit;
-      const current  = stateVal(this._hass, entityId);
-      const options  = this._hass.states[entityId]?.attributes?.options ?? [];
-      const pctOpts  = options.map(o => parseInt(o)).filter(o => !isNaN(o)).sort((a, b) => a - b);
-      const min      = pctOpts[0] ?? 0;
-      const max      = pctOpts[pctOpts.length - 1] ?? 100;
-      const step     = pctOpts.length > 1 ? (pctOpts[1] - pctOpts[0]) : 5;
-      const curPct   = (!current || current === "unknown") ? 100 : parseInt(current);
-      const label    = curPct === 100 ? this._t("toggleOff") : curPct === 0 ? `0 % (${this._t("fullDischarge")})` : `${curPct} %`;
-      const sliderLabel = ents.battery_boost ? this._t("batteryBoostLimit") : this._t("batteryBoost");
-      html += `
-        <div class="slider-row">
-          <label>${sliderLabel}</label>
-          <div class="slider-control">
-            <input type="range"
-                   min="${min}" max="${max}" step="${step}" value="${curPct}"
-                   data-boost-entity="${entityId}"
-                   data-options='${JSON.stringify(options)}' />
-            <span class="slider-val boost-val">${label}</span>
-          </div>
-        </div>`;
-    }
-
-    return html;
+    const limitId  = ents.battery_boost_limit;
+    const switchId = ents.battery_boost || "";
+    const switchOn = switchId ? isOn(this._hass, switchId) : true;
+    const current  = stateVal(this._hass, limitId);
+    const options  = this._hass.states[limitId]?.attributes?.options ?? [];
+    const pctOpts  = options.map(o => parseInt(o)).filter(o => !isNaN(o)).sort((a, b) => a - b);
+    const min      = pctOpts[0] ?? 0;
+    const max      = pctOpts[pctOpts.length - 1] ?? 100;
+    const step     = pctOpts.length > 1 ? (pctOpts[1] - pctOpts[0]) : 5;
+    const limitPct = (!current || current === "unknown") ? 100 : parseInt(current);
+    const curPct   = (switchId && !switchOn) ? 100 : limitPct;
+    const label    = curPct === 100 ? this._t("toggleOff") : curPct === 0 ? `0 % (${this._t("fullDischarge")})` : `${curPct} %`;
+    return `
+      <div class="slider-row">
+        <label>${this._t("batteryBoost")}</label>
+        <div class="slider-control">
+          <input type="range"
+                 min="${min}" max="${max}" step="${step}" value="${curPct}"
+                 data-boost-entity="${limitId}"
+                 ${switchId ? `data-boost-switch="${switchId}"` : ""}
+                 data-options='${JSON.stringify(options)}' />
+          <span class="slider-val boost-val">${label}</span>
+        </div>
+      </div>`;
   }
 
   _renderToggles(ents) {
