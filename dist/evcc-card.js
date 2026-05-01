@@ -380,6 +380,10 @@ class EvccCard extends HTMLElement {
         if (p !== this._detectedPrefix) {
           this._detectedPrefix = p;
           this._lastRenderKey = null;
+          if (this._renderTimer) {
+            clearTimeout(this._renderTimer);
+            this._renderTimer = null;
+          }
           this._render();
         }
       });
@@ -438,6 +442,9 @@ class EvccCard extends HTMLElement {
         this._loadingTranslations = false;
         if (this._hass) this._render();
       });
+    } else if (this._hass && this._translationsReady) {
+      this._lastRenderKey = null;
+      this._render();
     }
   }
 
@@ -490,10 +497,12 @@ class EvccCard extends HTMLElement {
     }
 
     if (!this._translationsReady) {
-      this.shadowRoot.innerHTML = `
-        <style>:host{display:block}
-        .loading{padding:24px;text-align:center;color:var(--secondary-text-color);font-size:.9rem}</style>
-        <ha-card><div class="loading">⏳</div></ha-card>`;
+      if (!this.shadowRoot.firstChild) {
+        this.shadowRoot.innerHTML = `
+          <style>:host{display:block}
+          .loading{padding:24px;text-align:center;color:var(--secondary-text-color);font-size:.9rem}</style>
+          <ha-card><div class="loading">⏳</div></ha-card>`;
+      }
       return;
     }
 
@@ -3499,6 +3508,7 @@ class EvccCardEditor extends HTMLElement {
         this._discoverLoadpoints();
         this._render();
       });
+      return;
     }
     const prev = this._availableLoadpoints.join(",");
     this._discoverLoadpoints();
