@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.5.10";
+const EVCC_CARD_VERSION = "0.5.11";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -613,6 +613,7 @@ class EvccCard extends HTMLElement {
         ${this._renderSliders(ents)}
         ${this._renderCurrentBlock(ents, lpName)}
         ${this._renderToggles(ents)}
+        ${this._renderBatteryBoost(ents)}
         ${noPlan ? "" : this._renderPlanBlock(lpName, ents)}
         ${this._renderSessionInfo(ents, charging)}
       </div>
@@ -657,6 +658,7 @@ class EvccCard extends HTMLElement {
         ${this._renderSliders(ents)}
         ${this._renderCurrentBlock(ents, lpName)}
         ${this._renderToggles(ents)}
+        ${this._renderBatteryBoost(ents)}
       </div>`,
       `<div class="compact-panel" ${activeTab !== 2 ? 'hidden' : ''}>
         ${noPlan ? "" : this._renderPlanBlock(lpName, ents)}
@@ -977,6 +979,25 @@ class EvccCard extends HTMLElement {
   }
 
   _renderBatteryBoost(ents) {
+    if (!ents.battery_boost && !ents.battery_boost_limit) return "";
+
+    let html = "";
+
+    if (ents.battery_boost) {
+      const entityId = ents.battery_boost;
+      const on = isOn(this._hass, entityId);
+      html += `
+        <div class="toggle-row">
+          <span>${this._t("batteryBoost")}</span>
+          <button class="toggle ${on ? "on" : ""}"
+                  data-entity="${entityId}"
+                  data-domain="switch"
+                  data-on="${on}">
+            ${on ? this._t("toggleOn") : this._t("toggleOff")}
+          </button>
+        </div>`;
+    }
+
     if (ents.battery_boost_limit) {
       const entityId = ents.battery_boost_limit;
       const current  = stateVal(this._hass, entityId);
@@ -987,9 +1008,10 @@ class EvccCard extends HTMLElement {
       const step     = pctOpts.length > 1 ? (pctOpts[1] - pctOpts[0]) : 5;
       const curPct   = (!current || current === "unknown") ? 100 : parseInt(current);
       const label    = curPct === 100 ? this._t("toggleOff") : curPct === 0 ? `0 % (${this._t("fullDischarge")})` : `${curPct} %`;
-      return `
+      const sliderLabel = ents.battery_boost ? this._t("batteryBoostLimit") : this._t("batteryBoost");
+      html += `
         <div class="slider-row">
-          <label>${this._t("batteryBoost")}</label>
+          <label>${sliderLabel}</label>
           <div class="slider-control">
             <input type="range"
                    min="${min}" max="${max}" step="${step}" value="${curPct}"
@@ -999,7 +1021,8 @@ class EvccCard extends HTMLElement {
           </div>
         </div>`;
     }
-    if (!ents.battery_boost_limit) return "";
+
+    return html;
   }
 
   _renderToggles(ents) {
