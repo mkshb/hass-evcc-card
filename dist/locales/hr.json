@@ -95,6 +95,7 @@
   "showSettings": "Prikaži postavke",
   "hideSettings": "Sakrij postavke",
   "batteryBoost": "Pojačanje baterije",
+  "batteryBoostLimit": "Granica pojačanja baterije",
   "toggleOn": "Uključeno",
   "toggleOff": "Isključeno",
   "fullDischarge": "potpuno pražnjenje",

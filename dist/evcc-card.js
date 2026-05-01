@@ -613,6 +613,7 @@ class EvccCard extends HTMLElement {
         ${this._renderSliders(ents)}
         ${this._renderCurrentBlock(ents, lpName)}
         ${this._renderToggles(ents)}
+        ${this._renderBatteryBoost(ents)}
         ${noPlan ? "" : this._renderPlanBlock(lpName, ents)}
         ${this._renderSessionInfo(ents, charging)}
       </div>
@@ -657,6 +658,7 @@ class EvccCard extends HTMLElement {
         ${this._renderSliders(ents)}
         ${this._renderCurrentBlock(ents, lpName)}
         ${this._renderToggles(ents)}
+        ${this._renderBatteryBoost(ents)}
       </div>`,
       `<div class="compact-panel" ${activeTab !== 2 ? 'hidden' : ''}>
         ${noPlan ? "" : this._renderPlanBlock(lpName, ents)}
