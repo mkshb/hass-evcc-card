@@ -95,6 +95,7 @@
   "showSettings": "Einstellungen anzeigen",
   "hideSettings": "Einstellungen ausblenden",
   "batteryBoost": "Batterie-Boost",
+  "boostShort": "Boost {val}%",
   "toggleOn": "Ein",
   "toggleOff": "Aus",
   "fullDischarge": "vollständige Entladung",

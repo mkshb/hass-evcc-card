@@ -95,6 +95,7 @@
   "showSettings": "Mostrar ajustes",
   "hideSettings": "Ocultar ajustes",
   "batteryBoost": "Refuerzo de batería",
+  "boostShort": "Boost {val}%",
   "toggleOn": "Activado",
   "toggleOff": "Desactivado",
   "fullDischarge": "descarga completa",
