@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.5.13";
+const EVCC_CARD_VERSION = "0.5.14";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -23,6 +23,7 @@ const FEATURES = [
   { suffix: "phases_configured",   domain: "select",        type: "select",        lp: true  },
   { suffix: "vehicle_name",        domain: "select",        type: "select",        lp: true  },
   { suffix: "battery_boost_limit", domain: "select",        type: "select_slider", lp: true  },
+  { suffix: "battery_boost",       domain: "switch",        type: "toggle",        lp: true  },
 
   { suffix: "charge_power",        domain: "sensor",        type: "power",         lp: true  },
   { suffix: "charge_current",      domain: "sensor",        type: "current",       lp: true  },
@@ -757,6 +758,20 @@ class EvccCard extends HTMLElement {
         ${isCo2Chip ? leafIcon : euroIcon} ≤ ${smartLimit} ${isCo2Chip ? "g" : smartUnit}
       </button>` : "";
 
+    const _boostLimitRaw = ents.battery_boost_limit
+      ? parseInt(stateVal(this._hass, ents.battery_boost_limit), 10) : NaN;
+    const boostLimit     = isNaN(_boostLimitRaw) ? 100 : _boostLimitRaw;
+    const showBoostChip  = !!ents.battery_boost && boostLimit < 100;
+    const boostOn        = showBoostChip ? isOn(this._hass, ents.battery_boost) : false;
+    const battPlusIcon   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16,20H8V14H10V12H8V6H16V20M14,4V2H10V4H8C6.89,4 6,4.89 6,6V20A2,2 0 0,0 8,22H16A2,2 0 0,0 18,20V6C18,4.89 17.11,4 16,4H14M11,9H13V11H15V13H13V15H11V13H9V11H11V9Z"/></svg>`;
+    const boostChip      = showBoostChip ? `
+      <button class="boost-activate-btn ${boostOn ? "on" : ""}"
+              data-entity="${ents.battery_boost}"
+              data-domain="switch"
+              data-on="${boostOn}">
+        ${battPlusIcon} ${this._t("boostShort", { val: boostLimit })}
+      </button>` : "";
+
     return `
       <div class="soc-section">
         <div class="soc-label-row">
@@ -773,6 +788,7 @@ class EvccCard extends HTMLElement {
           ${minSoc !== null ? `<div class="soc-min-marker"   style="left:${Math.min(minSoc,100)}%"></div>` : ""}
           ${limit  !== null ? `<div class="soc-limit-marker" style="left:${Math.min(limit,100)}%"></div>`  : ""}
         </div>` : ""}
+        ${boostChip ? `<div class="boost-activate-row">${boostChip}</div>` : ""}
         ${smartChip ? `<div class="smart-cost-row">${smartChip}</div>` : ""}
       </div>
     `;
@@ -2837,6 +2853,15 @@ class EvccCard extends HTMLElement {
       });
     });
 
+    this.shadowRoot.querySelectorAll("button.boost-activate-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const on = btn.dataset.on === "true";
+        this._hass.callService("switch", on ? "turn_off" : "turn_on", { entity_id: btn.dataset.entity });
+        btn.classList.toggle("on", !on);
+        btn.dataset.on = String(!on);
+      });
+    });
+
     this.shadowRoot.querySelectorAll(".batt-inline-select").forEach(sel => {
       sel.addEventListener("change", () => {
         this._hass.callService("select", "select_option", {
@@ -3128,6 +3153,17 @@ class EvccCard extends HTMLElement {
       }
       .vehicle-name { font-weight: 500; color: var(--primary-text-color); }
       .smart-cost-row { display: flex; justify-content: flex-end; margin-top: 4px; }
+      .boost-activate-row { display: flex; justify-content: flex-start; margin-top: 6px; margin-bottom: 2px; }
+      .boost-activate-btn {
+        display: inline-flex; align-items: center; gap: 4px;
+        background: none; border: 1px solid var(--divider-color, #555);
+        border-radius: 4px; cursor: pointer;
+        font-size: .75rem; color: var(--secondary-text-color);
+        padding: 3px 8px; font-family: inherit;
+        transition: border-color .15s, color .15s, background .15s;
+      }
+      .boost-activate-btn:hover { border-color: var(--evcc-bolt, #ffae00); color: var(--evcc-bolt, #ffae00); }
+      .boost-activate-btn.on { color: var(--evcc-bolt, #ffae00); border-color: var(--evcc-bolt, #ffae00); background: rgba(255,174,0,0.08); }
       .soc-track {
         position: relative; height: 8px;
         background: var(--divider-color, #e5e7eb); border-radius: 4px; overflow: visible;

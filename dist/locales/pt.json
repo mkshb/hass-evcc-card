@@ -95,6 +95,7 @@
   "showSettings": "Mostrar definições",
   "hideSettings": "Ocultar definições",
   "batteryBoost": "Reforço de bateria",
+  "boostShort": "Boost {val}%",
   "toggleOn": "Ligado",
   "toggleOff": "Desligado",
   "fullDischarge": "descarga completa",
