@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.5.15";
+const EVCC_CARD_VERSION = "0.5.16";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -150,6 +150,7 @@ function discoverEntities(hass, prefix = "evcc_", evccEntityIds = null) {
 
   const loadpoints = {};
   const site = {};
+  const meters = {};
 
   const sourceIds = (evccEntityIds && evccEntityIds.size > 0)
     ? evccEntityIds
@@ -193,13 +194,17 @@ function discoverEntities(hass, prefix = "evcc_", evccEntityIds = null) {
     }
   }
 
-  const CORE_FEATURES = ["mode", "charge_power", "connected", "charging", "vehicle_soc"];
-  for (const lpName of Object.keys(loadpoints)) {
-    const hasCore = CORE_FEATURES.some(f => loadpoints[lpName][f]);
-    if (!hasCore) delete loadpoints[lpName];
+  // charge_power is mandatory for every real EVCC loadpoint. Anything else
+  // (custom-named meters, batteries, PV/grid devices in ha-evcc 2026.5+) goes
+  // to the meters bucket so it doesn't pollute the loadpoint list.
+  for (const name of Object.keys(loadpoints)) {
+    if (!loadpoints[name].charge_power) {
+      meters[name] = loadpoints[name];
+      delete loadpoints[name];
+    }
   }
 
-  return { loadpoints, site };
+  return { loadpoints, site, meters };
 }
 
 function _discoverDeviceSources(site, prefix, primarySuffix, secondarySuffix) {
