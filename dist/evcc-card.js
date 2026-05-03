@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.5.16";
+const EVCC_CARD_VERSION = "0.5.17";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -112,17 +112,14 @@ const _chevron = (up) =>
        : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"
   }"/></svg>`;
 
-async function detectIntegration(hass) {
+async function detectPrefix(hass) {
   try {
     const entities = await hass.callWS({ type: "config/entity_registry/list" });
     const evccEnts = entities.filter(e => e.platform === "evcc_intg");
-    if (evccEnts.length === 0) return { prefix: "evcc_", entityIds: null };
+    if (evccEnts.length === 0) return "evcc_";
 
-    const entityIds = new Set(evccEnts.map(e => e.entity_id));
-
-    let prefix = "evcc_";
     const siteSuffixes = FEATURES.filter(f => !f.lp);
-    outer: for (const ent of evccEnts) {
+    for (const ent of evccEnts) {
       const dotIdx = ent.entity_id.indexOf(".");
       const domain = ent.entity_id.slice(0, dotIdx);
       const slug   = ent.entity_id.slice(dotIdx + 1);
@@ -130,21 +127,18 @@ async function detectIntegration(hass) {
       for (const feat of siteSuffixes) {
         if (feat.domain === domain && slug.endsWith(feat.suffix)) {
           const detected = slug.slice(0, slug.length - feat.suffix.length);
-          if (detected.length > 0) {
-            prefix = detected;
-            break outer;
-          }
+          if (detected.length > 0) return detected;
         }
       }
     }
-    return { prefix, entityIds };
+    return "evcc_";
   } catch (e) {
-    console.warn("[evcc-card] Could not detect integration from entity registry:", e);
-    return { prefix: "evcc_", entityIds: null };
+    console.warn("[evcc-card] Could not detect prefix from entity registry:", e);
+    return "evcc_";
   }
 }
 
-function discoverEntities(hass, prefix = "evcc_", evccEntityIds = null) {
+function discoverEntities(hass, prefix = "evcc_") {
   const sortedFeatures = [...FEATURES].sort((a, b) => b.suffix.length - a.suffix.length);
   const prefixLen = prefix.length;
 
@@ -152,11 +146,7 @@ function discoverEntities(hass, prefix = "evcc_", evccEntityIds = null) {
   const site = {};
   const meters = {};
 
-  const sourceIds = (evccEntityIds && evccEntityIds.size > 0)
-    ? evccEntityIds
-    : Object.keys(hass.states);
-
-  for (const entityId of sourceIds) {
+  for (const entityId of Object.keys(hass.states)) {
     const dotIdx = entityId.indexOf(".");
     if (dotIdx < 0) continue;
     const domain = entityId.slice(0, dotIdx);
@@ -391,13 +381,10 @@ class EvccCard extends HTMLElement {
 
     if (!this._detectedPrefix && !this._detectingPrefix && !this._config.prefix) {
       this._detectingPrefix = true;
-      detectIntegration(hass).then(({ prefix, entityIds }) => {
+      detectPrefix(hass).then(prefix => {
         this._detectingPrefix = false;
-        const prefixChanged = prefix !== this._detectedPrefix;
-        const idsChanged    = entityIds !== this._evccEntityIds;
-        if (prefixChanged || idsChanged) {
+        if (prefix !== this._detectedPrefix) {
           this._detectedPrefix = prefix;
-          this._evccEntityIds  = entityIds;
           this._lastRenderKey = null;
           if (this._renderTimer) {
             clearTimeout(this._renderTimer);
@@ -531,16 +518,13 @@ class EvccCard extends HTMLElement {
     this._renderStrings = this._translations[lang] || this._translations["en"] || {};
 
     const prefix = this._getPrefix();
-    const evccIds = this._evccEntityIds;
 
     // Cache discoverEntities() — only re-run when the set of entity IDs changes (not on value updates)
-    const idsForKey = (evccIds && evccIds.size > 0)
-      ? Array.from(evccIds)
-      : Object.keys(this._hass.states).filter(id => id.split(".")[1]?.startsWith(prefix));
+    const idsForKey = Object.keys(this._hass.states).filter(id => id.split(".")[1]?.startsWith(prefix));
     const evccIdKey = prefix + "|" + idsForKey.sort().join(",");
     if (evccIdKey !== this._cachedEntityIdKey) {
       this._cachedEntityIdKey = evccIdKey;
-      this._cachedEntities    = discoverEntities(this._hass, prefix, evccIds);
+      this._cachedEntities    = discoverEntities(this._hass, prefix);
     }
     const { loadpoints, site } = this._cachedEntities;
 
@@ -3558,10 +3542,9 @@ class EvccCardEditor extends HTMLElement {
     }
     if (!this._detectedPrefix && !this._detectingPrefix) {
       this._detectingPrefix = true;
-      detectIntegration(hass).then(({ prefix, entityIds }) => {
+      detectPrefix(hass).then(prefix => {
         this._detectingPrefix = false;
         this._detectedPrefix = prefix;
-        this._evccEntityIds  = entityIds;
         this._discoverLoadpoints();
         this._render();
       });
@@ -3587,7 +3570,7 @@ class EvccCardEditor extends HTMLElement {
   _discoverLoadpoints() {
     if (!this._hass) return;
     const prefix = this._getPrefix();
-    const { loadpoints } = discoverEntities(this._hass, prefix, this._evccEntityIds);
+    const { loadpoints } = discoverEntities(this._hass, prefix);
     this._availableLoadpoints = Object.keys(loadpoints).sort();
   }
 
