@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.5.17";
+const EVCC_CARD_VERSION = "0.5.18";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -3436,7 +3436,7 @@ class EvccCard extends HTMLElement {
       }
       button.batt-tab.active { color: var(--primary-text-color); border-bottom-color: var(--primary-text-color); font-weight: 600; }
       .batt-main-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
-      .batt-text-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+      .batt-text-col { flex: 1; min-width: 0; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 12px; }
       .batt-text-item { display: flex; gap: 8px; align-items: flex-start; }
       .batt-text-icon { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }
       .batt-text-title { font-size: .82rem; font-weight: 600; margin-bottom: 2px; }
@@ -3462,6 +3462,10 @@ class EvccCard extends HTMLElement {
       .batt-discharge-toggle.on { background: var(--primary-color, #00b4d8); }
       .batt-toggle-knob { position: absolute; width: 18px; height: 18px; border-radius: 50%; background: white; top: 3px; left: 3px; transition: left .2s; }
       .batt-discharge-toggle.on .batt-toggle-knob { left: 21px; }
+      @container (max-width: 420px) {
+        .batt-main-row { flex-direction: column; gap: 14px; }
+        .batt-visual-col { align-self: stretch; justify-content: flex-start; }
+      }
 
       .session-block { border-top: 1px solid var(--divider-color, #e5e7eb); margin-top: 10px; padding-top: 10px; }
       .session-title { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--secondary-text-color); margin-bottom: 8px; }
