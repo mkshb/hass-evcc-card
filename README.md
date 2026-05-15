@@ -1,6 +1,6 @@
 # EVCC Card for Home Assistant
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![HACS Validate](https://github.com/mkshb/hass-evcc-card/actions/workflows/validate.yaml/badge.svg)](https://github.com/mkshb/hass-evcc-card/actions/workflows/validate.yaml) <!-- LANGUAGES_START -->![Supported languages](https://img.shields.io/badge/languages-de%20%7C%20en%20%7C%20es%20%7C%20fr%20%7C%20hr%20%7C%20nl%20%7C%20pl%20%7C%20pt-blue)<!-- LANGUAGES_END --> [![GitHub Stars](https://img.shields.io/github/stars/mkshb/hass-evcc-card?style=flat)](https://github.com/mkshb/hass-evcc-card/stargazers) [![Last Commit](https://img.shields.io/github/last-commit/mkshb/hass-evcc-card)](https://github.com/mkshb/hass-evcc-card/commits/main) [![Open Issues](https://img.shields.io/github/issues/mkshb/hass-evcc-card)](https://github.com/mkshb/hass-evcc-card/issues)
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![HACS Validate](https://github.com/mkshb/hass-evcc-card/actions/workflows/validate.yaml/badge.svg)](https://github.com/mkshb/hass-evcc-card/actions/workflows/validate.yaml) <!-- LANGUAGES_START -->![Supported languages](https://img.shields.io/badge/languages-de%20%7C%20en%20%7C%20es%20%7C%20fr%20%7C%20hr%20%7C%20nl%20%7C%20pl%20%7C%20pt-blue)<!-- LANGUAGES_END --> [![GitHub Stars](https://img.shields.io/github/stars/mkshb/hass-evcc-card?style=flat)](https://github.com/mkshb/hass-evcc-card/stargazers) [![Last Commit](https://img.shields.io/github/last-commit/mkshb/hass-evcc-card)](https://github.com/mkshb/hass-evcc-card/commits/main) [![Open Issues](https://img.shields.io/github/issues/mkshb/hass-evcc-card)](https://github.com/mkshb/hass-evcc-card/issues)
 
 A custom Lovelace card for [Home Assistant](https://www.home-assistant.io/) that provides a comprehensive dashboard for [EVCC](https://evcc.io/) - the open-source EV charging controller - using the [ha-evcc integration](https://github.com/marq24/ha-evcc).
 
@@ -74,6 +74,9 @@ All charge points and site entities are **automatically discovered** via the HA 
 | **SoC display** | Vehicle state of charge as a progress bar with percentage and estimated range |
 | **Slider controls** | Adjust Target SoC, Min SoC, Priority, smart charging limit, Max current and Min current inline |
 | **Phase switching** | Auto / 1-phase / 3-phase control built in |
+| **Plan strategies** | Continuous charging and battery preconditioning settings inline in the plan block |
+| **Action indicators** | Pending phase switches (1↔3 phase) and PV-charging start/stop shown as inline countdown chips |
+| **Diagnostics** | Built-in `debug` mode collects card / HA / integration state into a copy-paste-ready bug report |
 | **Multi-language** | Support for various languages - auto-detected from HA language setting, easily extensible |
 
 ---
@@ -89,11 +92,14 @@ All charge points and site entities are **automatically discovered** via the HA 
 
 ### Via HACS (recommended)
 
+`hass-evcc-card` is part of the **default HACS repository** - no custom repository setup needed.
+
 1. Open **HACS** in Home Assistant
-2. Click the three-dot menu (top right) → **Custom repositories**
-3. Add this repository URL (https://github.com/mkshb/hass-evcc-card.git) and select category **Dashboard**
-4. Search for **EVCC Card** and click **Install**
-5. Reload your browser
+2. Search for **EVCC Card**
+3. Click **Download**
+4. Reload your browser
+
+[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=mkshb&repository=hass-evcc-card&category=plugin)
 
 > **Note for YAML mode users:** If your Lovelace is configured with `mode: yaml` in `configuration.yaml`, HACS cannot register the resource automatically. Add the resource entry manually - see [Manual resource registration](#manual-resource-registration) below.
 
@@ -149,7 +155,7 @@ Add the card to any Lovelace dashboard and use the **visual editor** to configur
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan` |
+| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan`, `debug` |
 | `title` | `string` | *(auto)* | Replaces the default card header |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language |
@@ -174,6 +180,8 @@ The main charge point view. For each discovered charge point it shows:
 - Current charging session: energy, cost, duration, phases
 - Sliders: Target SoC, Min SoC, Priority SoC
 - Charge plan block
+
+The loadpoint header also shows **live action indicators** when EVCC has scheduled a pending phase switch or PV-charging change - e.g. *"Switching to 3-phase in 0:42"* or *"PV charging on in 1:15"*. The chip disappears automatically once the action is executed. Requires ha-evcc with the `phase_action` / `pv_action` sensors exposed.
 
 The **CHARGE SETTINGS** section is collapsed by default and can be toggled using the gear icon. It contains:
 - Phase switch: Auto / 1-phase / 3-phase
@@ -313,9 +321,31 @@ Minimalist charge plan view:
 - Vehicle selector
 - Target time picker
 - Target SoC slider
+- **Continuous charging** toggle - keeps the charge running without interruption once started
+- **Preconditioning** select - pre-heats/cools the battery before reaching the target SoC (off / minutes / hours / all)
 - Activate / delete plan
 
+> **Note:** The *Continuous charging* and *Preconditioning* controls only appear when ha-evcc exposes the corresponding entities (`plan_strategy_continuous`, `plan_strategy_precondition`). The same controls also show up in the plan block of the `loadpoint` and `compact` modes.
+
 <img src="images/plan-dark.png" width="400"> <img src="images/plan-light.png" width="400">
+
+---
+
+### `debug`
+
+Diagnostics view for bug reports. Shows everything the card has detected:
+
+- Card, Home Assistant and browser versions
+- ha-evcc integration status (entity count, detected prefix vs. configured prefix)
+- All discovered charge points with their feature coverage and the list of missing entity suffixes
+- Site features (found vs. missing)
+- Orphan entity groups (loadpoint-like but missing `charge_power` — usually meters or devices with non-standard names)
+- The current card configuration
+- Loaded translation files
+
+The **Copy report** button copies a Markdown-formatted summary to the clipboard, ready to paste into a [bug report](../../issues/new?template=bug_report.yaml). An optional **Mask names** toggle anonymises loadpoint, vehicle and title strings before copying. No live state values or sensor data are included.
+
+> **Tip:** If your card shows *"No loadpoints found"*, click the **Open debug mode** link in the empty state — orphan groups in the meters bucket are usually the hint to why discovery missed your charge points.
 
 ---
 
