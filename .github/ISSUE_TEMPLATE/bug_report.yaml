@@ -45,3 +45,11 @@ body:
     attributes:
       label: Browser console errors
       render: shell
+
+  - type: textarea
+    id: debug_report
+    attributes:
+      label: Debug report
+      description: |
+        Switch the card to `mode: debug` (visual editor → Mode → "Debug / Diagnostics") and click **Copy report**. Paste the result here. This greatly speeds up triage for discovery / "no entities" issues.
+      render: markdown

@@ -11,12 +11,12 @@
 const EVCC_CARD_VERSION = "0.5.19";
 
 const FEATURES = [
-  { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
-  { suffix: "min_current",         domain: "select",        type: "select_slider", lp: true  },
-  { suffix: "max_current",         domain: "select",        type: "select_slider", lp: true  },
+  { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
+  { suffix: "min_current",         domain: "select",        type: "select_slider", lp: true,  core: true },
+  { suffix: "max_current",         domain: "select",        type: "select_slider", lp: true,  core: true },
   { suffix: "min_soc",             domain: "select",        type: "select_slider", lp: true  },
-  { suffix: "limit_soc",           domain: "number",        type: "slider",        lp: true  },
-  { suffix: "limit_soc",           domain: "select",        type: "select_slider", lp: true  },
+  { suffix: "limit_soc",           domain: "number",        type: "slider",        lp: true,  core: true },
+  { suffix: "limit_soc",           domain: "select",        type: "select_slider", lp: true,  core: true },
   { suffix: "limit_energy",        domain: "number",        type: "slider",        lp: true  },
   { suffix: "smart_cost_limit",    domain: "number",        type: "slider",        lp: true  },
   { suffix: "priority",            domain: "number",        type: "slider",        lp: true  },
@@ -31,8 +31,8 @@ const FEATURES = [
   { suffix: "pv_action",           domain: "sensor",        type: "info",          lp: true  },
   { suffix: "pv_remaining",        domain: "sensor",        type: "info",          lp: true  },
 
-  { suffix: "charge_power",        domain: "sensor",        type: "power",         lp: true  },
-  { suffix: "charge_current",      domain: "sensor",        type: "current",       lp: true  },
+  { suffix: "charge_power",        domain: "sensor",        type: "power",         lp: true,  core: true },
+  { suffix: "charge_current",      domain: "sensor",        type: "current",       lp: true,  core: true },
   { suffix: "charge_currents_0",   domain: "sensor",        type: "current",       lp: true  },
   { suffix: "charge_currents_1",   domain: "sensor",        type: "current",       lp: true  },
   { suffix: "charge_currents_2",   domain: "sensor",        type: "current",       lp: true  },
@@ -57,19 +57,19 @@ const FEATURES = [
   { suffix: "vehicle_plans_soc",       domain: "sensor", type: "info", lp: true },
   { suffix: "vehicle_plans_time",      domain: "sensor", type: "info", lp: true },
 
-  { suffix: "charging",            domain: "binary_sensor", type: "status_bool",   lp: true  },
+  { suffix: "charging",            domain: "binary_sensor", type: "status_bool",   lp: true,  core: true },
   { suffix: "connected",           domain: "binary_sensor", type: "status_bool",   lp: true  },
-  { suffix: "enabled",             domain: "binary_sensor", type: "status_bool",   lp: true  },
+  { suffix: "enabled",             domain: "binary_sensor", type: "status_bool",   lp: true,  core: true },
   { suffix: "smart_cost_active",   domain: "binary_sensor", type: "status_bool",   lp: true  },
   { suffix: "plan_active",         domain: "binary_sensor", type: "status_bool",   lp: true  },
 
-  { suffix: "grid_power",          domain: "sensor",        type: "power",         lp: false },
-  { suffix: "pv_power",            domain: "sensor",        type: "power",         lp: false },
+  { suffix: "grid_power",          domain: "sensor",        type: "power",         lp: false, core: true },
+  { suffix: "pv_power",            domain: "sensor",        type: "power",         lp: false, core: true },
   { suffix: "pv_0_power",          domain: "sensor",        type: "power",         lp: false },
   { suffix: "pv_1_power",          domain: "sensor",        type: "power",         lp: false },
   { suffix: "pv_2_power",          domain: "sensor",        type: "power",         lp: false },
   { suffix: "pv_3_power",          domain: "sensor",        type: "power",         lp: false },
-  { suffix: "home_power",          domain: "sensor",        type: "power",         lp: false },
+  { suffix: "home_power",          domain: "sensor",        type: "power",         lp: false, core: true },
   { suffix: "battery_power",        domain: "sensor",        type: "power",         lp: false },
   { suffix: "battery_0_power",     domain: "sensor",        type: "power",         lp: false },
   { suffix: "battery_1_power",     domain: "sensor",        type: "power",         lp: false },
@@ -532,7 +532,7 @@ class EvccCard extends HTMLElement {
       this._cachedEntityIdKey = evccIdKey;
       this._cachedEntities    = discoverEntities(this._hass, prefix);
     }
-    const { loadpoints, site } = this._cachedEntities;
+    const { loadpoints, site, meters } = this._cachedEntities;
 
     const filterRaw = this._config.loadpoints;
     const filter = filterRaw
@@ -548,7 +548,9 @@ class EvccCard extends HTMLElement {
       <style>${this._styles()}</style>
       <div class="evcc-scale-wrap"><ha-card>
         <div class="card-content">
-        ${this._config.mode === "battery"
+        ${this._config.mode === "debug"
+            ? this._renderDebugBlock(loadpoints, site, meters)
+            : this._config.mode === "battery"
             ? this._renderBatteryBlock(site)
             : this._config.mode === "site"
               ? this._renderSiteBlock(site, loadpoints)
@@ -2809,8 +2811,336 @@ class EvccCard extends HTMLElement {
       <div class="empty">
         <p>${this._t("noLoadpoints")}</p>
         ${hint}
+        <p class="empty-debug-hint">
+          ${this._t("emptyTryDebug")}
+          <button class="debug-link" data-action="open-debug">${this._t("openDebugMode")}</button>
+        </p>
       </div>
     `;
+  }
+
+  _expectedLpSuffixes() {
+    if (!this._cachedLpSuffixes) {
+      this._cachedLpSuffixes = Array.from(new Set(FEATURES.filter(f => f.lp).map(f => f.suffix)));
+    }
+    return this._cachedLpSuffixes;
+  }
+
+  _expectedSiteSuffixes() {
+    if (!this._cachedSiteSuffixes) {
+      this._cachedSiteSuffixes = Array.from(new Set(FEATURES.filter(f => !f.lp).map(f => f.suffix)));
+    }
+    return this._cachedSiteSuffixes;
+  }
+
+  _coreLpSuffixes() {
+    if (!this._cachedCoreLp) {
+      this._cachedCoreLp = new Set(FEATURES.filter(f => f.lp && f.core).map(f => f.suffix));
+    }
+    return this._cachedCoreLp;
+  }
+
+  _coreSiteSuffixes() {
+    if (!this._cachedCoreSite) {
+      this._cachedCoreSite = new Set(FEATURES.filter(f => !f.lp && f.core).map(f => f.suffix));
+    }
+    return this._cachedCoreSite;
+  }
+
+  // Drops indexed features (pv_N_*, battery_N_*, charge_currents_N) from `suffixes`
+  // when the previous index is also missing in `found`. So `pv_2_power` only
+  // counts as "expected" if `pv_1_power` is present.
+  _filterIndexedExpected(suffixes, found) {
+    return suffixes.filter(s => {
+      const mIdx = s.match(/^(pv|battery)_(\d+)_(.+)$/);
+      if (mIdx) {
+        const [, base, idxStr, stem] = mIdx;
+        const idx = parseInt(idxStr, 10);
+        if (idx === 0) return true;
+        return found[`${base}_${idx-1}_${stem}`] != null;
+      }
+      const mCc = s.match(/^charge_currents_(\d+)$/);
+      if (mCc) {
+        const idx = parseInt(mCc[1], 10);
+        if (idx === 0) return true;
+        return found[`charge_currents_${idx-1}`] != null;
+      }
+      return true;
+    });
+  }
+
+  // Splits a set of expected suffixes into { core, optional, missingCore, missingOpt }
+  // relative to `found` (an object whose keys are the entity suffixes that exist).
+  // Indexed features with N >= 1 (pv_2_*, battery_3_*, charge_currents_1, …) are
+  // excluded from the missing-optional list because the actual count depends on
+  // hardware (number of PV strings / batteries / phases) and is naturally variable.
+  _splitCoreOptional(expected, found, coreSet) {
+    const foundKeys   = new Set(Object.keys(found));
+    const isIndexedHigh = s =>
+      /^(pv|battery)_[1-9]\d*_/.test(s) || /^charge_currents_[1-9]\d*$/.test(s);
+    const core        = expected.filter(s => coreSet.has(s));
+    const opt         = expected.filter(s => !coreSet.has(s));
+    const missingCore = core.filter(s => !foundKeys.has(s));
+    const missingOpt  = opt.filter(s => !foundKeys.has(s) && !isIndexedHigh(s));
+    const foundCore   = core.filter(s => foundKeys.has(s));
+    const foundOpt    = opt.filter(s => foundKeys.has(s));
+    return {
+      core: core.length, foundCore: foundCore.length, missingCore,
+      opt:  opt.length,  foundOpt:  foundOpt.length,  missingOpt,
+    };
+  }
+
+  _formatConfigYaml(cfg, maskNames = false) {
+    if (!cfg || typeof cfg !== "object") return String(cfg ?? "—");
+    const out = ["type: custom:evcc-card"];
+    const lpMaskCount = { i: 0 };
+    const maskValue = (key, val) => {
+      if (!maskNames) return val;
+      if (key === "title") return "***";
+      if (key === "loadpoints" || key === "no_plan") {
+        if (Array.isArray(val)) return val.map(() => `lp_${++lpMaskCount.i}`);
+        if (typeof val === "string") return `lp_${++lpMaskCount.i}`;
+      }
+      return val;
+    };
+    for (const [k, raw] of Object.entries(cfg)) {
+      if (k === "type") continue;
+      const v = maskValue(k, raw);
+      if (Array.isArray(v)) {
+        if (v.length === 0) out.push(`${k}: []`);
+        else out.push(`${k}:\n${v.map(item => `  - ${item}`).join("\n")}`);
+      } else if (v != null && typeof v === "object") {
+        out.push(`${k}: ${JSON.stringify(v)}`);
+      } else {
+        out.push(`${k}: ${v}`);
+      }
+    }
+    return out.join("\n");
+  }
+
+  _renderDebugBlock(loadpoints, site, meters) {
+    const prefix    = this._getPrefix();
+    const haVer     = this._hass?.config?.version || "?";
+    const lang      = (this._config.language
+      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+    const cfgLang   = this._config.language || null;
+    const ua        = (typeof navigator !== "undefined" ? navigator.userAgent : "—");
+    const evccCount = Object.keys(this._hass?.states || {})
+      .filter(id => id.split(".")[1]?.startsWith(prefix)).length;
+
+    const allLp   = this._expectedLpSuffixes();
+    const allSite = this._expectedSiteSuffixes();
+    const coreLp  = this._coreLpSuffixes();
+    const coreSite = this._coreSiteSuffixes();
+
+    const lpNames    = Object.keys(loadpoints || {});
+    const meterNames = Object.keys(meters || {});
+    const loadedLocales = Object.keys(this._translations || {});
+
+    const expectedSite = this._filterIndexedExpected(allSite, site || {});
+    const siteSplit    = this._splitCoreOptional(expectedSite, site || {}, coreSite);
+
+    const pill = (tone, text) => `<span class="debug-pill ${tone}">${text}</span>`;
+    const escUa = ua.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    const lpRows = lpNames.length === 0
+      ? `<div class="debug-empty">—</div>`
+      : `<ul class="debug-list">${lpNames.map(name => {
+          const ents     = loadpoints[name];
+          const expected = this._filterIndexedExpected(allLp, ents);
+          const split    = this._splitCoreOptional(expected, ents, coreLp);
+          const coreTone = split.missingCore.length === 0 ? "ok" : "err";
+          return `
+            <li>
+              <div class="debug-list-head">
+                <code>${name}</code>
+                ${pill(coreTone, `${this._t("debugCore")} ${split.foundCore}/${split.core}`)}
+                ${pill("info", `${this._t("debugOptional")} ${split.foundOpt}/${split.opt}`)}
+              </div>
+              ${split.missingCore.length
+                ? `<div class="debug-missing"><strong>${this._t("debugMissingCore")}:</strong> <code>${split.missingCore.join(", ")}</code></div>`
+                : ""}
+              ${split.missingOpt.length
+                ? `<details class="debug-missing-opt"><summary>${this._t("debugMissingOptional")} (${split.missingOpt.length})</summary><code>${split.missingOpt.slice(0, 20).join(", ")}${split.missingOpt.length > 20 ? `, +${split.missingOpt.length - 20}` : ""}</code></details>`
+                : ""}
+            </li>`;
+        }).join("")}</ul>`;
+
+    const meterRows = meterNames.length === 0
+      ? `<div class="debug-empty">—</div>`
+      : `<ul class="debug-list">${meterNames.map(name => {
+          const count = Object.keys(meters[name]).length;
+          return `<li>
+            <div class="debug-list-head">
+              <code>${name}</code>
+              <span class="debug-count">${count} ${this._t("debugEntities")}</span>
+              ${pill("warn", this._t("debugOrphan"))}
+            </div>
+            <div class="debug-missing">${this._t("debugOrphanHint")}</div>
+          </li>`;
+        }).join("")}</ul>`;
+
+    const cfgSource = this._origConfig || this._config;
+    const cfgYaml = this._formatConfigYaml(cfgSource, this._debugMask === true);
+    const cfgNote = this._origConfig
+      ? `<div class="debug-cfg-note">${this._t("debugCfgFromEmptyState")}</div>`
+      : "";
+
+    return `
+      <div class="debug">
+        <div class="debug-header">
+          <div class="debug-title">🐞 ${this._t("debugTitle")}</div>
+          <div class="debug-actions">
+            <button class="debug-copy-btn">${this._t("debugCopyReport")}</button>
+            <label class="debug-mask">
+              <input type="checkbox" class="debug-mask-toggle" ${this._debugMask ? "checked" : ""}/>
+              ${this._t("debugMaskNames")}
+            </label>
+          </div>
+          <div class="debug-toast" hidden></div>
+        </div>
+
+        <div class="debug-section">
+          <div class="debug-section-title">${this._t("debugVersions")}</div>
+          <ul class="debug-kv">
+            <li><strong>Card:</strong> <code>${EVCC_CARD_VERSION}</code></li>
+            <li><strong>Home Assistant:</strong> <code>${haVer}</code></li>
+            <li><strong>Browser:</strong> <code>${escUa}</code></li>
+            <li><strong>Language:</strong> <code>${lang}</code>${cfgLang ? ` (configured: <code>${cfgLang}</code>)` : ""}</li>
+          </ul>
+        </div>
+
+        <div class="debug-section">
+          <div class="debug-section-title">${this._t("debugIntegration")}</div>
+          <ul class="debug-kv">
+            <li><strong>${this._t("debugEvccEntities")}:</strong> ${evccCount} ${evccCount > 0 ? pill("ok", "OK") : pill("err", "0")}</li>
+            <li><strong>${this._t("debugPrefixAuto")}:</strong> <code>${this._detectedPrefix || "—"}</code></li>
+            <li><strong>${this._t("debugPrefixCfg")}:</strong> <code>${this._config.prefix || "—"}</code></li>
+          </ul>
+          ${evccCount === 0 ? `<div class="debug-warn-box">${this._t("debugNoIntg")}</div>` : ""}
+        </div>
+
+        <div class="debug-section">
+          <div class="debug-section-title">${this._t("debugLoadpoints")} (${lpNames.length})</div>
+          ${lpRows}
+        </div>
+
+        <div class="debug-section">
+          <div class="debug-section-title">${this._t("debugSiteFeatures")}</div>
+          <div class="debug-list-head" style="margin-bottom:6px">
+            ${pill(siteSplit.missingCore.length === 0 ? "ok" : "err", `${this._t("debugCore")} ${siteSplit.foundCore}/${siteSplit.core}`)}
+            ${pill("info", `${this._t("debugOptional")} ${siteSplit.foundOpt}/${siteSplit.opt}`)}
+          </div>
+          ${siteSplit.missingCore.length ? `<div class="debug-suffix-list debug-missing"><strong>${this._t("debugMissingCore")}:</strong> <code>${siteSplit.missingCore.join(", ")}</code></div>` : ""}
+          ${siteSplit.missingOpt.length ? `<details class="debug-missing-opt"><summary>${this._t("debugMissingOptional")} (${siteSplit.missingOpt.length})</summary><code>${siteSplit.missingOpt.slice(0, 24).join(", ")}${siteSplit.missingOpt.length > 24 ? `, +${siteSplit.missingOpt.length - 24}` : ""}</code></details>` : ""}
+        </div>
+
+        <div class="debug-section">
+          <div class="debug-section-title">${this._t("debugMeters")} (${meterNames.length})</div>
+          ${meterRows}
+        </div>
+
+        <div class="debug-section">
+          <div class="debug-section-title">${this._t("debugCardConfig")}</div>
+          ${cfgNote}
+          <pre class="debug-yaml">${cfgYaml.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
+        </div>
+
+        <div class="debug-section">
+          <div class="debug-section-title">${this._t("debugTranslations")}</div>
+          <ul class="debug-kv">
+            <li><strong>${this._t("debugLoaded")}:</strong> <code>${loadedLocales.join(", ") || "—"}</code></li>
+          </ul>
+        </div>
+      </div>
+    `;
+  }
+
+  _buildDebugReport(maskNames = false) {
+    const prefix    = this._getPrefix();
+    const haVer     = this._hass?.config?.version || "?";
+    const lang      = (this._config.language
+      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+    const cfgLang   = this._config.language || null;
+    const ua        = (typeof navigator !== "undefined" ? navigator.userAgent : "—").slice(0, 300);
+    const evccCount = Object.keys(this._hass?.states || {})
+      .filter(id => id.split(".")[1]?.startsWith(prefix)).length;
+
+    const { loadpoints, site, meters } = discoverEntities(this._hass, prefix);
+
+    const allLp    = this._expectedLpSuffixes();
+    const allSite  = this._expectedSiteSuffixes();
+    const coreLp   = this._coreLpSuffixes();
+    const coreSite = this._coreSiteSuffixes();
+
+    const lpNames    = Object.keys(loadpoints);
+    const meterNames = Object.keys(meters);
+    const lpMask    = Object.fromEntries(lpNames.map((n, i)    => [n, `lp_${i+1}`]));
+    const meterMask = Object.fromEntries(meterNames.map((n, i) => [n, `meter_${i+1}`]));
+    const dispLp    = n => maskNames ? lpMask[n]    : n;
+    const dispMeter = n => maskNames ? meterMask[n] : n;
+
+    const expectedSite = this._filterIndexedExpected(allSite, site);
+    const siteSplit    = this._splitCoreOptional(expectedSite, site, coreSite);
+    const loadedLocales = Object.keys(this._translations || {});
+
+    const fmtList = (arr, max = 12) =>
+      arr.length === 0 ? "—"
+        : arr.slice(0, max).join(", ") + (arr.length > max ? `, +${arr.length - max}` : "");
+
+    const out = [];
+    out.push(`<details><summary>EVCC Card Debug Report (auto-generated)</summary>`);
+    out.push(``);
+    out.push(`**Versions**`);
+    out.push(`- Card: ${EVCC_CARD_VERSION}`);
+    out.push(`- Home Assistant: ${haVer}`);
+    out.push(`- Browser: ${ua}`);
+    out.push(`- Language: ${lang}${cfgLang ? ` (configured: ${cfgLang})` : ""}`);
+    out.push(``);
+    out.push(`**Integration**`);
+    out.push(`- evcc entity IDs (\`${prefix}*\`): ${evccCount}`);
+    out.push(`- Prefix detected: ${this._detectedPrefix ? `\`${this._detectedPrefix}\`` : "*(none)*"}`);
+    out.push(`- Prefix configured: ${this._config.prefix ? `\`${this._config.prefix}\`` : "*(none)*"}`);
+    out.push(``);
+    out.push(`**Loadpoints** (${lpNames.length})`);
+    if (lpNames.length === 0) {
+      out.push(`*(none detected)*`);
+    } else {
+      out.push(`| Name | Core | Optional | Missing core | Missing optional |`);
+      out.push(`|---|---|---|---|---|`);
+      for (const name of lpNames) {
+        const ents     = loadpoints[name];
+        const expected = this._filterIndexedExpected(allLp, ents);
+        const sp       = this._splitCoreOptional(expected, ents, coreLp);
+        const coreMark = sp.missingCore.length === 0 ? "✓" : "✗";
+        out.push(`| \`${dispLp(name)}\` | ${sp.foundCore}/${sp.core} ${coreMark} | ${sp.foundOpt}/${sp.opt} | ${fmtList(sp.missingCore, 10)} | ${fmtList(sp.missingOpt, 10)} |`);
+      }
+    }
+    out.push(``);
+    out.push(`**Site features** — Core ${siteSplit.foundCore}/${siteSplit.core} ${siteSplit.missingCore.length === 0 ? "✓" : "✗"} · Optional ${siteSplit.foundOpt}/${siteSplit.opt}`);
+    if (siteSplit.missingCore.length) out.push(`- Missing core: \`${siteSplit.missingCore.join(", ")}\``);
+    if (siteSplit.missingOpt.length)  out.push(`- Missing optional: \`${fmtList(siteSplit.missingOpt, 24)}\``);
+    out.push(``);
+    out.push(`**Meters / orphan groups** (${meterNames.length})`);
+    if (meterNames.length === 0) {
+      out.push(`*(none)*`);
+    } else {
+      for (const name of meterNames) {
+        const count = Object.keys(meters[name]).length;
+        out.push(`- \`${dispMeter(name)}\` — ${count} entities (no \`charge_power\`)`);
+      }
+    }
+    out.push(``);
+    out.push(`**Card configuration**${this._origConfig ? " *(restored from empty state)*" : ""}`);
+    out.push("```yaml");
+    out.push(this._formatConfigYaml(this._origConfig || this._config, maskNames));
+    out.push("```");
+    out.push(``);
+    out.push(`**Translations**`);
+    out.push(`- Loaded: ${loadedLocales.join(", ") || "—"}`);
+    out.push(``);
+    out.push(`</details>`);
+    return out.join("\n");
   }
 
   _attachListeners() {
@@ -2822,6 +3152,56 @@ class EvccCard extends HTMLElement {
         }));
       });
     });
+
+    this.shadowRoot.querySelectorAll('[data-action="open-debug"]').forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._origConfig = { ...this._config };
+        this._config = { ...this._config, mode: "debug" };
+        this._lastRenderKey = null;
+        this._render();
+      });
+    });
+
+    const copyBtn = this.shadowRoot.querySelector(".debug-copy-btn");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", async () => {
+        const md    = this._buildDebugReport(this._debugMask === true);
+        const toast = this.shadowRoot.querySelector(".debug-toast");
+        const showToast = (msg, tone = "ok") => {
+          if (!toast) return;
+          toast.textContent = msg;
+          toast.className = `debug-toast ${tone}`;
+          toast.hidden = false;
+          clearTimeout(this._debugToastTimer);
+          this._debugToastTimer = setTimeout(() => { toast.hidden = true; }, 3000);
+        };
+        try {
+          await navigator.clipboard.writeText(md);
+          showToast(this._t("debugCopied"), "ok");
+        } catch (e) {
+          showToast(this._t("debugCopyFailed"), "err");
+          const dbg = this.shadowRoot.querySelector(".debug");
+          if (dbg && !dbg.querySelector(".debug-fallback-ta")) {
+            const ta = document.createElement("textarea");
+            ta.className = "debug-fallback-ta";
+            ta.readOnly = true;
+            ta.value = md;
+            dbg.appendChild(ta);
+            ta.focus();
+            ta.select();
+          }
+        }
+      });
+    }
+
+    const maskTog = this.shadowRoot.querySelector(".debug-mask-toggle");
+    if (maskTog) {
+      maskTog.addEventListener("change", () => {
+        this._debugMask = maskTog.checked;
+        this._lastRenderKey = null;
+        this._render();
+      });
+    }
 
     this.shadowRoot.querySelectorAll("[data-lp-current-toggle]").forEach(btn => {
       btn.addEventListener("click", (e) => {
@@ -3612,6 +3992,79 @@ class EvccCard extends HTMLElement {
 
       .empty { text-align: center; padding: 24px; color: var(--secondary-text-color); font-size: .9rem; line-height: 1.8; }
       .empty code { background: var(--code-editor-background-color, #1e1e1e); color: var(--primary-color); padding: 1px 6px; border-radius: 4px; font-size: .82rem; }
+      .empty-debug-hint { margin-top: 12px; font-size: .82rem; }
+      button.debug-link {
+        background: transparent; border: 1px solid var(--divider-color, #4b5563);
+        color: var(--primary-color); border-radius: 6px;
+        padding: 3px 10px; margin-left: 4px; cursor: pointer; font: inherit;
+      }
+      button.debug-link:hover { background: color-mix(in srgb, var(--primary-color) 10%, transparent); }
+
+      .debug { font-size: .85rem; color: var(--primary-text-color); }
+      .debug code { background: color-mix(in srgb, var(--primary-text-color) 8%, transparent); padding: 1px 5px; border-radius: 4px; font-size: .78rem; word-break: break-word; }
+      .debug-header {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+        padding-bottom: 10px; margin-bottom: 10px;
+        border-bottom: 1px solid var(--divider-color, #4b5563);
+      }
+      .debug-title { font-size: 1rem; font-weight: 600; flex: 1; }
+      .debug-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      .debug-copy-btn {
+        background: var(--primary-color); color: var(--text-primary-color, white);
+        border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer;
+        font: inherit; font-weight: 600;
+      }
+      .debug-copy-btn:hover { filter: brightness(1.1); }
+      .debug-mask { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--secondary-text-color); cursor: pointer; }
+      .debug-mask input { margin: 0; }
+      .debug-toast {
+        flex-basis: 100%; padding: 6px 10px; border-radius: 6px;
+        font-size: .78rem; font-weight: 600;
+      }
+      .debug-toast.ok  { background: color-mix(in srgb, var(--evcc-green, #0a0)  18%, transparent); color: var(--evcc-green, #0a0); }
+      .debug-toast.err { background: color-mix(in srgb, #ef4444 18%, transparent); color: #ef4444; }
+
+      .debug-section { margin: 12px 0; }
+      .debug-section-title { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--secondary-text-color); margin-bottom: 6px; }
+      .debug-kv { list-style: none; padding: 0; margin: 0; }
+      .debug-kv li { padding: 3px 0; line-height: 1.5; }
+      .debug-kv strong { color: var(--secondary-text-color); font-weight: 500; margin-right: 6px; }
+      .debug-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+      .debug-list > li {
+        padding: 8px 10px; border-radius: 6px;
+        background: color-mix(in srgb, var(--primary-text-color) 4%, transparent);
+        border: 1px solid var(--divider-color, #4b5563);
+      }
+      .debug-list-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+      .debug-count { color: var(--secondary-text-color); font-size: .78rem; }
+      .debug-missing { margin-top: 4px; font-size: .76rem; color: var(--secondary-text-color); line-height: 1.5; }
+      .debug-suffix-list { margin: 4px 0; font-size: .78rem; line-height: 1.6; }
+      .debug-empty { color: var(--secondary-text-color); font-style: italic; padding: 4px 0; }
+      .debug-pill {
+        display: inline-flex; align-items: center; padding: 1px 8px;
+        border-radius: 999px; font-size: .7rem; font-weight: 700;
+      }
+      .debug-pill.ok   { background: color-mix(in srgb, var(--evcc-green, #0a0)  20%, transparent); color: var(--evcc-green, #0a0); }
+      .debug-pill.warn { background: color-mix(in srgb, var(--evcc-amber, #f59e0b) 20%, transparent); color: var(--evcc-amber, #f59e0b); }
+      .debug-pill.err  { background: color-mix(in srgb, #ef4444 20%, transparent); color: #ef4444; }
+      .debug-pill.info { background: color-mix(in srgb, var(--primary-text-color) 12%, transparent); color: var(--secondary-text-color); }
+      .debug-missing-opt { margin-top: 6px; font-size: .76rem; color: var(--secondary-text-color); }
+      .debug-missing-opt summary { cursor: pointer; user-select: none; padding: 2px 0; }
+      .debug-missing-opt code { margin-top: 4px; display: inline-block; word-break: break-word; }
+      .debug-warn-box { margin-top: 8px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, #ef4444 14%, transparent); color: #ef4444; font-size: .82rem; }
+      .debug-cfg-note { margin-bottom: 6px; padding: 6px 10px; border-radius: 6px; background: color-mix(in srgb, var(--primary-color) 12%, transparent); color: var(--primary-color); font-size: .76rem; }
+      .debug-yaml {
+        background: var(--code-editor-background-color, #1e1e1e);
+        color: var(--primary-text-color); padding: 10px; border-radius: 6px;
+        font-size: .78rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+        margin: 0; max-height: 220px; overflow: auto;
+      }
+      .debug-fallback-ta {
+        width: 100%; min-height: 180px; margin-top: 8px;
+        font-family: monospace; font-size: .75rem; padding: 8px;
+        border-radius: 6px; border: 1px solid var(--divider-color, #4b5563);
+        background: var(--card-background-color); color: var(--primary-text-color);
+      }
       .compact-tabs {
         display: flex; gap: 4px; margin-bottom: 12px;
         border-bottom: 1px solid var(--divider-color, #e5e7eb); padding-bottom: 0;
@@ -3776,6 +4229,7 @@ class EvccCardEditor extends HTMLElement {
             ["battery",   this._t("editorModeBattery")],
             ["stats",     this._t("editorModeStats")],
             ["plan",      this._t("editorModePlan")],
+            ["debug",     this._t("editorModeDebug")],
           ], mode)}
         </div>
         <div class="field">

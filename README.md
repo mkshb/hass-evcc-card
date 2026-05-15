@@ -76,6 +76,7 @@ All charge points and site entities are **automatically discovered** via the HA 
 | **Phase switching** | Auto / 1-phase / 3-phase control built in |
 | **Plan strategies** | Continuous charging and battery preconditioning settings inline in the plan block |
 | **Action indicators** | Pending phase switches (1↔3 phase) and PV-charging start/stop shown as inline countdown chips |
+| **Diagnostics** | Built-in `debug` mode collects card / HA / integration state into a copy-paste-ready bug report |
 | **Multi-language** | Support for various languages - auto-detected from HA language setting, easily extensible |
 
 ---
@@ -154,7 +155,7 @@ Add the card to any Lovelace dashboard and use the **visual editor** to configur
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan` |
+| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan`, `debug` |
 | `title` | `string` | *(auto)* | Replaces the default card header |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language |
@@ -327,6 +328,24 @@ Minimalist charge plan view:
 > **Note:** The *Continuous charging* and *Preconditioning* controls only appear when ha-evcc exposes the corresponding entities (`plan_strategy_continuous`, `plan_strategy_precondition`). The same controls also show up in the plan block of the `loadpoint` and `compact` modes.
 
 <img src="images/plan-dark.png" width="400"> <img src="images/plan-light.png" width="400">
+
+---
+
+### `debug`
+
+Diagnostics view for bug reports. Shows everything the card has detected:
+
+- Card, Home Assistant and browser versions
+- ha-evcc integration status (entity count, detected prefix vs. configured prefix)
+- All discovered charge points with their feature coverage and the list of missing entity suffixes
+- Site features (found vs. missing)
+- Orphan entity groups (loadpoint-like but missing `charge_power` — usually meters or devices with non-standard names)
+- The current card configuration
+- Loaded translation files
+
+The **Copy report** button copies a Markdown-formatted summary to the clipboard, ready to paste into a [bug report](../../issues/new?template=bug_report.yaml). An optional **Mask names** toggle anonymises loadpoint, vehicle and title strings before copying. No live state values or sensor data are included.
+
+> **Tip:** If your card shows *"No loadpoints found"*, click the **Open debug mode** link in the empty state — orphan groups in the meters bucket are usually the hint to why discovery missed your charge points.
 
 ---
 
