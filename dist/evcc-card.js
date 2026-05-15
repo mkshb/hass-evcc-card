@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.5.18";
+const EVCC_CARD_VERSION = "0.5.19";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true  },
@@ -24,6 +24,12 @@ const FEATURES = [
   { suffix: "vehicle_name",        domain: "select",        type: "select",        lp: true  },
   { suffix: "battery_boost_limit", domain: "select",        type: "select_slider", lp: true  },
   { suffix: "battery_boost",       domain: "switch",        type: "toggle",        lp: true  },
+  { suffix: "plan_strategy_continuous",   domain: "switch", type: "toggle",        lp: true  },
+  { suffix: "plan_strategy_precondition", domain: "select", type: "select",        lp: true  },
+  { suffix: "phase_action",        domain: "sensor",        type: "info",          lp: true  },
+  { suffix: "phase_remaining",     domain: "sensor",        type: "info",          lp: true  },
+  { suffix: "pv_action",           domain: "sensor",        type: "info",          lp: true  },
+  { suffix: "pv_remaining",        domain: "sensor",        type: "info",          lp: true  },
 
   { suffix: "charge_power",        domain: "sensor",        type: "power",         lp: true  },
   { suffix: "charge_current",      domain: "sensor",        type: "current",       lp: true  },
@@ -612,6 +618,7 @@ class EvccCard extends HTMLElement {
             ${statusLabel}
           </span>
         </div>
+        ${this._renderActionIndicator(ents)}
         ${this._renderModeSelector(ents)}
         ${this._renderVehicleInfo(ents, charging, lpName)}
         ${this._renderPowerRow(ents, charging)}
@@ -682,10 +689,55 @@ class EvccCard extends HTMLElement {
             ${statusLabel}
           </span>
         </div>
+        ${this._renderActionIndicator(ents)}
         ${tabBar}
         ${tabContent}
       </div>
     `;
+  }
+
+  _renderActionIndicator(ents) {
+    const flashIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>`;
+    const sunIcon   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z"/></svg>`;
+
+    const fmtCountdown = (sec) => {
+      const n = Math.max(0, Math.round(parseFloat(sec)));
+      if (isNaN(n) || n <= 0) return "";
+      if (n < 60) return `${n}s`;
+      return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
+    };
+
+    const chips = [];
+
+    if (ents.phase_action && this._hass.states[ents.phase_action]) {
+      const state = stateVal(this._hass, ents.phase_action);
+      if (state === "scale1p" || state === "scale3p") {
+        const sec = ents.phase_remaining ? stateVal(this._hass, ents.phase_remaining) : "";
+        const cd  = fmtCountdown(sec);
+        const key = state === "scale1p" ? "phaseActionScale1p" : "phaseActionScale3p";
+        chips.push(`
+          <div class="lp-action-chip phase">
+            ${flashIcon}
+            <span>${this._t(key, { val: cd || "—" })}</span>
+          </div>`);
+      }
+    }
+
+    if (ents.pv_action && this._hass.states[ents.pv_action]) {
+      const state = stateVal(this._hass, ents.pv_action);
+      if (state === "enable" || state === "disable") {
+        const sec = ents.pv_remaining ? stateVal(this._hass, ents.pv_remaining) : "";
+        const cd  = fmtCountdown(sec);
+        const key = state === "enable" ? "pvActionEnable" : "pvActionDisable";
+        chips.push(`
+          <div class="lp-action-chip pv">
+            ${sunIcon}
+            <span>${this._t(key, { val: cd || "—" })}</span>
+          </div>`);
+      }
+    }
+
+    return chips.length ? `<div class="lp-action-row">${chips.join("")}</div>` : "";
   }
 
   _renderModeSelector(ents) {
@@ -1173,6 +1225,41 @@ class EvccCard extends HTMLElement {
     const startStr = fmtDt(projStart);
     const endStr   = fmtDt(projEnd);
 
+    const contEntityId = ents.plan_strategy_continuous;
+    const contState    = contEntityId ? this._hass.states[contEntityId] : null;
+    const contOn       = contState ? isOn(this._hass, contEntityId) : false;
+    const contHtml     = contState ? `
+      <div class="plan-row">
+        <label>${this._t("planStrategyContinuous")}</label>
+        <button class="toggle ${contOn ? "on" : ""}"
+                data-entity="${contEntityId}"
+                data-domain="switch"
+                data-on="${contOn}">
+          ${contOn ? this._t("toggleOn") : this._t("toggleOff")}
+        </button>
+      </div>` : "";
+
+    const preEntityId  = ents.plan_strategy_precondition;
+    const preState     = preEntityId ? this._hass.states[preEntityId] : null;
+    const preOptions   = preState?.attributes?.options ?? [];
+    const preCurrent   = preState?.state ?? "0";
+    const fmtPre = (sec) => {
+      const n = parseInt(sec, 10);
+      if (n === 0)      return this._t("preconditionOff");
+      if (n >= 604800)  return this._t("preconditionAll");
+      if (n < 3600)     return this._t("preconditionMin",  { val: Math.round(n / 60) });
+      return this._t("preconditionHour", { val: Math.round(n / 3600) });
+    };
+    const preHtml = (preState && preOptions.length) ? `
+      <div class="plan-row">
+        <label>${this._t("planStrategyPrecondition")}</label>
+        <select class="plan-precondition-select" data-entity="${preEntityId}">
+          ${preOptions.map(opt => `
+            <option value="${opt}" ${opt === preCurrent ? "selected" : ""}>${fmtPre(opt)}</option>
+          `).join("")}
+        </select>
+      </div>` : "";
+
     const planBadge = planActive
       ? `<span class="plan-badge active">${this._t("chargingByPlan")}</span>`
       : (planTime && planTime !== "unknown" && planTime !== "unavailable")
@@ -1208,6 +1295,8 @@ class EvccCard extends HTMLElement {
               <span class="plan-soc-val">${defaultSoc} %</span>
             </div>
           </div>
+          ${contHtml}
+          ${preHtml}
         </div>
         <div class="plan-actions">
           <button class="plan-btn save" data-lp="${lpName}">${this._t("setPlan")}</button>
@@ -2894,6 +2983,17 @@ class EvccCard extends HTMLElement {
         this._hass.callService(domain, on ? "turn_off" : "turn_on", {
           entity_id: btn.dataset.entity,
         });
+        btn.classList.toggle("on", !on);
+        btn.dataset.on = String(!on);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("select.plan-precondition-select").forEach(sel => {
+      sel.addEventListener("change", () => {
+        this._hass.callService("select", "select_option", {
+          entity_id: sel.dataset.entity,
+          option:    sel.value,
+        });
       });
     });
 
@@ -3134,6 +3234,17 @@ class EvccCard extends HTMLElement {
       .lp-badge.charging  { color: var(--evcc-green);  background: color-mix(in srgb, var(--evcc-green)  15%, transparent); }
       .lp-badge.connected { color: var(--evcc-blue);   background: color-mix(in srgb, var(--evcc-blue)   15%, transparent); }
       .lp-badge.ready     { color: var(--evcc-gray);   background: color-mix(in srgb, var(--evcc-gray)   15%, transparent); }
+      .lp-action-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+      .lp-action-chip {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 3px 8px; border-radius: 999px;
+        font-size: .72rem; font-weight: 600;
+        border: 1px solid var(--divider-color, #4b5563);
+        color: var(--primary-text-color);
+      }
+      .lp-action-chip svg { width: 14px; height: 14px; flex: 0 0 14px; }
+      .lp-action-chip.phase { color: var(--evcc-bolt, #ffae00); border-color: color-mix(in srgb, var(--evcc-bolt, #ffae00) 50%, transparent); background: color-mix(in srgb, var(--evcc-bolt, #ffae00) 10%, transparent); }
+      .lp-action-chip.pv    { color: var(--evcc-green, #0a0);  border-color: color-mix(in srgb, var(--evcc-green, #0a0)  50%, transparent); background: color-mix(in srgb, var(--evcc-green, #0a0)  10%, transparent); }
       .lp-remaining {
         font-size: .85em; color: var(--secondary-text-color);
         margin-right: 8px; white-space: nowrap;
@@ -3494,7 +3605,9 @@ class EvccCard extends HTMLElement {
       .plan-btn.save:hover { filter: brightness(1.1); }
       .plan-btn.delete { color: #ef4444; border-color: #ef444466; }
       .plan-btn.delete:hover { background: #ef444422; }
-      select.plan-vehicle-select { flex: 1; padding: 4px 8px; border: 1px solid var(--divider-color, #4b5563); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); font-size: .82rem; }
+      select.plan-vehicle-select,
+      select.plan-precondition-select { flex: 1; padding: 4px 8px; border: 1px solid var(--divider-color, #4b5563); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); font-size: .82rem; }
+      .plan-row .toggle { margin-left: auto; }
       .plan-error { margin-top: 8px; padding: 6px 10px; border-radius: 6px; background: #ef444422; color: #ef4444; font-size: .78rem; word-break: break-all; }
 
       .empty { text-align: center; padding: 24px; color: var(--secondary-text-color); font-size: .9rem; line-height: 1.8; }
