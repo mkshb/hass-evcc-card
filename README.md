@@ -59,6 +59,17 @@ All charge points and site entities are **automatically discovered** via the HA 
 <a href="#plan"><img src="images/plan-light.png" width="200"></a>
 </td>
 </tr>
+<tr>
+<td align="center"><b>Priority</b></td>
+<td></td><td></td><td></td>
+</tr>
+<tr>
+<td>
+<a href="#priority"><img src="images/priority-dark.png" width="200"></a>
+<a href="#priority"><img src="images/priority-light.png" width="200"></a>
+</td>
+<td></td><td></td><td></td>
+</tr>
 </table>
 
 ---
@@ -155,7 +166,7 @@ Add the card to any Lovelace dashboard and use the **visual editor** to configur
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan`, `debug` |
+| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan`, `priority`, `debug` |
 | `title` | `string` | *(auto)* | Replaces the default card header |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language |
@@ -294,6 +305,21 @@ Home battery management block:
 - Discharge lock toggle
 
 <img src="images/battery-dark.png" width="400"> <img src="images/battery-light.png" width="400">
+
+---
+
+### `priority`
+
+PV surplus priority management: reorder all loadpoints by drag-and-drop to set which one is preferred when distributing PV excess. Higher position = higher priority.
+
+- One row per discovered loadpoint, sorted by current priority (highest at top)
+- Drag the ⋮⋮ handle to reorder; the rendered target value updates live
+- Rows with a target that differs from the current entity state are highlighted in amber and show the old value as `(N)` next to the target
+- **Apply** writes the new priorities via `number.set_value` for every loadpoint whose value would change. Values are assigned contiguously: top = `N-1`, bottom = `0`
+- **Reset** discards unapplied changes and re-syncs the visible order to the current state
+- Respects the `loadpoints` config filter; loadpoints without a `priority` entity are shown disabled
+
+<img src="images/priority-dark.png" width="400"> <img src="images/priority-light.png" width="400">
 
 ---
 
