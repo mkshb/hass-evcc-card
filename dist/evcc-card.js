@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.5.23";
+const EVCC_CARD_VERSION = "0.6.0";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -2924,7 +2924,7 @@ class EvccCard extends HTMLElement {
       <div class="batt-info-col">
         <div class="batt-info-label">${this._t("battLevel")}</div>
         <div class="batt-info-pct" style="color:${socColor}">${Math.round(soc)} %</div>
-        ${cap ? `<div class="batt-info-kwh">${(soc/100*cap).toFixed(1)} kWh / ${cap} kWh</div>` : ""}
+        ${cap ? `<div class="batt-info-kwh">${(soc/100*cap).toFixed(1)} / ${cap} kWh</div>` : ""}
         ${powerStr ? `<div class="batt-info-power">${powerStr}</div>` : ""}
       </div>`;
 
@@ -4234,7 +4234,7 @@ class EvccCard extends HTMLElement {
       .batt-text-title { font-size: .82rem; font-weight: 600; margin-bottom: 2px; }
       .batt-text-desc  { font-size: .76rem; color: var(--secondary-text-color); line-height: 1.4; }
       .batt-inline-select { color: var(--primary-color, #00b4d8); font-weight: 600; font-size: .76rem; font-family: inherit; background: transparent; border: none; border-bottom: 1px dotted var(--primary-color, #00b4d8); cursor: pointer; padding: 0 2px; outline: none; appearance: none; -webkit-appearance: none; }
-      .batt-visual-col { display: flex; align-items: flex-start; gap: 10px; flex-shrink: 0; align-self: flex-start; }
+      .batt-visual-col { display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0; align-self: flex-start; }
       .batt-marker-top { display: none; }
       .batt-visual { display: flex; flex-direction: column; align-items: center; width: 56px; }
       .batt-cap-tip { width: 22px; height: 5px; background: var(--divider-color, #555); border-radius: 3px 3px 0 0; margin-bottom: 1px; }
@@ -4245,10 +4245,10 @@ class EvccCard extends HTMLElement {
       .batt-zone-icon { font-size: 1.2rem; }
       .batt-divider-line { height: 2px; background: var(--divider-color, #555); flex-shrink: 0; z-index: 2; }
       .batt-soc-overlay { position: absolute; bottom: 0; left: 0; right: 0; z-index: 0; border-radius: 0 0 3px 3px; transition: height .4s; opacity: 0.55; }
-      .batt-info-col { display: flex; flex-direction: column; gap: 3px; padding-top: 2px; min-width: 90px; }
-      .batt-info-label { font-size: .72rem; color: var(--secondary-text-color); }
-      .batt-info-pct   { font-size: 1rem; font-weight: 700; }
-      .batt-info-kwh, .batt-info-power { font-size: .72rem; color: var(--secondary-text-color); }
+      .batt-info-col { display: flex; flex-direction: column; gap: 2px; align-items: center; text-align: center; }
+      .batt-info-label { font-size: .7rem; color: var(--secondary-text-color); line-height: 1.2; }
+      .batt-info-pct   { font-size: 1.1rem; font-weight: 700; line-height: 1.1; }
+      .batt-info-kwh, .batt-info-power { font-size: .7rem; color: var(--secondary-text-color); line-height: 1.2; white-space: nowrap; }
       .batt-discharge-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--divider-color, #333); font-size: .84rem; }
       .batt-discharge-toggle { width: 42px; height: 24px; border-radius: 12px; border: none; background: var(--divider-color, #444); position: relative; cursor: pointer; flex-shrink: 0; transition: background .2s; }
       .batt-discharge-toggle.on { background: var(--primary-color, #00b4d8); }
