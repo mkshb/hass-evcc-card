@@ -256,6 +256,18 @@ function fmtRemainingDuration(hass, entityId) {
   return h > 0 ? `${h}h ${m}min` : `${m}min`;
 }
 
+function fmtCountdownFromTimestamp(hass, entityId) {
+  if (!entityId || !hass) return "";
+  const ts = stateVal(hass, entityId);
+  if (!ts || ts === "unknown" || ts === "unavailable") return "";
+  const target = Date.parse(ts);
+  if (isNaN(target)) return "";
+  const sec = Math.max(0, Math.round((target - Date.now()) / 1000));
+  if (sec <= 0) return "";
+  if (sec < 60) return `${sec}s`;
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+}
+
 function socFillGradient(soc, minSoc, limitSoc) {
   const s   = Math.max(0.01, soc);
   const min = Math.max(0, minSoc  || 0);
@@ -609,7 +621,7 @@ class EvccCard extends HTMLElement {
     const statusClass = charging ? "charging" : connected ? "connected" : "ready";
 
     const noPlan = Array.isArray(this._config.no_plan) && this._config.no_plan.includes(lpName);
-    const remaining = charging ? fmtRemainingDuration(this._hass, ents.pv_remaining) : "";
+    const remaining = charging ? fmtRemainingDuration(this._hass, ents.charge_remaining_duration) : "";
 
     return `
       <div class="loadpoint">
@@ -680,7 +692,7 @@ class EvccCard extends HTMLElement {
       </div>`,
     ].join("");
 
-    const remaining = charging ? fmtRemainingDuration(this._hass, ents.pv_remaining) : "";
+    const remaining = charging ? fmtRemainingDuration(this._hass, ents.charge_remaining_duration) : "";
 
     return `
       <div class="loadpoint" data-lp-compact="${lpName}">
@@ -728,8 +740,7 @@ class EvccCard extends HTMLElement {
     if (ents.pv_action && this._hass.states[ents.pv_action]) {
       const state = stateVal(this._hass, ents.pv_action);
       if (state === "enable" || state === "disable") {
-        const sec = ents.pv_remaining ? stateVal(this._hass, ents.pv_remaining) : "";
-        const cd  = fmtCountdown(sec);
+        const cd  = fmtCountdownFromTimestamp(this._hass, ents.pv_remaining);
         const key = state === "enable" ? "pvActionEnable" : "pvActionDisable";
         chips.push(`
           <div class="lp-action-chip pv">
