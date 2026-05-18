@@ -470,6 +470,10 @@ class EvccCard extends HTMLElement {
     if (validPeriods.includes(config?.stats_period)) {
       this._statsPeriod = config.stats_period;
     }
+    const validSizes = ["small", "medium", "large"];
+    if (this._config.size && !validSizes.includes(this._config.size)) {
+      delete this._config.size;
+    }
 
     if (!this._translationsReady && !this._loadingTranslations) {
       this._loadingTranslations = true;
@@ -569,7 +573,7 @@ class EvccCard extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>${this._styles()}</style>
-      <div class="evcc-scale-wrap"><ha-card>
+      <div class="evcc-scale-wrap"${this._config.size ? ` data-size="${this._config.size}"` : ""}><ha-card>
         <div class="card-content">
         ${this._config.mode === "debug"
             ? this._renderDebugBlock(loadpoints, site, meters)
@@ -3882,8 +3886,11 @@ class EvccCard extends HTMLElement {
         --evcc-bolt:   #facc15;
       }
       .evcc-scale-wrap { container-type: inline-size; }
-      @container (min-width: 450px) { .evcc-scale-wrap { zoom: 1.15; } }
-      @container (min-width: 650px) { .evcc-scale-wrap { zoom: 1.3;  } }
+      @container (min-width: 450px) { .evcc-scale-wrap:not([data-size]) { zoom: 1.15; } }
+      @container (min-width: 650px) { .evcc-scale-wrap:not([data-size]) { zoom: 1.3;  } }
+      .evcc-scale-wrap[data-size="small"]  { zoom: 1.0;  }
+      .evcc-scale-wrap[data-size="medium"] { zoom: 1.15; }
+      .evcc-scale-wrap[data-size="large"]  { zoom: 1.30; }
       ha-card {
         color: var(--primary-text-color);
         font-family: var(--paper-font-body1_-_font-family, sans-serif);
@@ -4630,6 +4637,15 @@ class EvccCardEditor extends HTMLElement {
             ["pt", this._t("editorLanguageNamePt")],
           ], c.language || "")}
         </div>
+        <div class="field">
+          <label class="field-label" for="size">${this._t("editorSizeLabel")}</label>
+          ${this._sel("size", [
+            ["",       this._t("editorSizeAuto")],
+            ["small",  this._t("editorSizeSmall")],
+            ["medium", this._t("editorSizeMedium")],
+            ["large",  this._t("editorSizeLarge")],
+          ], c.size || "")}
+        </div>
         ${showLoadpoints ? `
         <div class="field">
           <div class="section-title">${this._t("editorShowLoadpointsTitle")}</div>
@@ -4680,7 +4696,7 @@ class EvccCardEditor extends HTMLElement {
   }
 
   _addListeners() {
-    ["mode", "language", "site_details", "charge_current_settings", "stats_period"].forEach(id => {
+    ["mode", "language", "site_details", "charge_current_settings", "stats_period", "size"].forEach(id => {
       const el = this.shadowRoot.getElementById(id);
       if (!el) return;
       el.addEventListener("change", () => {
