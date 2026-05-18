@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.5.21";
+const EVCC_CARD_VERSION = "0.5.23";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -585,6 +585,8 @@ class EvccCard extends HTMLElement {
               ? this._renderStatsBlock()
               : this._config.mode === "plan"
                 ? this._renderPlanMode(visible)
+                : this._config.mode === "priority"
+                  ? this._renderPriorityMode(visible)
                 : this._config.mode === "compact"
                   ? (Object.keys(visible).length === 0
                       ? this._renderEmpty(loadpoints)
@@ -740,6 +742,138 @@ class EvccCard extends HTMLElement {
         ${tabContent}
       </div>
     `;
+  }
+
+  _renderPriorityMode(visible) {
+    const lpKeys = Object.keys(visible);
+    if (lpKeys.length === 0) return this._renderEmpty(visible);
+
+    const items = lpKeys.map(lp => {
+      const ents = visible[lp];
+      const pid  = ents.priority;
+      const raw  = pid ? parseFloat(stateVal(this._hass, pid)) : NaN;
+      const cur  = isNaN(raw) ? 0 : raw;
+      const max  = pid ? (attr(this._hass, pid, "max") ?? Infinity) : Infinity;
+      const min  = pid ? (attr(this._hass, pid, "min") ?? 0) : 0;
+      const title = this._loadpointTitle(lp, ents);
+      return { lp, title, priorityEnt: pid, currentValue: cur, hasState: !isNaN(raw), max, min };
+    });
+
+    const signature = [...lpKeys].sort().join("|");
+    if (!this._priorityDraft || this._priorityDraft.signature !== signature) {
+      const sorted = items.slice().sort((a, b) =>
+        b.currentValue - a.currentValue || a.title.localeCompare(b.title));
+      this._priorityDraft = { signature, order: sorted.map(i => i.lp) };
+    }
+
+    const order = this._priorityDraft.order;
+    const N = order.length;
+    const byLp = Object.fromEntries(items.map(i => [i.lp, i]));
+
+    const targetFor = (idx, it) => {
+      if (!it.priorityEnt) return null;
+      const raw = N - 1 - idx;
+      return Math.min(it.max, Math.max(it.min, raw));
+    };
+
+    const lastApplied = this._priorityDraft.lastApplied || {};
+    let dirty = false;
+    const rowsHtml = order.map((lp, idx) => {
+      const it = byLp[lp];
+      const target = targetFor(idx, it);
+      const noEnt = !it.priorityEnt;
+      let changed = !noEnt && target !== it.currentValue;
+      // Optimistic suppress: we just wrote `target` via Apply but HA state hasn't propagated yet
+      if (changed && lastApplied[lp] === target) changed = false;
+      if (changed) dirty = true;
+      const targetDisplay = noEnt
+        ? `<span class="priority-no-ent">${this._t("priorityNoEntity")}</span>`
+        : `${target}${changed ? `<span class="priority-was">(${it.currentValue})</span>` : ""}`;
+      return `
+        <div class="priority-row${noEnt ? " no-entity" : ""}" data-lp="${this._escAttr(lp)}">
+          <span class="priority-handle" aria-hidden="true">⋮⋮</span>
+          <span class="priority-name">${this._escHtml(it.title)}</span>
+          <span class="priority-target${changed ? " changed" : ""}">${targetDisplay}</span>
+        </div>`;
+    }).join("");
+
+    const singleNote = N === 1
+      ? `<div class="priority-empty-note">${this._t("prioritySingleNote")}</div>`
+      : "";
+
+    return `
+      <div class="priority-mode" data-priority-root>
+        <div class="lp-header">
+          <span class="lp-name">${this._config.title || this._t("priority")}</span>
+        </div>
+        <div class="priority-hint">${this._t("priorityHint")}</div>
+        <div class="priority-list">${rowsHtml}</div>
+        ${singleNote}
+        <div class="priority-actions">
+          <button class="priority-btn reset" ${dirty ? "" : "disabled"}
+                  data-priority-reset>${this._t("priorityReset")}</button>
+          <button class="priority-btn apply" ${dirty ? "" : "disabled"}
+                  data-priority-apply>${this._t("priorityApply")}</button>
+        </div>
+      </div>`;
+  }
+
+  _escHtml(str) {
+    return String(str).replace(/[&<>"']/g, c =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  _escAttr(str) {
+    return this._escHtml(str);
+  }
+
+  _loadpointTitle(lp, ents) {
+    const hass = this._hass;
+    // 1) hass-evcc style: loadpoint_title attribute on mode entity
+    const fromAttr = ents.mode && attr(hass, ents.mode, "loadpoint_title");
+    if (fromAttr) return fromAttr;
+    // 2) ha-evcc style: device registry. ha-evcc names the loadpoint device like
+    //    "evcc - Ladepunkt openWB [evcc]" — extract the title by locating the lp slug
+    //    inside the device name case-insensitively (underscores match space/dash too).
+    const probeEntity = ents.mode || ents.charge_power || ents.priority;
+    const entReg = hass?.entities?.[probeEntity];
+    const devId  = entReg?.device_id;
+    const dev    = devId ? hass?.devices?.[devId] : null;
+    if (dev?.name_by_user) return dev.name_by_user;
+    const devName = dev?.name;
+    if (devName) {
+      const slugPattern = lp.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/_/g, "[ _\\-]");
+      const re = new RegExp(`(${slugPattern})`, "i");
+      const m = devName.match(re);
+      if (m) return m[1];
+      return devName.replace(/^\[evcc\]\s*/i, "").trim() || lp;
+    }
+    return lp;
+  }
+
+  async _priorityApply(visible) {
+    if (!this._priorityDraft) return;
+    const order = this._priorityDraft.order;
+    const N = order.length;
+    const changes = [];
+    const lastApplied = {};
+    order.forEach((lp, idx) => {
+      const pid = visible[lp]?.priority;
+      if (!pid) return;
+      const raw = parseFloat(stateVal(this._hass, pid));
+      const max = attr(this._hass, pid, "max") ?? Infinity;
+      const min = attr(this._hass, pid, "min") ?? 0;
+      const target = Math.min(max, Math.max(min, N - 1 - idx));
+      lastApplied[lp] = target;
+      if (isNaN(raw) || raw !== target) changes.push({ pid, target });
+    });
+    if (!changes.length) return;
+    this._priorityDraft.lastApplied = lastApplied;
+    this._lastRenderKey = null;
+    this._render();
+    await Promise.all(changes.map(c =>
+      this._hass.callService("number", "set_value",
+        { entity_id: c.pid, value: c.target })));
   }
 
   _renderActionIndicator(ents) {
@@ -3616,6 +3750,122 @@ class EvccCard extends HTMLElement {
         }
       });
     });
+
+    this._attachPriorityListeners();
+  }
+
+  _attachPriorityListeners() {
+    const root = this.shadowRoot.querySelector("[data-priority-root]");
+    if (!root) return;
+
+    const list = root.querySelector(".priority-list");
+
+    root.querySelectorAll(".priority-row").forEach(row => {
+      const handle = row.querySelector(".priority-handle");
+      if (!handle || row.classList.contains("no-entity")) return;
+
+      handle.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+        this._isDragging = true;
+        this._pendingRender = false;
+
+        const placeholder = document.createElement("div");
+        placeholder.className = "priority-placeholder";
+        placeholder.style.height = row.offsetHeight + "px";
+        row.parentNode.insertBefore(placeholder, row.nextSibling);
+
+        row.classList.add("priority-dragging");
+        row.style.width = row.offsetWidth + "px";
+        row.style.position = "relative";
+        row.style.zIndex = "5";
+
+        this._priorityDragging = {
+          row, placeholder, handle, pointerId: e.pointerId,
+          startY: e.clientY,
+        };
+      });
+
+      handle.addEventListener("pointermove", (e) => {
+        const d = this._priorityDragging;
+        if (!d) return;
+        const dy = e.clientY - d.startY;
+        d.row.style.transform = `translateY(${dy}px)`;
+
+        const ptrY = e.clientY;
+        const others = [...list.querySelectorAll(".priority-row")]
+          .filter(r => r !== d.row);
+        for (const r of others) {
+          const rect = r.getBoundingClientRect();
+          const mid = rect.top + rect.height / 2;
+          if (ptrY < mid && r.previousElementSibling !== d.placeholder &&
+              r.previousElementSibling !== d.row) {
+            list.insertBefore(d.placeholder, r);
+            break;
+          } else if (ptrY > mid && r.nextElementSibling !== d.placeholder &&
+                     r.nextElementSibling !== d.row) {
+            list.insertBefore(d.placeholder, r.nextElementSibling);
+            break;
+          }
+        }
+      });
+
+      const finish = (e) => {
+        const d = this._priorityDragging;
+        if (!d) return;
+        try { d.handle.releasePointerCapture(d.pointerId); } catch (_) {}
+        d.placeholder.parentNode.insertBefore(d.row, d.placeholder);
+        d.placeholder.remove();
+        d.row.classList.remove("priority-dragging");
+        d.row.style.transform = "";
+        d.row.style.position  = "";
+        d.row.style.zIndex    = "";
+        d.row.style.width     = "";
+
+        this._priorityDraft.order =
+          [...list.querySelectorAll(".priority-row")].map(r => r.dataset.lp);
+
+        this._priorityDragging = null;
+        this._isDragging = false;
+        this._pendingRender = false;
+        this._lastRenderKey = null;
+        this._render();
+      };
+      handle.addEventListener("pointerup",     finish);
+      handle.addEventListener("pointercancel", finish);
+    });
+
+    const applyBtn = root.querySelector("[data-priority-apply]");
+    if (applyBtn) {
+      applyBtn.addEventListener("click", () => {
+        const visible = this._currentVisible();
+        if (visible) this._priorityApply(visible);
+      });
+    }
+
+    const resetBtn = root.querySelector("[data-priority-reset]");
+    if (resetBtn) {
+      resetBtn.addEventListener("click", () => {
+        this._priorityDraft = null;
+        this._lastRenderKey = null;
+        this._render();
+      });
+    }
+  }
+
+  _currentVisible() {
+    if (!this._hass) return null;
+    const prefix = this._getPrefix();
+    const { loadpoints } = discoverEntities(this._hass, prefix);
+    const filterRaw = this._config.loadpoints;
+    const filter = filterRaw
+      ? (Array.isArray(filterRaw) ? filterRaw : [filterRaw])
+      : null;
+    return filter && filter.length > 0
+      ? Object.fromEntries(
+          Object.entries(loadpoints).filter(([lp]) => filter.includes(lp))
+        )
+      : loadpoints;
   }
 
   _styles() {
@@ -4127,6 +4377,90 @@ class EvccCard extends HTMLElement {
       .compact-panel[hidden] { display: none; }
       .compact-panel .plan-block,
       .compact-panel .session-block { border-top: none; margin-top: 0; padding-top: 0; }
+
+      .priority-mode { display: flex; flex-direction: column; gap: 12px; }
+      .priority-hint { font-size: .8rem; color: var(--secondary-text-color); }
+      .priority-list {
+        display: flex; flex-direction: column;
+        border: 1px solid var(--divider-color);
+        border-radius: 6px;
+        overflow: hidden;
+        background: var(--card-background-color);
+      }
+      .priority-row {
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 12px;
+        background: var(--card-background-color);
+        user-select: none;
+        border-bottom: 1px solid var(--divider-color);
+        transition: background .15s ease;
+      }
+      .priority-row:last-child { border-bottom: none; }
+      .priority-row.no-entity { opacity: .55; }
+      .priority-handle {
+        cursor: grab;
+        font-size: 1.2rem; line-height: 1;
+        color: var(--secondary-text-color);
+        touch-action: none;
+        padding: 4px 6px;
+        user-select: none;
+      }
+      .priority-handle:active { cursor: grabbing; }
+      .priority-row.no-entity .priority-handle { cursor: not-allowed; }
+      .priority-dragging {
+        opacity: .92;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, .22);
+        background: var(--card-background-color);
+      }
+      .priority-placeholder {
+        background: var(--divider-color);
+        opacity: .25;
+      }
+      .priority-name { flex: 1; font-weight: 500; }
+      .priority-target {
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        min-width: 2.5em;
+        text-align: right;
+      }
+      .priority-target.changed { color: var(--evcc-amber); }
+      .priority-was {
+        font-weight: 400;
+        color: var(--secondary-text-color);
+        margin-left: 4px;
+        font-size: .8em;
+      }
+      .priority-no-ent {
+        font-weight: 400;
+        font-size: .8em;
+        color: var(--secondary-text-color);
+      }
+      .priority-empty-note {
+        font-size: .8rem;
+        color: var(--secondary-text-color);
+        font-style: italic;
+      }
+      .priority-actions {
+        display: flex; gap: 8px; justify-content: flex-end;
+      }
+      .priority-btn {
+        padding: 6px 14px;
+        border-radius: 4px;
+        border: 1px solid var(--divider-color);
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+        cursor: pointer;
+        font: inherit;
+      }
+      .priority-btn:hover:not(:disabled) {
+        background: var(--secondary-background-color);
+      }
+      .priority-btn:disabled { opacity: .5; cursor: not-allowed; }
+      .priority-btn.apply:not(:disabled) {
+        background: var(--evcc-green);
+        color: white;
+        border-color: transparent;
+      }
     `;
   }
 }
@@ -4225,7 +4559,7 @@ class EvccCardEditor extends HTMLElement {
     const selLps = Array.isArray(c.loadpoints) ? c.loadpoints : [];
     const noPlan  = Array.isArray(c.no_plan)   ? c.no_plan   : [];
 
-    const showLoadpoints    = ["loadpoint", "compact", "plan"].includes(mode);
+    const showLoadpoints    = ["loadpoint", "compact", "plan", "priority"].includes(mode);
     const showNoPlan        = ["loadpoint", "compact"].includes(mode);
     const showChargeCurrent = ["loadpoint", "compact"].includes(mode);
     const showSiteDetails   = ["site", "flow"].includes(mode);
@@ -4235,6 +4569,7 @@ class EvccCardEditor extends HTMLElement {
       loadpoint: this._t("editorTitlePlaceholderLoadpoint"),
       compact:   this._t("editorTitlePlaceholderCompact"),
       plan:      this._t("editorTitlePlaceholderPlan"),
+      priority:  this._t("editorTitlePlaceholderPriority"),
       site:      this._t("editorTitlePlaceholderSite"),
       flow:      this._t("editorTitlePlaceholderFlow"),
       grid:      this._t("editorTitlePlaceholderGrid"),
@@ -4273,6 +4608,7 @@ class EvccCardEditor extends HTMLElement {
             ["battery",   this._t("editorModeBattery")],
             ["stats",     this._t("editorModeStats")],
             ["plan",      this._t("editorModePlan")],
+            ["priority",  this._t("editorModePriority")],
             ["debug",     this._t("editorModeDebug")],
           ], mode)}
         </div>

@@ -123,6 +123,7 @@
   "editorModeBattery": "Batterij (battery)",
   "editorModeStats": "Statistieken (stats)",
   "editorModePlan": "Planning (plan)",
+  "editorModePriority": "Prioriteit (priority)",
   "editorModeDebug": "Debug / Diagnose",
   "debugTitle": "Diagnose",
   "debugCopyReport": "Rapport kopiëren",
@@ -175,6 +176,7 @@
   "editorTitlePlaceholderLoadpoint": "Standaard: Naam laadpunt",
   "editorTitlePlaceholderCompact": "Standaard: Naam laadpunt",
   "editorTitlePlaceholderPlan": "Standaard: Naam laadpunt",
+  "editorTitlePlaceholderPriority": "Standaard: Prioriteit",
   "editorTitlePlaceholderSite": "Standaard: Overzicht",
   "editorTitlePlaceholderFlow": "Standaard: Energiestroom",
   "editorTitlePlaceholderGrid": "Standaard: Net",
@@ -187,5 +189,10 @@
   "editorLanguageNameHr": "Kroatisch",
   "editorLanguageNameNl": "Nederlands",
   "editorLanguageNamePl": "Pools",
-  "editorLanguageNamePt": "Portugees"
+  "editorLanguageNamePt": "Portugees",
+  "priorityHint": "Sleep om te herordenen. Bovenaan = hoogste PV-prioriteit.",
+  "priorityApply": "Toepassen",
+  "priorityReset": "Resetten",
+  "prioritySingleNote": "Slechts één laadpunt zichtbaar.",
+  "priorityNoEntity": "(geen prioriteitsentiteit)"
 }

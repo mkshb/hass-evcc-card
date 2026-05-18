@@ -123,6 +123,7 @@
   "editorModeBattery": "Batterie (battery)",
   "editorModeStats": "Statistik (stats)",
   "editorModePlan": "Plan (plan)",
+  "editorModePriority": "Priorität (priority)",
   "editorModeDebug": "Debug / Diagnose",
   "debugTitle": "Diagnose",
   "debugCopyReport": "Bericht kopieren",
@@ -175,6 +176,7 @@
   "editorTitlePlaceholderLoadpoint": "Standard: Ladepoint-Name",
   "editorTitlePlaceholderCompact": "Standard: Ladepoint-Name",
   "editorTitlePlaceholderPlan": "Standard: Ladepoint-Name",
+  "editorTitlePlaceholderPriority": "Standard: Priorität",
   "editorTitlePlaceholderSite": "Standard: Übersicht",
   "editorTitlePlaceholderFlow": "Standard: Energiefluss",
   "editorTitlePlaceholderGrid": "Standard: Netz",
@@ -187,5 +189,10 @@
   "editorLanguageNameHr": "Kroatisch",
   "editorLanguageNameNl": "Niederländisch",
   "editorLanguageNamePl": "Polnisch",
-  "editorLanguageNamePt": "Portugiesisch"
+  "editorLanguageNamePt": "Portugiesisch",
+  "priorityHint": "Zum Sortieren ziehen. Oben = höchste PV-Priorität.",
+  "priorityApply": "Übernehmen",
+  "priorityReset": "Zurücksetzen",
+  "prioritySingleNote": "Nur ein Ladepunkt sichtbar.",
+  "priorityNoEntity": "(keine Prioritäts-Entität)"
 }

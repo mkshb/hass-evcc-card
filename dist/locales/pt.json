@@ -123,6 +123,7 @@
   "editorModeBattery": "Bateria (battery)",
   "editorModeStats": "Estatísticas (stats)",
   "editorModePlan": "Plano (plan)",
+  "editorModePriority": "Prioridade (priority)",
   "editorModeDebug": "Depuração / Diagnóstico",
   "debugTitle": "Diagnóstico",
   "debugCopyReport": "Copiar relatório",
@@ -175,6 +176,7 @@
   "editorTitlePlaceholderLoadpoint": "Padrão: Nome do ponto de carga",
   "editorTitlePlaceholderCompact": "Padrão: Nome do ponto de carga",
   "editorTitlePlaceholderPlan": "Padrão: Nome do ponto de carga",
+  "editorTitlePlaceholderPriority": "Padrão: Prioridade",
   "editorTitlePlaceholderSite": "Padrão: Visão geral",
   "editorTitlePlaceholderFlow": "Padrão: Fluxo de energia",
   "editorTitlePlaceholderGrid": "Padrão: Rede",
@@ -187,5 +189,10 @@
   "editorLanguageNameHr": "Croata",
   "editorLanguageNameNl": "Neerlandês",
   "editorLanguageNamePl": "Polaco",
-  "editorLanguageNamePt": "Português"
+  "editorLanguageNamePt": "Português",
+  "priorityHint": "Arraste para reordenar. Topo = maior prioridade FV.",
+  "priorityApply": "Aplicar",
+  "priorityReset": "Redefinir",
+  "prioritySingleNote": "Apenas um ponto de carregamento visível.",
+  "priorityNoEntity": "(sem entidade de prioridade)"
 }

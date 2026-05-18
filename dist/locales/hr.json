@@ -123,6 +123,7 @@
   "editorModeBattery": "Baterija (battery)",
   "editorModeStats": "Statistike (stats)",
   "editorModePlan": "Plan (plan)",
+  "editorModePriority": "Prioritet (priority)",
   "editorModeDebug": "Debug / Dijagnostika",
   "debugTitle": "Dijagnostika",
   "debugCopyReport": "Kopiraj izvještaj",
@@ -175,6 +176,7 @@
   "editorTitlePlaceholderLoadpoint": "Zadano: Naziv točke punjenja",
   "editorTitlePlaceholderCompact": "Zadano: Naziv točke punjenja",
   "editorTitlePlaceholderPlan": "Zadano: Naziv točke punjenja",
+  "editorTitlePlaceholderPriority": "Zadano: Prioritet",
   "editorTitlePlaceholderSite": "Zadano: Pregled",
   "editorTitlePlaceholderFlow": "Zadano: Tok energije",
   "editorTitlePlaceholderGrid": "Zadano: Mreža",
@@ -187,5 +189,10 @@
   "editorLanguageNameHr": "Hrvatski",
   "editorLanguageNameNl": "Nizozemski",
   "editorLanguageNamePl": "Poljski",
-  "editorLanguageNamePt": "Portugalski"
+  "editorLanguageNamePt": "Portugalski",
+  "priorityHint": "Povucite za promjenu redoslijeda. Vrh = najveći PV prioritet.",
+  "priorityApply": "Primijeni",
+  "priorityReset": "Poništi",
+  "prioritySingleNote": "Vidljiva je samo jedna točka punjenja.",
+  "priorityNoEntity": "(nema entiteta prioriteta)"
 }

@@ -123,6 +123,7 @@
   "editorModeBattery": "Bateria (battery)",
   "editorModeStats": "Statystyki (stats)",
   "editorModePlan": "Plan (plan)",
+  "editorModePriority": "Priorytet (priority)",
   "editorModeDebug": "Debug / Diagnostyka",
   "debugTitle": "Diagnostyka",
   "debugCopyReport": "Kopiuj raport",
@@ -175,6 +176,7 @@
   "editorTitlePlaceholderLoadpoint": "Domyślnie: Nazwa punktu ładowania",
   "editorTitlePlaceholderCompact": "Domyślnie: Nazwa punktu ładowania",
   "editorTitlePlaceholderPlan": "Domyślnie: Nazwa punktu ładowania",
+  "editorTitlePlaceholderPriority": "Domyślnie: Priorytet",
   "editorTitlePlaceholderSite": "Domyślnie: Przegląd",
   "editorTitlePlaceholderFlow": "Domyślnie: Przepływ energii",
   "editorTitlePlaceholderGrid": "Domyślnie: Sieć",
@@ -187,5 +189,10 @@
   "editorLanguageNameHr": "Chorwacki",
   "editorLanguageNameNl": "Niderlandzki",
   "editorLanguageNamePl": "Polski",
-  "editorLanguageNamePt": "Portugalski"
+  "editorLanguageNamePt": "Portugalski",
+  "priorityHint": "Przeciągnij, aby zmienić kolejność. Góra = najwyższy priorytet PV.",
+  "priorityApply": "Zastosuj",
+  "priorityReset": "Resetuj",
+  "prioritySingleNote": "Widoczny tylko jeden punkt ładowania.",
+  "priorityNoEntity": "(brak encji priorytetu)"
 }
