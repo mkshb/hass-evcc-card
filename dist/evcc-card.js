@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.5.20";
+const EVCC_CARD_VERSION = "0.5.21";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -355,6 +355,7 @@ class EvccCard extends HTMLElement {
     this._pendingRender = false;
     this._renderTimer   = null;
     this._lastRenderKey = null;
+    this._countdownInterval = null;
     this._planState     = {};
     this._tabState      = {};
     this._statsPeriod   = "total";
@@ -380,8 +381,18 @@ class EvccCard extends HTMLElement {
     window.addEventListener("evcc-plan-reset", this._onPlanReset);
   }
 
+  connectedCallback() {
+    if (!this._countdownInterval) {
+      this._countdownInterval = setInterval(() => this._tickCountdowns(), 1000);
+    }
+  }
+
   disconnectedCallback() {
     window.removeEventListener("evcc-plan-reset", this._onPlanReset);
+    if (this._countdownInterval) {
+      clearInterval(this._countdownInterval);
+      this._countdownInterval = null;
+    }
   }
 
   async _loadTranslations() {
@@ -614,6 +625,27 @@ class EvccCard extends HTMLElement {
     });
   }
 
+  _tickCountdowns() {
+    const root = this.shadowRoot;
+    if (!root) return;
+    root.querySelectorAll("[data-countdown-target]").forEach(el => {
+      const ts = el.dataset.countdownTarget;
+      if (!ts) return;
+      const target = Date.parse(ts);
+      if (isNaN(target)) return;
+      const sec = Math.max(0, Math.round((target - Date.now()) / 1000));
+      const cd = sec <= 0
+        ? ""
+        : sec < 60
+          ? `${sec}s`
+          : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+      const key = el.dataset.countdownLabel;
+      if (key) {
+        el.textContent = this._t(key, { val: cd || "—" });
+      }
+    });
+  }
+
   _renderLoadpoint(lpName, ents) {
     const charging   = ents.charging  ? isOn(this._hass, ents.charging)  : false;
     const connected  = ents.connected ? isOn(this._hass, ents.connected) : false;
@@ -740,12 +772,13 @@ class EvccCard extends HTMLElement {
     if (ents.pv_action && this._hass.states[ents.pv_action]) {
       const state = stateVal(this._hass, ents.pv_action);
       if (state === "enable" || state === "disable") {
+        const ts  = ents.pv_remaining ? (stateVal(this._hass, ents.pv_remaining) || "") : "";
         const cd  = fmtCountdownFromTimestamp(this._hass, ents.pv_remaining);
         const key = state === "enable" ? "pvActionEnable" : "pvActionDisable";
         chips.push(`
           <div class="lp-action-chip pv">
             ${sunIcon}
-            <span>${this._t(key, { val: cd || "—" })}</span>
+            <span data-countdown-target="${ts}" data-countdown-label="${key}">${this._t(key, { val: cd || "—" })}</span>
           </div>`);
       }
     }
