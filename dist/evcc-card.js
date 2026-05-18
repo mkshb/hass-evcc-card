@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.5.19";
+const EVCC_CARD_VERSION = "0.5.20";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -609,7 +609,7 @@ class EvccCard extends HTMLElement {
     const statusClass = charging ? "charging" : connected ? "connected" : "ready";
 
     const noPlan = Array.isArray(this._config.no_plan) && this._config.no_plan.includes(lpName);
-    const remaining = charging ? fmtRemainingDuration(this._hass, ents.charge_remaining_duration) : "";
+    const remaining = charging ? fmtRemainingDuration(this._hass, ents.pv_remaining) : "";
 
     return `
       <div class="loadpoint">
@@ -680,7 +680,7 @@ class EvccCard extends HTMLElement {
       </div>`,
     ].join("");
 
-    const remaining = charging ? fmtRemainingDuration(this._hass, ents.charge_remaining_duration) : "";
+    const remaining = charging ? fmtRemainingDuration(this._hass, ents.pv_remaining) : "";
 
     return `
       <div class="loadpoint" data-lp-compact="${lpName}">
