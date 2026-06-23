@@ -1186,15 +1186,14 @@ class EvccCard extends HTMLElement {
           })() : ""}
           ${hasSmartCost && hasFeedIn ? `<hr class="settings-divider">` : ""}
           ${hasFeedIn ? (() => {
-            // Feed-in priority: above this export tariff, evcc prioritizes selling to the
-            // grid over PV-surplus charging. Active when the current feed-in price is at/above
-            // the limit (prefer the integration's binary_sensor when it is enabled).
-            const limit      = parseFloat(stateVal(this._hass, ents.smart_feed_in_priority_limit) || 0);
-            const fiTariffId = `sensor.${this._getPrefix()}tariff_feed_in`;
-            const fiTariff   = parseFloat(this._hass.states[fiTariffId]?.state ?? "NaN");
+            // Feed-in priority: above this feed-in limit, evcc prioritizes selling to the
+            // grid over PV-surplus charging. Like the smart charging limit, the limit follows
+            // evcc's global cost type, so the unit is currency/kWh (price mode) or g/kWh
+            // (CO2 mode); _sliderRow renders whichever unit the entity reports. The
+            // integration's binary_sensor is the authoritative "active" signal in both modes.
             const active     = ents.smart_feed_in_priority_active
               ? isOn(this._hass, ents.smart_feed_in_priority_active)
-              : (!isNaN(fiTariff) && fiTariff >= limit);
+              : false;
             const clearId   = ents.smart_feed_in_priority_limit.replace(/^number\./, "button.");
             const hasClear  = !!this._hass.states[clearId];
             return `<div class="smart-cost-section" data-lp-feed-in-section="${lpName}">` +
