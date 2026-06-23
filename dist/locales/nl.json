@@ -88,6 +88,8 @@
   "statsNoDataLink": "Meer info",
   "smartCostLimitCo2": "CO₂-limiet",
   "smartCostLimitPrice": "Prijslimiet",
+  "feedInPriorityLimit": "Teruglever-prioriteitslimiet",
+  "feedInPriorityActive": "Terugleverprioriteit actief",
   "sessionPricePerKwh": "Prijs/kWh",
   "sessionCo2PerKwh": "CO₂/kWh",
   "sessionSolar": "Zonne-aandeel",

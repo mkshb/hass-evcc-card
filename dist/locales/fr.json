@@ -88,6 +88,8 @@
   "statsNoDataLink": "Plus d'infos",
   "smartCostLimitCo2": "Limite CO₂",
   "smartCostLimitPrice": "Limite de prix",
+  "feedInPriorityLimit": "Limite de priorité d'injection",
+  "feedInPriorityActive": "Priorité d'injection active",
   "sessionPricePerKwh": "Prix/kWh",
   "sessionCo2PerKwh": "CO₂/kWh",
   "sessionSolar": "Part solaire",

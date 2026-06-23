@@ -88,6 +88,8 @@
   "statsNoDataLink": "Więcej info",
   "smartCostLimitCo2": "Limit CO₂",
   "smartCostLimitPrice": "Limit cenowy",
+  "feedInPriorityLimit": "Limit priorytetu oddawania do sieci",
+  "feedInPriorityActive": "Priorytet oddawania do sieci aktywny",
   "sessionPricePerKwh": "Cena/kWh",
   "sessionCo2PerKwh": "CO₂/kWh",
   "sessionSolar": "Udział słoneczny",

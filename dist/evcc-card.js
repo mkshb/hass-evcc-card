@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.6.1";
+const EVCC_CARD_VERSION = "0.6.2";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -19,6 +19,7 @@ const FEATURES = [
   { suffix: "limit_soc",           domain: "select",        type: "select_slider", lp: true,  core: true },
   { suffix: "limit_energy",        domain: "number",        type: "slider",        lp: true  },
   { suffix: "smart_cost_limit",    domain: "number",        type: "slider",        lp: true  },
+  { suffix: "smart_feed_in_priority_limit", domain: "number", type: "slider",      lp: true  },
   { suffix: "priority",            domain: "number",        type: "slider",        lp: true  },
   { suffix: "phases_configured",   domain: "select",        type: "select",        lp: true  },
   { suffix: "vehicle_name",        domain: "select",        type: "select",        lp: true  },
@@ -61,6 +62,7 @@ const FEATURES = [
   { suffix: "connected",           domain: "binary_sensor", type: "status_bool",   lp: true  },
   { suffix: "enabled",             domain: "binary_sensor", type: "status_bool",   lp: true,  core: true },
   { suffix: "smart_cost_active",   domain: "binary_sensor", type: "status_bool",   lp: true  },
+  { suffix: "smart_feed_in_priority_active", domain: "binary_sensor", type: "status_bool", lp: true  },
   { suffix: "plan_active",         domain: "binary_sensor", type: "status_bool",   lp: true  },
 
   { suffix: "grid_power",          domain: "sensor",        type: "power",         lp: false, core: true },
@@ -1110,9 +1112,10 @@ class EvccCard extends HTMLElement {
     const hasPhases     = !!ents.phases_configured;
     const hasCurrent    = ents.min_current || ents.max_current;
     const hasSmartCost  = !!ents.smart_cost_limit;
+    const hasFeedIn     = !!ents.smart_feed_in_priority_limit;
     const hasPriority   = !!ents.priority;
     const hasBoost      = !!ents.battery_boost_limit;
-    if (!hasPhases && !hasCurrent && !hasSmartCost && !hasPriority && !hasBoost) return "";
+    if (!hasPhases && !hasCurrent && !hasSmartCost && !hasFeedIn && !hasPriority && !hasBoost) return "";
 
     const configDefault = this._config.charge_current_settings === "expanded";
     const expanded = this._currentBlockExpanded[lpName] !== undefined
@@ -1161,11 +1164,11 @@ class EvccCard extends HTMLElement {
         <div class="current-block-body" ${expanded ? "" : "hidden"}>
           ${phasesHtml}
           ${currentRows}
-          ${(hasPhases || hasCurrent) && (hasBoost || hasPriority || hasSmartCost) ? `<hr class="settings-divider">` : ""}
+          ${(hasPhases || hasCurrent) && (hasBoost || hasPriority || hasSmartCost || hasFeedIn) ? `<hr class="settings-divider">` : ""}
           ${hasBoost ? this._renderBatteryBoost(ents) : ""}
-          ${hasBoost && (hasPriority || hasSmartCost) ? `<hr class="settings-divider">` : ""}
+          ${hasBoost && (hasPriority || hasSmartCost || hasFeedIn) ? `<hr class="settings-divider">` : ""}
           ${hasPriority ? this._sliderRow(ents.priority, this._t("priority")) : ""}
-          ${hasPriority && hasSmartCost ? `<hr class="settings-divider">` : ""}
+          ${hasPriority && (hasSmartCost || hasFeedIn) ? `<hr class="settings-divider">` : ""}
           ${hasSmartCost ? (() => {
             const unit      = attr(this._hass, ents.smart_cost_limit, "unit_of_measurement") ?? "";
             const isCo2     = unit === "g/kWh";
@@ -1178,6 +1181,25 @@ class EvccCard extends HTMLElement {
             return `<div class="smart-cost-section" data-lp-smart-cost-section="${lpName}">` +
               this._sliderRow(ents.smart_cost_limit, label) +
               (active ? `<div class="smart-active-hint">⚡ ${this._t("smartCostActive")}</div>` : "") +
+              (hasClear ? `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` : "") +
+              `</div>`;
+          })() : ""}
+          ${hasSmartCost && hasFeedIn ? `<hr class="settings-divider">` : ""}
+          ${hasFeedIn ? (() => {
+            // Feed-in priority: above this export tariff, evcc prioritizes selling to the
+            // grid over PV-surplus charging. Active when the current feed-in price is at/above
+            // the limit (prefer the integration's binary_sensor when it is enabled).
+            const limit      = parseFloat(stateVal(this._hass, ents.smart_feed_in_priority_limit) || 0);
+            const fiTariffId = `sensor.${this._getPrefix()}tariff_feed_in`;
+            const fiTariff   = parseFloat(this._hass.states[fiTariffId]?.state ?? "NaN");
+            const active     = ents.smart_feed_in_priority_active
+              ? isOn(this._hass, ents.smart_feed_in_priority_active)
+              : (!isNaN(fiTariff) && fiTariff >= limit);
+            const clearId   = ents.smart_feed_in_priority_limit.replace(/^number\./, "button.");
+            const hasClear  = !!this._hass.states[clearId];
+            return `<div class="smart-cost-section" data-lp-feed-in-section="${lpName}">` +
+              this._sliderRow(ents.smart_feed_in_priority_limit, this._t("feedInPriorityLimit")) +
+              (active ? `<div class="smart-active-hint">⚡ ${this._t("feedInPriorityActive")}</div>` : "") +
               (hasClear ? `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` : "") +
               `</div>`;
           })() : ""}
