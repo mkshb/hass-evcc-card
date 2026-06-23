@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.6.0";
+const EVCC_CARD_VERSION = "0.6.1";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -659,6 +659,7 @@ class EvccCard extends HTMLElement {
     const statusClass = charging ? "charging" : connected ? "connected" : "ready";
 
     const noPlan = Array.isArray(this._config.no_plan) && this._config.no_plan.includes(lpName);
+    const noPv   = Array.isArray(this._config.no_pv)   && this._config.no_pv.includes(lpName);
     const remaining = charging ? fmtRemainingDuration(this._hass, ents.charge_remaining_duration) : "";
 
     return `
@@ -671,7 +672,7 @@ class EvccCard extends HTMLElement {
           </span>
         </div>
         ${this._renderActionIndicator(ents)}
-        ${this._renderModeSelector(ents)}
+        ${this._renderModeSelector(ents, noPv)}
         ${this._renderVehicleInfo(ents, charging, lpName)}
         ${this._renderPowerRow(ents, charging)}
         ${this._renderSliders(ents)}
@@ -689,6 +690,7 @@ class EvccCard extends HTMLElement {
     const statusLabel = charging ? this._t("charging") : connected ? this._t("connected") : this._t("ready");
     const statusClass = charging ? "charging" : connected ? "connected" : "ready";
     const noPlan      = Array.isArray(this._config.no_plan) && this._config.no_plan.includes(lpName);
+    const noPv        = Array.isArray(this._config.no_pv)   && this._config.no_pv.includes(lpName);
 
     if (this._tabState[lpName] === undefined) this._tabState[lpName] = 0;
     const activeTab = this._tabState[lpName];
@@ -713,7 +715,7 @@ class EvccCard extends HTMLElement {
 
     const tabContent = [
       `<div class="compact-panel" ${activeTab !== 0 ? 'hidden' : ''}>
-        ${this._renderModeSelector(ents)}
+        ${this._renderModeSelector(ents, noPv)}
         ${this._renderVehicleInfo(ents, charging, lpName)}
         ${this._renderPowerRow(ents, charging)}
       </div>`,
@@ -924,10 +926,13 @@ class EvccCard extends HTMLElement {
     return chips.length ? `<div class="lp-action-row">${chips.join("")}</div>` : "";
   }
 
-  _renderModeSelector(ents) {
+  _renderModeSelector(ents, hidePv = false) {
     if (!ents.mode) return "";
     const current = stateVal(this._hass, ents.mode);
-    const buttons = Object.entries(CHARGE_MODES).map(([val, cfg]) => `
+    const hidden  = hidePv ? ["pv", "minpv"] : [];
+    const buttons = Object.entries(CHARGE_MODES)
+      .filter(([val]) => !hidden.includes(val) || val === current)
+      .map(([val, cfg]) => `
       <button class="mode-btn ${current === val ? "active" : ""}"
               data-entity="${ents.mode}" data-value="${val}">
         <span class="mode-icon">${cfg.icon}</span>
@@ -1369,14 +1374,19 @@ class EvccCard extends HTMLElement {
     const defaultSoc     = this._planState[lpName].soc;
     const defaultDt      = this._planState[lpName].time;
 
+    const currentVehicleId = vehicleEntityId ? this._hass.states[vehicleEntityId]?.state : null;
+
     const dbIdToName = {};
     allOptions.forEach(id => {
-      const path = `component.evcc_intg.entity.select.vehiclename.state.${id}`;
+      if (id === currentVehicleId && vehicleAttr?.name && vehicleAttr.name !== "null") {
+        dbIdToName[id] = vehicleAttr.name;
+        return;
+      }
+      const path = `component.evcc_intg.entity.select.vehiclename.state.${String(id).toLowerCase()}`;
       const translated = this._hass.localize(path);
       dbIdToName[id] = translated || id;
     });
 
-    const currentVehicleId = vehicleEntityId ? this._hass.states[vehicleEntityId]?.state : null;
     if (currentVehicleId && currentVehicleId !== "null") {
       if (this._planState[lpName].vehicle && this._planState[lpName].vehicle !== currentVehicleId) {
         this._planState[lpName].soc  = null;
@@ -3079,7 +3089,7 @@ class EvccCard extends HTMLElement {
     const maskValue = (key, val) => {
       if (!maskNames) return val;
       if (key === "title") return "***";
-      if (key === "loadpoints" || key === "no_plan") {
+      if (key === "loadpoints" || key === "no_plan" || key === "no_pv") {
         if (Array.isArray(val)) return val.map(() => `lp_${++lpMaskCount.i}`);
         if (typeof val === "string") return `lp_${++lpMaskCount.i}`;
       }
@@ -4565,6 +4575,7 @@ class EvccCardEditor extends HTMLElement {
     const mode = c.mode || "loadpoint";
     const selLps = Array.isArray(c.loadpoints) ? c.loadpoints : [];
     const noPlan  = Array.isArray(c.no_plan)   ? c.no_plan   : [];
+    const noPv    = Array.isArray(c.no_pv)     ? c.no_pv     : [];
 
     const showLoadpoints    = ["loadpoint", "compact", "plan", "priority"].includes(mode);
     const showNoPlan        = ["loadpoint", "compact"].includes(mode);
@@ -4657,6 +4668,12 @@ class EvccCardEditor extends HTMLElement {
         <div class="field">
           <div class="section-title">${this._t("editorNoPlanForTitle")}</div>
           ${this._checkboxes("no_plan", noPlan)}
+        </div>
+        ` : ""}
+        ${showNoPlan ? `
+        <div class="field">
+          <div class="section-title">${this._t("editorNoPvForTitle")}</div>
+          ${this._checkboxes("no_pv", noPv)}
         </div>
         ` : ""}
         ${showChargeCurrent ? `

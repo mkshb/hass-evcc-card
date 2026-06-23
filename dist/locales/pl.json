@@ -168,6 +168,7 @@
   "editorShowLoadpointsTitle": "Pokaż punkty ładowania",
   "editorShowLoadpointsHint": "Puste = pokaż wszystkie",
   "editorNoPlanForTitle": "Brak planu ładowania dla",
+  "editorNoPvForTitle": "Ukryj PV / Min+PV dla",
   "editorChargeCurrentSettingsLabel": "Ustawienia prądu ładowania",
   "editorCollapsed": "Zwinięty",
   "editorExpanded": "Rozwinięty",
