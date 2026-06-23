@@ -81,9 +81,9 @@ All charge points and site entities are **automatically discovered** via the HA 
 | **Auto-discovery** | Automatically detects all charge points and site entities via the HA entity registry - zero configuration |
 | **Visual editor** | Native card editor in Home Assistant - configure everything interactively, no YAML needed |
 | **Live updates** | Power, SoC and status update in real time without full re-render |
-| **Responsive scaling** | Card automatically scales to fit larger screens via CSS container queries |
+| **Responsive scaling** | Card automatically scales to fit larger screens via CSS container queries; can be overridden with a fixed `size` |
 | **SoC display** | Vehicle state of charge as a progress bar with percentage and estimated range |
-| **Slider controls** | Adjust Target SoC, Min SoC, Priority, smart charging limit, Max current and Min current inline |
+| **Slider controls** | Adjust Target SoC, Min SoC, Priority, smart charging limit, feed-in priority limit, battery boost, Max current and Min current inline |
 | **Phase switching** | Auto / 1-phase / 3-phase control built in |
 | **Plan strategies** | Continuous charging and battery preconditioning settings inline in the plan block |
 | **Action indicators** | Pending phase switches (1↔3 phase) and PV-charging start/stop shown as inline countdown chips |
@@ -170,6 +170,7 @@ Add the card to any Lovelace dashboard and use the **visual editor** to configur
 | `title` | `string` | *(auto)* | Replaces the default card header |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language |
+| `size` | `string` | *(auto)* | Fixed card scale: `small`, `medium` or `large`. When unset, the card auto-scales to its container width |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
 | `no_pv` | `list` | *(none)* | Hide the **PV** and **Min+PV** charge modes for specific charge points (useful when no PV system is configured in evcc) |
 | `site_details` | `string` | `expanded` | `collapsed` to hide the IN/OUT detail table by default in `site` and `flow` mode |
@@ -190,7 +191,7 @@ The main charge point view. For each discovered charge point it shows:
 - Charge mode buttons (Off / PV / Min+PV / Now)
 - Vehicle SoC progress bar with percentage and estimated range
 - Current charging session: energy, cost, duration, phases
-- Sliders: Target SoC, Min SoC, Priority SoC
+- Sliders: Target SoC, Min SoC
 - Charge plan block
 
 The loadpoint header also shows **live action indicators** when EVCC has scheduled a pending phase switch or PV-charging change - e.g. *"Switching to 3-phase in 0:42"* or *"PV charging on in 1:15"*. The chip disappears automatically once the action is executed. Requires ha-evcc with the `phase_action` / `pv_action` sensors exposed.
@@ -198,7 +199,10 @@ The loadpoint header also shows **live action indicators** when EVCC has schedul
 The **CHARGE SETTINGS** section is collapsed by default and can be toggled using the gear icon. It contains:
 - Phase switch: Auto / 1-phase / 3-phase
 - Max current / Min current sliders
+- Battery boost - lets the vehicle draw from the home battery; the slider sets the battery SoC threshold above which boosting is allowed. Only shown when ha-evcc exposes the battery boost entities (`battery_boost_limit`, `battery_boost`)
+- Priority - PV-surplus priority of this charge point relative to the others
 - Smart charging limit - threshold below which charging starts automatically; shows "Off" when set to 0; EVCC supports either CO2-based (g/kWh) **or** price-based (EUR/kWh) - not both simultaneously; the active mode is reflected in the entity's unit
+- Feed-in priority limit - export price floor above which EVCC prioritizes feeding into the grid over charging from PV surplus, shown directly under the smart charging limit. It has a slider, an "active" hint while it is steering, and a clear button. The `smart_feed_in_priority_limit` / `smart_feed_in_priority_active` entities ship **disabled by default** in ha-evcc, so the row stays hidden until you enable them
 
 > **Price mode - slider range issue:** When switching the smart charging mode in EVCC from CO2-based to price-based, ha-evcc may not recreate the limit entity. The slider then still shows the CO2 range (0-500 g/kWh) instead of the price range. To fix this, go to Settings -> Devices & Services -> ha-evcc -> **Reconfigure**, and enable the option **"Remove and recreate all Devices"**.
 
@@ -331,7 +335,7 @@ Same content as `loadpoint`, but organized into four tabs - ideal for dashboards
 | Tab | Contents |
 |---|---|
 | **Control** | Charge mode buttons, vehicle SoC bar, current charging power |
-| **Settings** | Target SoC, Min SoC, Priority sliders, phase switch, current limits, smart charging limit |
+| **Settings** | Target SoC, Min SoC sliders, phase switch, current limits, battery boost, priority, smart charging limit, feed-in priority limit |
 | **Plan** | Charge plan: vehicle selector, target time, target SoC, activate/delete |
 | **Session** | Energy, cost, duration and phases of the current session |
 

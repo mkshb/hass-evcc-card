@@ -88,6 +88,8 @@
   "statsNoDataLink": "Više info",
   "smartCostLimitCo2": "CO₂ ograničenje",
   "smartCostLimitPrice": "Cjenovno ograničenje",
+  "feedInPriorityLimit": "Ograničenje prioriteta predaje u mrežu",
+  "feedInPriorityActive": "Prioritet predaje u mrežu aktivan",
   "sessionPricePerKwh": "Cijena/kWh",
   "sessionCo2PerKwh": "CO₂/kWh",
   "sessionSolar": "Udio solara",
