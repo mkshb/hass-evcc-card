@@ -168,6 +168,7 @@
   "editorShowLoadpointsTitle": "Show charge points",
   "editorShowLoadpointsHint": "Empty = show all",
   "editorNoPlanForTitle": "No charging plan for",
+  "editorNoPvForTitle": "Hide PV / Min+PV for",
   "editorChargeCurrentSettingsLabel": "Charge current settings",
   "editorCollapsed": "Collapsed",
   "editorExpanded": "Expanded",

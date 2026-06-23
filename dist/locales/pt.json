@@ -168,6 +168,7 @@
   "editorShowLoadpointsTitle": "Mostrar pontos de carga",
   "editorShowLoadpointsHint": "Vazio = mostrar todos",
   "editorNoPlanForTitle": "Sem plano de carga para",
+  "editorNoPvForTitle": "Ocultar PV / Min+PV para",
   "editorChargeCurrentSettingsLabel": "Definições de corrente de carga",
   "editorCollapsed": "Recolhido",
   "editorExpanded": "Expandido",

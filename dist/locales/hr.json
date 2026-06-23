@@ -168,6 +168,7 @@
   "editorShowLoadpointsTitle": "Prikaži točke punjenja",
   "editorShowLoadpointsHint": "Prazno = prikaži sve",
   "editorNoPlanForTitle": "Nema plana punjenja za",
+  "editorNoPvForTitle": "Sakrij PV / Min+PV za",
   "editorChargeCurrentSettingsLabel": "Postavke struje punjenja",
   "editorCollapsed": "Sažeto",
   "editorExpanded": "Prošireno",

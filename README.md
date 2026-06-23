@@ -171,6 +171,7 @@ Add the card to any Lovelace dashboard and use the **visual editor** to configur
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
+| `no_pv` | `list` | *(none)* | Hide the **PV** and **Min+PV** charge modes for specific charge points (useful when no PV system is configured in evcc) |
 | `site_details` | `string` | `expanded` | `collapsed` to hide the IN/OUT detail table by default in `site` and `flow` mode |
 | `charge_current_settings` | `string` | `collapsed` | `expanded` to show charge settings expanded by default |
 | `stats_period` | `string` | `total` | Default statistics period: `total`, `30d`, `365d`, `thisYear`, `none` |

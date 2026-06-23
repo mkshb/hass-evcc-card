@@ -168,6 +168,7 @@
   "editorShowLoadpointsTitle": "Mostrar puntos de carga",
   "editorShowLoadpointsHint": "Vacío = mostrar todos",
   "editorNoPlanForTitle": "Sin plan de carga para",
+  "editorNoPvForTitle": "Ocultar PV / Min+PV para",
   "editorChargeCurrentSettingsLabel": "Ajustes de corriente de carga",
   "editorCollapsed": "Contraído",
   "editorExpanded": "Expandido",
