@@ -86,6 +86,7 @@ All charge points and site entities are **automatically discovered** via the HA 
 | **Slider controls** | Adjust Target SoC, Min SoC, Priority, smart charging limit, feed-in priority limit, battery boost, Max current and Min current inline |
 | **Phase switching** | Auto / 1-phase / 3-phase control built in |
 | **Plan strategies** | Continuous charging and battery preconditioning settings inline in the plan block |
+| **Repeating plans** | `repeatplan` mode lists evcc's weekly repeating charge plans per vehicle and toggles them on/off (ha-evcc 2026.6.1+) |
 | **Action indicators** | Pending phase switches (1↔3 phase) and PV-charging start/stop shown as inline countdown chips |
 | **Diagnostics** | Built-in `debug` mode collects card / HA / integration state into a copy-paste-ready bug report |
 | **Multi-language** | Support for various languages - auto-detected from HA language setting, easily extensible |
@@ -166,7 +167,7 @@ Add the card to any Lovelace dashboard and use the **visual editor** to configur
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan`, `priority`, `debug` |
+| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan`, `repeatplan`, `priority`, `debug` |
 | `title` | `string` | *(auto)* | Replaces the default card header |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language |
@@ -359,6 +360,18 @@ Minimalist charge plan view:
 > **Note:** The *Continuous charging* and *Preconditioning* controls only appear when ha-evcc exposes the corresponding entities (`plan_strategy_continuous`, `plan_strategy_precondition`). The same controls also show up in the plan block of the `loadpoint` and `compact` modes.
 
 <img src="images/plan-dark.png" width="400"> <img src="images/plan-light.png" width="400">
+
+---
+
+### `repeatplan`
+
+Repeating charge plans per vehicle - evcc's weekly departure schedules:
+
+- One block per vehicle, listing each repeating plan
+- Active weekdays shown as badges, plus the departure time and target SoC
+- On/off toggle to activate or deactivate a plan directly from the dashboard
+
+> **Note:** Repeating plans can only be **created and edited in evcc itself** - the card only switches them on or off (an info icon in the header points this out). Requires the repeating plan entities from **ha-evcc 2026.6.1+** (`repeating_plan_*`); on older integration versions the entities do not exist yet and the mode shows an empty state.
 
 ---
 
