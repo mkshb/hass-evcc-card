@@ -268,16 +268,19 @@ function fmtRemainingDuration(hass, entityId) {
   return h > 0 ? `${h}h ${m}min` : `${m}min`;
 }
 
-function fmtCountdownFromTimestamp(hass, entityId) {
-  if (!entityId || !hass) return "";
-  const ts = stateVal(hass, entityId);
-  if (!ts || ts === "unknown" || ts === "unavailable") return "";
-  const target = Date.parse(ts);
+function fmtCountdownFromISO(iso) {
+  if (!iso || iso === "unknown" || iso === "unavailable") return "";
+  const target = Date.parse(iso);
   if (isNaN(target)) return "";
   const sec = Math.max(0, Math.round((target - Date.now()) / 1000));
   if (sec <= 0) return "";
   if (sec < 60) return `${sec}s`;
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+}
+
+function fmtCountdownFromTimestamp(hass, entityId) {
+  if (!entityId || !hass) return "";
+  return fmtCountdownFromISO(stateVal(hass, entityId));
 }
 
 function socFillGradient(soc, minSoc, limitSoc) {
@@ -896,6 +899,25 @@ class EvccCard extends HTMLElement {
         { entity_id: c.pid, value: c.target })));
   }
 
+  // phase_remaining is delivered as a raw seconds value (unlike pv_remaining,
+  // which ha-evcc exposes as an absolute timestamp). Convert it to an absolute
+  // target ISO so the generic _tickCountdowns() loop can count it down live.
+  // The target is cached per entity and only re-anchored when the integration
+  // reports a new remaining value, so frequent re-renders don't reset it.
+  _phaseTargetISO(entityId, rawState) {
+    const sec = Math.round(parseFloat(rawState));
+    if (isNaN(sec) || sec <= 0) return null;
+    this._phaseTargets = this._phaseTargets || {};
+    const cached = this._phaseTargets[entityId];
+    if (!cached || cached.raw !== String(rawState)) {
+      this._phaseTargets[entityId] = {
+        raw: String(rawState),
+        iso: new Date(Date.now() + sec * 1000).toISOString(),
+      };
+    }
+    return this._phaseTargets[entityId].iso;
+  }
+
   _renderActionIndicator(ents) {
     const flashIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>`;
     const sunIcon   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z"/></svg>`;
@@ -912,13 +934,16 @@ class EvccCard extends HTMLElement {
     if (ents.phase_action && this._hass.states[ents.phase_action]) {
       const state = stateVal(this._hass, ents.phase_action);
       if (state === "scale1p" || state === "scale3p") {
-        const sec = ents.phase_remaining ? stateVal(this._hass, ents.phase_remaining) : "";
-        const cd  = fmtCountdown(sec);
-        const key = state === "scale1p" ? "phaseActionScale1p" : "phaseActionScale3p";
+        const key    = state === "scale1p" ? "phaseActionScale1p" : "phaseActionScale3p";
+        const raw    = ents.phase_remaining ? stateVal(this._hass, ents.phase_remaining) : "";
+        const target = ents.phase_remaining ? this._phaseTargetISO(ents.phase_remaining, raw) : null;
+        const span   = target
+          ? `<span data-countdown-target="${target}" data-countdown-label="${key}">${this._t(key, { val: fmtCountdownFromISO(target) || "—" })}</span>`
+          : `<span>${this._t(key, { val: fmtCountdown(raw) || "—" })}</span>`;
         chips.push(`
           <div class="lp-action-chip phase">
             ${flashIcon}
-            <span>${this._t(key, { val: cd || "—" })}</span>
+            ${span}
           </div>`);
       }
     }
