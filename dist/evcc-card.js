@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.6.4";
+const EVCC_CARD_VERSION = "0.6.5";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -74,6 +74,9 @@ const FEATURES = [
   { suffix: "smart_cost_active",   domain: "binary_sensor", type: "status_bool",   lp: true  },
   { suffix: "smart_feed_in_priority_active", domain: "binary_sensor", type: "status_bool", lp: true  },
   { suffix: "plan_active",         domain: "binary_sensor", type: "status_bool",   lp: true  },
+  { suffix: "vehicle_detection_active", domain: "binary_sensor", type: "status_bool", lp: true },
+  { suffix: "vehicle_climater_active",  domain: "binary_sensor", type: "status_bool", lp: true },
+  { suffix: "vehicle_welcome_active",   domain: "binary_sensor", type: "status_bool", lp: true },
 
   { suffix: "grid_power",          domain: "sensor",        type: "power",         lp: false, core: true },
   { suffix: "pv_power",            domain: "sensor",        type: "power",         lp: false, core: true },
@@ -268,16 +271,19 @@ function fmtRemainingDuration(hass, entityId) {
   return h > 0 ? `${h}h ${m}min` : `${m}min`;
 }
 
-function fmtCountdownFromTimestamp(hass, entityId) {
-  if (!entityId || !hass) return "";
-  const ts = stateVal(hass, entityId);
-  if (!ts || ts === "unknown" || ts === "unavailable") return "";
-  const target = Date.parse(ts);
+function fmtCountdownFromISO(iso) {
+  if (!iso || iso === "unknown" || iso === "unavailable") return "";
+  const target = Date.parse(iso);
   if (isNaN(target)) return "";
   const sec = Math.max(0, Math.round((target - Date.now()) / 1000));
   if (sec <= 0) return "";
   if (sec < 60) return `${sec}s`;
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+}
+
+function fmtCountdownFromTimestamp(hass, entityId) {
+  if (!entityId || !hass) return "";
+  return fmtCountdownFromISO(stateVal(hass, entityId));
 }
 
 function socFillGradient(soc, minSoc, limitSoc) {
@@ -896,6 +902,25 @@ class EvccCard extends HTMLElement {
         { entity_id: c.pid, value: c.target })));
   }
 
+  // phase_remaining is delivered as a raw seconds value (unlike pv_remaining,
+  // which ha-evcc exposes as an absolute timestamp). Convert it to an absolute
+  // target ISO so the generic _tickCountdowns() loop can count it down live.
+  // The target is cached per entity and only re-anchored when the integration
+  // reports a new remaining value, so frequent re-renders don't reset it.
+  _phaseTargetISO(entityId, rawState) {
+    const sec = Math.round(parseFloat(rawState));
+    if (isNaN(sec) || sec <= 0) return null;
+    this._phaseTargets = this._phaseTargets || {};
+    const cached = this._phaseTargets[entityId];
+    if (!cached || cached.raw !== String(rawState)) {
+      this._phaseTargets[entityId] = {
+        raw: String(rawState),
+        iso: new Date(Date.now() + sec * 1000).toISOString(),
+      };
+    }
+    return this._phaseTargets[entityId].iso;
+  }
+
   _renderActionIndicator(ents) {
     const flashIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>`;
     const sunIcon   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z"/></svg>`;
@@ -912,13 +937,16 @@ class EvccCard extends HTMLElement {
     if (ents.phase_action && this._hass.states[ents.phase_action]) {
       const state = stateVal(this._hass, ents.phase_action);
       if (state === "scale1p" || state === "scale3p") {
-        const sec = ents.phase_remaining ? stateVal(this._hass, ents.phase_remaining) : "";
-        const cd  = fmtCountdown(sec);
-        const key = state === "scale1p" ? "phaseActionScale1p" : "phaseActionScale3p";
+        const key    = state === "scale1p" ? "phaseActionScale1p" : "phaseActionScale3p";
+        const raw    = ents.phase_remaining ? stateVal(this._hass, ents.phase_remaining) : "";
+        const target = ents.phase_remaining ? this._phaseTargetISO(ents.phase_remaining, raw) : null;
+        const span   = target
+          ? `<span data-countdown-target="${target}" data-countdown-label="${key}">${this._t(key, { val: fmtCountdownFromISO(target) || "—" })}</span>`
+          : `<span>${this._t(key, { val: fmtCountdown(raw) || "—" })}</span>`;
         chips.push(`
           <div class="lp-action-chip phase">
             ${flashIcon}
-            <span>${this._t(key, { val: cd || "—" })}</span>
+            ${span}
           </div>`);
       }
     }
@@ -933,6 +961,21 @@ class EvccCard extends HTMLElement {
           <div class="lp-action-chip pv">
             ${sunIcon}
             <span data-countdown-target="${ts}" data-countdown-label="${key}">${this._t(key, { val: cd || "—" })}</span>
+          </div>`);
+      }
+    }
+
+    const vehicleStatuses = [
+      { key: "vehicle_detection_active", label: "vehicleDetectionActive", icon: "M9.61 16.11C9.61 14.03 10.59 12.19 12.1 11H5L6.5 6.5H17.5L18.72 10.16C19.56 10.53 20.3 11.07 20.91 11.74L18.92 6C18.72 5.42 18.16 5 17.5 5H6.5C5.84 5 5.28 5.42 5.08 6L3 12V20C3 20.55 3.45 21 4 21H5C5.55 21 6 20.55 6 20V19H10.29C9.86 18.13 9.61 17.15 9.61 16.11M6.5 16C5.67 16 5 15.33 5 14.5S5.67 13 6.5 13 8 13.67 8 14.5 7.33 16 6.5 16M20.71 20.7L20.7 20.71L20.71 20.7M16.11 11.61C18.61 11.61 20.61 13.61 20.61 16.11C20.61 17 20.36 17.82 19.92 18.5L23 21.61L21.61 23L18.5 19.93C17.8 20.36 17 20.61 16.11 20.61C13.61 20.61 11.61 18.61 11.61 16.11S13.61 11.61 16.11 11.61M16.11 13.61C14.73 13.61 13.61 14.73 13.61 16.11S14.73 18.61 16.11 18.61 18.61 17.5 18.61 16.11 17.5 13.61 16.11 13.61" },
+      { key: "vehicle_climater_active",  label: "vehicleClimaterActive",  icon: "M12,11A1,1 0 0,0 11,12A1,1 0 0,0 12,13A1,1 0 0,0 13,12A1,1 0 0,0 12,11M12.5,2C17,2 17.11,5.57 14.75,6.75C13.76,7.24 13.32,8.29 13.13,9.22C13.61,9.42 14.03,9.73 14.35,10.13C18.05,8.13 22.03,8.92 22.03,12.5C22.03,17 18.46,17.1 17.28,14.73C16.78,13.74 15.72,13.3 14.79,13.11C14.59,13.59 14.28,14 13.88,14.34C15.87,18.03 15.08,22 11.5,22C7,22 6.91,18.42 9.27,17.24C10.25,16.75 10.69,15.71 10.89,14.79C10.4,14.59 9.97,14.27 9.65,13.87C5.96,15.85 2,15.07 2,11.5C2,7 5.56,6.89 6.74,9.26C7.24,10.25 8.29,10.68 9.22,10.87C9.41,10.39 9.73,9.97 10.14,9.65C8.15,5.96 8.94,2 12.5,2Z" },
+      { key: "vehicle_welcome_active",   label: "vehicleWelcomeActive",   icon: "M22,12V20A2,2 0 0,1 20,22H4A2,2 0 0,1 2,20V12A1,1 0 0,1 1,11V8A2,2 0 0,1 3,6H6.17C6.06,5.69 6,5.35 6,5A3,3 0 0,1 9,2C10,2 10.88,2.5 11.43,3.24V3.23L12,4L12.57,3.23V3.24C13.12,2.5 14,2 15,2A3,3 0 0,1 18,5C18,5.35 17.94,5.69 17.83,6H21A2,2 0 0,1 23,8V11A1,1 0 0,1 22,12M4,20H11V12H4V20M20,20V12H13V20H20M9,4A1,1 0 0,0 8,5A1,1 0 0,0 9,6A1,1 0 0,0 10,5A1,1 0 0,0 9,4M15,4A1,1 0 0,0 14,5A1,1 0 0,0 15,6A1,1 0 0,0 16,5A1,1 0 0,0 15,4M3,8V10H11V8H3M13,8V10H21V8H13Z" },
+    ];
+    for (const vs of vehicleStatuses) {
+      if (ents[vs.key] && isOn(this._hass, ents[vs.key])) {
+        chips.push(`
+          <div class="lp-action-chip vehicle">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="${vs.icon}"/></svg>
+            <span>${this._t(vs.label)}</span>
           </div>`);
       }
     }
@@ -4077,6 +4120,7 @@ class EvccCard extends HTMLElement {
       .lp-action-chip svg { width: 14px; height: 14px; flex: 0 0 14px; }
       .lp-action-chip.phase { color: var(--evcc-bolt, #ffae00); border-color: color-mix(in srgb, var(--evcc-bolt, #ffae00) 50%, transparent); background: color-mix(in srgb, var(--evcc-bolt, #ffae00) 10%, transparent); }
       .lp-action-chip.pv    { color: var(--evcc-green, #0a0);  border-color: color-mix(in srgb, var(--evcc-green, #0a0)  50%, transparent); background: color-mix(in srgb, var(--evcc-green, #0a0)  10%, transparent); }
+      .lp-action-chip.vehicle { color: var(--info-color, #2196f3); border-color: color-mix(in srgb, var(--info-color, #2196f3) 50%, transparent); background: color-mix(in srgb, var(--info-color, #2196f3) 10%, transparent); }
       .lp-remaining {
         font-size: .85em; color: var(--secondary-text-color);
         margin-right: 8px; white-space: nowrap;
