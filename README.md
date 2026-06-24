@@ -61,14 +61,19 @@ All charge points and site entities are **automatically discovered** via the HA 
 </tr>
 <tr>
 <td align="center"><b>Priority</b></td>
-<td></td><td></td><td></td>
+<td align="center"><b>Repeat plan</b></td>
+<td></td><td></td>
 </tr>
 <tr>
 <td>
 <a href="#priority"><img src="images/priority-dark.png" width="200"></a>
 <a href="#priority"><img src="images/priority-light.png" width="200"></a>
 </td>
-<td></td><td></td><td></td>
+<td>
+<a href="#repeatplan"><img src="images/repeatplan-dark.png" width="200"></a>
+<a href="#repeatplan"><img src="images/repeatplan-light.png" width="200"></a>
+</td>
+<td></td><td></td>
 </tr>
 </table>
 
@@ -372,6 +377,8 @@ Repeating charge plans per vehicle - evcc's weekly departure schedules:
 - On/off toggle to activate or deactivate a plan directly from the dashboard
 
 > **Note:** Repeating plans can only be **created and edited in evcc itself** - the card only switches them on or off (an info icon in the header points this out). Requires the repeating plan entities from **ha-evcc 2026.6.1+** (`repeating_plan_*`); on older integration versions the entities do not exist yet and the mode shows an empty state.
+
+<img src="images/repeatplan-dark.png" width="400"> <img src="images/repeatplan-light.png" width="400">
 
 ---
 
