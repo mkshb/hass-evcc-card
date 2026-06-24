@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.6.3";
+const EVCC_CARD_VERSION = "0.6.4";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -57,6 +57,16 @@ const FEATURES = [
   { suffix: "plan_projected_end",      domain: "sensor", type: "info", lp: true },
   { suffix: "vehicle_plans_soc",       domain: "sensor", type: "info", lp: true },
   { suffix: "vehicle_plans_time",      domain: "sensor", type: "info", lp: true },
+
+  { suffix: "repeating_plan_2",  domain: "switch", type: "toggle", lp: true },
+  { suffix: "repeating_plan_3",  domain: "switch", type: "toggle", lp: true },
+  { suffix: "repeating_plan_4",  domain: "switch", type: "toggle", lp: true },
+  { suffix: "repeating_plan_5",  domain: "switch", type: "toggle", lp: true },
+  { suffix: "repeating_plan_6",  domain: "switch", type: "toggle", lp: true },
+  { suffix: "repeating_plan_7",  domain: "switch", type: "toggle", lp: true },
+  { suffix: "repeating_plan_8",  domain: "switch", type: "toggle", lp: true },
+  { suffix: "repeating_plan_9",  domain: "switch", type: "toggle", lp: true },
+  { suffix: "repeating_plan_10", domain: "switch", type: "toggle", lp: true },
 
   { suffix: "charging",            domain: "binary_sensor", type: "status_bool",   lp: true,  core: true },
   { suffix: "connected",           domain: "binary_sensor", type: "status_bool",   lp: true  },
@@ -591,6 +601,8 @@ class EvccCard extends HTMLElement {
               ? this._renderStatsBlock()
               : this._config.mode === "plan"
                 ? this._renderPlanMode(visible)
+                : this._config.mode === "repeatplan"
+                ? this._renderRepeatPlansMode()
                 : this._config.mode === "priority"
                   ? this._renderPriorityMode(visible)
                 : this._config.mode === "compact"
@@ -1575,6 +1587,114 @@ class EvccCard extends HTMLElement {
           </div>
           ${planHtml}
           ${sessionHtml}
+        </div>`;
+    }).join("");
+  }
+
+  // Repeating plans (ha-evcc 2026.6.1+) are vehicle-scoped switches
+  // (switch.<prefix><vehicle>_repeating_plan_N) and therefore never land in the
+  // loadpoint buckets of discoverEntities(). We scan hass.states directly and
+  // group the plans by vehicle.
+  _discoverRepeatingPlans() {
+    const prefix    = this._getPrefix();
+    const escPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re        = new RegExp(`^switch\\.${escPrefix}(.+)_repeating_plan_(\\d+)$`);
+    const states    = this._hass.states;
+    const groups     = {};
+
+    for (const entityId of Object.keys(states)) {
+      const m = entityId.match(re);
+      if (!m) continue;
+      const slug = m[1];
+      const n    = parseInt(m[2], 10);
+      const st   = states[entityId];
+      if (!st || st.state === "unavailable" || st.state === "unknown") continue;
+      const a = st.attributes || {};
+      // Only render plans that actually carry schedule data.
+      if (!Array.isArray(a.weekdays) && a.time == null) continue;
+
+      if (!groups[slug]) {
+        groups[slug] = { slug, vehicleName: this._vehicleNameForSlug(slug), plans: [] };
+      }
+      groups[slug].plans.push({
+        n,
+        entityId,
+        active:   st.state === "on",
+        weekdays: Array.isArray(a.weekdays) ? a.weekdays.map(Number) : [],
+        time:     a.time ?? null,
+        soc:      a.soc ?? null,
+      });
+    }
+
+    return Object.values(groups)
+      .map(g => ({ ...g, plans: g.plans.sort((x, y) => x.n - y.n) }))
+      .filter(g => g.plans.length > 0)
+      .sort((x, y) => x.vehicleName.localeCompare(y.vehicleName));
+  }
+
+  _vehicleNameForSlug(slug) {
+    // ha-evcc does not expose the vehicle title on the repeating-plan switch,
+    // so derive a readable label from the entity slug (e.g. "mein_auto" → "Mein Auto").
+    return String(slug).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  _renderWeekdayBadges(weekdays) {
+    // evcc/Go weekday convention: 0 = Sunday … 6 = Saturday.
+    // Displayed Monday-first (European order): 1,2,3,4,5,6,0.
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    const set   = new Set(weekdays || []);
+    return order.map(d =>
+      `<span class="rplan-day${set.has(d) ? " on" : ""}">${this._t("weekday" + d)}</span>`
+    ).join("");
+  }
+
+  _renderRepeatPlansBlock(group) {
+    const clockSuffix = this._t("clockSuffix");
+    const rows = group.plans.map(p => {
+      const time = p.time ? `${p.time}${clockSuffix ? " " + clockSuffix : ""}` : "—";
+      const soc  = (p.soc != null && p.soc !== "") ? `${p.soc} %` : "—";
+      return `
+        <div class="rplan-row">
+          <div class="rplan-days">${this._renderWeekdayBadges(p.weekdays)}</div>
+          <div class="rplan-line">
+            <div class="rplan-info">
+              <span class="rplan-field"><span class="rplan-label">${this._t("departure")}</span><span class="rplan-value">${time}</span></span>
+              <span class="rplan-field"><span class="rplan-label">${this._t("targetSoc")}</span><span class="rplan-value">${soc}</span></span>
+            </div>
+            <button class="toggle ${p.active ? "on" : ""}"
+                    data-entity="${p.entityId}"
+                    data-domain="switch"
+                    data-on="${p.active}">
+              ${p.active ? this._t("toggleOn") : this._t("toggleOff")}
+            </button>
+          </div>
+        </div>`;
+    }).join("");
+    return `
+      <div class="plan-block rplan-block">
+        <div class="plan-header">
+          <span class="session-title">${this._t("repeatingPlans")}</span>
+          <span class="rplan-hint" title="${this._tInline("repeatingPlansHint")}" aria-label="${this._tInline("repeatingPlansHint")}">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M11,9H13V7H11M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M11,17H13V11H11V17Z"/></svg>
+          </span>
+        </div>
+        <div class="rplan-list">${rows}</div>
+      </div>`;
+  }
+
+  _renderRepeatPlansMode() {
+    const groups = this._discoverRepeatingPlans();
+    if (groups.length === 0) {
+      return `<div class="empty"><p>${this._t("noRepeatingPlans")}</p></div>`;
+    }
+    return groups.map(g => {
+      const name = (groups.length === 1 && this._config.title) ? this._config.title : g.vehicleName;
+      return `
+        <div class="loadpoint">
+          <div class="lp-header">
+            <span class="lp-name">${name}</span>
+          </div>
+          ${this._renderRepeatPlansBlock(g)}
         </div>`;
     }).join("");
   }
@@ -4321,6 +4441,19 @@ class EvccCard extends HTMLElement {
       select.plan-precondition-select { flex: 1; padding: 4px 8px; border: 1px solid var(--divider-color, #4b5563); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); font-size: .82rem; }
       .plan-row .toggle { margin-left: auto; }
       .plan-error { margin-top: 8px; padding: 6px 10px; border-radius: 6px; background: #ef444422; color: #ef4444; font-size: .78rem; word-break: break-all; }
+      .rplan-block .plan-header { justify-content: flex-start; gap: 6px; }
+      .rplan-hint { display: inline-flex; align-items: center; color: var(--secondary-text-color); cursor: help; }
+      .rplan-list { display: flex; flex-direction: column; gap: 8px; }
+      .rplan-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--divider-color); border-radius: 8px; }
+      .rplan-days { display: flex; gap: 3px; flex-wrap: wrap; }
+      .rplan-day { font-size: .68rem; font-weight: 600; line-height: 1; padding: 4px 5px; border-radius: 5px; min-width: 15px; text-align: center; background: var(--secondary-background-color, rgba(0,0,0,.08)); color: var(--secondary-text-color); border: 1px solid transparent; }
+      .rplan-day.on { background: var(--primary-color); color: #fff; }
+      .rplan-line { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      .rplan-info { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+      .rplan-field { display: inline-flex; align-items: baseline; gap: 5px; }
+      .rplan-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--secondary-text-color); }
+      .rplan-value { font-size: .9rem; font-weight: 600; }
+      .rplan-line .toggle { margin-left: auto; }
 
       .empty { text-align: center; padding: 24px; color: var(--secondary-text-color); font-size: .9rem; line-height: 1.8; }
       .empty code { background: var(--code-editor-background-color, #1e1e1e); color: var(--primary-color); padding: 1px 6px; border-radius: 4px; font-size: .82rem; }
@@ -4608,6 +4741,7 @@ class EvccCardEditor extends HTMLElement {
       loadpoint: this._t("editorTitlePlaceholderLoadpoint"),
       compact:   this._t("editorTitlePlaceholderCompact"),
       plan:      this._t("editorTitlePlaceholderPlan"),
+      repeatplan:this._t("editorTitlePlaceholderRepeatplan"),
       priority:  this._t("editorTitlePlaceholderPriority"),
       site:      this._t("editorTitlePlaceholderSite"),
       flow:      this._t("editorTitlePlaceholderFlow"),
@@ -4647,6 +4781,7 @@ class EvccCardEditor extends HTMLElement {
             ["battery",   this._t("editorModeBattery")],
             ["stats",     this._t("editorModeStats")],
             ["plan",      this._t("editorModePlan")],
+            ["repeatplan",this._t("editorModeRepeatplan")],
             ["priority",  this._t("editorModePriority")],
             ["debug",     this._t("editorModeDebug")],
           ], mode)}
