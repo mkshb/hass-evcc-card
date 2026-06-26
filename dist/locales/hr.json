@@ -10,6 +10,7 @@
   "modePV": "Solarno",
   "modeMinPV": "Min+Solarno",
   "modeNow": "Sad",
+  "modeSmart": "Pametno",
   "modeAuto": "Auto",
   "targetSoc": "Ciljani SoC",
   "minSoc": "Min SoC",

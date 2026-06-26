@@ -10,6 +10,7 @@
   "modePV": "PV",
   "modeMinPV": "Min+PV",
   "modeNow": "Now",
+  "modeSmart": "Smart",
   "modeAuto": "Auto",
   "targetSoc": "Target SoC",
   "minSoc": "Min SoC",

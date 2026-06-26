@@ -178,7 +178,7 @@ Add the card to any Lovelace dashboard and use the **visual editor** to configur
 | `language` | `string` | *(auto)* | Override UI language |
 | `size` | `string` | *(auto)* | Fixed card scale: `small`, `medium` or `large`. When unset, the card auto-scales to its container width |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
-| `no_pv` | `list` | *(none)* | Hide the **PV** and **Min+PV** charge modes for specific charge points (useful when no PV system is configured in evcc) |
+| `no_pv` | `list` | *(none)* | Treat specific charge points as having **no PV system**, mirroring evcc's own mode logic: **Min+PV** is hidden and **PV** is replaced by a single **Smart** mode when a dynamic tariff is configured (otherwise only **Off** / **Now** remain). See [Charge modes](#charge-modes) below |
 | `site_details` | `string` | `expanded` | `collapsed` to hide the IN/OUT detail table by default in `site` and `flow` mode |
 | `charge_current_settings` | `string` | `collapsed` | `expanded` to show charge settings expanded by default |
 | `stats_period` | `string` | `total` | Default statistics period: `total`, `30d`, `365d`, `thisYear`, `none` |
@@ -194,11 +194,23 @@ Add the card to any Lovelace dashboard and use the **visual editor** to configur
 
 The main charge point view. For each discovered charge point it shows:
 
-- Charge mode buttons (Off / PV / Min+PV / Now)
+- Charge mode buttons (Off / PV / Min+PV / Now) - see [Charge modes](#charge-modes) for when which mode is shown
 - Vehicle SoC progress bar with percentage and estimated range
 - Current charging session: energy, cost, duration, phases
 - Sliders: Target SoC, Min SoC
 - Charge plan block
+
+#### Charge modes
+
+The mode selector mirrors evcc's own logic, where the available modes depend on whether the charge point has a PV system (controlled here via the [`no_pv`](#configuration-options) option) and whether a dynamic electricity tariff is configured:
+
+| Situation | Modes shown |
+| --- | --- |
+| PV system present (default) | **Off** / **PV** / **Min+PV** / **Now** |
+| `no_pv` set + dynamic tariff available | **Off** / **Smart** / **Now** |
+| `no_pv` set + no dynamic tariff | **Off** / **Now** |
+
+> **About the Smart mode:** Without a PV system, charging is driven by electricity tariffs rather than solar surplus, so evcc renames the **PV** mode to **Smart** and drops **Min+PV**. The card does the same: the **Smart** button still sets the same underlying `pv` charge mode, only the label and icon change. A dynamic tariff is detected via the `tariff_grid` (price) or `tariff_co2` (CO2) sensor; if neither reports a value, only **Off** / **Now** are offered.
 
 The loadpoint header also shows **live action indicators** when EVCC has scheduled a pending phase switch or PV-charging change - e.g. *"Switching to 3-phase in 0:42"* or *"PV charging on in 1:15"*. The chip disappears automatically once the action is executed. Requires ha-evcc with the `phase_action` / `pv_action` sensors exposed.
 

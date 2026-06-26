@@ -10,6 +10,7 @@
   "modePV": "PV",
   "modeMinPV": "Min+PV",
   "modeNow": "Snel",
+  "modeSmart": "Slim",
   "modeAuto": "Auto",
   "targetSoc": "Limiet",
   "minSoc": "Min. lading",

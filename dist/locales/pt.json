@@ -10,6 +10,7 @@
   "modePV": "FV",
   "modeMinPV": "Mín+FV",
   "modeNow": "Imediato",
+  "modeSmart": "Smart",
   "modeAuto": "Auto",
   "targetSoc": "SOC alvo",
   "minSoc": "SOC mín",
