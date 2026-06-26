@@ -10,6 +10,7 @@
   "modePV": "PV",
   "modeMinPV": "Min+PV",
   "modeNow": "Sofort",
+  "modeSmart": "Intelligent",
   "modeAuto": "Auto",
   "targetSoc": "Ziel-SOC",
   "minSoc": "Min-SOC",

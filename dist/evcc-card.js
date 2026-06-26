@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.6.5";
+const EVCC_CARD_VERSION = "0.6.6";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -126,6 +126,10 @@ const CHARGE_MODES = {
   "minpv": { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style="position:relative;top:4px;left:-6px;opacity:0.8"><path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z"/></svg>`, tKey: "modeMinPV"},
   "now":   { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>`,  tKey: "modeNow"  },
 };
+
+// Icon for the "smart" pseudo-mode: when PV is hidden but a dynamic tariff is
+// available, the pv mode is relabelled to "Smart" (mirrors evcc's Mode.vue).
+const SMART_MODE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12,6A6,6 0 0,1 18,12C18,14.22 16.79,16.16 15,17.2V19A1,1 0 0,1 14,20H10A1,1 0 0,1 9,19V17.2C7.21,16.16 6,14.22 6,12A6,6 0 0,1 12,6M14,21V22A1,1 0 0,1 13,23H11A1,1 0 0,1 10,22V21H14M20,11H23V13H20V11M1,11H4V13H1V11M13,1V4H11V1H13M4.92,3.5L7.05,5.64L5.63,7.05L3.5,4.93L4.92,3.5M16.95,5.63L19.07,3.5L20.5,4.93L18.37,7.05L16.95,5.63Z"/></svg>`;
 
 const _chevron = (up) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="${
@@ -986,16 +990,35 @@ class EvccCard extends HTMLElement {
   _renderModeSelector(ents, hidePv = false) {
     if (!ents.mode) return "";
     const current = stateVal(this._hass, ents.mode);
-    const hidden  = hidePv ? ["pv", "minpv"] : [];
+
+    // Mirror evcc's Mode.vue: when PV is hidden (no solar configured) the modes
+    // depend on whether a dynamic tariff is available (smartCostAvailable). The
+    // ha-evcc integration exposes no such flag, so we proxy it via a valid
+    // tariff sensor value (same signal used by the smart-cost block below).
+    let hidden    = [];
+    let pvAsSmart = false;
+    if (hidePv) {
+      const isCo2     = (attr(this._hass, ents.smart_cost_limit, "unit_of_measurement") ?? "") === "g/kWh";
+      const tariffId  = `sensor.${this._getPrefix()}${isCo2 ? "tariff_co2" : "tariff_grid"}`;
+      const smartCost = !isNaN(parseFloat(this._hass.states[tariffId]?.state ?? "NaN"));
+      if (smartCost) { hidden = ["minpv"];        pvAsSmart = true; }  // [Off, Smart, Now]
+      else           { hidden = ["pv", "minpv"]; }                     // [Off, Now]
+    }
+
     const buttons = Object.entries(CHARGE_MODES)
       .filter(([val]) => !hidden.includes(val) || val === current)
-      .map(([val, cfg]) => `
+      .map(([val, cfg]) => {
+        const isSmart = pvAsSmart && val === "pv";
+        const icon    = isSmart ? SMART_MODE_ICON : cfg.icon;
+        const label   = isSmart ? this._t("modeSmart") : this._t(cfg.tKey);
+        return `
       <button class="mode-btn ${current === val ? "active" : ""}"
               data-entity="${ents.mode}" data-value="${val}">
-        <span class="mode-icon">${cfg.icon}</span>
-        <span class="mode-label">${this._t(cfg.tKey)}</span>
+        <span class="mode-icon">${icon}</span>
+        <span class="mode-label">${label}</span>
       </button>
-    `).join("");
+    `;
+      }).join("");
     return `<div class="mode-row">${buttons}</div>`;
   }
 
