@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.6.6";
+const EVCC_CARD_VERSION = "0.7.0";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -137,11 +137,17 @@ const _chevron = (up) =>
        : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"
   }"/></svg>`;
 
-async function detectPrefix(hass) {
+// Detect the entity prefix AND the integration's config_entry_id from a single
+// `config/entity_registry/list` call. The entry_id is required by the ha-evcc
+// WebSocket data API commands (evcc_intg/forecast|sessions|plan_preview); every
+// evcc_intg registry entry carries it in `config_entry_id`.
+async function detectIntegration(hass) {
   try {
     const entities = await hass.callWS({ type: "config/entity_registry/list" });
     const evccEnts = entities.filter(e => e.platform === "evcc_intg");
-    if (evccEnts.length === 0) return "evcc_";
+    if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null };
+
+    const entryId = evccEnts.find(e => e.config_entry_id)?.config_entry_id ?? null;
 
     const siteSuffixes = FEATURES.filter(f => !f.lp);
     for (const ent of evccEnts) {
@@ -152,15 +158,20 @@ async function detectPrefix(hass) {
       for (const feat of siteSuffixes) {
         if (feat.domain === domain && slug.endsWith(feat.suffix)) {
           const detected = slug.slice(0, slug.length - feat.suffix.length);
-          if (detected.length > 0) return detected;
+          if (detected.length > 0) return { prefix: detected, entryId };
         }
       }
     }
-    return "evcc_";
+    return { prefix: "evcc_", entryId };
   } catch (e) {
-    console.warn("[evcc-card] Could not detect prefix from entity registry:", e);
-    return "evcc_";
+    console.warn("[evcc-card] Could not detect integration from entity registry:", e);
+    return { prefix: "evcc_", entryId: null };
   }
+}
+
+// Backwards-compatible thin wrapper: the editor only needs the prefix.
+async function detectPrefix(hass) {
+  return (await detectIntegration(hass)).prefix;
 }
 
 function discoverEntities(hass, prefix = "evcc_") {
@@ -379,6 +390,7 @@ class EvccCard extends HTMLElement {
     this._lastRenderKey = null;
     this._countdownInterval = null;
     this._planState     = {};
+    this._planPreviewDebounce = {};
     this._tabState      = {};
     this._statsPeriod   = "total";
     this._chartCache     = {};
@@ -392,11 +404,32 @@ class EvccCard extends HTMLElement {
     this._cachedEntities   = null;  // { loadpoints, site } — invalidated when entity IDs change
     this._cachedEntityIdKey = null; // sorted join of evcc entity IDs + prefix
 
+    // ha-evcc WebSocket data API (evcc_intg/forecast|sessions|plan_preview).
+    this._entryId             = null;   // config_entry_id, needed by the WS commands
+    this._integrationDetected = false;  // entity-registry probe done once
+    this._detectingIntegration = false;
+    this._caps        = null;   // { version, commands[] } from evcc_intg/capabilities
+    this._capsLoaded  = false;
+    this._capsLoading = null;   // in-flight promise guard
+    this._wsCache     = {};     // cacheKey -> { ts, data }
+    this._wsInflight  = {};     // cacheKey -> Promise (de-dup concurrent fetches)
+
     this._onPlanReset = (e) => {
       const lpName = e.detail?.lpName;
       setTimeout(() => {
-        if (lpName) delete this._planState[lpName];
-        else this._planState = {};
+        if (lpName) {
+          delete this._planState[lpName];
+          clearTimeout(this._planPreviewDebounce[lpName]);
+          delete this._planPreviewDebounce[lpName];
+        } else {
+          this._planState = {};
+          for (const k of Object.keys(this._planPreviewDebounce)) clearTimeout(this._planPreviewDebounce[k]);
+          this._planPreviewDebounce = {};
+        }
+        // Purge preview cache entries
+        for (const key of Object.keys(this._wsCache)) {
+          if (key.startsWith("plan:")) delete this._wsCache[key];
+        }
         if (this._hass) this._render();
       }, 1500);
     };
@@ -415,6 +448,9 @@ class EvccCard extends HTMLElement {
       clearInterval(this._countdownInterval);
       this._countdownInterval = null;
     }
+    // Drop on-demand WS caches; a re-mount re-probes capabilities/entry_id.
+    this._wsCache    = {};
+    this._wsInflight = {};
   }
 
   async _loadTranslations() {
@@ -427,15 +463,164 @@ class EvccCard extends HTMLElement {
     return this._config.prefix || this._detectedPrefix || "evcc_";
   }
 
+  // ── ha-evcc WebSocket data API ──────────────────────────────────────────
+  // On-demand request/response commands served by evcc_intg. They return data
+  // that does not map to entities (forecast curves, raw session history, plan
+  // previews). Reads are slow-changing, so results are cached with a TTL.
+
+  _hasCmd(name) {
+    return Array.isArray(this._caps?.commands) && this._caps.commands.includes(name);
+  }
+
+  // Probe capabilities once. Older ha-evcc versions lack the command and the
+  // callWS rejects — we then mark the feature set empty so the UI degrades.
+  _loadCapabilities() {
+    if (this._capsLoaded || this._capsLoading || !this._hass) return this._capsLoading;
+    this._capsLoading = this._hass
+      .callWS({ type: "evcc_intg/capabilities", entry_id: this._entryId })
+      .then(res => {
+        this._caps = {
+          version:  res?.version ?? null,
+          commands: Array.isArray(res?.commands) ? res.commands : [],
+        };
+      })
+      .catch(e => {
+        console.warn("[evcc-card] evcc_intg/capabilities not available:", e?.message || e);
+        this._caps = { version: null, commands: [] };
+      })
+      .finally(() => {
+        this._capsLoaded  = true;
+        this._capsLoading = null;
+        // Pre-fetch debug probes so data is cached before the debug block renders.
+        this._prefetchDebugProbes();
+        this._render();
+      });
+    return this._capsLoading;
+  }
+
+  // Kick off WS probes in the background so they are cached for the debug block.
+  // Results arrive asynchronously; _wsFetch.finally() triggers a re-render.
+  _prefetchDebugProbes() {
+    if (this._hasCmd("forecast"))     { this._wsForecast("grid"); this._wsForecast("planner"); }
+    if (this._hasCmd("sessions"))     this._wsSessions();
+    // plan_preview needs a loadpoint — skip here, probe only in debug report.
+  }
+
+  // Generic cached WS fetch. Returns fresh cached data synchronously; otherwise
+  // kicks off the request (de-duplicated per cacheKey) and triggers a re-render
+  // when it lands. Returns null while data is pending or on error.
+  // Returns: null (pending/no hass), { data } on success, { error } on failure.
+  _wsFetch(type, params, cacheKey, ttlMs) {
+    if (!this._hass || !this._entryId) return null;
+
+    const cached = this._wsCache[cacheKey];
+    const now = Date.now();
+    if (cached && (now - cached.ts) < ttlMs) return cached.result;
+
+    if (!this._wsInflight[cacheKey]) {
+      this._wsInflight[cacheKey] = this._hass
+        .callWS({ type, entry_id: this._entryId, ...params })
+        .then(data => {
+          this._wsCache[cacheKey] = { ts: Date.now(), result: { data } };
+        })
+        .catch(e => {
+          const msg = e?.message || (typeof e === "object" ? JSON.stringify(e) : String(e));
+          console.warn(`[evcc-card] ${type} failed:`, msg);
+          this._wsCache[cacheKey] = { ts: Date.now(), result: { error: msg } };
+        })
+        .finally(() => {
+          delete this._wsInflight[cacheKey];
+          // Throttle the re-render to avoid rapid DOM replacements.
+          if (!this._wsRenderTimer) {
+            this._wsRenderTimer = setTimeout(() => {
+              this._wsRenderTimer = null;
+              this._render();
+            }, 500);
+          }
+        });
+    }
+    // Serve stale result while a refresh is in flight, else null (pending).
+    return cached ? cached.result : null;
+  }
+
+  // kind: grid | feedin | co2 | solar | planner  →  { kind, rates[], smartCostType?, currency? }
+  // capabilities + the "planner" kind ship in the same ha-evcc release, so
+  // _hasCmd("forecast") already implies planner is accepted - no kind-level probe needed.
+  _wsForecast(kind) {
+    if (!this._hasCmd("forecast")) return null;
+    return this._wsFetch("evcc_intg/forecast", { kind }, `forecast:${kind}`, 5 * 60 * 1000);
+  }
+
+  // year/month optional  →  { sessions[] }
+  _wsSessions(year, month) {
+    if (!this._hasCmd("sessions")) return null;
+    const params = {};
+    if (year  != null) params.year  = year;
+    if (month != null) params.month = month;
+    return this._wsFetch("evcc_intg/sessions", params, `sessions:${year ?? ""}:${month ?? ""}`, 5 * 60 * 1000);
+  }
+
+  // opts: { loadpoint:int, kind:"soc"|"energy"|"repeating", value,
+  //         timestamp? | weekdays/time/timezone }  →  { duration, power, rates[], ... }
+  _wsPlanPreview(opts) {
+    if (!this._hasCmd("plan_preview")) return null;
+    const params = { loadpoint: opts.loadpoint, kind: opts.kind, value: String(opts.value) };
+    if (opts.timestamp != null) params.timestamp = opts.timestamp;
+    if (opts.weekdays  != null) params.weekdays  = opts.weekdays;
+    if (opts.time      != null) params.time      = opts.time;
+    if (opts.timezone  != null) params.timezone  = opts.timezone;
+    const cacheKey = "plan:" + JSON.stringify(params);
+    return this._wsFetch("evcc_intg/plan_preview", params, cacheKey, 60 * 1000);
+  }
+
+  // plan_preview expects the integer loadpoint index, but the card keys
+  // loadpoints by name slug. ha-evcc has no per-loadpoint index attribute, so
+  // fall back to the stable discovery order.
+  // Returns 1-based loadpoint index (evcc API is 1-based).
+  _lpIndex(lpName) {
+    const prefix = this._getPrefix();
+    const names = Object.keys(discoverEntities(this._hass, prefix).loadpoints);
+    const idx = names.indexOf(lpName);
+    return idx >= 0 ? idx + 1 : null;
+  }
+
+  // Debounced plan preview fetch — called after SOC/time/vehicle changes.
+  _requestPlanPreview(lpName) {
+    const state = this._planState[lpName];
+    if (!state || !state.soc || !state.time || !this._hasCmd("plan_preview")) return;
+    const lpIdx = this._lpIndex(lpName);
+    if (lpIdx == null) return;
+
+    clearTimeout(this._planPreviewDebounce[lpName]);
+    this._planPreviewDebounce[lpName] = setTimeout(() => {
+      // Convert datetime-local value to ISO 8601 with timezone offset
+      const d = new Date(state.time);
+      if (isNaN(d.getTime())) return;
+      const ts = d.toISOString();
+      // Purge stale preview cache entries for this loadpoint
+      const pfx = `plan:{"loadpoint":${lpIdx},`;
+      for (const key of Object.keys(this._wsCache)) {
+        if (key.startsWith(pfx)) delete this._wsCache[key];
+      }
+      this._wsPlanPreview({ loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts });
+    }, 500);
+  }
+
   set hass(hass) {
     this._hass = hass;
 
-    if (!this._detectedPrefix && !this._detectingPrefix && !this._config.prefix) {
-      this._detectingPrefix = true;
-      detectPrefix(hass).then(prefix => {
-        this._detectingPrefix = false;
-        if (prefix !== this._detectedPrefix) {
-          this._detectedPrefix = prefix;
+    if (!this._integrationDetected && !this._detectingIntegration) {
+      this._detectingIntegration = true;
+      detectIntegration(hass).then(({ prefix, entryId }) => {
+        this._detectingIntegration = false;
+        this._integrationDetected = true;
+        this._entryId = entryId;
+        // Probe the ha-evcc WebSocket data API once the entry_id is known.
+        this._loadCapabilities();
+        // Honour an explicitly configured prefix, but still keep the detected one.
+        const changed = (!this._config.prefix && prefix !== this._detectedPrefix);
+        this._detectedPrefix = prefix;
+        if (changed) {
           this._lastRenderKey = null;
           if (this._renderTimer) {
             clearTimeout(this._renderTimer);
@@ -1527,7 +1712,8 @@ class EvccCard extends HTMLElement {
         <button class="toggle ${contOn ? "on" : ""}"
                 data-entity="${contEntityId}"
                 data-domain="switch"
-                data-on="${contOn}">
+                data-on="${contOn}"
+                data-lp="${lpName}">
           ${contOn ? this._t("toggleOn") : this._t("toggleOff")}
         </button>
       </div>` : "";
@@ -1546,7 +1732,7 @@ class EvccCard extends HTMLElement {
     const preHtml = (preState && preOptions.length) ? `
       <div class="plan-row">
         <label>${this._t("planStrategyPrecondition")}</label>
-        <select class="plan-precondition-select" data-entity="${preEntityId}">
+        <select class="plan-precondition-select" data-entity="${preEntityId}" data-lp="${lpName}">
           ${preOptions.map(opt => `
             <option value="${opt}" ${opt === preCurrent ? "selected" : ""}>${fmtPre(opt)}</option>
           `).join("")}
@@ -1591,6 +1777,7 @@ class EvccCard extends HTMLElement {
           ${contHtml}
           ${preHtml}
         </div>
+        ${this._renderPlanPreview(lpName)}
         <div class="plan-actions">
           <button class="plan-btn save" data-lp="${lpName}">${this._t("setPlan")}</button>
           ${(planActive || (planTime && planTime !== "unknown" && planTime !== "unavailable"))
@@ -1599,6 +1786,202 @@ class EvccCard extends HTMLElement {
         </div>
       </div>
     `;
+  }
+
+  // Plan preview: shows charging slot chart + summary when SOC and time are set.
+  _renderPlanPreview(lpName) {
+    if (!this._hasCmd("plan_preview")) return "";
+    const state = this._planState[lpName];
+    if (!state || !state.soc || !state.time) return "";
+    const lpIdx = this._lpIndex(lpName);
+    if (lpIdx == null) return "";
+
+    const d = new Date(state.time);
+    if (isNaN(d.getTime())) return "";
+    const ts = d.toISOString();
+    // Call _wsPlanPreview to trigger fetch if not cached (returns null while pending)
+    const res = this._wsPlanPreview({ loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts });
+    if (!res) {
+      return `<div class="plan-preview"><div class="plan-preview-loading">${this._t("planPreviewLoading")}</div></div>`;
+    }
+    if (res.error) {
+      return `<div class="plan-preview"><div class="plan-preview-error">${this._t("planPreviewError")}</div></div>`;
+    }
+    const preview = res.data;
+    if (!preview || !Array.isArray(preview.plan) || preview.plan.length === 0) {
+      return `<div class="plan-preview"><div class="plan-preview-info">${this._t("planPreviewNoCharge")}</div></div>`;
+    }
+
+    // Fetch matching forecast for background bars.
+    // CO2 plans use "planner" forecast (tariff API), price plans use "grid".
+    const isCo2 = preview.smartCostType === "co2";
+    let forecastRates = null;
+    if (this._hasCmd("forecast")) {
+      const primary = this._wsForecast(isCo2 ? "planner" : "grid");
+      if (primary && !primary.error && primary.data?.rates?.length) {
+        forecastRates = primary.data.rates;
+      }
+    }
+    const unit = isCo2 ? "g CO₂/kWh" : (preview.currency ? `${preview.currency}/kWh` : "");
+
+    const chart = this._renderPlanPreviewChart(forecastRates, preview.plan, preview, unit);
+    const summary = this._renderPlanPreviewSummary(preview, unit);
+    return `<div class="plan-preview">${summary}${chart}</div>`;
+  }
+
+  _renderPlanPreviewChart(forecastRates, planRates, preview, unit) {
+    const now = Date.now();
+
+    // Determine display time range: from now to planTime + 2h buffer, capped at 36h
+    const targetTs = preview.planTime ? new Date(preview.planTime).getTime() : null;
+    const planEnd = planRates.length > 0
+      ? Math.max(...planRates.map(r => new Date(r.end).getTime()))
+      : now;
+    const rangeEnd = targetTs
+      ? Math.max(targetTs, planEnd) + 2 * 3600000
+      : planEnd + 2 * 3600000;
+    const maxRange = 36 * 3600000;
+    const displayStart = now;
+    const displayEnd = Math.min(rangeEnd, now + maxRange);
+
+    // Build charging time ranges for overlap detection
+    const chargingRanges = planRates.map(r => ({
+      start: new Date(r.start).getTime(),
+      end:   new Date(r.end).getTime(),
+    }));
+    const isCharging = (s, e) =>
+      chargingRanges.some(cr => s < cr.end && e > cr.start);
+
+    // Build slots from forecast, clipped to display range
+    const slots = [];
+    if (forecastRates && forecastRates.length > 0) {
+      for (const r of forecastRates) {
+        const s = new Date(r.start).getTime();
+        const e = new Date(r.end).getTime();
+        if (e <= displayStart || s >= displayEnd) continue;
+        slots.push({ start: Math.max(s, displayStart), end: Math.min(e, displayEnd), value: r.value ?? 0, charging: isCharging(s, e) });
+      }
+    } else {
+      for (const r of planRates) {
+        const s = new Date(r.start).getTime();
+        const e = new Date(r.end).getTime();
+        if (e <= displayStart || s >= displayEnd) continue;
+        slots.push({ start: Math.max(s, displayStart), end: Math.min(e, displayEnd), value: r.value ?? 0, charging: true });
+      }
+    }
+
+    if (slots.length === 0) return "";
+
+    // SVG dimensions
+    const ML = 4, MR = 4, MT = 2, MB = 26;
+    const W = 400, H = 80;
+    const CW = W - ML - MR, CH = H - MT - MB;
+    const n = slots.length;
+    const GAP = 1;
+    const bw = Math.max(2, Math.floor((CW - GAP * Math.max(0, n - 1)) / n));
+    const totalBarW = bw * n + GAP * (n - 1);
+    const xOffset = Math.round((CW - totalBarW) / 2);
+    const barX0 = i => ML + xOffset + i * (bw + GAP);
+
+    // Check if forecast (non-charging) values have meaningful variation
+    const fVals = slots.filter(s => !s.charging).map(s => s.value);
+    const fMax = fVals.length > 0 ? Math.max(...fVals) : 0;
+    const fMin = fVals.length > 0 ? Math.min(...fVals) : 0;
+    const fRange = fMax - fMin;
+    const hasVariation = fRange > 0.001;
+
+    // Bar height: if forecast values vary, scale proportionally.
+    // If flat (e.g. fixed price fallback), use fixed heights.
+    const barH = (v, charging) => {
+      if (hasVariation) {
+        const frac = 0.2 + 0.8 * ((v - fMin) / fRange);
+        return Math.max(2, Math.round(frac * CH));
+      }
+      return charging ? CH : Math.round(CH * 0.7);
+    };
+
+    // X-axis hour labels — sequential, ~12 labels max
+    const showEvery = Math.max(1, Math.ceil(n / 12));
+    // Track label x positions to avoid overlaps
+    let lastLabelX = -999;
+
+    const bars = slots.map((s, i) => {
+      const x0 = barX0(i);
+      const cx = x0 + bw / 2;
+      const R = bw >= 4 ? 1 : 0;
+      const h = barH(s.value, s.charging);
+      const y = MT + CH - h;
+      const fill = s.charging ? "var(--evcc-green,#22c55e)" : "var(--secondary-text-color,#888)";
+      const opacity = s.charging ? "1" : "0.35";
+
+      const barRect = `<rect x="${x0}" y="${y}" width="${bw}" height="${h}"
+        fill="${fill}" opacity="${opacity}" rx="${R}"/>`;
+
+      // Hour labels — sequential, no dedup
+      let labelSvg = "";
+      if (i % showEvery === 0 && (cx - lastLabelX) > 18) {
+        const hr = new Date(s.start).getHours();
+        labelSvg = `<text x="${cx}" y="${MT + CH + 10}" text-anchor="middle" font-size="7"
+             fill="var(--secondary-text-color,#888)">${hr}</text>`;
+        lastLabelX = cx;
+      }
+
+      return `${barRect}${labelSvg}`;
+    }).join("");
+
+    // Target time marker (vertical line + label like evcc)
+    let targetMarker = "";
+    if (targetTs && slots.length > 1) {
+      const slotsStart = slots[0].start;
+      const slotsEnd = slots[slots.length - 1].end;
+      if (targetTs >= slotsStart && targetTs <= slotsEnd) {
+        const frac = (targetTs - slotsStart) / (slotsEnd - slotsStart);
+        const tx = ML + xOffset + frac * totalBarW;
+        const td = new Date(targetTs);
+        const dayNames = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+        const tLabel = `${dayNames[td.getDay()]}, ${String(td.getHours()).padStart(2,"0")}:${String(td.getMinutes()).padStart(2,"0")}`;
+        targetMarker = `
+          <line x1="${tx}" y1="${MT + CH}" x2="${tx}" y2="${MT + CH + 14}"
+            stroke="var(--evcc-green,#22c55e)" stroke-width="1.5"/>
+          <text x="${tx}" y="${MT + CH + 24}" text-anchor="middle" font-size="8"
+            fill="var(--evcc-green,#22c55e)" font-weight="600">${tLabel}</text>`;
+      }
+    }
+
+    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet"
+      style="width:100%;height:auto;display:block">${bars}${targetMarker}</svg>`;
+  }
+
+  _renderPlanPreviewSummary(preview, unit) {
+    const dur = preview.duration ?? 0;
+    const m = Math.floor(dur / 60);
+    const s = dur % 60;
+    const durStr = `${m}:${String(s).padStart(2, "0")} min`;
+    const powerKw = ((preview.power ?? 0) / 1000).toFixed(1).replace(".", ",");
+
+    // Average cost/emission from plan slots
+    const planSlots = preview.plan || [];
+    const avgVal = planSlots.length > 0
+      ? planSlots.reduce((sum, r) => sum + (r.value ?? 0), 0) / planSlots.length
+      : 0;
+
+    const isCo2 = preview.smartCostType === "co2";
+    const currency = preview.currency || "€";
+    const avgLabel = isCo2 ? "CO₂-Emission Ø" : `${this._t("planPreviewCost")} Ø`;
+    const avgStr = isCo2
+      ? `${Math.round(avgVal)} g/kWh`
+      : `${avgVal.toFixed(2)} ${currency}/kWh`;
+
+    return `<div class="plan-preview-header">
+      <div class="plan-preview-left">
+        <div class="plan-preview-label">${this._t("planPreviewDuration")}</div>
+        <div class="plan-preview-value">${durStr} @ ${powerKw} kW</div>
+      </div>
+      <div class="plan-preview-right">
+        <div class="plan-preview-label">${avgLabel}</div>
+        <div class="plan-preview-value">${avgStr}</div>
+      </div>
+    </div>`;
   }
 
   _renderSessionInfo(ents, charging = false) {
@@ -1692,10 +2075,19 @@ class EvccCard extends HTMLElement {
       });
     }
 
-    return Object.values(groups)
+    let result = Object.values(groups)
       .map(g => ({ ...g, plans: g.plans.sort((x, y) => x.n - y.n) }))
       .filter(g => g.plans.length > 0)
       .sort((x, y) => x.vehicleName.localeCompare(y.vehicleName));
+
+    // Config filter: repeating_plan_vehicles restricts to listed vehicle slugs
+    const filter = this._config.repeating_plan_vehicles;
+    if (Array.isArray(filter) && filter.length > 0) {
+      const allowed = new Set(filter.map(v => String(v).toLowerCase()));
+      result = result.filter(g => allowed.has(g.slug.toLowerCase()));
+    }
+
+    return result;
   }
 
   _vehicleNameForSlug(slug) {
@@ -3296,7 +3688,7 @@ class EvccCard extends HTMLElement {
     const maskValue = (key, val) => {
       if (!maskNames) return val;
       if (key === "title") return "***";
-      if (key === "loadpoints" || key === "no_plan" || key === "no_pv") {
+      if (key === "loadpoints" || key === "no_plan" || key === "no_pv" || key === "repeating_plan_vehicles") {
         if (Array.isArray(val)) return val.map(() => `lp_${++lpMaskCount.i}`);
         if (typeof val === "string") return `lp_${++lpMaskCount.i}`;
       }
@@ -3420,6 +3812,37 @@ class EvccCard extends HTMLElement {
         </div>
 
         <div class="debug-section">
+          <div class="debug-section-title">WebSocket API</div>
+          <ul class="debug-kv">
+            <li><strong>Config entry id:</strong> <code>${this._entryId || "—"}</code></li>
+            ${!this._capsLoaded
+              ? `<li><em>Probing capabilities…</em></li>`
+              : !this._caps || this._caps.commands.length === 0
+                ? `<li>${pill("warn", "not supported")} <em>(older ha-evcc / unknown command)</em></li>`
+                : (() => {
+                    const items = [];
+                    items.push(`<li><strong>Integration version:</strong> <code>${this._caps.version ?? "—"}</code></li>`);
+                    items.push(`<li><strong>Commands:</strong> ${this._caps.commands.map(c => `<code>${c}</code>`).join(", ")}</li>`);
+                    // Show cached probe results (prefetched by _prefetchDebugProbes).
+                    const fmtProbe = (label, cacheKey, fmt) => {
+                      const c = this._wsCache[cacheKey];
+                      if (!c) return `<li><strong>${label}:</strong> <em>loading…</em></li>`;
+                      if (c.result.error) return `<li><strong>${label}:</strong> ${pill("err", "error")} <code>${c.result.error}</code></li>`;
+                      return `<li><strong>${label}:</strong> ${fmt(c.result.data)}</li>`;
+                    };
+                    if (this._hasCmd("forecast"))
+                      items.push(fmtProbe("forecast (grid)", "forecast:grid",
+                        d => `${Array.isArray(d?.rates) ? d.rates.length : 0} rates${d?.unit ? ` (${d.unit})` : ""}`));
+                    if (this._hasCmd("sessions"))
+                      items.push(fmtProbe("sessions", "sessions::",
+                        d => `${Array.isArray(d?.sessions) ? d.sessions.length : 0} sessions`));
+                    return items.join("\n");
+                  })()
+            }
+          </ul>
+        </div>
+
+        <div class="debug-section">
           <div class="debug-section-title">${this._t("debugLoadpoints")} (${lpNames.length})</div>
           ${lpRows}
         </div>
@@ -3501,6 +3924,35 @@ class EvccCard extends HTMLElement {
     out.push(`- Prefix detected: ${this._detectedPrefix ? `\`${this._detectedPrefix}\`` : "*(none)*"}`);
     out.push(`- Prefix configured: ${this._config.prefix ? `\`${this._config.prefix}\`` : "*(none)*"}`);
     out.push(``);
+
+    // ── WebSocket data API (evcc_intg/forecast|sessions|plan_preview) ──
+    out.push(`**WebSocket API**`);
+    out.push(`- Config entry id: ${this._entryId ? `\`${this._entryId}\`` : "*(not found)*"}`);
+    if (!this._capsLoaded) {
+      out.push(`- Capabilities: *(probing…)*`);
+    } else if (!this._caps || this._caps.commands.length === 0) {
+      out.push(`- Capabilities: *not supported (older ha-evcc / unknown command)*`);
+    } else {
+      out.push(`- Integration version: \`${this._caps.version ?? "—"}\``);
+      out.push(`- Commands: ${this._caps.commands.map(c => `\`${c}\``).join(", ")}`);
+
+      // Live probes — read from cache (populated by visual debug block render).
+      // Show prefetched probe results (cached by _prefetchDebugProbes).
+      const probe = (label, cacheKey, fmt) => {
+        const c = this._wsCache[cacheKey];
+        if (!c) { out.push(`- ${label}: *(not fetched)*`); return; }
+        if (c.result.error) { out.push(`- ${label}: **error** \`${c.result.error}\``); return; }
+        out.push(`- ${label}: ${fmt(c.result.data)}`);
+      };
+      if (this._hasCmd("forecast"))
+        probe("forecast (grid)", "forecast:grid",
+          d => `${Array.isArray(d?.rates) ? d.rates.length : 0} rates${d?.unit ? ` (${d.unit})` : ""}`);
+      if (this._hasCmd("sessions"))
+        probe("sessions", "sessions::",
+          d => `${Array.isArray(d?.sessions) ? d.sessions.length : 0} sessions`);
+    }
+    out.push(``);
+
     out.push(`**Loadpoints** (${lpNames.length})`);
     if (lpNames.length === 0) {
       out.push(`*(none detected)*`);
@@ -3564,7 +4016,6 @@ class EvccCard extends HTMLElement {
     const copyBtn = this.shadowRoot.querySelector(".debug-copy-btn");
     if (copyBtn) {
       copyBtn.addEventListener("click", async () => {
-        const md    = this._buildDebugReport(this._debugMask === true);
         const toast = this.shadowRoot.querySelector(".debug-toast");
         const showToast = (msg, tone = "ok") => {
           if (!toast) return;
@@ -3574,6 +4025,14 @@ class EvccCard extends HTMLElement {
           clearTimeout(this._debugToastTimer);
           this._debugToastTimer = setTimeout(() => { toast.hidden = true; }, 3000);
         };
+        let md;
+        try {
+          md = this._buildDebugReport(this._debugMask === true);
+        } catch (e) {
+          console.error("[evcc-card] _buildDebugReport crashed:", e);
+          showToast("Report build failed: " + (e?.message || e), "err");
+          return;
+        }
         try {
           await navigator.clipboard.writeText(md);
           showToast(this._t("debugCopied"), "ok");
@@ -3764,6 +4223,7 @@ class EvccCard extends HTMLElement {
         });
         btn.classList.toggle("on", !on);
         btn.dataset.on = String(!on);
+        if (btn.dataset.lp) this._requestPlanPreview(btn.dataset.lp);
       });
     });
 
@@ -3773,6 +4233,7 @@ class EvccCard extends HTMLElement {
           entity_id: sel.dataset.entity,
           option:    sel.value,
         });
+        if (sel.dataset.lp) this._requestPlanPreview(sel.dataset.lp);
       });
     });
 
@@ -3816,6 +4277,7 @@ class EvccCard extends HTMLElement {
       });
       input.addEventListener("pointerup", () => {
         this._isDragging = false;
+        this._requestPlanPreview(input.dataset.lp);
         if (this._pendingRender) { this._pendingRender = false; this._render(); }
       });
       input.addEventListener("blur", () => {
@@ -3830,6 +4292,7 @@ class EvccCard extends HTMLElement {
       input.addEventListener("change", () => {
         const lpName = input.dataset.lp;
         if (this._planState[lpName]) this._planState[lpName].time = input.value;
+        this._requestPlanPreview(lpName);
       });
     });
 
@@ -3853,6 +4316,7 @@ class EvccCard extends HTMLElement {
         if (eid && this._hass) {
           this._hass.callService("select", "select_option", { entity_id: eid, option: val });
         }
+        this._requestPlanPreview(lpName);
       });
     });
 
@@ -4508,6 +4972,14 @@ class EvccCard extends HTMLElement {
       select.plan-precondition-select { flex: 1; padding: 4px 8px; border: 1px solid var(--divider-color, #4b5563); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); font-size: .82rem; }
       .plan-row .toggle { margin-left: auto; }
       .plan-error { margin-top: 8px; padding: 6px 10px; border-radius: 6px; background: #ef444422; color: #ef4444; font-size: .78rem; word-break: break-all; }
+      .plan-preview { margin: 10px 0 4px; }
+      .plan-preview-loading { text-align: center; padding: 12px; font-size: .78rem; color: var(--secondary-text-color); }
+      .plan-preview-error, .plan-preview-info { padding: 8px 10px; border-radius: 6px; background: var(--secondary-background-color, rgba(0,0,0,.08)); color: var(--secondary-text-color); font-size: .78rem; }
+      .plan-preview-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+      .plan-preview-left, .plan-preview-right { display: flex; flex-direction: column; }
+      .plan-preview-right { text-align: right; }
+      .plan-preview-label { font-size: .65rem; text-transform: uppercase; letter-spacing: .03em; color: var(--secondary-text-color); }
+      .plan-preview-value { font-size: .88rem; font-weight: 600; color: var(--evcc-green,#22c55e); }
       .rplan-block .plan-header { justify-content: flex-start; gap: 6px; }
       .rplan-hint { display: inline-flex; align-items: center; color: var(--secondary-text-color); cursor: help; }
       .rplan-list { display: flex; flex-direction: column; gap: 8px; }
@@ -4791,6 +5263,32 @@ class EvccCardEditor extends HTMLElement {
     `).join("");
   }
 
+  _vehicleCheckboxes(type, selected) {
+    const slugs = this._availableVehicleSlugs;
+    if (slugs.length === 0) return `<div class="hint">${this._t("editorNoVehiclesFound")}</div>`;
+    return slugs.map(slug => {
+      const label = String(slug).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+      return `
+      <label class="cb-row">
+        <input type="checkbox" data-field="${type}" data-lp="${this._esc(slug)}" ${selected.includes(slug) ? "checked" : ""}>
+        <span>${this._esc(label)}</span>
+      </label>`;
+    }).join("");
+  }
+
+  get _availableVehicleSlugs() {
+    if (!this._hass) return [];
+    const prefix = this._config?.prefix || "evcc_";
+    const escPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`^switch\\.${escPrefix}(.+)_repeating_plan_\\d+$`);
+    const slugs = new Set();
+    for (const entityId of Object.keys(this._hass.states)) {
+      const m = entityId.match(re);
+      if (m) slugs.add(m[1]);
+    }
+    return [...slugs].sort();
+  }
+
   _render() {
     const c    = this._config;
     const mode = c.mode || "loadpoint";
@@ -4803,6 +5301,8 @@ class EvccCardEditor extends HTMLElement {
     const showChargeCurrent = ["loadpoint", "compact"].includes(mode);
     const showSiteDetails   = ["site", "flow"].includes(mode);
     const showStatsPeriod   = ["stats", "site", "flow", "grid"].includes(mode);
+    const showVehicleFilter = mode === "repeatplan";
+    const rplanVehicles     = Array.isArray(c.repeating_plan_vehicles) ? c.repeating_plan_vehicles : [];
 
     const titlePlaceholder = {
       loadpoint: this._t("editorTitlePlaceholderLoadpoint"),
@@ -4885,6 +5385,13 @@ class EvccCardEditor extends HTMLElement {
           <div class="section-title">${this._t("editorShowLoadpointsTitle")}</div>
           <div class="hint">${this._t("editorShowLoadpointsHint")}</div>
           ${this._checkboxes("loadpoints", selLps)}
+        </div>
+        ` : ""}
+        ${showVehicleFilter ? `
+        <div class="field">
+          <div class="section-title">${this._t("editorVehicleFilterTitle")}</div>
+          <div class="hint">${this._t("editorVehicleFilterHint")}</div>
+          ${this._vehicleCheckboxes("repeating_plan_vehicles", rplanVehicles)}
         </div>
         ` : ""}
         ${showNoPlan ? `
