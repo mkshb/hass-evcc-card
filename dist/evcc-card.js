@@ -411,6 +411,7 @@ class EvccCard extends HTMLElement {
     this._caps        = null;   // { version, commands[] } from evcc_intg/capabilities
     this._capsLoaded  = false;
     this._capsLoading = null;   // in-flight promise guard
+    this._lpIndexMap  = {};     // loadpoint slug -> evcc API index (from capabilities)
     this._wsCache     = {};     // cacheKey -> { ts, data }
     this._wsInflight  = {};     // cacheKey -> Promise (de-dup concurrent fetches)
 
@@ -483,6 +484,12 @@ class EvccCard extends HTMLElement {
           version:  res?.version ?? null,
           commands: Array.isArray(res?.commands) ? res.commands : [],
         };
+        // Build the loadpoint slug -> evcc API index map (ha-evcc 2026.6.x+),
+        // so the plan preview targets the right loadpoint without guessing.
+        this._lpIndexMap = {};
+        for (const lp of (Array.isArray(res?.loadpoints) ? res.loadpoints : [])) {
+          if (lp && lp.id != null && lp.index != null) this._lpIndexMap[lp.id] = Number(lp.index);
+        }
       })
       .catch(e => {
         console.warn("[evcc-card] evcc_intg/capabilities not available:", e?.message || e);
@@ -602,14 +609,16 @@ class EvccCard extends HTMLElement {
   }
 
   // plan_preview expects the integer evcc loadpoint index (1-based), but the card
-  // keys loadpoints by name slug. ha-evcc exposes no per-loadpoint index attribute,
-  // so there is no reliable slug→index signal. Resolution order:
-  //   1. explicit config override  plan_loadpoint_index: { <slug>: <int> }
-  //   2. fallback: position in the deterministically sorted discovery list
-  // The sort makes the fallback reproducible and matches the typical evcc default
-  // ordering; the override is the escape hatch when a setup deviates.
+  // keys loadpoints by name slug. Resolution order:
+  //   1. authoritative map from evcc_intg/capabilities (ha-evcc 2026.6.x+)
+  //   2. explicit config override  plan_loadpoint_index: { <slug>: <int> }
+  //   3. fallback heuristic: position in the deterministically sorted discovery list
+  // The map is exact; the override + heuristic only cover older integrations that
+  // do not yet return the loadpoint list in their capabilities response.
   // Returns the 1-based index, or null if the loadpoint is unknown.
   _lpIndex(lpName) {
+    const fromCaps = this._lpIndexMap?.[lpName];
+    if (fromCaps != null) return fromCaps;
     const override = this._config?.plan_loadpoint_index;
     if (override && override[lpName] != null) {
       const n = parseInt(override[lpName], 10);
@@ -4290,6 +4299,8 @@ class EvccCard extends HTMLElement {
                     const items = [];
                     items.push(`<li><strong>Integration version:</strong> <code>${this._caps.version ?? "—"}</code></li>`);
                     items.push(`<li><strong>Commands:</strong> ${this._caps.commands.map(c => `<code>${c}</code>`).join(", ")}</li>`);
+                    const lpMap = Object.entries(this._lpIndexMap || {});
+                    items.push(`<li><strong>Loadpoint index map:</strong> ${lpMap.length ? lpMap.map(([id, i]) => `<code>${id}=${i}</code>`).join(", ") : `${pill("warn", "fallback")} <em>(heuristic/override; older ha-evcc)</em>`}</li>`);
                     // Show cached probe results (prefetched by _prefetchDebugProbes).
                     const fmtProbe = (label, cacheKey, fmt) => {
                       const c = this._wsCache[cacheKey];
