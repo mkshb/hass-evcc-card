@@ -5811,7 +5811,7 @@ class EvccCardEditor extends HTMLElement {
 
   get _availableVehicleSlugs() {
     if (!this._hass) return [];
-    const prefix = this._config?.prefix || "evcc_";
+    const prefix = this._getPrefix();
     const escPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const re = new RegExp(`^switch\\.${escPrefix}(.+)_repeating_plan_\\d+$`);
     const slugs = new Set();
