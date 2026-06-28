@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.7.1";
+const EVCC_CARD_VERSION = "0.7.2";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -5811,7 +5811,7 @@ class EvccCardEditor extends HTMLElement {
 
   get _availableVehicleSlugs() {
     if (!this._hass) return [];
-    const prefix = this._config?.prefix || "evcc_";
+    const prefix = this._getPrefix();
     const escPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const re = new RegExp(`^switch\\.${escPrefix}(.+)_repeating_plan_\\d+$`);
     const slugs = new Set();
@@ -6016,45 +6016,12 @@ customElements.define("evcc-card-editor", EvccCardEditor);
 customElements.define("evcc-card", EvccCard);
 window.__evccCards = window.__evccCards || new Map();
 
-(async function cacheBust() {
-  const ver = EVCC_CARD_VERSION;
-
-  console.info(
-    `%c evcc-card %c ${ver} %c`,
-    "background:#1d4ed8;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px;font-weight:bold",
-    "background:#22c55e;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0;font-weight:bold",
-    "background:transparent"
-  );
-
-  await customElements.whenDefined("home-assistant");
-  const ha = document.querySelector("home-assistant");
-  if (!ha || !ha.hass) return;
-
-  try {
-    const resources = await ha.hass.callWS({ type: "lovelace/resources" });
-    const myRes = resources.find(r =>
-      r.url && r.url.includes("evcc-card") && r.url.endsWith(".js") ||
-      r.url && r.url.includes("evcc-card") && r.url.includes(".js?")
-    );
-    if (!myRes) return;
-
-    const baseUrl = myRes.url.split("?")[0];
-    const expectedUrl = `${baseUrl}?v=${ver}`;
-
-    if (myRes.url === expectedUrl) return;
-
-    await ha.hass.callWS({
-      type:        "lovelace/resources/update",
-      resource_id: myRes.id,
-      res_type:    myRes.type || "module",
-      url:         expectedUrl,
-    });
-    console.info(`[evcc-card] Cache URL updated -> ${expectedUrl}. Reloading page.`);
-    setTimeout(() => location.reload(), 500);
-  } catch (e) {
-    console.warn("[evcc-card] Cache URL update failed:", e);
-  }
-})();
+console.info(
+  `%c evcc-card %c ${EVCC_CARD_VERSION} %c`,
+  "background:#1d4ed8;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px;font-weight:bold",
+  "background:#22c55e;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0;font-weight:bold",
+  "background:transparent"
+);
 
 window.customCards = window.customCards || [];
 window.customCards.push({
