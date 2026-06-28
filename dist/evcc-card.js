@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.6.6";
+const EVCC_CARD_VERSION = "0.7.0";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -137,11 +137,17 @@ const _chevron = (up) =>
        : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"
   }"/></svg>`;
 
-async function detectPrefix(hass) {
+// Detect the entity prefix AND the integration's config_entry_id from a single
+// `config/entity_registry/list` call. The entry_id is required by the ha-evcc
+// WebSocket data API commands (evcc_intg/forecast|sessions|plan_preview); every
+// evcc_intg registry entry carries it in `config_entry_id`.
+async function detectIntegration(hass) {
   try {
     const entities = await hass.callWS({ type: "config/entity_registry/list" });
     const evccEnts = entities.filter(e => e.platform === "evcc_intg");
-    if (evccEnts.length === 0) return "evcc_";
+    if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null };
+
+    const entryId = evccEnts.find(e => e.config_entry_id)?.config_entry_id ?? null;
 
     const siteSuffixes = FEATURES.filter(f => !f.lp);
     for (const ent of evccEnts) {
@@ -152,15 +158,20 @@ async function detectPrefix(hass) {
       for (const feat of siteSuffixes) {
         if (feat.domain === domain && slug.endsWith(feat.suffix)) {
           const detected = slug.slice(0, slug.length - feat.suffix.length);
-          if (detected.length > 0) return detected;
+          if (detected.length > 0) return { prefix: detected, entryId };
         }
       }
     }
-    return "evcc_";
+    return { prefix: "evcc_", entryId };
   } catch (e) {
-    console.warn("[evcc-card] Could not detect prefix from entity registry:", e);
-    return "evcc_";
+    console.warn("[evcc-card] Could not detect integration from entity registry:", e);
+    return { prefix: "evcc_", entryId: null };
   }
+}
+
+// Backwards-compatible thin wrapper: the editor only needs the prefix.
+async function detectPrefix(hass) {
+  return (await detectIntegration(hass)).prefix;
 }
 
 function discoverEntities(hass, prefix = "evcc_") {
@@ -379,6 +390,7 @@ class EvccCard extends HTMLElement {
     this._lastRenderKey = null;
     this._countdownInterval = null;
     this._planState     = {};
+    this._planPreviewDebounce = {};
     this._tabState      = {};
     this._statsPeriod   = "total";
     this._chartCache     = {};
@@ -392,11 +404,32 @@ class EvccCard extends HTMLElement {
     this._cachedEntities   = null;  // { loadpoints, site } — invalidated when entity IDs change
     this._cachedEntityIdKey = null; // sorted join of evcc entity IDs + prefix
 
+    // ha-evcc WebSocket data API (evcc_intg/forecast|sessions|plan_preview).
+    this._entryId             = null;   // config_entry_id, needed by the WS commands
+    this._integrationDetected = false;  // entity-registry probe done once
+    this._detectingIntegration = false;
+    this._caps        = null;   // { version, commands[] } from evcc_intg/capabilities
+    this._capsLoaded  = false;
+    this._capsLoading = null;   // in-flight promise guard
+    this._wsCache     = {};     // cacheKey -> { ts, data }
+    this._wsInflight  = {};     // cacheKey -> Promise (de-dup concurrent fetches)
+
     this._onPlanReset = (e) => {
       const lpName = e.detail?.lpName;
       setTimeout(() => {
-        if (lpName) delete this._planState[lpName];
-        else this._planState = {};
+        if (lpName) {
+          delete this._planState[lpName];
+          clearTimeout(this._planPreviewDebounce[lpName]);
+          delete this._planPreviewDebounce[lpName];
+        } else {
+          this._planState = {};
+          for (const k of Object.keys(this._planPreviewDebounce)) clearTimeout(this._planPreviewDebounce[k]);
+          this._planPreviewDebounce = {};
+        }
+        // Purge preview cache entries
+        for (const key of Object.keys(this._wsCache)) {
+          if (key.startsWith("plan:")) delete this._wsCache[key];
+        }
         if (this._hass) this._render();
       }, 1500);
     };
@@ -415,6 +448,9 @@ class EvccCard extends HTMLElement {
       clearInterval(this._countdownInterval);
       this._countdownInterval = null;
     }
+    // Drop on-demand WS caches; a re-mount re-probes capabilities/entry_id.
+    this._wsCache    = {};
+    this._wsInflight = {};
   }
 
   async _loadTranslations() {
@@ -427,15 +463,206 @@ class EvccCard extends HTMLElement {
     return this._config.prefix || this._detectedPrefix || "evcc_";
   }
 
+  // ── ha-evcc WebSocket data API ──────────────────────────────────────────
+  // On-demand request/response commands served by evcc_intg. They return data
+  // that does not map to entities (forecast curves, raw session history, plan
+  // previews). Reads are slow-changing, so results are cached with a TTL.
+
+  _hasCmd(name) {
+    return Array.isArray(this._caps?.commands) && this._caps.commands.includes(name);
+  }
+
+  // Probe capabilities once. Older ha-evcc versions lack the command and the
+  // callWS rejects — we then mark the feature set empty so the UI degrades.
+  _loadCapabilities() {
+    if (this._capsLoaded || this._capsLoading || !this._hass) return this._capsLoading;
+    this._capsLoading = this._hass
+      .callWS({ type: "evcc_intg/capabilities", entry_id: this._entryId })
+      .then(res => {
+        this._caps = {
+          version:  res?.version ?? null,
+          commands: Array.isArray(res?.commands) ? res.commands : [],
+        };
+      })
+      .catch(e => {
+        console.warn("[evcc-card] evcc_intg/capabilities not available:", e?.message || e);
+        this._caps = { version: null, commands: [] };
+      })
+      .finally(() => {
+        this._capsLoaded  = true;
+        this._capsLoading = null;
+        // Pre-fetch debug probes so data is cached before the debug block renders.
+        this._prefetchDebugProbes();
+        this._render();
+      });
+    return this._capsLoading;
+  }
+
+  // Kick off WS probes in the background so they are cached for the debug block.
+  // Results arrive asynchronously; _wsFetch.finally() triggers a re-render.
+  _prefetchDebugProbes() {
+    if (this._hasCmd("forecast"))     { this._wsForecast("grid"); this._wsForecast("planner"); }
+    if (this._hasCmd("sessions"))     this._wsSessions();
+    // plan_preview needs a loadpoint — skip here, probe only in debug report.
+  }
+
+  // Generic cached WS fetch. Returns fresh cached data synchronously; otherwise
+  // kicks off the request (de-duplicated per cacheKey) and triggers a re-render
+  // when it lands. Returns null while data is pending or on error.
+  // Returns: null (pending/no hass), { data } on success, { error } on failure.
+  _wsFetch(type, params, cacheKey, ttlMs) {
+    if (!this._hass || !this._entryId) return null;
+
+    const cached = this._wsCache[cacheKey];
+    const now = Date.now();
+    if (cached && (now - cached.ts) < ttlMs) return cached.result;
+
+    if (!this._wsInflight[cacheKey]) {
+      this._wsInflight[cacheKey] = this._hass
+        .callWS({ type, entry_id: this._entryId, ...params })
+        .then(data => {
+          this._wsCache[cacheKey] = { ts: Date.now(), result: { data } };
+        })
+        .catch(e => {
+          const msg = e?.message || (typeof e === "object" ? JSON.stringify(e) : String(e));
+          console.warn(`[evcc-card] ${type} failed:`, msg);
+          this._wsCache[cacheKey] = { ts: Date.now(), result: { error: msg } };
+        })
+        .finally(() => {
+          delete this._wsInflight[cacheKey];
+          // Throttle the re-render to avoid rapid DOM replacements.
+          if (!this._wsRenderTimer) {
+            this._wsRenderTimer = setTimeout(() => {
+              this._wsRenderTimer = null;
+              this._render();
+            }, 500);
+          }
+        });
+    }
+    // Serve stale result while a refresh is in flight, else null (pending).
+    return cached ? cached.result : null;
+  }
+
+  // kind: grid | feedin | co2 | solar | planner  →  { kind, rates[], smartCostType?, currency? }
+  // capabilities + the "planner" kind ship in the same ha-evcc release, so
+  // _hasCmd("forecast") already implies planner is accepted - no kind-level probe needed.
+  _wsForecast(kind) {
+    if (!this._hasCmd("forecast")) return null;
+    return this._wsFetch("evcc_intg/forecast", { kind }, `forecast:${kind}`, 5 * 60 * 1000);
+  }
+
+  // year/month optional  →  { sessions[] }
+  _wsSessions(year, month) {
+    if (!this._hasCmd("sessions")) return null;
+    const params = {};
+    if (year  != null) params.year  = year;
+    if (month != null) params.month = month;
+    return this._wsFetch("evcc_intg/sessions", params, `sessions:${year ?? ""}:${month ?? ""}`, 5 * 60 * 1000);
+  }
+
+  // Canonical params + cache key for a plan_preview request. Shared by every
+  // call site so the cached-read, the fetch and the invalidation all agree.
+  _planPreviewParams(opts) {
+    return {
+      loadpoint: opts.loadpoint,
+      kind:      opts.kind,
+      value:     String(opts.value),
+      timestamp: opts.timestamp,
+    };
+  }
+  _planPreviewKey(opts) {
+    return "plan:" + JSON.stringify(this._planPreviewParams(opts));
+  }
+
+  // opts: { loadpoint:int, kind:"soc"|"energy", value, timestamp }  →
+  //       { duration, power, rates[], smartCostType, currency }
+  // The ha-evcc 'plan_preview' command (2026.6.x) requires all four params; it is
+  // a static, read-only preview (no 'repeating' kind, timestamp is mandatory).
+  // Initiates a backend call (subject to _wsFetch TTL + in-flight coalescing).
+  _wsPlanPreview(opts) {
+    if (!this._hasCmd("plan_preview")) return null;
+    const params = this._planPreviewParams(opts);
+    return this._wsFetch("evcc_intg/plan_preview", params, this._planPreviewKey(opts), 60 * 1000);
+  }
+
+  // Render-path read: serve the cached preview regardless of age, and prime
+  // exactly one fetch if nothing is cached or in flight. Unlike _wsPlanPreview,
+  // this never re-hits the backend on TTL expiry — a result, once cached, is
+  // served until the user changes an input (which re-fetches via
+  // _requestPlanPreview). That keeps an idle plan card at zero backend calls,
+  // as agreed with ha-evcc (marq24/ha-evcc#298): plan_preview is uncached
+  // server-side, so the card must not generate background/idle traffic.
+  _wsPlanPreviewCached(opts) {
+    if (!this._hasCmd("plan_preview")) return null;
+    const cacheKey = this._planPreviewKey(opts);
+    const cached = this._wsCache[cacheKey];
+    if (cached) return cached.result;
+    if (!this._wsInflight[cacheKey]) this._wsPlanPreview(opts);
+    return null;
+  }
+
+  // plan_preview expects the integer evcc loadpoint index (1-based), but the card
+  // keys loadpoints by name slug. ha-evcc exposes no per-loadpoint index attribute,
+  // so there is no reliable slug→index signal. Resolution order:
+  //   1. explicit config override  plan_loadpoint_index: { <slug>: <int> }
+  //   2. fallback: position in the deterministically sorted discovery list
+  // The sort makes the fallback reproducible and matches the typical evcc default
+  // ordering; the override is the escape hatch when a setup deviates.
+  // Returns the 1-based index, or null if the loadpoint is unknown.
+  _lpIndex(lpName) {
+    const override = this._config?.plan_loadpoint_index;
+    if (override && override[lpName] != null) {
+      const n = parseInt(override[lpName], 10);
+      if (n > 0) return n;
+    }
+    const prefix = this._getPrefix();
+    const names = Object.keys(discoverEntities(this._hass, prefix).loadpoints).sort();
+    const idx = names.indexOf(lpName);
+    return idx >= 0 ? idx + 1 : null;
+  }
+
+  // Debounced plan preview fetch — called after SOC/time/vehicle changes.
+  _requestPlanPreview(lpName) {
+    const state = this._planState[lpName];
+    if (!state || !state.soc || !state.time || !this._hasCmd("plan_preview")) return;
+    const lpIdx = this._lpIndex(lpName);
+    if (lpIdx == null) return;
+
+    clearTimeout(this._planPreviewDebounce[lpName]);
+    this._planPreviewDebounce[lpName] = setTimeout(() => {
+      // Convert datetime-local value to ISO 8601 with timezone offset
+      const d = new Date(state.time);
+      if (isNaN(d.getTime())) return;
+      const ts = d.toISOString();
+      const opts = { loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts };
+      const cacheKey = this._planPreviewKey(opts);
+      // Drop previews for OTHER inputs of this loadpoint (bounds the cache), but
+      // keep the current one — refetching what we already have wastes a backend call.
+      const pfx = `plan:{"loadpoint":${lpIdx},`;
+      for (const key of Object.keys(this._wsCache)) {
+        if (key.startsWith(pfx) && key !== cacheKey) delete this._wsCache[key];
+      }
+      // Already cached (e.g. primed by the render path) or in flight → no refetch.
+      if (this._wsCache[cacheKey] || this._wsInflight[cacheKey]) return;
+      this._wsPlanPreview(opts);
+    }, 500);
+  }
+
   set hass(hass) {
     this._hass = hass;
 
-    if (!this._detectedPrefix && !this._detectingPrefix && !this._config.prefix) {
-      this._detectingPrefix = true;
-      detectPrefix(hass).then(prefix => {
-        this._detectingPrefix = false;
-        if (prefix !== this._detectedPrefix) {
-          this._detectedPrefix = prefix;
+    if (!this._integrationDetected && !this._detectingIntegration) {
+      this._detectingIntegration = true;
+      detectIntegration(hass).then(({ prefix, entryId }) => {
+        this._detectingIntegration = false;
+        this._integrationDetected = true;
+        this._entryId = entryId;
+        // Probe the ha-evcc WebSocket data API once the entry_id is known.
+        this._loadCapabilities();
+        // Honour an explicitly configured prefix, but still keep the detected one.
+        const changed = (!this._config.prefix && prefix !== this._detectedPrefix);
+        this._detectedPrefix = prefix;
+        if (changed) {
           this._lastRenderKey = null;
           if (this._renderTimer) {
             clearTimeout(this._renderTimer);
@@ -492,6 +719,11 @@ class EvccCard extends HTMLElement {
     if (validPeriods.includes(config?.stats_period)) {
       this._statsPeriod = config.stats_period;
     }
+    // Sessions stats path scope (Month/Year/Total); map legacy values too.
+    const scopeMap = { total: "total", month: "month", year: "year", "30d": "month", "365d": "year", thisYear: "year" };
+    this._statsScope = scopeMap[config?.stats_period] ?? "month";
+    if (this._statsMetric == null) this._statsMetric = "energy"; // energy | cost | co2
+    if (this._statsGroup  == null) this._statsGroup  = "solar";  // solar | loadpoint | vehicle
     const validSizes = ["small", "medium", "large"];
     if (this._config.size && !validSizes.includes(this._config.size)) {
       delete this._config.size;
@@ -1174,9 +1406,12 @@ class EvccCard extends HTMLElement {
   }
 
   _renderSliders(ents) {
+    // Heating loadpoints expose limit/min as a target temperature (°C), not a SoC,
+    // so relabel the sliders accordingly (value/unit already come from the entity).
+    const heating = this._isHeatingLoadpoint(ents);
     const SLIDER_FEATURES = [
-      { key: "limit_soc",   label: this._t("targetSoc") },
-      { key: "min_soc",     label: this._t("minSoc")    },
+      { key: "limit_soc",   label: this._t(heating ? "targetTemp" : "targetSoc") },
+      { key: "min_soc",     label: this._t(heating ? "minTemp"    : "minSoc")    },
     ];
 
     const rows = SLIDER_FEATURES
@@ -1417,6 +1652,17 @@ class EvccCard extends HTMLElement {
     return rows.length ? `<div class="selects">${rows.join("")}</div>` : "";
   }
 
+  // ha-evcc marks heating loadpoints (is_heating) by giving their SOC entities a
+  // temperature device_class / °C unit (see force_celsius in the integration). Such
+  // loadpoints are not EV charge points, so the charge-plan block is skipped for them.
+  _isHeatingLoadpoint(ents) {
+    const probe = ents.effective_plan_soc || ents.effective_limit_soc || ents.vehicle_soc;
+    if (!probe) return false;
+    const a = this._hass?.states[probe]?.attributes;
+    if (!a) return false;
+    return a.device_class === "temperature" || a.unit_of_measurement === "°C";
+  }
+
   _renderPlanBlock(lpName, ents, force = false) {
     const hasVehicle = !!ents.vehicle_soc;
     const planActive = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
@@ -1430,6 +1676,9 @@ class EvccCard extends HTMLElement {
       ? stateVal(this._hass, ents.plan_projected_end) : null;
 
     if (!ents.effective_plan_soc || !this._hass.states[ents.effective_plan_soc]) return "";
+    // Heating loadpoints (ha-evcc 'is_heating') are not EV charge points — their
+    // "SOC" is a target temperature. The EV charge-plan UI/preview does not apply.
+    if (this._isHeatingLoadpoint(ents)) return "";
     if (!force && !hasVehicle && !planActive) return "";
 
     const vehicleEntityId    = ents.vehicle_name || null;
@@ -1527,7 +1776,8 @@ class EvccCard extends HTMLElement {
         <button class="toggle ${contOn ? "on" : ""}"
                 data-entity="${contEntityId}"
                 data-domain="switch"
-                data-on="${contOn}">
+                data-on="${contOn}"
+                data-lp="${lpName}">
           ${contOn ? this._t("toggleOn") : this._t("toggleOff")}
         </button>
       </div>` : "";
@@ -1546,7 +1796,7 @@ class EvccCard extends HTMLElement {
     const preHtml = (preState && preOptions.length) ? `
       <div class="plan-row">
         <label>${this._t("planStrategyPrecondition")}</label>
-        <select class="plan-precondition-select" data-entity="${preEntityId}">
+        <select class="plan-precondition-select" data-entity="${preEntityId}" data-lp="${lpName}">
           ${preOptions.map(opt => `
             <option value="${opt}" ${opt === preCurrent ? "selected" : ""}>${fmtPre(opt)}</option>
           `).join("")}
@@ -1591,6 +1841,7 @@ class EvccCard extends HTMLElement {
           ${contHtml}
           ${preHtml}
         </div>
+        ${this._renderPlanPreview(lpName)}
         <div class="plan-actions">
           <button class="plan-btn save" data-lp="${lpName}">${this._t("setPlan")}</button>
           ${(planActive || (planTime && planTime !== "unknown" && planTime !== "unavailable"))
@@ -1599,6 +1850,203 @@ class EvccCard extends HTMLElement {
         </div>
       </div>
     `;
+  }
+
+  // Plan preview: shows charging slot chart + summary when SOC and time are set.
+  _renderPlanPreview(lpName) {
+    if (!this._hasCmd("plan_preview")) return "";
+    const state = this._planState[lpName];
+    if (!state || !state.soc || !state.time) return "";
+    const lpIdx = this._lpIndex(lpName);
+    if (lpIdx == null) return "";
+
+    const d = new Date(state.time);
+    if (isNaN(d.getTime())) return "";
+    const ts = d.toISOString();
+    // Cache-only read: serve the cached preview, prime one fetch if absent.
+    // Never refetches on its own → an idle plan card makes zero backend calls.
+    const res = this._wsPlanPreviewCached({ loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts });
+    if (!res) {
+      return `<div class="plan-preview"><div class="plan-preview-loading">${this._t("planPreviewLoading")}</div></div>`;
+    }
+    if (res.error) {
+      return `<div class="plan-preview"><div class="plan-preview-error">${this._t("planPreviewError")}</div></div>`;
+    }
+    const preview = res.data;
+    if (!preview || !Array.isArray(preview.plan) || preview.plan.length === 0) {
+      return `<div class="plan-preview"><div class="plan-preview-info">${this._t("planPreviewNoCharge")}</div></div>`;
+    }
+
+    // Fetch matching forecast for background bars.
+    // CO2 plans use "planner" forecast (tariff API), price plans use "grid".
+    const isCo2 = preview.smartCostType === "co2";
+    let forecastRates = null;
+    if (this._hasCmd("forecast")) {
+      const primary = this._wsForecast(isCo2 ? "planner" : "grid");
+      if (primary && !primary.error && primary.data?.rates?.length) {
+        forecastRates = primary.data.rates;
+      }
+    }
+    const unit = isCo2 ? "g CO₂/kWh" : (preview.currency ? `${preview.currency}/kWh` : "");
+
+    const chart = this._renderPlanPreviewChart(forecastRates, preview.plan, preview, unit);
+    const summary = this._renderPlanPreviewSummary(preview, unit);
+    return `<div class="plan-preview">${summary}${chart}</div>`;
+  }
+
+  _renderPlanPreviewChart(forecastRates, planRates, preview, unit) {
+    const now = Date.now();
+
+    // Determine display time range: from now to planTime + 2h buffer, capped at 36h
+    const targetTs = preview.planTime ? new Date(preview.planTime).getTime() : null;
+    const planEnd = planRates.length > 0
+      ? Math.max(...planRates.map(r => new Date(r.end).getTime()))
+      : now;
+    const rangeEnd = targetTs
+      ? Math.max(targetTs, planEnd) + 2 * 3600000
+      : planEnd + 2 * 3600000;
+    const maxRange = 36 * 3600000;
+    const displayStart = now;
+    const displayEnd = Math.min(rangeEnd, now + maxRange);
+
+    // Build charging time ranges for overlap detection
+    const chargingRanges = planRates.map(r => ({
+      start: new Date(r.start).getTime(),
+      end:   new Date(r.end).getTime(),
+    }));
+    const isCharging = (s, e) =>
+      chargingRanges.some(cr => s < cr.end && e > cr.start);
+
+    // Build slots from forecast, clipped to display range
+    const slots = [];
+    if (forecastRates && forecastRates.length > 0) {
+      for (const r of forecastRates) {
+        const s = new Date(r.start).getTime();
+        const e = new Date(r.end).getTime();
+        if (e <= displayStart || s >= displayEnd) continue;
+        slots.push({ start: Math.max(s, displayStart), end: Math.min(e, displayEnd), value: r.value ?? 0, charging: isCharging(s, e) });
+      }
+    } else {
+      for (const r of planRates) {
+        const s = new Date(r.start).getTime();
+        const e = new Date(r.end).getTime();
+        if (e <= displayStart || s >= displayEnd) continue;
+        slots.push({ start: Math.max(s, displayStart), end: Math.min(e, displayEnd), value: r.value ?? 0, charging: true });
+      }
+    }
+
+    if (slots.length === 0) return "";
+
+    // SVG dimensions
+    const ML = 4, MR = 4, MT = 2, MB = 26;
+    const W = 400, H = 80;
+    const CW = W - ML - MR, CH = H - MT - MB;
+    const n = slots.length;
+    const GAP = 1;
+    const bw = Math.max(2, Math.floor((CW - GAP * Math.max(0, n - 1)) / n));
+    const totalBarW = bw * n + GAP * (n - 1);
+    const xOffset = Math.round((CW - totalBarW) / 2);
+    const barX0 = i => ML + xOffset + i * (bw + GAP);
+
+    // Check if forecast (non-charging) values have meaningful variation
+    const fVals = slots.filter(s => !s.charging).map(s => s.value);
+    const fMax = fVals.length > 0 ? Math.max(...fVals) : 0;
+    const fMin = fVals.length > 0 ? Math.min(...fVals) : 0;
+    const fRange = fMax - fMin;
+    const hasVariation = fRange > 0.001;
+
+    // Bar height: if forecast values vary, scale proportionally.
+    // If flat (e.g. fixed price fallback), use fixed heights.
+    const barH = (v, charging) => {
+      if (hasVariation) {
+        const frac = 0.2 + 0.8 * ((v - fMin) / fRange);
+        return Math.max(2, Math.round(frac * CH));
+      }
+      return charging ? CH : Math.round(CH * 0.7);
+    };
+
+    // X-axis hour labels — sequential, ~12 labels max
+    const showEvery = Math.max(1, Math.ceil(n / 12));
+    // Track label x positions to avoid overlaps
+    let lastLabelX = -999;
+
+    const bars = slots.map((s, i) => {
+      const x0 = barX0(i);
+      const cx = x0 + bw / 2;
+      const R = bw >= 4 ? 1 : 0;
+      const h = barH(s.value, s.charging);
+      const y = MT + CH - h;
+      const fill = s.charging ? "var(--evcc-green,#22c55e)" : "var(--secondary-text-color,#888)";
+      const opacity = s.charging ? "1" : "0.35";
+
+      const barRect = `<rect x="${x0}" y="${y}" width="${bw}" height="${h}"
+        fill="${fill}" opacity="${opacity}" rx="${R}"/>`;
+
+      // Hour labels — sequential, no dedup
+      let labelSvg = "";
+      if (i % showEvery === 0 && (cx - lastLabelX) > 18) {
+        const hr = new Date(s.start).getHours();
+        labelSvg = `<text x="${cx}" y="${MT + CH + 10}" text-anchor="middle" font-size="7"
+             fill="var(--secondary-text-color,#888)">${hr}</text>`;
+        lastLabelX = cx;
+      }
+
+      return `${barRect}${labelSvg}`;
+    }).join("");
+
+    // Target time marker (vertical line + label like evcc)
+    let targetMarker = "";
+    if (targetTs && slots.length > 1) {
+      const slotsStart = slots[0].start;
+      const slotsEnd = slots[slots.length - 1].end;
+      if (targetTs >= slotsStart && targetTs <= slotsEnd) {
+        const frac = (targetTs - slotsStart) / (slotsEnd - slotsStart);
+        const tx = ML + xOffset + frac * totalBarW;
+        const td = new Date(targetTs);
+        const dayNames = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+        const tLabel = `${dayNames[td.getDay()]}, ${String(td.getHours()).padStart(2,"0")}:${String(td.getMinutes()).padStart(2,"0")}`;
+        targetMarker = `
+          <line x1="${tx}" y1="${MT + CH}" x2="${tx}" y2="${MT + CH + 14}"
+            stroke="var(--evcc-green,#22c55e)" stroke-width="1.5"/>
+          <text x="${tx}" y="${MT + CH + 24}" text-anchor="middle" font-size="8"
+            fill="var(--evcc-green,#22c55e)" font-weight="600">${tLabel}</text>`;
+      }
+    }
+
+    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet"
+      style="width:100%;height:auto;display:block">${bars}${targetMarker}</svg>`;
+  }
+
+  _renderPlanPreviewSummary(preview, unit) {
+    const dur = preview.duration ?? 0;
+    const m = Math.floor(dur / 60);
+    const s = dur % 60;
+    const durStr = `${m}:${String(s).padStart(2, "0")} min`;
+    const powerKw = ((preview.power ?? 0) / 1000).toFixed(1).replace(".", ",");
+
+    // Average cost/emission from plan slots
+    const planSlots = preview.plan || [];
+    const avgVal = planSlots.length > 0
+      ? planSlots.reduce((sum, r) => sum + (r.value ?? 0), 0) / planSlots.length
+      : 0;
+
+    const isCo2 = preview.smartCostType === "co2";
+    const currency = preview.currency || "€";
+    const avgLabel = isCo2 ? "CO₂-Emission Ø" : `${this._t("planPreviewCost")} Ø`;
+    const avgStr = isCo2
+      ? `${Math.round(avgVal)} g/kWh`
+      : `${avgVal.toFixed(2)} ${currency}/kWh`;
+
+    return `<div class="plan-preview-header">
+      <div class="plan-preview-left">
+        <div class="plan-preview-label">${this._t("planPreviewDuration")}</div>
+        <div class="plan-preview-value">${durStr} @ ${powerKw} kW</div>
+      </div>
+      <div class="plan-preview-right">
+        <div class="plan-preview-label">${avgLabel}</div>
+        <div class="plan-preview-value">${avgStr}</div>
+      </div>
+    </div>`;
   }
 
   _renderSessionInfo(ents, charging = false) {
@@ -1692,10 +2140,19 @@ class EvccCard extends HTMLElement {
       });
     }
 
-    return Object.values(groups)
+    let result = Object.values(groups)
       .map(g => ({ ...g, plans: g.plans.sort((x, y) => x.n - y.n) }))
       .filter(g => g.plans.length > 0)
       .sort((x, y) => x.vehicleName.localeCompare(y.vehicleName));
+
+    // Config filter: repeating_plan_vehicles restricts to listed vehicle slugs
+    const filter = this._config.repeating_plan_vehicles;
+    if (Array.isArray(filter) && filter.length > 0) {
+      const allowed = new Set(filter.map(v => String(v).toLowerCase()));
+      result = result.filter(g => allowed.has(g.slug.toLowerCase()));
+    }
+
+    return result;
   }
 
   _vehicleNameForSlug(slug) {
@@ -2992,9 +3449,388 @@ class EvccCard extends HTMLElement {
     </div>`;
   }
 
+  // ---- Sessions-based statistics (ha-evcc evcc_intg/sessions) -------------
+  // The raw session list lets the card compute every period + KPI itself, so
+  // the stats mode no longer depends on user-configured stat_* template sensors
+  // or HA-Recorder delta reconstruction. Gated on _hasCmd("sessions"); older
+  // integrations keep the entity/Recorder path below.
+
+  _sessionDate(s) {
+    const raw = s?.created || s?.finished;
+    if (!raw) return null;
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  _statsLang() { return (this._config?.language || this._hass?.language || "de").split("-")[0]; }
+
+  // Earliest/latest session date — bounds the month/year stepper.
+  _sessionRange(sessions) {
+    let min = null, max = null;
+    for (const s of sessions) {
+      const d = this._sessionDate(s);
+      if (!d) continue;
+      if (!min || d < min) min = d;
+      if (!max || d > max) max = d;
+    }
+    return { min, max };
+  }
+
+  // Scope = the active stats window: month / year / total.
+  _sessionInScope(d, scope) {
+    if (scope.kind === "month") return d.getFullYear() === scope.year && d.getMonth() === scope.month;
+    if (scope.kind === "year")  return d.getFullYear() === scope.year;
+    return true; // total
+  }
+  _scopeKey(scope) {
+    return scope.kind === "month" ? `m${scope.year}-${scope.month}`
+         : scope.kind === "year"  ? `y${scope.year}` : "total";
+  }
+
+  // Active scope for the stats block, from the scope tab + stepper selection
+  // (lazily defaulting to the most recent month/year present in the data).
+  _statsScopeObj(sessions) {
+    const tab = this._statsScope ?? "month";
+    if (tab === "total") return { kind: "total" };
+    const ref = this._sessionRange(sessions).max ?? new Date();
+    if (this._statsYearSel  == null) this._statsYearSel  = ref.getFullYear();
+    if (this._statsMonthSel == null) this._statsMonthSel = ref.getMonth();   // 0-based month index
+    if (tab === "year") return { kind: "year", year: this._statsYearSel };
+    return { kind: "month", year: this._statsYearSel, month: this._statsMonthSel };
+  }
+
+  // Footer scope (compact, no stepper): current month / current year / all.
+  _footerScope() {
+    const p = this._config.stats_period ?? "total";
+    const now = new Date();
+    if (p === "month" || p === "30d") return { kind: "month", year: now.getFullYear(), month: now.getMonth() };
+    if (p === "year" || p === "365d" || p === "thisYear") return { kind: "year", year: now.getFullYear() };
+    return { kind: "total" };
+  }
+
+  // Currency symbol for session price values (the sessions response carries none).
+  _statsCurrency() {
+    const c = this._wsCache["forecast:grid"]?.result?.data?.currency
+           ?? this._wsCache["forecast:planner"]?.result?.data?.currency;
+    if (c) return c;
+    const { priceId } = this._getStatEntityIds("total");
+    const u = priceId ? unitStr(this._hass, priceId) : "";
+    return u ? u.replace(/\s*\/\s*kwh$/i, "") : "";
+  }
+
+  // --- metric + grouping for the EVCC-style stacked chart ------------------
+  // Per-session value for the selected metric: energy (kWh) | cost (currency) | co2 (kg).
+  _metricVal(s, metric) {
+    const e = Number(s.chargedEnergy);
+    if (metric === "cost") { const p = Number(s.price); return isFinite(p) ? p : null; }
+    if (metric === "co2")  { const c = Number(s.co2PerKWh); return (isFinite(e) && isFinite(c)) ? e * c / 1000 : null; }
+    return isFinite(e) ? e : null;
+  }
+  _metricFmt(metric, currency) {
+    if (metric === "cost") return { unit: currency || "", axis: currency || "", fmt: v => v.toFixed(2) };
+    if (metric === "co2")  return { unit: "kg", axis: "kg", fmt: v => v >= 10 ? String(Math.round(v)) : v.toFixed(2) };
+    return { unit: "kWh", axis: "kWh", fmt: v => v >= 100 ? String(Math.round(v)) : v.toFixed(1) };
+  }
+
+  // X-axis skeleton for the scope: bucket key per date + ordered bucket descriptors.
+  _scopeAxis(scope, sessions) {
+    const lang = this._statsLang(), now = new Date();
+    if (scope.kind === "month") {
+      const days = new Date(scope.year, scope.month + 1, 0).getDate();
+      const buckets = [];
+      for (let day = 1; day <= days; day++) {
+        const date = new Date(scope.year, scope.month, day);
+        buckets.push({ key: day,
+          labelStr:  date.toLocaleDateString(lang, { day: "numeric" }),
+          labelFull: date.toLocaleDateString(lang, { day: "numeric", month: "short" }),
+          isCurrent: scope.year === now.getFullYear() && scope.month === now.getMonth() && day === now.getDate() });
+      }
+      return { keyOf: d => (d.getFullYear() === scope.year && d.getMonth() === scope.month) ? d.getDate() : null, buckets };
+    }
+    if (scope.kind === "year") {
+      const last = scope.year === now.getFullYear() ? now.getMonth() : 11;
+      const buckets = [];
+      for (let m = 0; m <= last; m++) {
+        const date = new Date(scope.year, m, 1);
+        buckets.push({ key: m,
+          labelStr:  date.toLocaleDateString(lang, { month: "short" }),
+          labelFull: date.toLocaleDateString(lang, { month: "long", year: "numeric" }),
+          isCurrent: scope.year === now.getFullYear() && m === now.getMonth() });
+      }
+      return { keyOf: d => d.getFullYear() === scope.year ? d.getMonth() : null, buckets };
+    }
+    // total: yearly; if ≤1 year of data, fall back to that year's months
+    const years = [...new Set(sessions.map(s => { const d = this._sessionDate(s); return d ? d.getFullYear() : null; }).filter(v => v != null))].sort((a, b) => a - b);
+    if (years.length <= 1) return this._scopeAxis({ kind: "year", year: years.length ? years[0] : now.getFullYear() }, sessions);
+    const buckets = years.map(y => ({ key: y, labelStr: String(y), labelFull: String(y), isCurrent: y === now.getFullYear() }));
+    return { keyOf: d => d.getFullYear(), buckets };
+  }
+
+  // Ordered series for the grouping. solar → [solar, grid]; loadpoint/vehicle → distinct (energy desc).
+  _groupSeries(scope, sessions, grouping) {
+    if (grouping === "solar") return [
+      { key: "__solar", label: this._t("statsGroupSolar"), color: "var(--evcc-green,#22c55e)" },
+      { key: "__grid",  label: this._t("grid"),            color: "var(--primary-color,#3b82f6)" },
+    ];
+    const pal = ["#3b82f6", "#22c55e", "#f59e0b", "#a855f7", "#ef4444", "#06b6d4", "#ec4899", "#84cc16"];
+    const field = grouping === "loadpoint" ? "loadpoint" : "vehicle";
+    const totals = {};
+    for (const s of sessions) {
+      const d = this._sessionDate(s); if (!d || !this._sessionInScope(d, scope)) continue;
+      const n = s[field] || "—";
+      totals[n] = (totals[n] || 0) + (Number(s.chargedEnergy) || 0);
+    }
+    return Object.entries(totals).sort((a, b) => b[1] - a[1]).map(([n], i) => ({ key: n, label: n, color: pal[i % pal.length] }));
+  }
+
+  // Stacked buckets: each bucket gets seg{seriesKey:value} + total for the chosen metric.
+  _sessionStacks(sessions, scope, metric, grouping, series) {
+    const axis = this._scopeAxis(scope, sessions);
+    const pos = {}; axis.buckets.forEach((b, i) => { pos[b.key] = i; b.seg = {}; b.total = 0; });
+    const known = new Set(series.map(s => s.key));
+    const field = grouping === "loadpoint" ? "loadpoint" : "vehicle";
+    for (const s of sessions) {
+      const d = this._sessionDate(s); if (!d) continue;
+      const bk = axis.keyOf(d); if (bk == null || !(bk in pos)) continue;
+      const v = this._metricVal(s, metric); if (v == null) continue;
+      const b = axis.buckets[pos[bk]];
+      if (grouping === "solar") {
+        if (metric === "energy") {
+          const sp = Number(s.solarPercentage);
+          const frac = isFinite(sp) ? Math.max(0, Math.min(100, sp)) / 100 : 0;
+          b.seg.__solar = (b.seg.__solar || 0) + v * frac;
+          b.seg.__grid  = (b.seg.__grid  || 0) + v * (1 - frac);
+        } else {
+          // cost/CO₂: solar self-consumption carries ~no marginal cost/emissions → attribute to grid.
+          b.seg.__grid = (b.seg.__grid || 0) + v;
+        }
+      } else {
+        const key = s[field] || "—";
+        if (!known.has(key)) continue;
+        b.seg[key] = (b.seg[key] || 0) + v;
+      }
+      b.total += v;
+    }
+    return axis.buckets;
+  }
+
+  _computeSessionStats(sessions, scope) {
+    let kwh = 0, solarKwh = 0, cost = 0, co2wSum = 0, co2w = 0;
+    let hasSolar = false, hasPrice = false, hasCo2 = false, count = 0;
+    for (const s of sessions) {
+      const d = this._sessionDate(s);
+      if (!d || !this._sessionInScope(d, scope)) continue;
+      const e = Number(s.chargedEnergy) || 0;
+      kwh += e; count++;
+      const sp = Number(s.solarPercentage);
+      if (isFinite(sp)) { solarKwh += e * Math.max(0, Math.min(100, sp)) / 100; hasSolar = true; }
+      const p = Number(s.price);
+      if (isFinite(p)) { cost += p; hasPrice = true; }
+      const c = Number(s.co2PerKWh);
+      if (isFinite(c)) { co2wSum += e * c; co2w += e; hasCo2 = true; }
+    }
+
+    return {
+      kwh,
+      solarPct:  (hasSolar && kwh > 0) ? solarKwh / kwh * 100 : null,
+      avgPrice:  (hasPrice && kwh > 0) ? cost / kwh : null,
+      totalCost: hasPrice ? cost : null,
+      avgCo2:    (hasCo2 && co2w > 0) ? co2wSum / co2w : null,
+      count, hasSolar, hasPrice, hasCo2,
+    };
+  }
+
+  // KPI memo per (sessions cache timestamp, scope); the footer reuses this.
+  _sessionStats(sessions, scope) {
+    const ts = this._wsCache["sessions::"]?.ts ?? 0;
+    const key = this._scopeKey(scope);
+    if (!this._sessionStatsMemo || this._sessionStatsMemo.ts !== ts) this._sessionStatsMemo = { ts, byKey: {} };
+    if (!this._sessionStatsMemo.byKey[key]) this._sessionStatsMemo.byKey[key] = this._computeSessionStats(sessions, scope);
+    return this._sessionStatsMemo.byKey[key];
+  }
+
+  // Metric toggle (Energie / Kosten / CO₂) — selects what the bars represent.
+  _renderStatsMetricTabs() {
+    const cur = this._statsMetric ?? "energy";
+    const defs = [
+      { key: "energy", tKey: "statsMetricEnergy" },
+      { key: "cost",   tKey: "statsMetricCost"   },
+      { key: "co2",    tKey: "statsMetricCo2"    },
+    ];
+    const btns = defs.map(d => `<button class="stats-period-tab${d.key === cur ? " active" : ""}" data-metric="${d.key}">${this._t(d.tKey)}</button>`).join("");
+    return `<div class="stats-period-tabs stats-period-tabs--small">${btns}</div>`;
+  }
+
+  // Grouping toggle (Sonne / Ladepunkt / Fahrzeug) — selects how bars are stacked.
+  _renderStatsGroupTabs() {
+    const cur = this._statsGroup ?? "solar";
+    const defs = [
+      { key: "solar",     tKey: "statsGroupSolar"     },
+      { key: "loadpoint", tKey: "statsGroupLoadpoint" },
+      { key: "vehicle",   tKey: "statsGroupVehicle"   },
+    ];
+    const btns = defs.map(d => `<button class="stats-period-tab${d.key === cur ? " active" : ""}" data-group="${d.key}">${this._t(d.tKey)}</button>`).join("");
+    return `<div class="stats-period-tabs stats-period-tabs--small">${btns}</div>`;
+  }
+
+  // Scope tabs (Month / Year / Total) for the sessions stats path. Reuses the
+  // .stats-period-tab styling but carries data-scope (handled separately from the
+  // legacy entity-path data-period tabs).
+  _renderStatsScopeTabs() {
+    const cur = this._statsScope ?? "month";
+    const defs = [
+      { key: "month", tKey: "statsPeriodMonth" },
+      { key: "year",  tKey: "statsPeriodYear"  },
+      { key: "total", tKey: "statsPeriodTotal" },
+    ];
+    const btns = defs.map(d =>
+      `<button class="stats-period-tab${d.key === cur ? " active" : ""}" data-scope="${d.key}">${this._t(d.tKey)}</button>`
+    ).join("");
+    return `<div class="stats-period-tabs">${btns}</div>`;
+  }
+
+  // Two independent steppers like EVCC: a month stepper (month scope only, wraps
+  // freely) and a year stepper (month + year scope, bounded to the data range).
+  // Steppers live on their OWN full-width line (CSS flex-basis:100%), right-aligned,
+  // always reserved (even in 'total') so switching Month/Year/Total never reflows
+  // the controls. The year stepper stays anchored right; month appears to its left
+  // only in month scope. Fixed label widths stop the year from shifting.
+  _renderStatsSteppers(sessions, scope) {
+    const lang = this._statsLang();
+    const now = new Date();
+    const { min, max } = this._sessionRange(sessions);
+    const y = scope.year ?? (max ? max.getFullYear() : now.getFullYear());
+    const minY = min ? min.getFullYear() : y;
+    const maxY = max ? max.getFullYear() : y;
+    const one = (group, label, atStart, atEnd) => `
+      <div class="stats-stepper">
+        <button class="stats-step-btn" data-stats-step="prev" data-stats-unit="${group}" ${atStart ? "disabled" : ""} aria-label="prev">‹</button>
+        <span class="stats-step-label stats-step-label--${group}">${label}</span>
+        <button class="stats-step-btn" data-stats-step="next" data-stats-unit="${group}" ${atEnd ? "disabled" : ""} aria-label="next">›</button>
+      </div>`;
+    let inner = "";
+    if (scope.kind !== "total") {
+      const monthLbl = new Date(y, scope.kind === "month" ? scope.month : 0, 1).toLocaleDateString(lang, { month: "long" });
+      const month = scope.kind === "month" ? one("month", monthLbl, false, false) : "";
+      inner = month + one("year", String(y), y <= minY, y >= maxY);
+    }
+    return `<div class="stats-steppers">${inner}</div>`;
+  }
+
+  // EVCC-style stacked multi-series bar chart for the sessions stats. `series` is
+  // an ordered [{key,label,color}]; each bucket carries seg{key:value} + total.
+  // Stashes the data on the instance so the tooltip handler can look it up by index.
+  _renderSessionChart(buckets, series, metric, currency) {
+    this._statsChartData = { buckets, series, metric, currency };
+    const mf = this._metricFmt(metric, currency);
+    const ML = 22, MR = 6, MT = 20, MB = 18, W = 280, H = 110, CW = W - ML - MR, CH = H - MT - MB;
+    const n = buckets.length || 1;
+    const GAP = n > 20 ? 1 : 2;
+    const bw = Math.max(1, Math.floor((CW - GAP * (n - 1)) / n));
+    const offset = Math.round((CW - (bw * n + GAP * (n - 1))) / 2);
+    const barX0 = i => ML + offset + i * (bw + GAP);
+    const maxVal = Math.max(...buckets.map(b => b.total || 0), 0.1);
+    const rawStep = maxVal / 5, stepExp = Math.floor(Math.log10(Math.max(rawStep, 0.001))), stepBase = Math.pow(10, stepExp), stepF = rawStep / stepBase;
+    const tickStep = (stepF <= 1 ? 1 : stepF <= 2 ? 2 : stepF <= 5 ? 5 : 10) * stepBase;
+    const numTicks = Math.ceil(maxVal / tickStep), niceMax = tickStep * numTicks;
+    const toY = v => MT + CH - Math.round((v / niceMax) * CH);
+    const grid = Array.from({ length: numTicks + 1 }, (_, i) => {
+      const val = i * tickStep, y = toY(val), lbl = tickStep >= 1 ? Math.round(val) : val.toFixed(1);
+      return `<line x1="${ML}" y1="${y}" x2="${W - MR}" y2="${y}" stroke="var(--divider-color,#374151)" stroke-width="${i === 0 ? 1 : 0.5}" opacity="${i === 0 ? 0.9 : 0.35}"/>`
+           + `<text x="${ML - 3}" y="${y + 3}" text-anchor="end" font-size="6.5" fill="var(--secondary-text-color,#888)">${lbl}</text>`;
+    }).join("");
+    const axisLbl = `<text x="${ML - 3}" y="${MT - 8}" text-anchor="end" font-size="6.5" fill="var(--secondary-text-color,#888)">${mf.axis}</text>`;
+    const showEvery = n > 15 ? Math.ceil(n / 7) : 1;
+    const bars = buckets.map((b, i) => {
+      const x0 = barX0(i), cx = x0 + bw / 2;
+      const op = b.isCurrent ? "0.95" : "0.6";
+      let bottom = toY(0), segs = "";
+      for (const s of series) {
+        const val = b.seg[s.key] || 0; if (val <= 0) continue;
+        const h = Math.round((val / niceMax) * CH); if (h <= 0) continue;
+        const y = bottom - h;
+        segs += `<rect x="${x0}" y="${y}" width="${bw}" height="${h}" fill="${s.color}" opacity="${op}"/>`;
+        bottom = y;
+      }
+      const showLabel = (i % showEvery === 0) || i === n - 1;
+      const labelSvg = showLabel ? `<text x="${cx}" y="${H - MB + 12}" text-anchor="middle" font-size="6.5" fill="var(--secondary-text-color,#888)" opacity="${b.isCurrent ? "1" : "0.75"}">${b.labelStr}</text>` : "";
+      const hit = `<rect class="evcc-bar" data-idx="${i}" x="${x0}" y="${MT}" width="${bw}" height="${CH}" fill="transparent" style="cursor:pointer"/>`;
+      return segs + hit + labelSvg;
+    }).join("");
+    const legend = `<div class="stats-legend">${series.map(s => `<span class="sl-item"><span class="sl-dot" style="background:${s.color}"></span>${s.label}</span>`).join("")}</div>`;
+    return `<div class="evcc-chart-wrap"><svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${grid}${axisLbl}${bars}</svg><div class="evcc-chart-tooltip" hidden></div></div>${legend}`;
+  }
+
+  _renderStatsBlockSessions(sessions) {
+    const scope   = this._statsScopeObj(sessions);
+    const metric  = this._statsMetric ?? "energy";
+    const grouping = this._statsGroup ?? "solar";
+    const cur     = this._statsCurrency();
+    const k       = this._sessionStats(sessions, scope);
+
+    // KPI tiles (period summary, independent of the selected metric).
+    const kpi = (v, label, fmt, color) => `
+      <div class="stats-kpi">
+        <div class="stats-kpi-val"${color ? ` style="color:${color}"` : ""}>${v != null ? fmt(v) : "–"}</div>
+        <div class="stats-kpi-lbl">${label}</div>
+      </div>`;
+    const kpis = [ kpi(k.kwh, this._t("statsTotalCharged"), v => `${Math.round(v)} kWh`, null) ];
+    if (k.hasSolar) kpis.push(kpi(k.solarPct, this._t("statsSolarShare"), v => `${Math.round(v)} %`, k.solarPct > 0 ? "var(--evcc-green)" : null));
+    if (k.hasPrice) kpis.push(kpi(k.totalCost, this._t("statsTotalCost"), v => `${v.toFixed(2)} ${cur}`, null));
+    if (k.hasCo2)   kpis.push(kpi(k.avgCo2, this._t("statsAvgCo2"), v => `${v >= 10 ? Math.round(v) : v.toFixed(1)} g/kWh`, null));
+
+    // Stacked chart for the selected metric × grouping.
+    const series = this._groupSeries(scope, sessions, grouping);
+    const buckets = this._sessionStacks(sessions, scope, metric, grouping, series);
+    const hasBars = buckets.some(b => (b.total || 0) > 0);
+    const chartHtml = `
+      <div class="stats-chart-section">
+        ${hasBars ? this._renderSessionChart(buckets, series, metric, cur) : `<div class="stats-chart-loading">${this._t("statsNoSessions")}</div>`}
+      </div>`;
+
+    return `
+      <div>
+        <div class="lp-header">
+          <span class="lp-name">${this._config.title || this._t("statistics")}</span>
+        </div>
+        <div class="stats-controls">
+          ${this._renderStatsScopeTabs()}
+          ${this._renderStatsSteppers(sessions, scope)}
+        </div>
+        <div class="stats-controls">
+          ${this._renderStatsMetricTabs()}
+          ${this._renderStatsGroupTabs()}
+        </div>
+        <div class="stats-kpi-row">${kpis.join("")}</div>
+        ${chartHtml}
+      </div>`;
+  }
+
+  _renderStatsFooterSessions(sessions) {
+    const scope = this._footerScope();
+    const k = this._sessionStats(sessions, scope);
+    const cur = this._statsCurrency();
+    const labelKey = scope.kind === "month" ? "statsPeriodMonth" : scope.kind === "year" ? "statsPeriodYear" : "statsPeriodTotal";
+    const periodLabel = this._t(labelKey);
+    const items = [
+      `<span class="sf-item"><span class="sf-val">${Math.round(k.kwh)} kWh</span><span class="sf-lbl">${this._t("statsCharged")}</span></span>`,
+      k.hasSolar ? `<span class="sf-item"><span class="sf-val" style="color:var(--evcc-green)">${Math.round(k.solarPct)} %</span><span class="sf-lbl">${this._t("statsSolarShare")}</span></span>` : "",
+      k.hasPrice ? `<span class="sf-item"><span class="sf-val">${k.avgPrice.toFixed(2)} ${cur}/kWh</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
+    ].filter(Boolean);
+    if (k.kwh <= 0) return "";
+    return `<div class="stats-footer"><div class="sf-period">${periodLabel}</div><div class="sf-items">${items.join('<span class="sf-sep"></span>')}</div></div>`;
+  }
+
   _renderStatsFooter() {
     const period = this._config.stats_period ?? "total";
     if (period === "none") return "";
+    if (this._hasCmd("sessions")) {
+      const res = this._wsSessions();
+      if (res && res.data && Array.isArray(res.data.sessions)) {
+        return this._renderStatsFooterSessions(res.data.sessions);
+      }
+      // pending/error → fall through to the entity path below
+    }
     const { kwhId, solarId, priceId } = this._getStatEntityIds(period);
     if (!kwhId && !solarId && !priceId) return "";
 
@@ -3017,6 +3853,29 @@ class EvccCard extends HTMLElement {
   }
 
   _renderStatsBlock() {
+    // Sessions-first: when ha-evcc exposes the sessions command, compute the
+    // stats entirely from the raw session list (no stat_* sensors, no Recorder).
+    // Fall back to the entity/Recorder path for older integrations or while the
+    // first session fetch is still in flight.
+    if (this._hasCmd("sessions")) {
+      const res = this._wsSessions();
+      if (res && res.data && Array.isArray(res.data.sessions)) {
+        return this._renderStatsBlockSessions(res.data.sessions);
+      }
+      if (!res) {
+        return `
+          <div>
+            <div class="lp-header"><span class="lp-name">${this._config.title || this._t("statistics")}</span></div>
+            ${this._renderStatsScopeTabs()}
+            <div class="stats-chart-loading">…</div>
+          </div>`;
+      }
+      // res.error → fall through to the entity path
+    }
+    return this._renderStatsBlockEntities();
+  }
+
+  _renderStatsBlockEntities() {
     this._maybeRefreshStats();
     const { kwhId, solarId, priceId } = this._getStatEntityIds();
 
@@ -3296,7 +4155,7 @@ class EvccCard extends HTMLElement {
     const maskValue = (key, val) => {
       if (!maskNames) return val;
       if (key === "title") return "***";
-      if (key === "loadpoints" || key === "no_plan" || key === "no_pv") {
+      if (key === "loadpoints" || key === "no_plan" || key === "no_pv" || key === "repeating_plan_vehicles") {
         if (Array.isArray(val)) return val.map(() => `lp_${++lpMaskCount.i}`);
         if (typeof val === "string") return `lp_${++lpMaskCount.i}`;
       }
@@ -3420,6 +4279,37 @@ class EvccCard extends HTMLElement {
         </div>
 
         <div class="debug-section">
+          <div class="debug-section-title">WebSocket API</div>
+          <ul class="debug-kv">
+            <li><strong>Config entry id:</strong> <code>${this._entryId || "—"}</code></li>
+            ${!this._capsLoaded
+              ? `<li><em>Probing capabilities…</em></li>`
+              : !this._caps || this._caps.commands.length === 0
+                ? `<li>${pill("warn", "not supported")} <em>(older ha-evcc / unknown command)</em></li>`
+                : (() => {
+                    const items = [];
+                    items.push(`<li><strong>Integration version:</strong> <code>${this._caps.version ?? "—"}</code></li>`);
+                    items.push(`<li><strong>Commands:</strong> ${this._caps.commands.map(c => `<code>${c}</code>`).join(", ")}</li>`);
+                    // Show cached probe results (prefetched by _prefetchDebugProbes).
+                    const fmtProbe = (label, cacheKey, fmt) => {
+                      const c = this._wsCache[cacheKey];
+                      if (!c) return `<li><strong>${label}:</strong> <em>loading…</em></li>`;
+                      if (c.result.error) return `<li><strong>${label}:</strong> ${pill("err", "error")} <code>${c.result.error}</code></li>`;
+                      return `<li><strong>${label}:</strong> ${fmt(c.result.data)}</li>`;
+                    };
+                    if (this._hasCmd("forecast"))
+                      items.push(fmtProbe("forecast (grid)", "forecast:grid",
+                        d => `${Array.isArray(d?.rates) ? d.rates.length : 0} rates${d?.unit ? ` (${d.unit})` : ""}`));
+                    if (this._hasCmd("sessions"))
+                      items.push(fmtProbe("sessions", "sessions::",
+                        d => `${Array.isArray(d?.sessions) ? d.sessions.length : 0} sessions`));
+                    return items.join("\n");
+                  })()
+            }
+          </ul>
+        </div>
+
+        <div class="debug-section">
           <div class="debug-section-title">${this._t("debugLoadpoints")} (${lpNames.length})</div>
           ${lpRows}
         </div>
@@ -3501,6 +4391,35 @@ class EvccCard extends HTMLElement {
     out.push(`- Prefix detected: ${this._detectedPrefix ? `\`${this._detectedPrefix}\`` : "*(none)*"}`);
     out.push(`- Prefix configured: ${this._config.prefix ? `\`${this._config.prefix}\`` : "*(none)*"}`);
     out.push(``);
+
+    // ── WebSocket data API (evcc_intg/forecast|sessions|plan_preview) ──
+    out.push(`**WebSocket API**`);
+    out.push(`- Config entry id: ${this._entryId ? `\`${this._entryId}\`` : "*(not found)*"}`);
+    if (!this._capsLoaded) {
+      out.push(`- Capabilities: *(probing…)*`);
+    } else if (!this._caps || this._caps.commands.length === 0) {
+      out.push(`- Capabilities: *not supported (older ha-evcc / unknown command)*`);
+    } else {
+      out.push(`- Integration version: \`${this._caps.version ?? "—"}\``);
+      out.push(`- Commands: ${this._caps.commands.map(c => `\`${c}\``).join(", ")}`);
+
+      // Live probes — read from cache (populated by visual debug block render).
+      // Show prefetched probe results (cached by _prefetchDebugProbes).
+      const probe = (label, cacheKey, fmt) => {
+        const c = this._wsCache[cacheKey];
+        if (!c) { out.push(`- ${label}: *(not fetched)*`); return; }
+        if (c.result.error) { out.push(`- ${label}: **error** \`${c.result.error}\``); return; }
+        out.push(`- ${label}: ${fmt(c.result.data)}`);
+      };
+      if (this._hasCmd("forecast"))
+        probe("forecast (grid)", "forecast:grid",
+          d => `${Array.isArray(d?.rates) ? d.rates.length : 0} rates${d?.unit ? ` (${d.unit})` : ""}`);
+      if (this._hasCmd("sessions"))
+        probe("sessions", "sessions::",
+          d => `${Array.isArray(d?.sessions) ? d.sessions.length : 0} sessions`);
+    }
+    out.push(``);
+
     out.push(`**Loadpoints** (${lpNames.length})`);
     if (lpNames.length === 0) {
       out.push(`*(none detected)*`);
@@ -3564,7 +4483,6 @@ class EvccCard extends HTMLElement {
     const copyBtn = this.shadowRoot.querySelector(".debug-copy-btn");
     if (copyBtn) {
       copyBtn.addEventListener("click", async () => {
-        const md    = this._buildDebugReport(this._debugMask === true);
         const toast = this.shadowRoot.querySelector(".debug-toast");
         const showToast = (msg, tone = "ok") => {
           if (!toast) return;
@@ -3574,6 +4492,14 @@ class EvccCard extends HTMLElement {
           clearTimeout(this._debugToastTimer);
           this._debugToastTimer = setTimeout(() => { toast.hidden = true; }, 3000);
         };
+        let md;
+        try {
+          md = this._buildDebugReport(this._debugMask === true);
+        } catch (e) {
+          console.error("[evcc-card] _buildDebugReport crashed:", e);
+          showToast("Report build failed: " + (e?.message || e), "err");
+          return;
+        }
         try {
           await navigator.clipboard.writeText(md);
           showToast(this._t("debugCopied"), "ok");
@@ -3656,7 +4582,26 @@ class EvccCard extends HTMLElement {
 
     this.shadowRoot.querySelectorAll("button.stats-period-tab").forEach(btn => {
       btn.addEventListener("click", () => {
-        this._statsPeriod = btn.dataset.period;
+        // Sessions path: data-scope/-metric/-group. Legacy entity path: data-period.
+        if      (btn.dataset.scope)  this._statsScope  = btn.dataset.scope;
+        else if (btn.dataset.metric) this._statsMetric = btn.dataset.metric;
+        else if (btn.dataset.group)  this._statsGroup  = btn.dataset.group;
+        else                         this._statsPeriod = btn.dataset.period;
+        this._render();
+      });
+    });
+
+    // Two independent steppers: month (wraps 0-11) and year (sessions stats path).
+    this.shadowRoot.querySelectorAll("button[data-stats-step]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const dir = btn.dataset.statsStep === "next" ? 1 : -1;
+        const now = new Date();
+        if (btn.dataset.statsUnit === "year") {
+          this._statsYearSel = (this._statsYearSel ?? now.getFullYear()) + dir;
+        } else {
+          const m = (this._statsMonthSel ?? now.getMonth()) + dir;
+          this._statsMonthSel = (m + 12) % 12;
+        }
         this._render();
       });
     });
@@ -3664,19 +4609,9 @@ class EvccCard extends HTMLElement {
     const chartWrap = this.shadowRoot.querySelector(".evcc-chart-wrap");
     if (chartWrap) {
       const tooltip = chartWrap.querySelector(".evcc-chart-tooltip");
-      const showTooltip = (bar) => {
-        const total = bar.dataset.total;
-        if (!total) { tooltip.hidden = true; return; }
-        const solar = bar.dataset.solar ? parseFloat(bar.dataset.solar) : null;
-        const grid  = solar != null ? (parseFloat(total) - solar).toFixed(1) : null;
-        const dot = (color) => `<span class="ectt-dot" style="background:${color}"></span>`;
-        const solarColor = getComputedStyle(chartWrap).getPropertyValue("--evcc-green").trim() || "#22c55e";
-        const gridColor  = getComputedStyle(chartWrap).getPropertyValue("--primary-color").trim() || "#3b82f6";
-        tooltip.innerHTML =
-          `<div class="ectt-header">${bar.dataset.label}</div>` +
-          (solar != null ? `<div class="ectt-row">${dot(solarColor)}<span class="ectt-name">${this._t("solar")}</span><span class="ectt-val">${bar.dataset.solar} kWh</span></div>` : "") +
-          (grid  != null ? `<div class="ectt-row">${dot(gridColor)}<span class="ectt-name">${this._t("grid")}</span><span class="ectt-val">${grid} kWh</span></div>` : "") +
-          `<div class="ectt-summary">${total} kWh ${this._t("total")}</div>`;
+      const dot = (color) => `<span class="ectt-dot" style="background:${color}"></span>`;
+      const barKey = (bar) => bar.dataset.idx != null ? "i" + bar.dataset.idx : (bar.dataset.label || "") + (bar.dataset.total || "");
+      const positionTooltip = (bar) => {
         const barRect  = bar.getBoundingClientRect();
         const wrapRect = chartWrap.getBoundingClientRect();
         const rawLeft  = barRect.left - wrapRect.left + barRect.width / 2;
@@ -3684,7 +4619,35 @@ class EvccCard extends HTMLElement {
         const ttW  = tooltip.getBoundingClientRect().width;
         const left = Math.min(wrapRect.width - ttW / 2 - 4, Math.max(ttW / 2 + 4, rawLeft));
         tooltip.style.left = `${left}px`;
-        tooltip.dataset.activeBar = bar.dataset.label + bar.dataset.total;
+      };
+      const showTooltip = (bar) => {
+        // Sessions stacked chart: look the bucket up by index.
+        if (bar.dataset.idx != null && this._statsChartData) {
+          const { buckets, series, metric, currency } = this._statsChartData;
+          const b = buckets[+bar.dataset.idx];
+          if (!b || !(b.total > 0)) { tooltip.hidden = true; return; }
+          const mf = this._metricFmt(metric, currency);
+          const rows = series.filter(s => (b.seg[s.key] || 0) > 0)
+            .map(s => `<div class="ectt-row">${dot(s.color)}<span class="ectt-name">${s.label}</span><span class="ectt-val">${mf.fmt(b.seg[s.key])} ${mf.unit}</span></div>`).join("");
+          tooltip.innerHTML = `<div class="ectt-header">${b.labelFull || b.labelStr}</div>${rows}<div class="ectt-summary">${mf.fmt(b.total)} ${mf.unit} ${this._t("total")}</div>`;
+          positionTooltip(bar);
+          tooltip.dataset.activeBar = barKey(bar);
+          return;
+        }
+        // Legacy entity chart (solar/grid).
+        const total = bar.dataset.total;
+        if (!total) { tooltip.hidden = true; return; }
+        const solar = bar.dataset.solar ? parseFloat(bar.dataset.solar) : null;
+        const grid  = solar != null ? (parseFloat(total) - solar).toFixed(1) : null;
+        const solarColor = getComputedStyle(chartWrap).getPropertyValue("--evcc-green").trim() || "#22c55e";
+        const gridColor  = getComputedStyle(chartWrap).getPropertyValue("--primary-color").trim() || "#3b82f6";
+        tooltip.innerHTML =
+          `<div class="ectt-header">${bar.dataset.label}</div>` +
+          (solar != null ? `<div class="ectt-row">${dot(solarColor)}<span class="ectt-name">${this._t("solar")}</span><span class="ectt-val">${bar.dataset.solar} kWh</span></div>` : "") +
+          (grid  != null ? `<div class="ectt-row">${dot(gridColor)}<span class="ectt-name">${this._t("grid")}</span><span class="ectt-val">${grid} kWh</span></div>` : "") +
+          `<div class="ectt-summary">${total} kWh ${this._t("total")}</div>`;
+        positionTooltip(bar);
+        tooltip.dataset.activeBar = barKey(bar);
       };
       chartWrap.addEventListener("mouseover", (e) => {
         const bar = e.target.closest(".evcc-bar");
@@ -3696,7 +4659,7 @@ class EvccCard extends HTMLElement {
       chartWrap.addEventListener("click", (e) => {
         const bar = e.target.closest(".evcc-bar");
         if (bar) {
-          const key = bar.dataset.label + bar.dataset.total;
+          const key = barKey(bar);
           if (!tooltip.hidden && tooltip.dataset.activeBar === key) {
             tooltip.hidden = true;
           } else {
@@ -3764,6 +4727,7 @@ class EvccCard extends HTMLElement {
         });
         btn.classList.toggle("on", !on);
         btn.dataset.on = String(!on);
+        if (btn.dataset.lp) this._requestPlanPreview(btn.dataset.lp);
       });
     });
 
@@ -3773,6 +4737,7 @@ class EvccCard extends HTMLElement {
           entity_id: sel.dataset.entity,
           option:    sel.value,
         });
+        if (sel.dataset.lp) this._requestPlanPreview(sel.dataset.lp);
       });
     });
 
@@ -3816,6 +4781,7 @@ class EvccCard extends HTMLElement {
       });
       input.addEventListener("pointerup", () => {
         this._isDragging = false;
+        this._requestPlanPreview(input.dataset.lp);
         if (this._pendingRender) { this._pendingRender = false; this._render(); }
       });
       input.addEventListener("blur", () => {
@@ -3830,6 +4796,7 @@ class EvccCard extends HTMLElement {
       input.addEventListener("change", () => {
         const lpName = input.dataset.lp;
         if (this._planState[lpName]) this._planState[lpName].time = input.value;
+        this._requestPlanPreview(lpName);
       });
     });
 
@@ -3853,6 +4820,7 @@ class EvccCard extends HTMLElement {
         if (eid && this._hass) {
           this._hass.callService("select", "select_option", { entity_id: eid, option: val });
         }
+        this._requestPlanPreview(lpName);
       });
     });
 
@@ -4407,6 +5375,24 @@ class EvccCard extends HTMLElement {
       .stats-kpi-val { font-size: 1.1rem; font-weight: 800; line-height: 1; }
       .stats-kpi-lbl { font-size: .58rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
       .stats-chart-section { margin-top: 4px; }
+      .stats-stepper { display: flex; align-items: center; justify-content: center; }
+      .stats-step-btn {
+        border: 1px solid var(--divider-color, rgba(127,127,127,0.3)); background: transparent;
+        color: var(--primary-text-color); border-radius: 8px; width: 26px; height: 24px; line-height: 1;
+        font-size: 1rem; cursor: pointer; padding: 0;
+      }
+      .stats-step-btn:hover:not([disabled]) { background: var(--secondary-background-color, rgba(127,127,127,0.12)); }
+      .stats-step-btn[disabled] { opacity: 0.35; cursor: default; }
+      .stats-stepper { gap: 4px; }
+      .stats-step-label { text-align: center; font-weight: 600; font-size: 0.85rem; white-space: nowrap; overflow: hidden; }
+      .stats-step-label--month { width: 74px; }
+      .stats-step-label--year { width: 42px; }
+      .stats-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+      .stats-controls .stats-period-tabs { margin-bottom: 0; }
+      .stats-steppers { flex: 0 0 100%; display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-height: 26px; }
+      .stats-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; margin-top: 8px; font-size: 0.74rem; color: var(--secondary-text-color); }
+      .sl-item { display: inline-flex; align-items: center; gap: 5px; }
+      .sl-dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
       .evcc-chart-wrap { position: relative; margin-left: -16px; margin-right: 0; }
       .evcc-chart-tooltip {
         position: absolute; top: 0; transform: translateX(-50%);
@@ -4508,6 +5494,14 @@ class EvccCard extends HTMLElement {
       select.plan-precondition-select { flex: 1; padding: 4px 8px; border: 1px solid var(--divider-color, #4b5563); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); font-size: .82rem; }
       .plan-row .toggle { margin-left: auto; }
       .plan-error { margin-top: 8px; padding: 6px 10px; border-radius: 6px; background: #ef444422; color: #ef4444; font-size: .78rem; word-break: break-all; }
+      .plan-preview { margin: 10px 0 4px; }
+      .plan-preview-loading { text-align: center; padding: 12px; font-size: .78rem; color: var(--secondary-text-color); }
+      .plan-preview-error, .plan-preview-info { padding: 8px 10px; border-radius: 6px; background: var(--secondary-background-color, rgba(0,0,0,.08)); color: var(--secondary-text-color); font-size: .78rem; }
+      .plan-preview-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+      .plan-preview-left, .plan-preview-right { display: flex; flex-direction: column; }
+      .plan-preview-right { text-align: right; }
+      .plan-preview-label { font-size: .65rem; text-transform: uppercase; letter-spacing: .03em; color: var(--secondary-text-color); }
+      .plan-preview-value { font-size: .88rem; font-weight: 600; color: var(--evcc-green,#22c55e); }
       .rplan-block .plan-header { justify-content: flex-start; gap: 6px; }
       .rplan-hint { display: inline-flex; align-items: center; color: var(--secondary-text-color); cursor: help; }
       .rplan-list { display: flex; flex-direction: column; gap: 8px; }
@@ -4791,6 +5785,32 @@ class EvccCardEditor extends HTMLElement {
     `).join("");
   }
 
+  _vehicleCheckboxes(type, selected) {
+    const slugs = this._availableVehicleSlugs;
+    if (slugs.length === 0) return `<div class="hint">${this._t("editorNoVehiclesFound")}</div>`;
+    return slugs.map(slug => {
+      const label = String(slug).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+      return `
+      <label class="cb-row">
+        <input type="checkbox" data-field="${type}" data-lp="${this._esc(slug)}" ${selected.includes(slug) ? "checked" : ""}>
+        <span>${this._esc(label)}</span>
+      </label>`;
+    }).join("");
+  }
+
+  get _availableVehicleSlugs() {
+    if (!this._hass) return [];
+    const prefix = this._config?.prefix || "evcc_";
+    const escPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`^switch\\.${escPrefix}(.+)_repeating_plan_\\d+$`);
+    const slugs = new Set();
+    for (const entityId of Object.keys(this._hass.states)) {
+      const m = entityId.match(re);
+      if (m) slugs.add(m[1]);
+    }
+    return [...slugs].sort();
+  }
+
   _render() {
     const c    = this._config;
     const mode = c.mode || "loadpoint";
@@ -4803,6 +5823,8 @@ class EvccCardEditor extends HTMLElement {
     const showChargeCurrent = ["loadpoint", "compact"].includes(mode);
     const showSiteDetails   = ["site", "flow"].includes(mode);
     const showStatsPeriod   = ["stats", "site", "flow", "grid"].includes(mode);
+    const showVehicleFilter = mode === "repeatplan";
+    const rplanVehicles     = Array.isArray(c.repeating_plan_vehicles) ? c.repeating_plan_vehicles : [];
 
     const titlePlaceholder = {
       loadpoint: this._t("editorTitlePlaceholderLoadpoint"),
@@ -4887,6 +5909,13 @@ class EvccCardEditor extends HTMLElement {
           ${this._checkboxes("loadpoints", selLps)}
         </div>
         ` : ""}
+        ${showVehicleFilter ? `
+        <div class="field">
+          <div class="section-title">${this._t("editorVehicleFilterTitle")}</div>
+          <div class="hint">${this._t("editorVehicleFilterHint")}</div>
+          ${this._vehicleCheckboxes("repeating_plan_vehicles", rplanVehicles)}
+        </div>
+        ` : ""}
         ${showNoPlan ? `
         <div class="field">
           <div class="section-title">${this._t("editorNoPlanForTitle")}</div>
@@ -4921,10 +5950,9 @@ class EvccCardEditor extends HTMLElement {
         <div class="field">
           <label class="field-label" for="stats_period">${this._t("editorStatsPeriodLabel")}</label>
           ${this._sel("stats_period", [
+            ["month",    this._t("statsPeriodMonth")],
+            ["year",     this._t("statsPeriodYear")],
             ["total",    this._t("editorStatsPeriodTotal")],
-            ["30d",      this._t("editorStatsPeriod30d")],
-            ["365d",     this._t("editorStatsPeriod365d")],
-            ["thisYear", this._t("editorStatsPeriodThisYear")],
             ["none",     this._t("editorStatsPeriodNone")],
           ], c.stats_period || "total")}
         </div>
