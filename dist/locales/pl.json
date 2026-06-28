@@ -14,6 +14,8 @@
   "modeAuto": "Auto",
   "targetSoc": "Docelowy SoC",
   "minSoc": "Minimalny SoC",
+  "targetTemp": "Temperatura docelowa",
+  "minTemp": "Minimalna temperatura",
   "priority": "Priorytet",
   "maxCurrent": "Maksymalny prąd",
   "minCurrent": "Minimalny prąd",

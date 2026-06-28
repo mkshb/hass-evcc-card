@@ -14,6 +14,8 @@
   "modeAuto": "Auto",
   "targetSoc": "Limiet",
   "minSoc": "Min. lading",
+  "targetTemp": "Doeltemperatuur",
+  "minTemp": "Min. temperatuur",
   "priority": "Prioriteit",
   "maxCurrent": "Max. stroom",
   "minCurrent": "Min. stroom",

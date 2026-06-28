@@ -14,6 +14,8 @@
   "modeAuto": "Auto",
   "targetSoc": "Ziel-SOC",
   "minSoc": "Min-SOC",
+  "targetTemp": "Ziel-Temperatur",
+  "minTemp": "Min-Temperatur",
   "priority": "Priorität",
   "maxCurrent": "Max-Strom",
   "minCurrent": "Min-Strom",

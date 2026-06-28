@@ -560,26 +560,63 @@ class EvccCard extends HTMLElement {
     return this._wsFetch("evcc_intg/sessions", params, `sessions:${year ?? ""}:${month ?? ""}`, 5 * 60 * 1000);
   }
 
-  // opts: { loadpoint:int, kind:"soc"|"energy"|"repeating", value,
-  //         timestamp? | weekdays/time/timezone }  →  { duration, power, rates[], ... }
-  _wsPlanPreview(opts) {
-    if (!this._hasCmd("plan_preview")) return null;
-    const params = { loadpoint: opts.loadpoint, kind: opts.kind, value: String(opts.value) };
-    if (opts.timestamp != null) params.timestamp = opts.timestamp;
-    if (opts.weekdays  != null) params.weekdays  = opts.weekdays;
-    if (opts.time      != null) params.time      = opts.time;
-    if (opts.timezone  != null) params.timezone  = opts.timezone;
-    const cacheKey = "plan:" + JSON.stringify(params);
-    return this._wsFetch("evcc_intg/plan_preview", params, cacheKey, 60 * 1000);
+  // Canonical params + cache key for a plan_preview request. Shared by every
+  // call site so the cached-read, the fetch and the invalidation all agree.
+  _planPreviewParams(opts) {
+    return {
+      loadpoint: opts.loadpoint,
+      kind:      opts.kind,
+      value:     String(opts.value),
+      timestamp: opts.timestamp,
+    };
+  }
+  _planPreviewKey(opts) {
+    return "plan:" + JSON.stringify(this._planPreviewParams(opts));
   }
 
-  // plan_preview expects the integer loadpoint index, but the card keys
-  // loadpoints by name slug. ha-evcc has no per-loadpoint index attribute, so
-  // fall back to the stable discovery order.
-  // Returns 1-based loadpoint index (evcc API is 1-based).
+  // opts: { loadpoint:int, kind:"soc"|"energy", value, timestamp }  →
+  //       { duration, power, rates[], smartCostType, currency }
+  // The ha-evcc 'plan_preview' command (2026.6.x) requires all four params; it is
+  // a static, read-only preview (no 'repeating' kind, timestamp is mandatory).
+  // Initiates a backend call (subject to _wsFetch TTL + in-flight coalescing).
+  _wsPlanPreview(opts) {
+    if (!this._hasCmd("plan_preview")) return null;
+    const params = this._planPreviewParams(opts);
+    return this._wsFetch("evcc_intg/plan_preview", params, this._planPreviewKey(opts), 60 * 1000);
+  }
+
+  // Render-path read: serve the cached preview regardless of age, and prime
+  // exactly one fetch if nothing is cached or in flight. Unlike _wsPlanPreview,
+  // this never re-hits the backend on TTL expiry — a result, once cached, is
+  // served until the user changes an input (which re-fetches via
+  // _requestPlanPreview). That keeps an idle plan card at zero backend calls,
+  // as agreed with ha-evcc (marq24/ha-evcc#298): plan_preview is uncached
+  // server-side, so the card must not generate background/idle traffic.
+  _wsPlanPreviewCached(opts) {
+    if (!this._hasCmd("plan_preview")) return null;
+    const cacheKey = this._planPreviewKey(opts);
+    const cached = this._wsCache[cacheKey];
+    if (cached) return cached.result;
+    if (!this._wsInflight[cacheKey]) this._wsPlanPreview(opts);
+    return null;
+  }
+
+  // plan_preview expects the integer evcc loadpoint index (1-based), but the card
+  // keys loadpoints by name slug. ha-evcc exposes no per-loadpoint index attribute,
+  // so there is no reliable slug→index signal. Resolution order:
+  //   1. explicit config override  plan_loadpoint_index: { <slug>: <int> }
+  //   2. fallback: position in the deterministically sorted discovery list
+  // The sort makes the fallback reproducible and matches the typical evcc default
+  // ordering; the override is the escape hatch when a setup deviates.
+  // Returns the 1-based index, or null if the loadpoint is unknown.
   _lpIndex(lpName) {
+    const override = this._config?.plan_loadpoint_index;
+    if (override && override[lpName] != null) {
+      const n = parseInt(override[lpName], 10);
+      if (n > 0) return n;
+    }
     const prefix = this._getPrefix();
-    const names = Object.keys(discoverEntities(this._hass, prefix).loadpoints);
+    const names = Object.keys(discoverEntities(this._hass, prefix).loadpoints).sort();
     const idx = names.indexOf(lpName);
     return idx >= 0 ? idx + 1 : null;
   }
@@ -597,12 +634,17 @@ class EvccCard extends HTMLElement {
       const d = new Date(state.time);
       if (isNaN(d.getTime())) return;
       const ts = d.toISOString();
-      // Purge stale preview cache entries for this loadpoint
+      const opts = { loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts };
+      const cacheKey = this._planPreviewKey(opts);
+      // Drop previews for OTHER inputs of this loadpoint (bounds the cache), but
+      // keep the current one — refetching what we already have wastes a backend call.
       const pfx = `plan:{"loadpoint":${lpIdx},`;
       for (const key of Object.keys(this._wsCache)) {
-        if (key.startsWith(pfx)) delete this._wsCache[key];
+        if (key.startsWith(pfx) && key !== cacheKey) delete this._wsCache[key];
       }
-      this._wsPlanPreview({ loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts });
+      // Already cached (e.g. primed by the render path) or in flight → no refetch.
+      if (this._wsCache[cacheKey] || this._wsInflight[cacheKey]) return;
+      this._wsPlanPreview(opts);
     }, 500);
   }
 
@@ -1359,9 +1401,12 @@ class EvccCard extends HTMLElement {
   }
 
   _renderSliders(ents) {
+    // Heating loadpoints expose limit/min as a target temperature (°C), not a SoC,
+    // so relabel the sliders accordingly (value/unit already come from the entity).
+    const heating = this._isHeatingLoadpoint(ents);
     const SLIDER_FEATURES = [
-      { key: "limit_soc",   label: this._t("targetSoc") },
-      { key: "min_soc",     label: this._t("minSoc")    },
+      { key: "limit_soc",   label: this._t(heating ? "targetTemp" : "targetSoc") },
+      { key: "min_soc",     label: this._t(heating ? "minTemp"    : "minSoc")    },
     ];
 
     const rows = SLIDER_FEATURES
@@ -1602,6 +1647,17 @@ class EvccCard extends HTMLElement {
     return rows.length ? `<div class="selects">${rows.join("")}</div>` : "";
   }
 
+  // ha-evcc marks heating loadpoints (is_heating) by giving their SOC entities a
+  // temperature device_class / °C unit (see force_celsius in the integration). Such
+  // loadpoints are not EV charge points, so the charge-plan block is skipped for them.
+  _isHeatingLoadpoint(ents) {
+    const probe = ents.effective_plan_soc || ents.effective_limit_soc || ents.vehicle_soc;
+    if (!probe) return false;
+    const a = this._hass?.states[probe]?.attributes;
+    if (!a) return false;
+    return a.device_class === "temperature" || a.unit_of_measurement === "°C";
+  }
+
   _renderPlanBlock(lpName, ents, force = false) {
     const hasVehicle = !!ents.vehicle_soc;
     const planActive = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
@@ -1615,6 +1671,9 @@ class EvccCard extends HTMLElement {
       ? stateVal(this._hass, ents.plan_projected_end) : null;
 
     if (!ents.effective_plan_soc || !this._hass.states[ents.effective_plan_soc]) return "";
+    // Heating loadpoints (ha-evcc 'is_heating') are not EV charge points — their
+    // "SOC" is a target temperature. The EV charge-plan UI/preview does not apply.
+    if (this._isHeatingLoadpoint(ents)) return "";
     if (!force && !hasVehicle && !planActive) return "";
 
     const vehicleEntityId    = ents.vehicle_name || null;
@@ -1799,8 +1858,9 @@ class EvccCard extends HTMLElement {
     const d = new Date(state.time);
     if (isNaN(d.getTime())) return "";
     const ts = d.toISOString();
-    // Call _wsPlanPreview to trigger fetch if not cached (returns null while pending)
-    const res = this._wsPlanPreview({ loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts });
+    // Cache-only read: serve the cached preview, prime one fetch if absent.
+    // Never refetches on its own → an idle plan card makes zero backend calls.
+    const res = this._wsPlanPreviewCached({ loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts });
     if (!res) {
       return `<div class="plan-preview"><div class="plan-preview-loading">${this._t("planPreviewLoading")}</div></div>`;
     }
