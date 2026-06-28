@@ -92,6 +92,9 @@ All charge points and site entities are **automatically discovered** via the HA 
 | **Phase switching** | Auto / 1-phase / 3-phase control built in |
 | **Plan strategies** | Continuous charging and battery preconditioning settings inline in the plan block |
 | **Repeating plans** | `repeatplan` mode lists evcc's weekly repeating charge plans per vehicle and toggles them on/off (ha-evcc 2026.6.1+) |
+| **Live plan preview** | In `plan` mode, a live chart previews the planned charging window over the upcoming tariff/forecast, with duration, power and average price/CO₂ (ha-evcc 2026.6.x+) |
+| **Session statistics** | `stats` mode is powered directly by evcc's charging-session history: no helper sensors or recorder setup, with metric (energy / cost / CO₂) and grouping (solar / charge point / vehicle) toggles (ha-evcc 2026.6.x+) |
+| **Heating loadpoints** | Heat-pump / heating loadpoints are detected automatically: no EV charge plan, and the target/limit is shown as a temperature |
 | **Action indicators** | Pending phase switches (1↔3 phase) and PV-charging start/stop shown as inline countdown chips |
 | **Diagnostics** | Built-in `debug` mode collects card / HA / integration state into a copy-paste-ready bug report |
 | **Multi-language** | Support for various languages - auto-detected from HA language setting, easily extensible |
@@ -102,6 +105,7 @@ All charge points and site entities are **automatically discovered** via the HA 
 
 - [Home Assistant](https://www.home-assistant.io/) (2023.x or newer)
 - [ha-evcc](https://github.com/marq24/ha-evcc) integration installed and configured, with a running [EVCC](https://evcc.io/) instance connected to it
+- For the **live plan preview** and the **session-based statistics**, ha-evcc **2026.6.x or newer** is required (it ships evcc's WebSocket data API). On older versions these features fall back automatically and the rest of the card keeps working.
 
 ---
 
@@ -178,10 +182,12 @@ Add the card to any Lovelace dashboard and use the **visual editor** to configur
 | `language` | `string` | *(auto)* | Override UI language |
 | `size` | `string` | *(auto)* | Fixed card scale: `small`, `medium` or `large`. When unset, the card auto-scales to its container width |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
+| `repeating_plan_vehicles` | `list` | *(all)* | Limit the `repeatplan` mode to specific vehicles |
+| `plan_loadpoint_index` | `map` | *(auto)* | **YAML only** — Override the evcc loadpoint index (1-based) used for the plan preview, e.g. `{ openwb: 1, wp: 2 }`. Only needed if the auto-detected order does not match evcc |
 | `no_pv` | `list` | *(none)* | Treat specific charge points as having **no PV system**, mirroring evcc's own mode logic: **Min+PV** is hidden and **PV** is replaced by a single **Smart** mode when a dynamic tariff is configured (otherwise only **Off** / **Now** remain). See [Charge modes](#charge-modes) below |
 | `site_details` | `string` | `expanded` | `collapsed` to hide the IN/OUT detail table by default in `site` and `flow` mode |
 | `charge_current_settings` | `string` | `collapsed` | `expanded` to show charge settings expanded by default |
-| `stats_period` | `string` | `total` | Default statistics period: `total`, `30d`, `365d`, `thisYear`, `none` |
+| `stats_period` | `string` | `total` | Default statistics period for the footer/summary: `month`, `year`, `total`, `none` |
 | `prefix` | `string` | *(auto)* | **YAML only** — Entity prefix, auto-detected from ha-evcc. Only needed for multiple EVCC instances with custom prefixes. |
 
 > **YAML Configurator:** For users who prefer YAML configuration, the interactive **[YAML Configurator](https://mkshb.github.io/hass-evcc-card/configurator.html)** is still available to generate card configurations for special cases.
@@ -276,29 +282,34 @@ Compact site energy overview with a focus on the current grid status:
 
 ### `stats`
 
-Charging statistics with period selector and a matching bar chart:
+Charging statistics, powered directly by evcc's **charging-session history** (ha-evcc 2026.6.x+). No helper sensors and no HA Recorder setup are required: the card reads the full session list once via the integration's WebSocket data API and computes everything in the browser. The header mirrors evcc's own statistics view:
 
-- **Period tabs:** 30 days / 365 days / This year / Total - switch with a single tap; the selection is remembered for the session
-- Three KPIs per period: charged energy (kWh), solar share (%), average price (ct/kWh)
-- The bar chart adapts to the selected period:
+- **Period:** **Month**, **Year** or **Total**, each with back/forward steppers to pick the exact month and year
+- **Metric:** switch the bars between **Energy** (kWh), **Cost** and **CO₂**
+- **Grouping:** stack the bars by **Solar** vs grid, by **charge point** or by **vehicle**, with a colour legend
+- **Tooltips:** hover or tap a bar to see every series and the total for that day, month or year
+- KPI tiles above the chart summarise the selected period (charged energy, solar share, cost, CO₂)
 
-| Tab | Chart | Bars |
-|---|---|---|
-| **30 days** | Daily values | 30 bars (day.month labels) |
-| **365 days** | Rolling monthly | 13 bars (3-letter month labels) |
-| **This year** | Monthly, current calendar year | Jan - current month |
-| **Total** | One bar per year | All available years |
+| Period | Bars |
+|---|---|
+| **Month** | One bar per day of the selected month |
+| **Year** | One bar per month of the selected year |
+| **Total** | One bar per year (falls back to monthly when only one year of data exists) |
 
-- Chart data is fetched lazily per tab on first access and cached for 5 minutes
-- The same three KPIs also appear as a compact footer row at the bottom of `site` and `grid` cards - the period shown there is controlled via `stats_period` (default: `total`). Set `stats_period` to `none` to hide the footer entirely.
+- The data comes from a single request that is cached for 5 minutes on the card and additionally cached inside the integration, so switching periods, metrics and groupings is instant and puts practically no load on evcc.
+- A compact summary also appears as a footer row at the bottom of `site` and `grid` cards. The period shown there is controlled via `stats_period` (default: `total`); set `stats_period` to `none` to hide the footer entirely.
 
-**Solar breakdown in the bar chart:** When `sensor.evcc_stat_total_solar_k_wh_template` is available, each bar is split into a **green** (solar) and **blue** (grid) portion. This sensor was recently added to [ha-evcc](https://github.com/marq24/ha-evcc) - thanks to [@marq24](https://github.com/marq24) for adding it! The sensor needs at least 3 days of HA Recorder history before the split appears. No configuration is needed - once enough history has been collected, the solar breakdown appears automatically.
+> **Heating loadpoints** (heat pumps) are included like any other loadpoint; with the **charge point** or **vehicle** grouping they show up as their own series.
+
+> **Note on the Solar grouping:** for the **Cost** and **CO₂** metrics the solar share carries no marginal cost/emissions, so those are attributed to the grid series (only **Energy** is split proportionally into solar and grid).
 
 <a name="enabling-stat-periods"></a>
 
-> **Periods not showing data?** The **Total** period is enabled by default in ha-evcc. The sensor entities for **30 days**, **365 days** and **This year** are **disabled by default** in Home Assistant and must be enabled manually. If a period tab shows a warning instead of statistics, follow the steps below.
+#### Older ha-evcc versions (fallback)
 
-#### Enabling the stat entities in Home Assistant
+On ha-evcc versions **before 2026.6.x** the WebSocket session API is not available. The card then falls back to the previous statistics implementation, which is built on dedicated `stat_*` sensor entities and the HA Recorder. In that mode the period tabs are **30 days / 365 days / This year / Total**, each bar is split into a **green** (solar) and **blue** (grid) portion via `sensor.evcc_stat_total_solar_k_wh_template`, and the data is fetched lazily per tab and cached for 5 minutes.
+
+> **Periods not showing data?** The **Total** period is enabled by default in ha-evcc. The sensor entities for **30 days**, **365 days** and **This year** are **disabled by default** in Home Assistant and must be enabled manually. If a period tab shows a warning instead of statistics, follow the steps below.
 
 The stat sensors exist in your ha-evcc integration but are disabled by default. To enable them:
 
@@ -370,11 +381,14 @@ Minimalist charge plan view:
 - Vehicle selector
 - Target time picker
 - Target SoC slider
+- **Live preview** - as soon as a target SoC and time are set, a chart previews the planned charging window over the upcoming tariff/forecast, with the expected duration, charging power and the average price or CO₂ of the plan (ha-evcc 2026.6.x+). It updates while you drag and is debounced and cached so it never floods evcc
 - **Continuous charging** toggle - keeps the charge running without interruption once started
 - **Preconditioning** select - pre-heats/cools the battery before reaching the target SoC (off / minutes / hours / all)
 - Activate / delete plan
 
 > **Note:** The *Continuous charging* and *Preconditioning* controls only appear when ha-evcc exposes the corresponding entities (`plan_strategy_continuous`, `plan_strategy_precondition`). The same controls also show up in the plan block of the `loadpoint` and `compact` modes.
+
+> **Heating loadpoints:** loadpoints that evcc marks as heating (for example a heat pump) do not get an EV charge plan; the plan block is skipped for them and their target/limit is shown as a temperature instead of a state of charge.
 
 <img src="images/plan-dark.png" width="400"> <img src="images/plan-light.png" width="400">
 
@@ -455,7 +469,7 @@ Translations are stored as simple JSON files in the `dist/locales/` folder. Addi
 
 ### Why does the solar share show 0 % or nothing for older charging sessions?
 
-The solar share visualization in the stats chart requires `sensor.evcc_stat_total_solar_k_wh_template`, which was introduced in [ha-evcc](https://github.com/marq24/ha-evcc) version **2026.3.3**. Historical sessions recorded before that version are missing the underlying data, so a correct solar share cannot be calculated retroactively. Only sessions recorded after upgrading to ha-evcc 2026.3.3 or later will show solar share data.
+The solar share is taken from each charging session's recorded solar percentage. Sessions that evcc recorded before it started tracking that value are missing the underlying data, so a correct solar share cannot be calculated retroactively. Only sessions recorded after upgrading to a recent evcc/ha-evcc version will show solar share data. (On the older entity-based statistics fallback, the solar split additionally requires `sensor.evcc_stat_total_solar_k_wh_template`, introduced in ha-evcc **2026.3.3**.)
 
 ---
 
