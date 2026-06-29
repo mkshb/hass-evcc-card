@@ -190,8 +190,6 @@ Add the card to any Lovelace dashboard and use the **visual editor** to configur
 | `stats_period` | `string` | `total` | Default statistics period for the footer/summary: `month`, `year`, `total`, `none` |
 | `prefix` | `string` | *(auto)* | **YAML only** — Entity prefix, auto-detected from ha-evcc. Only needed for multiple EVCC instances with custom prefixes. |
 
-> **YAML Configurator:** For users who prefer YAML configuration, the interactive **[YAML Configurator](https://mkshb.github.io/hass-evcc-card/configurator.html)** is still available to generate card configurations for special cases.
-
 ---
 
 ## Modes

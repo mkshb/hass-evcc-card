@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.7.2";
+const EVCC_CARD_VERSION = "0.7.3";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -130,12 +130,6 @@ const CHARGE_MODES = {
 // Icon for the "smart" pseudo-mode: when PV is hidden but a dynamic tariff is
 // available, the pv mode is relabelled to "Smart" (mirrors evcc's Mode.vue).
 const SMART_MODE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12,6A6,6 0 0,1 18,12C18,14.22 16.79,16.16 15,17.2V19A1,1 0 0,1 14,20H10A1,1 0 0,1 9,19V17.2C7.21,16.16 6,14.22 6,12A6,6 0 0,1 12,6M14,21V22A1,1 0 0,1 13,23H11A1,1 0 0,1 10,22V21H14M20,11H23V13H20V11M1,11H4V13H1V11M13,1V4H11V1H13M4.92,3.5L7.05,5.64L5.63,7.05L3.5,4.93L4.92,3.5M16.95,5.63L19.07,3.5L20.5,4.93L18.37,7.05L16.95,5.63Z"/></svg>`;
-
-const _chevron = (up) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="${
-    up ? "M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
-       : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"
-  }"/></svg>`;
 
 // Detect the entity prefix AND the integration's config_entry_id from a single
 // `config/entity_registry/list` call. The entry_id is required by the ha-evcc
@@ -729,7 +723,7 @@ class EvccCard extends HTMLElement {
       this._statsPeriod = config.stats_period;
     }
     // Sessions stats path scope (Month/Year/Total); map legacy values too.
-    const scopeMap = { total: "total", month: "month", year: "year", "30d": "month", "365d": "year", thisYear: "year" };
+    const scopeMap = { total: "total", "30d": "month", "365d": "year", thisYear: "year" };
     this._statsScope = scopeMap[config?.stats_period] ?? "month";
     if (this._statsMetric == null) this._statsMetric = "energy"; // energy | cost | co2
     if (this._statsGroup  == null) this._statsGroup  = "solar";  // solar | loadpoint | vehicle
@@ -761,16 +755,12 @@ class EvccCard extends HTMLElement {
     if (table) table.style.display = wasExpanded ? "none" : "";
     const wrap = root?.querySelector(".flow-wrap-clickable");
     if (wrap) {
-      wrap.title = !wasExpanded ? this._tInline("siteCollapse") : this._tInline("siteExpand");
+      wrap.title = !wasExpanded ? this._t("siteCollapse") : this._t("siteExpand");
     }
     const chevronPath = root?.querySelector(".sankey-center-chevron path");
     if (chevronPath) chevronPath.setAttribute("d", !wasExpanded
       ? "M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
       : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z");
-  }
-
-  _tInline(key) {
-    return this._t(key);
   }
 
   _t(key, replacements = {}) {
@@ -931,7 +921,7 @@ class EvccCard extends HTMLElement {
       <div class="loadpoint">
         <div class="lp-header">
           <span class="lp-name">${this._config.title || lpName}</span>
-          ${remaining ? `<span class="lp-remaining" title="${this._tInline("remaining")}">${remaining}</span>` : ""}
+          ${remaining ? `<span class="lp-remaining" title="${this._t("remaining")}">${remaining}</span>` : ""}
           <span class="lp-badge ${statusClass}">
             ${statusLabel}
           </span>
@@ -1003,7 +993,7 @@ class EvccCard extends HTMLElement {
       <div class="loadpoint" data-lp-compact="${lpName}">
         <div class="lp-header">
           <span class="lp-name">${this._config.title || lpName}</span>
-          ${remaining ? `<span class="lp-remaining" title="${this._tInline("remaining")}">${remaining}</span>` : ""}
+          ${remaining ? `<span class="lp-remaining" title="${this._t("remaining")}">${remaining}</span>` : ""}
           <span class="lp-badge ${statusClass}">
             ${statusLabel}
           </span>
@@ -1246,8 +1236,15 @@ class EvccCard extends HTMLElement {
       else           { hidden = ["pv", "minpv"]; }                     // [Off, Now]
     }
 
+    // evcc 0.310 "switch devices" no longer offer the 'minpv' mode (the ha-evcc
+    // integration drops it from the select's options). Render only the modes the
+    // entity actually exposes; fall back to all modes when options are not yet
+    // loaded so non-switch loadpoints keep their full button row.
+    const available = attr(this._hass, ents.mode, "options");
+    const offered   = Array.isArray(available) && available.length ? available : null;
+
     const buttons = Object.entries(CHARGE_MODES)
-      .filter(([val]) => !hidden.includes(val) || val === current)
+      .filter(([val]) => (!hidden.includes(val) && (!offered || offered.includes(val))) || val === current)
       .map(([val, cfg]) => {
         const isSmart = pvAsSmart && val === "pv";
         const icon    = isSmart ? SMART_MODE_ICON : cfg.icon;
@@ -1261,35 +1258,6 @@ class EvccCard extends HTMLElement {
     `;
       }).join("");
     return `<div class="mode-row">${buttons}</div>`;
-  }
-
-  _renderSocBar(ents, charging = false) {
-    if (!ents.vehicle_soc) return "";
-    const soc   = parseFloat(stateVal(this._hass, ents.vehicle_soc)) || 0;
-    const range = ents.vehicle_range
-      ? Math.round(parseFloat(stateVal(this._hass, ents.vehicle_range))) : null;
-    const limit = ents.limit_soc
-      ? parseFloat(stateVal(this._hass, ents.limit_soc)) : null;
-    const color = soc > 80 ? "var(--evcc-green)" : soc > 30 ? "var(--evcc-blue)" : "var(--evcc-amber)";
-
-    return `
-      <div class="soc-section">
-        <div class="soc-label-row">
-          <span data-live-entity="${ents.vehicle_soc}" data-live-type="soc-pct">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${unitStr(this._hass, ents.vehicle_soc)}
-          </span>
-          ${range !== null ? `<span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M11.5 0L9 8H11V16H13V8H15L11.5 0M3 18V20H21V18L11.5 16L3 18Z"/></svg> ${range} km</span>` : ""}
-        </div>
-        <div class="soc-track">
-          <div class="soc-fill ${charging ? 'charging' : ''}"
-               data-live-entity="${ents.vehicle_soc}" data-live-type="soc-fill"
-               style="width:${soc}%;background:${color}"></div>
-          ${limit !== null
-            ? `<div class="soc-limit-marker" style="left:${Math.min(limit,100)}%"></div>`
-            : ""}
-        </div>
-      </div>
-    `;
   }
 
   _renderVehicleInfo(ents, charging = false, lpName = "") {
@@ -1631,34 +1599,6 @@ class EvccCard extends HTMLElement {
         `;
       });
     return rows.length ? `<div class="toggles">${rows.join("")}</div>` : "";
-  }
-
-  _renderSelects(ents) {
-    const SELECT_FEATURES = [
-      { key: "phases_configured", label: this._t("phases") },
-    ];
-    const PHASE_LABELS = {
-      "automatischer Wechsel": this._t("phaseAuto"), "automatic": this._t("phaseAuto"), "auto": this._t("phaseAuto"), "0": this._t("phaseAuto"),
-      "1-phasig": "1", "1": "1", "3-phasig": "3", "3": "3",
-    };
-    const rows = SELECT_FEATURES
-      .filter(({ key }) => ents[key])
-      .map(({ key, label }) => {
-        const entityId = ents[key];
-        const current  = stateVal(this._hass, entityId);
-        const options  = this._hass.states[entityId]?.attributes?.options ?? [];
-        const buttons  = options.map(opt => `
-          <button class="phase-btn ${opt === current ? "active" : ""}"
-                  data-entity="${entityId}" data-value="${opt}">
-            ${PHASE_LABELS[opt] ?? opt}
-          </button>`).join("");
-        return `
-          <div class="select-row">
-            <span>${label}</span>
-            <div class="phase-btn-group">${buttons}</div>
-          </div>`;
-      });
-    return rows.length ? `<div class="selects">${rows.join("")}</div>` : "";
   }
 
   // ha-evcc marks heating loadpoints (is_heating) by giving their SOC entities a
@@ -2206,7 +2146,7 @@ class EvccCard extends HTMLElement {
       <div class="plan-block rplan-block">
         <div class="plan-header">
           <span class="session-title">${this._t("repeatingPlans")}</span>
-          <span class="rplan-hint" title="${this._tInline("repeatingPlansHint")}" aria-label="${this._tInline("repeatingPlansHint")}">
+          <span class="rplan-hint" title="${this._t("repeatingPlansHint")}" aria-label="${this._t("repeatingPlansHint")}">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M11,9H13V7H11M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M11,17H13V11H11V17Z"/></svg>
           </span>
         </div>
@@ -2627,7 +2567,7 @@ class EvccCard extends HTMLElement {
         </div>
         <div class="flow-wrap-clickable" role="button" tabindex="0"
              onclick="window.__evccCards.get('${this._cardId}')._toggleSite()"
-             title="${siteExpanded ? this._tInline("siteCollapse") : this._tInline("siteExpand")}">
+             title="${siteExpanded ? this._t("siteCollapse") : this._t("siteExpand")}">
           ${flowBar}
         </div>
         <div class="site-table" style="${siteExpanded ? '' : 'display:none'}">
@@ -5850,6 +5790,20 @@ class EvccCardEditor extends HTMLElement {
       battery:   this._t("editorTitlePlaceholderBattery"),
     }[mode] || this._t("editorTitlePlaceholderLoadpoint");
 
+    const modeDesc = {
+      loadpoint:  this._t("editorModeDescLoadpoint"),
+      compact:    this._t("editorModeDescCompact"),
+      site:       this._t("editorModeDescSite"),
+      flow:       this._t("editorModeDescFlow"),
+      grid:       this._t("editorModeDescGrid"),
+      battery:    this._t("editorModeDescBattery"),
+      stats:      this._t("editorModeDescStats"),
+      plan:       this._t("editorModeDescPlan"),
+      repeatplan: this._t("editorModeDescRepeatplan"),
+      priority:   this._t("editorModeDescPriority"),
+      debug:      this._t("editorModeDescDebug"),
+    }[mode] || "";
+
     this.shadowRoot.innerHTML = `
       <style>
         :host { display: block; }
@@ -5885,6 +5839,7 @@ class EvccCardEditor extends HTMLElement {
             ["priority",  this._t("editorModePriority")],
             ["debug",     this._t("editorModeDebug")],
           ], mode)}
+          ${modeDesc ? `<div class="hint">${modeDesc}</div>` : ""}
         </div>
         <div class="field">
           <label class="field-label" for="title">${this._t("editorTitleLabel")} <span class="hint" style="display:inline">(${this._t("editorOptional")})</span></label>
