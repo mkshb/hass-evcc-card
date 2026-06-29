@@ -1236,8 +1236,15 @@ class EvccCard extends HTMLElement {
       else           { hidden = ["pv", "minpv"]; }                     // [Off, Now]
     }
 
+    // evcc 0.310 "switch devices" no longer offer the 'minpv' mode (the ha-evcc
+    // integration drops it from the select's options). Render only the modes the
+    // entity actually exposes; fall back to all modes when options are not yet
+    // loaded so non-switch loadpoints keep their full button row.
+    const available = attr(this._hass, ents.mode, "options");
+    const offered   = Array.isArray(available) && available.length ? available : null;
+
     const buttons = Object.entries(CHARGE_MODES)
-      .filter(([val]) => !hidden.includes(val) || val === current)
+      .filter(([val]) => (!hidden.includes(val) && (!offered || offered.includes(val))) || val === current)
       .map(([val, cfg]) => {
         const isSmart = pvAsSmart && val === "pv";
         const icon    = isSmart ? SMART_MODE_ICON : cfg.icon;
