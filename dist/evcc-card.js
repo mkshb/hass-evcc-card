@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.7.3";
+const EVCC_CARD_VERSION = "0.7.4";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -263,6 +263,28 @@ function displayUnit(hass, entityId) {
 function isOn(hass, entityId) {
   const s = stateVal(hass, entityId);
   return s === "on" || s === "true";
+}
+
+// Parse an evcc-sourced timestamp that may be an RFC3339 string OR a unix
+// timestamp (seconds or ms). Mirrors ha-evcc 2026.7.0 dual-format handling
+// (marq24/ha-evcc, commit b2f0957). Returns a Date, or null if unparseable.
+// Used only for RAW evcc values (WS forecast/plan rates, session created/
+// finished); HA-recorder buckets and device_class:timestamp sensor states are
+// always ISO and keep using new Date() directly.
+function evccDate(v) {
+  if (v == null) return null;
+  if (typeof v === "number") {
+    const ms = v < 1e12 ? v * 1000 : v; // unix seconds vs milliseconds
+    const d = new Date(ms);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof v === "string") {
+    const t = v.trim();
+    if (/^\d+$/.test(t)) return evccDate(Number(t)); // numeric string
+    const d = new Date(t);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
 }
 
 function fmtRemainingDuration(hass, entityId) {
@@ -1847,10 +1869,9 @@ class EvccCard extends HTMLElement {
     const now = Date.now();
 
     // Determine display time range: from now to planTime + 2h buffer, capped at 36h
-    const targetTs = preview.planTime ? new Date(preview.planTime).getTime() : null;
-    const planEnd = planRates.length > 0
-      ? Math.max(...planRates.map(r => new Date(r.end).getTime()))
-      : now;
+    const targetTs = preview.planTime ? (evccDate(preview.planTime)?.getTime() ?? null) : null;
+    const planEndTimes = planRates.map(r => evccDate(r.end)?.getTime()).filter(t => t != null);
+    const planEnd = planEndTimes.length > 0 ? Math.max(...planEndTimes) : now;
     const rangeEnd = targetTs
       ? Math.max(targetTs, planEnd) + 2 * 3600000
       : planEnd + 2 * 3600000;
@@ -1859,10 +1880,9 @@ class EvccCard extends HTMLElement {
     const displayEnd = Math.min(rangeEnd, now + maxRange);
 
     // Build charging time ranges for overlap detection
-    const chargingRanges = planRates.map(r => ({
-      start: new Date(r.start).getTime(),
-      end:   new Date(r.end).getTime(),
-    }));
+    const chargingRanges = planRates
+      .map(r => ({ start: evccDate(r.start)?.getTime(), end: evccDate(r.end)?.getTime() }))
+      .filter(cr => cr.start != null && cr.end != null);
     const isCharging = (s, e) =>
       chargingRanges.some(cr => s < cr.end && e > cr.start);
 
@@ -1870,15 +1890,17 @@ class EvccCard extends HTMLElement {
     const slots = [];
     if (forecastRates && forecastRates.length > 0) {
       for (const r of forecastRates) {
-        const s = new Date(r.start).getTime();
-        const e = new Date(r.end).getTime();
+        const s = evccDate(r.start)?.getTime();
+        const e = evccDate(r.end)?.getTime();
+        if (s == null || e == null) continue;
         if (e <= displayStart || s >= displayEnd) continue;
         slots.push({ start: Math.max(s, displayStart), end: Math.min(e, displayEnd), value: r.value ?? 0, charging: isCharging(s, e) });
       }
     } else {
       for (const r of planRates) {
-        const s = new Date(r.start).getTime();
-        const e = new Date(r.end).getTime();
+        const s = evccDate(r.start)?.getTime();
+        const e = evccDate(r.end)?.getTime();
+        if (s == null || e == null) continue;
         if (e <= displayStart || s >= displayEnd) continue;
         slots.push({ start: Math.max(s, displayStart), end: Math.min(e, displayEnd), value: r.value ?? 0, charging: true });
       }
@@ -3407,8 +3429,7 @@ class EvccCard extends HTMLElement {
   _sessionDate(s) {
     const raw = s?.created || s?.finished;
     if (!raw) return null;
-    const d = new Date(raw);
-    return isNaN(d.getTime()) ? null : d;
+    return evccDate(raw);
   }
 
   _statsLang() { return (this._config?.language || this._hass?.language || "de").split("-")[0]; }
