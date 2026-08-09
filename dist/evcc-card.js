@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.7.4";
+const EVCC_CARD_VERSION = "0.7.5";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -27,6 +27,10 @@ const FEATURES = [
   { suffix: "battery_boost",       domain: "switch",        type: "toggle",        lp: true  },
   { suffix: "plan_strategy_continuous",   domain: "switch", type: "toggle",        lp: true  },
   { suffix: "plan_strategy_precondition", domain: "select", type: "select",        lp: true  },
+  // ha-evcc 2026.8.3+ (evcc PR 32490, still a draft): companion selector of the
+  // new 'smart' mode, replaces the retired 'minpv' mode. Only exists when evcc
+  // reports 'alwaysCharge' for the loadpoint, and never for switch devices.
+  { suffix: "always_charge",       domain: "select",        type: "select",        lp: true  },
   { suffix: "phase_action",        domain: "sensor",        type: "info",          lp: true  },
   { suffix: "phase_remaining",     domain: "sensor",        type: "info",          lp: true  },
   { suffix: "pv_action",           domain: "sensor",        type: "info",          lp: true  },
@@ -120,16 +124,21 @@ const FEATURES = [
   { suffix: "battery_grid_charge_limit",  domain: "number",        type: "slider",      lp: false },
 ];
 
+// Icon for the "smart" mode. Used twice: for the native 'smart' mode of evcc
+// PR 32490, and for the "pv relabelled as Smart" pseudo-mode that older evcc
+// versions need when PV is hidden but a dynamic tariff exists (Mode.vue).
+const SMART_MODE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12,6A6,6 0 0,1 18,12C18,14.22 16.79,16.16 15,17.2V19A1,1 0 0,1 14,20H10A1,1 0 0,1 9,19V17.2C7.21,16.16 6,14.22 6,12A6,6 0 0,1 12,6M14,21V22A1,1 0 0,1 13,23H11A1,1 0 0,1 10,22V21H14M20,11H23V13H20V11M1,11H4V13H1V11M13,1V4H11V1H13M4.92,3.5L7.05,5.64L5.63,7.05L3.5,4.93L4.92,3.5M16.95,5.63L19.07,3.5L20.5,4.93L18.37,7.05L16.95,5.63Z"/></svg>`;
+
 const CHARGE_MODES = {
   "off":   { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M13,3H11V13H13V3M17.83,5.17L16.41,6.59C17.99,7.86 19,9.81 19,12A7,7 0 0,1 12,19A7,7 0 0,1 5,12C5,9.81 6.01,7.86 7.58,6.58L6.17,5.17C4.23,6.82 3,9.26 3,12A9,9 0 0,0 12,21A9,9 0 0,0 21,12C21,9.26 19.77,6.82 17.83,5.17Z"/></svg>`,  tKey: "modeOff"  },
+  // 'smart' replaces 'pv'/'minpv' with evcc PR 32490 (ha-evcc 2026.8.3+).
+  // Rendered only when the mode entity actually offers it, so old and new
+  // setups both keep exactly their own set of buttons.
+  "smart": { icon: SMART_MODE_ICON, tKey: "modeSmart" },
   "pv":    { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z"/></svg>`,  tKey: "modePV"   },
   "minpv": { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style="position:relative;top:4px;left:-6px;opacity:0.8"><path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z"/></svg>`, tKey: "modeMinPV"},
   "now":   { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>`,  tKey: "modeNow"  },
 };
-
-// Icon for the "smart" pseudo-mode: when PV is hidden but a dynamic tariff is
-// available, the pv mode is relabelled to "Smart" (mirrors evcc's Mode.vue).
-const SMART_MODE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12,6A6,6 0 0,1 18,12C18,14.22 16.79,16.16 15,17.2V19A1,1 0 0,1 14,20H10A1,1 0 0,1 9,19V17.2C7.21,16.16 6,14.22 6,12A6,6 0 0,1 12,6M14,21V22A1,1 0 0,1 13,23H11A1,1 0 0,1 10,22V21H14M20,11H23V13H20V11M1,11H4V13H1V11M13,1V4H11V1H13M4.92,3.5L7.05,5.64L5.63,7.05L3.5,4.93L4.92,3.5M16.95,5.63L19.07,3.5L20.5,4.93L18.37,7.05L16.95,5.63Z"/></svg>`;
 
 // Detect the entity prefix AND the integration's config_entry_id from a single
 // `config/entity_registry/list` call. The entry_id is required by the ha-evcc
@@ -1244,13 +1253,23 @@ class EvccCard extends HTMLElement {
     if (!ents.mode) return "";
     const current = stateVal(this._hass, ents.mode);
 
+    // evcc 0.310 "switch devices" no longer offer the 'minpv' mode, and with
+    // evcc PR 32490 a loadpoint offers 'smart' instead of 'pv'/'minpv' (ha-evcc
+    // then swaps the whole option list to [off, smart, now]). Render only the
+    // modes the entity actually exposes; fall back to the classic set when
+    // options are not yet loaded, so nothing regresses on older integrations.
+    const available = attr(this._hass, ents.mode, "options");
+    const offered   = Array.isArray(available) && available.length ? available : null;
+    const hasSmart  = !!offered && offered.includes("smart");
+
     // Mirror evcc's Mode.vue: when PV is hidden (no solar configured) the modes
     // depend on whether a dynamic tariff is available (smartCostAvailable). The
     // ha-evcc integration exposes no such flag, so we proxy it via a valid
     // tariff sensor value (same signal used by the smart-cost block below).
+    // Obsolete once evcc offers a real 'smart' mode, hence the hasSmart guard.
     let hidden    = [];
     let pvAsSmart = false;
-    if (hidePv) {
+    if (hidePv && !hasSmart) {
       const isCo2     = (attr(this._hass, ents.smart_cost_limit, "unit_of_measurement") ?? "") === "g/kWh";
       const tariffId  = `sensor.${this._getPrefix()}${isCo2 ? "tariff_co2" : "tariff_grid"}`;
       const smartCost = !isNaN(parseFloat(this._hass.states[tariffId]?.state ?? "NaN"));
@@ -1258,15 +1277,13 @@ class EvccCard extends HTMLElement {
       else           { hidden = ["pv", "minpv"]; }                     // [Off, Now]
     }
 
-    // evcc 0.310 "switch devices" no longer offer the 'minpv' mode (the ha-evcc
-    // integration drops it from the select's options). Render only the modes the
-    // entity actually exposes; fall back to all modes when options are not yet
-    // loaded so non-switch loadpoints keep their full button row.
-    const available = attr(this._hass, ents.mode, "options");
-    const offered   = Array.isArray(available) && available.length ? available : null;
-
     const buttons = Object.entries(CHARGE_MODES)
-      .filter(([val]) => (!hidden.includes(val) && (!offered || offered.includes(val))) || val === current)
+      .filter(([val]) => {
+        if (val === current)      return true;
+        if (hidden.includes(val)) return false;
+        if (offered)              return offered.includes(val);
+        return val !== "smart";   // options unknown: keep the pre-32391 set
+      })
       .map(([val, cfg]) => {
         const isSmart = pvAsSmart && val === "pv";
         const icon    = isSmart ? SMART_MODE_ICON : cfg.icon;
@@ -1279,7 +1296,46 @@ class EvccCard extends HTMLElement {
       </button>
     `;
       }).join("");
-    return `<div class="mode-row">${buttons}</div>`;
+    const alwaysCharge = this._renderAlwaysCharge(ents);
+    return `<div class="mode-row${alwaysCharge ? " has-sub" : ""}">${buttons}</div>${alwaysCharge}`;
+  }
+
+  // Companion of the 'smart' mode (evcc PR 32490, ha-evcc 2026.8.3+): charge
+  // without interruption at least at min current, either permanently ('on') or
+  // for the running session only ('once'). ha-evcc marks the entity unavailable
+  // while the loadpoint is not in 'smart' mode, so the row disappears by itself
+  // whenever it does not apply.
+  _renderAlwaysCharge(ents) {
+    const entityId = ents.always_charge;
+    if (!entityId) return "";
+    const current = stateVal(this._hass, entityId);
+    if (current === null || current === "unavailable" || current === "unknown") return "";
+
+    const options = attr(this._hass, entityId, "options");
+    if (!Array.isArray(options) || !options.length) return "";
+
+    const LABELS = {
+      "off":  this._t("alwaysChargeOff"),
+      "on":   this._t("alwaysChargeOn"),
+      "once": this._t("alwaysChargeOnce"),
+    };
+    const buttons = options.map(opt => `
+        <button class="phase-btn ${opt === current ? "active" : ""}"
+                data-entity="${entityId}" data-value="${opt}">
+          ${LABELS[opt] ?? opt}
+        </button>`).join("");
+
+    // Same subline evcc shows under its Always-charge dropdown, as a tooltip so
+    // the compact row stays a single line.
+    const minA = ents.min_current ? stateVal(this._hass, ents.min_current) : null;
+    const hint = minA !== null && !isNaN(parseFloat(minA))
+      ? this._t("alwaysChargeHint", { val: minA }) : "";
+
+    return `
+      <div class="select-row alwayscharge-row">
+        <span${hint ? ` title="${this._escAttr(hint)}"` : ""}>${this._t("alwaysCharge")}</span>
+        <div class="phase-btn-group">${buttons}</div>
+      </div>`;
   }
 
   _renderVehicleInfo(ents, charging = false, lpName = "") {
@@ -5090,6 +5146,8 @@ class EvccCard extends HTMLElement {
       }
 
       .mode-row { display: flex; gap: 6px; margin-bottom: 12px; }
+      .mode-row.has-sub { margin-bottom: 6px; }
+      .alwayscharge-row { margin-bottom: 12px; }
       .mode-btn {
         flex: 1; display: flex; flex-direction: column; align-items: center;
         gap: 2px; padding: 8px 2px; min-width: 0;
