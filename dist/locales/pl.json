@@ -262,5 +262,12 @@
   "priorityApply": "Zastosuj",
   "priorityReset": "Resetuj",
   "prioritySingleNote": "Widoczny tylko jeden punkt ładowania.",
-  "priorityNoEntity": "(brak encji priorytetu)"
+  "priorityNoEntity": "(brak encji priorytetu)",
+  "loadpointDisabled": "Wyłączony",
+  "allLoadpointsDisabled": "Wszystkie punkty ładowania są wyłączone w konfiguracji evcc.",
+  "editorDisabledLoadpointsLabel": "Wyłączone punkty ładowania",
+  "editorDisabledLoadpointsHide": "Ukryj (domyślnie)",
+  "editorDisabledLoadpointsDim": "Pokaż przyciemnione",
+  "editorDisabledLoadpointsShow": "Pokaż normalnie",
+  "editorDisabledLoadpointsHint": "Sposób traktowania punktów ładowania wyłączonych w konfiguracji evcc (ha-evcc 2026.8.8+)."
 }

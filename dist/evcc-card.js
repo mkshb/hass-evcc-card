@@ -74,7 +74,11 @@ const FEATURES = [
 
   { suffix: "charging",            domain: "binary_sensor", type: "status_bool",   lp: true,  core: true },
   { suffix: "connected",           domain: "binary_sensor", type: "status_bool",   lp: true  },
-  { suffix: "enabled",             domain: "binary_sensor", type: "status_bool",   lp: true,  core: true },
+  { suffix: "enabled",             domain: "binary_sensor", type: "status_bool", lp: true,  core: true },
+  // ha-evcc 2026.8.8+: reports whether the loadpoint is disabled in the evcc
+  // configuration. A disabled loadpoint keeps ONLY this entity - everything
+  // else (charging, mode, ...) is not created by the integration at all.
+  { suffix: "disabled_in_config",  domain: "binary_sensor", type: "status_bool", lp: true  },
   { suffix: "smart_cost_active",   domain: "binary_sensor", type: "status_bool",   lp: true  },
   { suffix: "smart_feed_in_priority_active", domain: "binary_sensor", type: "status_bool", lp: true  },
   { suffix: "plan_active",         domain: "binary_sensor", type: "status_bool",   lp: true  },
@@ -226,14 +230,34 @@ function discoverEntities(hass, prefix = "evcc_") {
   // charge_power is mandatory for every real EVCC loadpoint. Anything else
   // (custom-named meters, batteries, PV/grid devices in ha-evcc 2026.5+) goes
   // to the meters bucket so it doesn't pollute the loadpoint list.
+  // Exception: a loadpoint disabled in the evcc config (ha-evcc 2026.8.8+)
+  // only exposes its `disabled_in_config` binary sensor - keep it as a
+  // loadpoint so the card can hide/dim it instead of misfiling it as a meter.
   for (const name of Object.keys(loadpoints)) {
-    if (!loadpoints[name].charge_power) {
+    if (!loadpoints[name].charge_power && !loadpoints[name].disabled_in_config) {
       meters[name] = loadpoints[name];
       delete loadpoints[name];
     }
   }
 
   return { loadpoints, site, meters };
+}
+
+// ha-evcc 2026.8.8+: true when the loadpoint is disabled in the evcc config.
+// Older integration versions never create the sensor, so this stays false.
+function isLoadpointDisabled(hass, ents) {
+  return !!ents.disabled_in_config && isOn(hass, ents.disabled_in_config);
+}
+
+// Split a loadpoints map into enabled/disabled buckets (config-disabled ones).
+function partitionDisabledLoadpoints(hass, loadpoints) {
+  const enabled = {};
+  const disabled = {};
+  for (const [name, ents] of Object.entries(loadpoints)) {
+    if (isLoadpointDisabled(hass, ents)) disabled[name] = ents;
+    else enabled[name] = ents;
+  }
+  return { enabled, disabled };
 }
 
 function _discoverDeviceSources(site, prefix, primarySuffix, secondarySuffix) {
@@ -855,6 +879,20 @@ class EvccCard extends HTMLElement {
         )
       : loadpoints;
 
+    // disabled_loadpoints: hide (default) | dim | show - how to treat
+    // loadpoints that are disabled in the evcc config (ha-evcc 2026.8.8+).
+    const dlpOpt = ["hide", "dim", "show"].includes(this._config.disabled_loadpoints)
+      ? this._config.disabled_loadpoints
+      : "hide";
+    const { enabled: lpEnabled, disabled: lpDisabled } =
+      partitionDisabledLoadpoints(this._hass, visible);
+    // Interactive modes (plan/priority) can never work on a disabled
+    // loadpoint - its entities don't exist - so those always get lpEnabled.
+    const lpVisible = dlpOpt === "show" ? visible : lpEnabled;
+    const dimmed    = dlpOpt === "dim"  ? lpDisabled : {};
+    const allDisabled = Object.keys(visible).length > 0
+      && Object.keys(lpEnabled).length === 0;
+
     this.shadowRoot.innerHTML = `
       <style>${this._styles()}</style>
       <div class="evcc-scale-wrap"${this._config.size ? ` data-size="${this._config.size}"` : ""}><ha-card>
@@ -872,21 +910,31 @@ class EvccCard extends HTMLElement {
               : this._config.mode === "stats"
               ? this._renderStatsBlock()
               : this._config.mode === "plan"
-                ? this._renderPlanMode(visible)
+                ? this._renderPlanMode(lpEnabled)
                 : this._config.mode === "repeatplan"
                 ? this._renderRepeatPlansMode()
                 : this._config.mode === "priority"
-                  ? this._renderPriorityMode(visible)
+                  ? this._renderPriorityMode(lpEnabled)
                 : this._config.mode === "compact"
-                  ? (Object.keys(visible).length === 0
-                      ? this._renderEmpty(loadpoints)
-                      : Object.entries(visible)
+                  ? (Object.keys(lpVisible).length === 0 && Object.keys(dimmed).length === 0
+                      ? (allDisabled
+                          ? this._renderAllDisabled()
+                          : this._renderEmpty(loadpoints))
+                      : Object.entries(lpVisible)
                           .map(([lp, ents]) => this._renderCompactLoadpoint(lp, ents))
+                          .join("")
+                        + Object.entries(dimmed)
+                          .map(([lp, ents]) => this._renderDisabledLoadpoint(lp, ents))
                           .join(""))
-                  : Object.keys(visible).length === 0
-              ? this._renderEmpty(loadpoints)
-              : Object.entries(visible)
+                  : Object.keys(lpVisible).length === 0 && Object.keys(dimmed).length === 0
+              ? (allDisabled
+                  ? this._renderAllDisabled()
+                  : this._renderEmpty(loadpoints))
+              : Object.entries(lpVisible)
                   .map(([lp, ents]) => this._renderLoadpoint(lp, ents))
+                  .join("")
+                + Object.entries(dimmed)
+                  .map(([lp, ents]) => this._renderDisabledLoadpoint(lp, ents))
                   .join("")
           }
         </div>
@@ -4103,6 +4151,30 @@ class EvccCard extends HTMLElement {
     `;
   }
 
+  // Placeholder when every (matching) loadpoint is disabled in the evcc
+  // config and disabled_loadpoints is 'hide' - avoids an empty-looking card.
+  _renderAllDisabled() {
+    return `
+      <div class="empty">
+        <p>${this._t("allLoadpointsDisabled")}</p>
+      </div>
+    `;
+  }
+
+  // Dimmed stub for a loadpoint disabled in the evcc config
+  // (disabled_loadpoints: dim). Only its disabled_in_config entity exists,
+  // so there is nothing interactive to render.
+  _renderDisabledLoadpoint(lpName, ents) {
+    return `
+      <div class="loadpoint lp-disabled" data-entity="${ents.disabled_in_config || ""}">
+        <div class="lp-header">
+          <span class="lp-name">${this._config.title || lpName}</span>
+          <span class="lp-badge disabled">${this._t("loadpointDisabled")}</span>
+        </div>
+      </div>
+    `;
+  }
+
   _expectedLpSuffixes() {
     if (!this._cachedLpSuffixes) {
       this._cachedLpSuffixes = Array.from(new Set(FEATURES.filter(f => f.lp).map(f => f.suffix)));
@@ -5078,11 +5150,14 @@ class EvccCard extends HTMLElement {
     const filter = filterRaw
       ? (Array.isArray(filterRaw) ? filterRaw : [filterRaw])
       : null;
-    return filter && filter.length > 0
+    const visible = filter && filter.length > 0
       ? Object.fromEntries(
           Object.entries(loadpoints).filter(([lp]) => filter.includes(lp))
         )
       : loadpoints;
+    // Config-disabled loadpoints have no interactive entities - callers of
+    // _currentVisible (plan/priority interactions) can never act on them.
+    return partitionDisabledLoadpoints(this._hass, visible).enabled;
   }
 
   _styles() {
@@ -5128,6 +5203,8 @@ class EvccCard extends HTMLElement {
       .lp-badge.charging  { color: var(--evcc-green);  background: color-mix(in srgb, var(--evcc-green)  15%, transparent); }
       .lp-badge.connected { color: var(--evcc-blue);   background: color-mix(in srgb, var(--evcc-blue)   15%, transparent); }
       .lp-badge.ready     { color: var(--evcc-gray);   background: color-mix(in srgb, var(--evcc-gray)   15%, transparent); }
+      .lp-badge.disabled  { color: var(--evcc-gray);   background: color-mix(in srgb, var(--evcc-gray)   15%, transparent); }
+      .loadpoint.lp-disabled { opacity: 0.55; }
       .lp-action-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
       .lp-action-chip {
         display: inline-flex; align-items: center; gap: 4px;
@@ -5954,6 +6031,17 @@ class EvccCardEditor extends HTMLElement {
           ${this._checkboxes("loadpoints", selLps)}
         </div>
         ` : ""}
+        ${showLoadpoints ? `
+        <div class="field">
+          <label class="field-label" for="disabled_loadpoints">${this._t("editorDisabledLoadpointsLabel")}</label>
+          ${this._sel("disabled_loadpoints", [
+            ["",     this._t("editorDisabledLoadpointsHide")],
+            ["dim",  this._t("editorDisabledLoadpointsDim")],
+            ["show", this._t("editorDisabledLoadpointsShow")],
+          ], c.disabled_loadpoints || "")}
+          <div class="hint">${this._t("editorDisabledLoadpointsHint")}</div>
+        </div>
+        ` : ""}
         ${showVehicleFilter ? `
         <div class="field">
           <div class="section-title">${this._t("editorVehicleFilterTitle")}</div>
@@ -6009,7 +6097,7 @@ class EvccCardEditor extends HTMLElement {
   }
 
   _addListeners() {
-    ["mode", "language", "site_details", "charge_current_settings", "stats_period", "size"].forEach(id => {
+    ["mode", "language", "site_details", "charge_current_settings", "stats_period", "size", "disabled_loadpoints"].forEach(id => {
       const el = this.shadowRoot.getElementById(id);
       if (!el) return;
       el.addEventListener("change", () => {

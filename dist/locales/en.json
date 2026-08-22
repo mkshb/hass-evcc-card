@@ -262,5 +262,12 @@
   "priorityApply": "Apply",
   "priorityReset": "Reset",
   "prioritySingleNote": "Only one loadpoint visible.",
-  "priorityNoEntity": "(no priority entity)"
+  "priorityNoEntity": "(no priority entity)",
+  "loadpointDisabled": "Disabled",
+  "allLoadpointsDisabled": "All charge points are disabled in the evcc configuration.",
+  "editorDisabledLoadpointsLabel": "Disabled charge points",
+  "editorDisabledLoadpointsHide": "Hide (default)",
+  "editorDisabledLoadpointsDim": "Show dimmed",
+  "editorDisabledLoadpointsShow": "Show normally",
+  "editorDisabledLoadpointsHint": "How to treat charge points disabled in the evcc configuration (ha-evcc 2026.8.8+)."
 }

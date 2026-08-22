@@ -262,5 +262,12 @@
   "priorityApply": "Primijeni",
   "priorityReset": "Poništi",
   "prioritySingleNote": "Vidljiva je samo jedna točka punjenja.",
-  "priorityNoEntity": "(nema entiteta prioriteta)"
+  "priorityNoEntity": "(nema entiteta prioriteta)",
+  "loadpointDisabled": "Onemogućeno",
+  "allLoadpointsDisabled": "Sve točke punjenja su onemogućene u evcc konfiguraciji.",
+  "editorDisabledLoadpointsLabel": "Onemogućene točke punjenja",
+  "editorDisabledLoadpointsHide": "Sakrij (zadano)",
+  "editorDisabledLoadpointsDim": "Prikaži zatamnjeno",
+  "editorDisabledLoadpointsShow": "Prikaži normalno",
+  "editorDisabledLoadpointsHint": "Kako postupati s točkama punjenja onemogućenima u evcc konfiguraciji (ha-evcc 2026.8.8+)."
 }

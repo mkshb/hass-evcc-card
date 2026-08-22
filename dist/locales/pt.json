@@ -262,5 +262,12 @@
   "priorityApply": "Aplicar",
   "priorityReset": "Redefinir",
   "prioritySingleNote": "Apenas um ponto de carregamento visível.",
-  "priorityNoEntity": "(sem entidade de prioridade)"
+  "priorityNoEntity": "(sem entidade de prioridade)",
+  "loadpointDisabled": "Desativado",
+  "allLoadpointsDisabled": "Todos os pontos de carregamento estão desativados na configuração do evcc.",
+  "editorDisabledLoadpointsLabel": "Pontos de carregamento desativados",
+  "editorDisabledLoadpointsHide": "Ocultar (padrão)",
+  "editorDisabledLoadpointsDim": "Mostrar esmaecido",
+  "editorDisabledLoadpointsShow": "Mostrar normalmente",
+  "editorDisabledLoadpointsHint": "Como tratar pontos de carregamento desativados na configuração do evcc (ha-evcc 2026.8.8+)."
 }

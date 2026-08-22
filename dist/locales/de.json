@@ -262,5 +262,12 @@
   "priorityApply": "Übernehmen",
   "priorityReset": "Zurücksetzen",
   "prioritySingleNote": "Nur ein Ladepunkt sichtbar.",
-  "priorityNoEntity": "(keine Prioritäts-Entität)"
+  "priorityNoEntity": "(keine Prioritäts-Entität)",
+  "loadpointDisabled": "Deaktiviert",
+  "allLoadpointsDisabled": "Alle Ladepunkte sind in der evcc-Konfiguration deaktiviert.",
+  "editorDisabledLoadpointsLabel": "Deaktivierte Ladepunkte",
+  "editorDisabledLoadpointsHide": "Ausblenden (Standard)",
+  "editorDisabledLoadpointsDim": "Ausgegraut anzeigen",
+  "editorDisabledLoadpointsShow": "Normal anzeigen",
+  "editorDisabledLoadpointsHint": "Umgang mit Ladepunkten, die in der evcc-Konfiguration deaktiviert sind (ha-evcc 2026.8.8+)."
 }

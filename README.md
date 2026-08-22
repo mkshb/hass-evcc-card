@@ -185,6 +185,7 @@ Add the card to any Lovelace dashboard and use the **visual editor** to configur
 | `repeating_plan_vehicles` | `list` | *(all)* | Limit the `repeatplan` mode to specific vehicles |
 | `plan_loadpoint_index` | `map` | *(auto)* | **YAML only** — Override the evcc loadpoint index (1-based) used for the plan preview, e.g. `{ openwb: 1, wp: 2 }`. Only needed if the auto-detected order does not match evcc |
 | `no_pv` | `list` | *(none)* | Treat specific charge points as having **no PV system**, mirroring evcc's own mode logic: **Min+PV** is hidden and **PV** is replaced by a single **Smart** mode when a dynamic tariff is configured (otherwise only **Off** / **Now** remain). See [Charge modes](#charge-modes) below |
+| `disabled_loadpoints` | `string` | `hide` | How to treat charge points disabled in the evcc configuration (ha-evcc 2026.8.8+): `hide` removes them from the card, `dim` shows them grayed out with a "Disabled" badge, `show` keeps the previous behavior |
 | `site_details` | `string` | `expanded` | `collapsed` to hide the IN/OUT detail table by default in `site` and `flow` mode |
 | `charge_current_settings` | `string` | `collapsed` | `expanded` to show charge settings expanded by default |
 | `stats_period` | `string` | `total` | Default statistics period for the footer/summary: `month`, `year`, `total`, `none` |
