@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.7.5";
+const EVCC_CARD_VERSION = "0.7.7";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -109,13 +109,15 @@ const FEATURES = [
   { suffix: "pv_1_energy",         domain: "sensor",        type: "info",          lp: false },
   { suffix: "pv_2_energy",         domain: "sensor",        type: "info",          lp: false },
   { suffix: "pv_3_energy",         domain: "sensor",        type: "info",          lp: false },
-  { suffix: "grid_energy",         domain: "sensor",        type: "info",          lp: false },
-  { suffix: "grid_energy_export",  domain: "sensor",        type: "info",          lp: false },
-  { suffix: "battery_energy_charge",   domain: "sensor",    type: "info",          lp: false },
-  { suffix: "battery_energy_discharge",domain: "sensor",    type: "info",          lp: false },
-  { suffix: "home_energy",         domain: "sensor",        type: "info",          lp: false },
+  // Site lifetime energy counters. grid_* and battery_* exist since
+  // ha-evcc 2026.9.x and are disabled by default in the HA entity registry,
+  // so they only show up once the user enables the sensors.
+  { suffix: "grid_energy",           domain: "sensor",      type: "info",          lp: false },
+  { suffix: "grid_return_energy",    domain: "sensor",      type: "info",          lp: false },
+  { suffix: "battery_energy",        domain: "sensor",      type: "info",          lp: false },
+  { suffix: "battery_return_energy", domain: "sensor",      type: "info",          lp: false },
   { suffix: "tariff_grid",         domain: "sensor",        type: "info",          lp: false },
-  { suffix: "tariff_feedin",       domain: "sensor",        type: "info",          lp: false },
+  { suffix: "tariff_feed_in",      domain: "sensor",        type: "info",          lp: false },
   { suffix: "tariff_co2",          domain: "sensor",        type: "info",          lp: false },
 
   { suffix: "battery_mode",        domain: "select",        type: "select",        lp: false },
@@ -1622,25 +1624,45 @@ class EvccCard extends HTMLElement {
       </div>`;
   }
 
+  _sliderOptions(entityId) {
+    return (attr(this._hass, entityId, "options") ?? [])
+      .map(o => parseFloat(o)).filter(o => !isNaN(o)).sort((a, b) => a - b);
+  }
+
+  // The user-facing value behind a range input: select-backed sliders carry an
+  // option index, number sliders carry the value itself.
+  _sliderValueFor(input) {
+    if (input.dataset.domain !== "select") return input.value;
+    const opts = this._sliderOptions(input.dataset.entity);
+    if (opts.length === 0) return input.value;
+    const idx = Math.min(Math.max(Math.round(parseFloat(input.value)) || 0, 0), opts.length - 1);
+    return String(opts[idx]);
+  }
+
   _sliderRow(entityId, label, zeroLabel = null) {
     const domain  = entityId.split(".")[0];
     const _v      = parseFloat(stateVal(this._hass, entityId));
     const val     = isNaN(_v) ? 0 : _v;
     const unit    = displayUnit(this._hass, entityId);
-    let min, max, step;
+    let min, max, step, sliderVal;
 
     if (domain === "select") {
-      const opts = (attr(this._hass, entityId, "options") ?? [])
-        .map(o => parseFloat(o)).filter(o => !isNaN(o)).sort((a, b) => a - b);
-      min  = opts[0]  ?? 0;
-      max  = opts[opts.length - 1] ?? 100;
-      step = opts.length > 1
-        ? opts.slice(1).reduce((s, v, i) => Math.min(s, v - opts[i]), Infinity)
-        : 5;
+      // Select-backed sliders walk option INDEXES, not values: ha-evcc option
+      // lists are not uniform (min_current offers 0.125/0.25/0.5 A besides the
+      // 1 A grid since 2026.8.9), so a value-based step would create hundreds
+      // of slider positions that don't exist as options.
+      const opts = this._sliderOptions(entityId);
+      min  = 0;
+      max  = Math.max(opts.length - 1, 0);
+      step = 1;
+      sliderVal = opts.length
+        ? opts.reduce((best, o, i) => Math.abs(o - val) < Math.abs(opts[best] - val) ? i : best, 0)
+        : 0;
     } else {
       min  = attr(this._hass, entityId, "min")  ?? 0;
       max  = attr(this._hass, entityId, "max")  ?? 100;
       step = attr(this._hass, entityId, "step") ?? 1;
+      sliderVal = val;
     }
 
     return `
@@ -1648,7 +1670,7 @@ class EvccCard extends HTMLElement {
         <label>${label}</label>
         <div class="slider-control">
           <input type="range"
-                 min="${min}" max="${max}" step="${step}" value="${val}"
+                 min="${min}" max="${max}" step="${step}" value="${sliderVal}"
                  data-entity="${entityId}"
                  data-domain="${domain}" />
           <span class="slider-val">${zeroLabel && val === 0 ? zeroLabel : `${val} ${unit}`}</span>
@@ -2305,7 +2327,6 @@ class EvccCard extends HTMLElement {
       return unit === "kW" ? raw : raw / 1000;
     };
     const kwh = id => id ? parseFloat(stateVal(this._hass, id)) || 0 : null;
-    const ct  = id => id ? parseFloat(stateVal(this._hass, id)) || 0 : null;
 
     const nameFromEntity = (entityId) => entityId ? (attr(this._hass, entityId, "title") ?? null) : null;
     const pvSources = _discoverDeviceSources(site, "pv", "power", "energy").map(s => ({
@@ -2315,8 +2336,9 @@ class EvccCard extends HTMLElement {
     const pvPow = pvSources.length > 0
       ? pvSources.reduce((sum, s) => sum + kw(site[s.key]), 0)
       : kw(site.pv_power);
-    const pvKwh = pvSources.length > 0
-      ? pvSources.reduce((sum, s) => sum + (kwh(site[s.energyKey]) ?? 0), 0)
+    const pvEnergyIds = pvSources.map(s => site[s.energyKey]).filter(Boolean);
+    const pvKwh = pvEnergyIds.length > 0
+      ? pvEnergyIds.reduce((sum, id) => sum + (kwh(id) ?? 0), 0)
       : kwh(site.pv_energy);
     const battSources = _discoverDeviceSources(site, "battery", "power", "soc").map(s => ({
       ...s,
@@ -2359,14 +2381,12 @@ class EvccCard extends HTMLElement {
     const fmtKwh  = v => v === null ? "–" : `${fmt(v)} kWh`;
 
     const batterySoc = kwh(site.battery_soc);
+    // Lifetime meter readings; kwh() yields null for a missing entity and the
+    // matching row below stays hidden.
     const gridKwh    = kwh(site.grid_energy);
-    const exportKwh  = kwh(site.grid_energy_export);
-    const battCKwh   = kwh(site.battery_energy_charge);
-    const battDKwh   = kwh(site.battery_energy_discharge);
-    const homeKwh    = kwh(site.home_energy);
-
-    const tariffGrid   = ct(site.tariff_grid);
-    const tariffFeedin = ct(site.tariff_feedin);
+    const exportKwh  = kwh(site.grid_return_energy);
+    const battCKwh   = kwh(site.battery_energy);
+    const battDKwh   = kwh(site.battery_return_energy);
 
     const hasBatt   = site.battery_power && (battDischPow > 0.05 || battChargePow > 0.05);
     const hasGrid   = bezugPow > 0.05 || feedinPow > 0.05;
@@ -2682,6 +2702,28 @@ class EvccCard extends HTMLElement {
         ? row("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\" style=\"vertical-align:middle\"><path d=\"M11,7.5L9.5,3H14.5L13,7.5H15L18,3H21L15,12H17L21,21H15L12,15L9,21H3L7,12H9L3,3H6L9,7.5H11M12,13.5L13.9,19H10.1L12,13.5Z\"/></svg>", this._t("gridExport"), "", feedinPow, "site-pw-yellow", false, site.grid_power) : "",
     ].join(""));
 
+    const energyRow = (mdiPath, label, v, entityId) => v === null ? "" : `
+      <div class="site-row${entityId ? " site-row-clickable" : ""}"${entityId ? ` data-more-info="${entityId}"` : ""}>
+        <span class="site-row-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="vertical-align:middle"><path d="${mdiPath}"/></svg></span>
+        <span class="site-row-label"><span class="site-row-name">${label}</span></span>
+        <span class="site-row-pw">${fmtKwh(v)}</span>
+      </div>`;
+    const energyRows = [
+      energyRow(MDI.solar,   this._t("generation"),    pvKwh,     site.pv_energy ?? pvEnergyIds[0]),
+      energyRow(MDI.tower,   this._t("gridImport"),    gridKwh,   site.grid_energy),
+      energyRow(MDI.tower,   this._t("gridExport"),    exportKwh, site.grid_return_energy),
+      energyRow(MDI.battery, this._t("battCharge"),    battCKwh,  site.battery_energy),
+      energyRow(MDI.battery, this._t("battDischarge"), battDKwh,  site.battery_return_energy),
+    ].join("");
+    const energySection = energyRows ? `
+          <div class="site-section-gap"></div>
+          <div class="site-section">
+            <div class="site-section-head">
+              <span class="site-section-title">${this._t("energyTotals")}</span>
+            </div>
+            ${energyRows}
+          </div>` : "";
+
     const siteExpanded = this._siteTableExpanded !== undefined
       ? this._siteTableExpanded
       : (this._config.site_details !== "collapsed");
@@ -2700,6 +2742,7 @@ class EvccCard extends HTMLElement {
           ${inSection}
           <div class="site-section-gap"></div>
           ${outSection}
+          ${energySection}
         </div>
         ${this._renderStatsFooter()}
       </div>`;
@@ -5015,18 +5058,16 @@ class EvccCard extends HTMLElement {
       });
       input.addEventListener("input", () => {
         const span = input.nextElementSibling;
-        if (span) span.textContent = `${input.value} ${displayUnit(this._hass, input.dataset.entity)}`;
+        if (span) span.textContent = `${this._sliderValueFor(input)} ${displayUnit(this._hass, input.dataset.entity)}`;
       });
       input.addEventListener("pointerup", () => {
         this._isDragging = false;
         const domain   = input.dataset.domain;
         const entityId = input.dataset.entity;
         if (domain === "select") {
-          const opts = (attr(this._hass, entityId, "options") ?? [])
-            .map(o => parseFloat(o)).filter(o => !isNaN(o)).sort((a, b) => a - b);
-          const target  = parseFloat(input.value);
-          const nearest = opts.reduce((p, c) => Math.abs(c - target) < Math.abs(p - target) ? c : p, opts[0]);
-          this._hass.callService("select", "select_option", { entity_id: entityId, option: String(nearest) });
+          if (this._sliderOptions(entityId).length > 0) {
+            this._hass.callService("select", "select_option", { entity_id: entityId, option: this._sliderValueFor(input) });
+          }
         } else {
           this._hass.callService("number", "set_value", { entity_id: entityId, value: parseFloat(input.value) });
         }
