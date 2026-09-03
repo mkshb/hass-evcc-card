@@ -62,6 +62,7 @@
   "gridNeutral": "Indépendant du réseau",
   "battCharge": "Charge batterie",
   "battDischarge": "Décharge batterie",
+  "energyTotals": "Totaux d'énergie",
   "chargePoint": "Point de charge",
   "legendHome": "Maison",
   "legendCharge": "Charge",
