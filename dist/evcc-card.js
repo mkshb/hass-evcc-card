@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.7.7";
+const EVCC_CARD_VERSION = "0.7.8";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -839,6 +839,10 @@ class EvccCard extends HTMLElement {
 
   _render() {
     if (!this._hass) return;
+    // A priority drag holds live DOM references (row, placeholder, captured
+    // handle). Replacing the shadow DOM now would orphan it and leave
+    // _isDragging stuck. Defer; _priorityDragEnd re-renders.
+    if (this._priorityDragging) { this._pendingRender = true; return; }
     if (!this._cardId) {
       this._cardId = Math.random().toString(36).slice(2);
       window.__evccCards = window.__evccCards || new Map();
@@ -5094,75 +5098,13 @@ class EvccCard extends HTMLElement {
       const handle = row.querySelector(".priority-handle");
       if (!handle || row.classList.contains("no-entity")) return;
 
-      handle.addEventListener("pointerdown", (e) => {
-        e.preventDefault();
-        try { handle.setPointerCapture(e.pointerId); } catch (_) {}
-        this._isDragging = true;
-        this._pendingRender = false;
-
-        const placeholder = document.createElement("div");
-        placeholder.className = "priority-placeholder";
-        placeholder.style.height = row.offsetHeight + "px";
-        row.parentNode.insertBefore(placeholder, row.nextSibling);
-
-        row.classList.add("priority-dragging");
-        row.style.width = row.offsetWidth + "px";
-        row.style.position = "relative";
-        row.style.zIndex = "5";
-
-        this._priorityDragging = {
-          row, placeholder, handle, pointerId: e.pointerId,
-          startY: e.clientY,
-        };
-      });
-
-      handle.addEventListener("pointermove", (e) => {
-        const d = this._priorityDragging;
-        if (!d) return;
-        const dy = e.clientY - d.startY;
-        d.row.style.transform = `translateY(${dy}px)`;
-
-        const ptrY = e.clientY;
-        const others = [...list.querySelectorAll(".priority-row")]
-          .filter(r => r !== d.row);
-        for (const r of others) {
-          const rect = r.getBoundingClientRect();
-          const mid = rect.top + rect.height / 2;
-          if (ptrY < mid && r.previousElementSibling !== d.placeholder &&
-              r.previousElementSibling !== d.row) {
-            list.insertBefore(d.placeholder, r);
-            break;
-          } else if (ptrY > mid && r.nextElementSibling !== d.placeholder &&
-                     r.nextElementSibling !== d.row) {
-            list.insertBefore(d.placeholder, r.nextElementSibling);
-            break;
-          }
-        }
-      });
-
-      const finish = (e) => {
-        const d = this._priorityDragging;
-        if (!d) return;
-        try { d.handle.releasePointerCapture(d.pointerId); } catch (_) {}
-        d.placeholder.parentNode.insertBefore(d.row, d.placeholder);
-        d.placeholder.remove();
-        d.row.classList.remove("priority-dragging");
-        d.row.style.transform = "";
-        d.row.style.position  = "";
-        d.row.style.zIndex    = "";
-        d.row.style.width     = "";
-
-        this._priorityDraft.order =
-          [...list.querySelectorAll(".priority-row")].map(r => r.dataset.lp);
-
-        this._priorityDragging = null;
-        this._isDragging = false;
-        this._pendingRender = false;
-        this._lastRenderKey = null;
-        this._render();
-      };
-      handle.addEventListener("pointerup",     finish);
-      handle.addEventListener("pointercancel", finish);
+      handle.addEventListener("pointerdown",        (e) => this._priorityDragStart(e, list, row, handle));
+      handle.addEventListener("pointermove",        (e) => this._priorityDragMove(e));
+      handle.addEventListener("pointerup",          (e) => this._priorityDragEnd(e));
+      handle.addEventListener("pointercancel",      (e) => this._priorityDragEnd(e));
+      // Fallback: if the handle loses capture for any other reason (e.g. the
+      // element is detached), still leave the drag state cleanly.
+      handle.addEventListener("lostpointercapture", (e) => this._priorityDragEnd(e));
     });
 
     const applyBtn = root.querySelector("[data-priority-apply]");
@@ -5181,6 +5123,90 @@ class EvccCard extends HTMLElement {
         this._render();
       });
     }
+  }
+
+  // ---- Priority drag & drop ------------------------------------------------
+  // Model: on pointerdown the slot geometry of the list is frozen once. The
+  // dragged row is taken out of the flow (position: absolute via CSS) and a
+  // placeholder of the same height is put in its slot, so the list keeps
+  // exactly N slots with unchanged boundaries for the whole drag. The target
+  // index is derived from the centre of the dragged row against those frozen
+  // slots; nothing is measured live, so there is no feedback loop.
+  _priorityDragStart(e, list, row, handle) {
+    if (this._priorityDragging) return;
+    if (!e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
+    e.preventDefault();
+
+    // Geometry snapshot before any DOM mutation. offsetTop/offsetHeight are
+    // relative to .priority-list (position: relative), the same frame the
+    // absolutely positioned row uses below.
+    const rows  = [...list.querySelectorAll(".priority-row")];
+    const slots = rows.map(r => ({ top: r.offsetTop, h: r.offsetHeight }));
+    const idx   = rows.indexOf(row);
+    const baseTop = row.offsetTop;
+    const rowH    = row.offsetHeight;
+    // Keep the row inside the list (overflow: hidden would clip it otherwise).
+    const minDy = -baseTop;
+    const maxDy = Math.max(minDy, list.clientHeight - rowH - baseTop);
+
+    const placeholder = document.createElement("div");
+    placeholder.className = "priority-placeholder";
+    placeholder.style.height = rowH + "px";
+    list.insertBefore(placeholder, row);
+
+    row.classList.add("priority-dragging");
+    row.style.top = baseTop + "px";
+
+    this._isDragging    = true;
+    this._pendingRender = false;
+    this._priorityDragging = {
+      list, row, placeholder, handle, pointerId: e.pointerId,
+      startY: e.clientY, slots, idx, baseTop, rowH, minDy, maxDy,
+    };
+    try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+  }
+
+  _priorityDragMove(e) {
+    const d = this._priorityDragging;
+    if (!d || e.pointerId !== d.pointerId) return;
+
+    const dy = Math.min(d.maxDy, Math.max(d.minDy, e.clientY - d.startY));
+    d.row.style.transform = `translateY(${dy}px)`;
+
+    // Target slot: first frozen slot whose midpoint lies below the centre of
+    // the dragged row. No early exit, so the placeholder tracks the pointer
+    // directly instead of advancing one position per event.
+    const center = d.baseTop + dy + d.rowH / 2;
+    let idx = d.slots.findIndex(s => center < s.top + s.h / 2);
+    if (idx === -1) idx = d.slots.length - 1;
+    if (idx === d.idx) return;
+    d.idx = idx;
+
+    const others = [...d.list.querySelectorAll(".priority-row")].filter(r => r !== d.row);
+    d.list.insertBefore(d.placeholder, others[idx] || null);
+  }
+
+  _priorityDragEnd(e) {
+    const d = this._priorityDragging;
+    if (!d || (e && e.pointerId !== d.pointerId)) return;
+    this._priorityDragging = null;
+    try { d.handle.releasePointerCapture(d.pointerId); } catch (_) {}
+
+    if (d.placeholder.parentNode) d.placeholder.parentNode.insertBefore(d.row, d.placeholder);
+    d.placeholder.remove();
+    d.row.classList.remove("priority-dragging");
+    d.row.style.transform = "";
+    d.row.style.top       = "";
+
+    if (this._priorityDraft) {
+      this._priorityDraft.order =
+        [...d.list.querySelectorAll(".priority-row")].map(r => r.dataset.lp);
+    }
+
+    this._isDragging    = false;
+    this._pendingRender = false;
+    this._lastRenderKey = null;
+    this._render();
   }
 
   _currentVisible() {
@@ -5761,6 +5787,7 @@ class EvccCard extends HTMLElement {
       .priority-mode { display: flex; flex-direction: column; gap: 12px; }
       .priority-hint { font-size: .8rem; color: var(--secondary-text-color); }
       .priority-list {
+        position: relative;
         display: flex; flex-direction: column;
         border: 1px solid var(--divider-color);
         border-radius: 6px;
@@ -5787,10 +5814,15 @@ class EvccCard extends HTMLElement {
       }
       .priority-handle:active { cursor: grabbing; }
       .priority-row.no-entity .priority-handle { cursor: not-allowed; }
-      .priority-dragging {
+      .priority-row.priority-dragging {
+        /* Out of the flow; left/right stretch it to the list width regardless
+           of box-sizing, so no inline width is needed. */
+        position: absolute; left: 0; right: 0; z-index: 5;
         opacity: .92;
         box-shadow: 0 4px 14px rgba(0, 0, 0, .22);
         background: var(--card-background-color);
+        border-bottom: none;
+        will-change: transform;
       }
       .priority-placeholder {
         background: var(--divider-color);
