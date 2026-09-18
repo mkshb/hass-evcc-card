@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>evcc-card test harness</title>
+  <style>
+    :root {
+      --primary-color: #03a9f4; --primary-text-color: #212121; --secondary-text-color: #727272;
+      --card-background-color: #fff; --divider-color: #e0e0e0; --secondary-background-color: #f0f0f0;
+    }
+    body.dark {
+      --primary-text-color: #e1e1e1; --secondary-text-color: #9b9b9b; --card-background-color: #1c1c1c;
+      --divider-color: #383838; --secondary-background-color: #2a2a2a; background: #111;
+    }
+    body { margin: 0; padding: 16px; background: #fafafa; font-family: Roboto, "Segoe UI", sans-serif; color: var(--primary-text-color); }
+    #host { width: var(--w, 400px); }
+    ha-card { display: block; background: var(--card-background-color); border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,.2); color: var(--primary-text-color); }
+  </style>
+</head>
+<body>
+  <div id="host"></div>
+  <script type="module">
+    import { createMockHass } from "./mock-hass.js";
+    import "../dist/evcc-card.js";
+
+    const q      = new URLSearchParams(location.search);
+    const config = q.get("config") ? JSON.parse(q.get("config")) : { mode: q.get("mode") || "loadpoint" };
+    if (q.get("dark")) document.body.classList.add("dark");
+    if (q.get("w"))    document.getElementById("host").style.setProperty("--w", `${q.get("w")}px`);
+
+    const hass = await createMockHass({ language: q.get("lang") || "de", ws: q.get("ws") !== "0" });
+    const card = document.createElement("evcc-card");
+    card.setConfig(config);
+    card.hass = hass;
+    document.getElementById("host").appendChild(card);
+
+    // Mirror HA: every state change arrives as a new hass object.
+    window.addEventListener("mock-hass-updated", () => { card.hass = { ...hass, states: hass.states }; });
+
+    window.__card  = card;
+    window.__hass  = hass;
+    window.__ready = () => !!card.shadowRoot?.querySelector("ha-card") && card._translationsReady === true;
+  </script>
+</body>
+</html>

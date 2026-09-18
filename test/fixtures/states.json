@@ -1,0 +1,4897 @@
+{
+ "binary_sensor.evcc_battery_grid_charge_active": {
+  "attributes": {
+   "friendly_name": "Hausbatterie: Netzladen",
+   "icon": "mdi:battery-charging-outline"
+  },
+  "entity_id": "binary_sensor.evcc_battery_grid_charge_active",
+  "last_changed": "2026-09-17T17:24:19.671199+00:00",
+  "last_updated": "2026-09-17T17:24:19.671199+00:00",
+  "state": "off"
+ },
+ "binary_sensor.evcc_garage_circuits_dimmed": {
+  "attributes": {
+   "friendly_name": "'GARAGE' Lastmanagement Begrenzung",
+   "icon": "mdi:transmission-tower"
+  },
+  "entity_id": "binary_sensor.evcc_garage_circuits_dimmed",
+  "last_changed": "2026-09-17T17:24:19.674777+00:00",
+  "last_updated": "2026-09-17T17:24:19.674777+00:00",
+  "state": "off"
+ },
+ "binary_sensor.evcc_main_circuits_dimmed": {
+  "attributes": {
+   "friendly_name": "'MAIN' Lastmanagement Begrenzung",
+   "icon": "mdi:transmission-tower"
+  },
+  "entity_id": "binary_sensor.evcc_main_circuits_dimmed",
+  "last_changed": "2026-09-17T17:24:19.675066+00:00",
+  "last_updated": "2026-09-17T17:24:19.675066+00:00",
+  "state": "off"
+ },
+ "binary_sensor.evcc_openwb_charging": {
+  "attributes": {
+   "friendly_name": "openWB Lädt"
+  },
+  "entity_id": "binary_sensor.evcc_openwb_charging",
+  "last_changed": "2026-09-18T08:49:11.506372+00:00",
+  "last_updated": "2026-09-18T08:49:11.506372+00:00",
+  "state": "on"
+ },
+ "binary_sensor.evcc_openwb_connected": {
+  "attributes": {
+   "friendly_name": "openWB Verbunden"
+  },
+  "entity_id": "binary_sensor.evcc_openwb_connected",
+  "last_changed": "2026-09-17T17:24:19.671872+00:00",
+  "last_updated": "2026-09-17T17:24:19.671872+00:00",
+  "state": "on"
+ },
+ "binary_sensor.evcc_openwb_disabled_in_config": {
+  "attributes": {
+   "friendly_name": "openWB Deaktiviert in evcc Konfiguration",
+   "icon": "mdi:check-circle"
+  },
+  "entity_id": "binary_sensor.evcc_openwb_disabled_in_config",
+  "last_changed": "2026-09-17T17:24:19.671457+00:00",
+  "last_updated": "2026-09-17T17:24:19.671457+00:00",
+  "state": "off"
+ },
+ "binary_sensor.evcc_openwb_enabled": {
+  "attributes": {
+   "friendly_name": "openWB Aktiviert"
+  },
+  "entity_id": "binary_sensor.evcc_openwb_enabled",
+  "last_changed": "2026-09-18T08:48:11.475994+00:00",
+  "last_updated": "2026-09-18T08:48:11.475994+00:00",
+  "state": "on"
+ },
+ "binary_sensor.evcc_openwb_plan_active": {
+  "attributes": {
+   "friendly_name": "openWB Plan aktiviert",
+   "icon": "mdi:calendar-blank"
+  },
+  "entity_id": "binary_sensor.evcc_openwb_plan_active",
+  "last_changed": "2026-09-17T17:24:19.673237+00:00",
+  "last_updated": "2026-09-17T17:24:19.673237+00:00",
+  "state": "off"
+ },
+ "binary_sensor.evcc_openwb_smart_cost_active": {
+  "attributes": {
+   "friendly_name": "openWB Smartes Netzladen"
+  },
+  "entity_id": "binary_sensor.evcc_openwb_smart_cost_active",
+  "last_changed": "2026-09-17T17:24:19.672262+00:00",
+  "last_updated": "2026-09-17T17:24:19.672262+00:00",
+  "state": "off"
+ },
+ "binary_sensor.evcc_openwb_smart_feed_in_priority_active": {
+  "attributes": {
+   "friendly_name": "openWB Smarte Einspeisegrenze"
+  },
+  "entity_id": "binary_sensor.evcc_openwb_smart_feed_in_priority_active",
+  "last_changed": "2026-09-17T17:24:19.672456+00:00",
+  "last_updated": "2026-09-17T17:24:19.672456+00:00",
+  "state": "off"
+ },
+ "binary_sensor.evcc_openwb_vehicle_climater_active": {
+  "attributes": {
+   "friendly_name": "openWB Fahrzeug Klimatisierung",
+   "icon": "mdi:fan-off"
+  },
+  "entity_id": "binary_sensor.evcc_openwb_vehicle_climater_active",
+  "last_changed": "2026-09-17T17:24:19.672847+00:00",
+  "last_updated": "2026-09-17T17:24:19.672847+00:00",
+  "state": "off"
+ },
+ "binary_sensor.evcc_openwb_vehicle_detection_active": {
+  "attributes": {
+   "friendly_name": "openWB Fahrzeugerkennung",
+   "icon": "mdi:car-search-outline"
+  },
+  "entity_id": "binary_sensor.evcc_openwb_vehicle_detection_active",
+  "last_changed": "2026-09-17T17:24:19.672653+00:00",
+  "last_updated": "2026-09-17T17:24:19.672653+00:00",
+  "state": "off"
+ },
+ "binary_sensor.evcc_openwb_vehicle_welcome_active": {
+  "attributes": {
+   "friendly_name": "openWB Fahrzeug Willkommensfunktion",
+   "icon": "mdi:gift-off-outline"
+  },
+  "entity_id": "binary_sensor.evcc_openwb_vehicle_welcome_active",
+  "last_changed": "2026-09-17T17:24:19.673044+00:00",
+  "last_updated": "2026-09-17T17:24:19.673044+00:00",
+  "state": "off"
+ },
+ "binary_sensor.evcc_wp_charging": {
+  "attributes": {
+   "friendly_name": "WP Lädt"
+  },
+  "entity_id": "binary_sensor.evcc_wp_charging",
+  "last_changed": "2026-09-17T17:24:19.673732+00:00",
+  "last_updated": "2026-09-17T17:24:19.673732+00:00",
+  "state": "off"
+ },
+ "binary_sensor.evcc_wp_disabled_in_config": {
+  "attributes": {
+   "friendly_name": "WP Deaktiviert in evcc Konfiguration",
+   "icon": "mdi:check-circle"
+  },
+  "entity_id": "binary_sensor.evcc_wp_disabled_in_config",
+  "last_changed": "2026-09-17T17:24:19.673539+00:00",
+  "last_updated": "2026-09-17T17:24:19.673539+00:00",
+  "state": "off"
+ },
+ "binary_sensor.evcc_wp_enabled": {
+  "attributes": {
+   "friendly_name": "WP Aktiviert"
+  },
+  "entity_id": "binary_sensor.evcc_wp_enabled",
+  "last_changed": "2026-09-17T17:24:19.673922+00:00",
+  "last_updated": "2026-09-17T17:24:19.673922+00:00",
+  "state": "off"
+ },
+ "binary_sensor.evcc_wp_plan_active": {
+  "attributes": {
+   "friendly_name": "WP Plan aktiviert",
+   "icon": "mdi:calendar-blank"
+  },
+  "entity_id": "binary_sensor.evcc_wp_plan_active",
+  "last_changed": "2026-09-17T17:24:19.674496+00:00",
+  "last_updated": "2026-09-17T17:24:19.674496+00:00",
+  "state": "off"
+ },
+ "binary_sensor.evcc_wp_smart_cost_active": {
+  "attributes": {
+   "friendly_name": "WP Smartes Netzladen"
+  },
+  "entity_id": "binary_sensor.evcc_wp_smart_cost_active",
+  "last_changed": "2026-09-17T17:24:19.674112+00:00",
+  "last_updated": "2026-09-17T17:24:19.674112+00:00",
+  "state": "off"
+ },
+ "binary_sensor.evcc_wp_smart_feed_in_priority_active": {
+  "attributes": {
+   "friendly_name": "WP Smarte Einspeisegrenze"
+  },
+  "entity_id": "binary_sensor.evcc_wp_smart_feed_in_priority_active",
+  "last_changed": "2026-09-17T17:24:19.674299+00:00",
+  "last_updated": "2026-09-17T17:24:19.674299+00:00",
+  "state": "off"
+ },
+ "button.evcc_evcc_shutdown": {
+  "attributes": {
+   "friendly_name": "Server stoppen",
+   "icon": "mdi:server-off"
+  },
+  "entity_id": "button.evcc_evcc_shutdown",
+  "last_changed": "2026-09-17T17:24:20.149069+00:00",
+  "last_updated": "2026-09-17T17:24:20.149069+00:00",
+  "state": "2026-05-02T18:31:34.868607+00:00"
+ },
+ "button.evcc_openwb_detectvehicle": {
+  "attributes": {
+   "friendly_name": "openWB Fahrzeugerkennung starten",
+   "icon": "mdi:car-search-outline"
+  },
+  "entity_id": "button.evcc_openwb_detectvehicle",
+  "last_changed": "2026-09-17T17:24:20.149628+00:00",
+  "last_updated": "2026-09-17T17:24:20.149628+00:00",
+  "state": "2026-03-16T21:41:54.820013+00:00"
+ },
+ "button.evcc_openwb_smart_cost_limit": {
+  "attributes": {
+   "friendly_name": "openWB € Limit entfernen",
+   "icon": "mdi:cash-off"
+  },
+  "entity_id": "button.evcc_openwb_smart_cost_limit",
+  "last_changed": "2026-09-17T17:24:20.149816+00:00",
+  "last_updated": "2026-09-17T17:24:20.149816+00:00",
+  "state": "2026-05-01T21:39:37.012522+00:00"
+ },
+ "button.evcc_openwb_smart_feed_in_priority_limit": {
+  "attributes": {
+   "friendly_name": "openWB € Einspeisegrenze entfernen",
+   "icon": "mdi:cash-off"
+  },
+  "entity_id": "button.evcc_openwb_smart_feed_in_priority_limit",
+  "last_changed": "2026-09-17T17:24:20.150003+00:00",
+  "last_updated": "2026-09-17T17:24:20.150003+00:00",
+  "state": "2026-06-23T16:50:05.151986+00:00"
+ },
+ "button.evcc_openwb_vehicle_plans_delete": {
+  "attributes": {
+   "friendly_name": "openWB Ladeplanung: Abfahrt löschen (Fahrzeug/SOC)",
+   "icon": "mdi:restart"
+  },
+  "entity_id": "button.evcc_openwb_vehicle_plans_delete",
+  "last_changed": "2026-09-17T17:24:20.149330+00:00",
+  "last_updated": "2026-09-17T17:24:20.149330+00:00",
+  "state": "2026-03-08T18:23:08.946296+00:00"
+ },
+ "button.evcc_wp_smart_cost_limit": {
+  "attributes": {
+   "friendly_name": "WP € Limit entfernen",
+   "icon": "mdi:cash-off"
+  },
+  "entity_id": "button.evcc_wp_smart_cost_limit",
+  "last_changed": "2026-09-17T17:24:20.150189+00:00",
+  "last_updated": "2026-09-17T17:24:20.150189+00:00",
+  "state": "unknown"
+ },
+ "button.evcc_wp_smart_feed_in_priority_limit": {
+  "attributes": {
+   "friendly_name": "WP € Einspeisegrenze entfernen",
+   "icon": "mdi:cash-off"
+  },
+  "entity_id": "button.evcc_wp_smart_feed_in_priority_limit",
+  "last_changed": "2026-09-17T17:24:20.150380+00:00",
+  "last_updated": "2026-09-17T17:24:20.150380+00:00",
+  "state": "unknown"
+ },
+ "number.evcc_battery_grid_charge_limit": {
+  "attributes": {
+   "friendly_name": "Hausbatterie: Netzladen € Limit ≤",
+   "icon": "mdi:cash-multiple",
+   "max": 2.5,
+   "min": -0.5,
+   "mode": "box",
+   "step": 0.005,
+   "unit_of_measurement": "€/kWh"
+  },
+  "entity_id": "number.evcc_battery_grid_charge_limit",
+  "last_changed": "2026-09-17T17:24:20.153218+00:00",
+  "last_updated": "2026-09-17T17:24:20.153218+00:00",
+  "state": "unknown"
+ },
+ "number.evcc_openwb_disable_delay": {
+  "attributes": {
+   "friendly_name": "openWB Verzögerung Deaktivierung",
+   "icon": "mdi:weather-sunset-down",
+   "max": 6000,
+   "min": 0,
+   "mode": "box",
+   "step": 1,
+   "unit_of_measurement": "s"
+  },
+  "entity_id": "number.evcc_openwb_disable_delay",
+  "last_changed": "2026-09-17T17:24:20.154963+00:00",
+  "last_updated": "2026-09-17T17:24:20.154963+00:00",
+  "state": "180"
+ },
+ "number.evcc_openwb_disable_threshold": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "openWB Schwellwert Deaktivierung",
+   "icon": "mdi:scale-balance",
+   "max": 25000,
+   "min": -5000,
+   "mode": "box",
+   "step": 50,
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "number.evcc_openwb_disable_threshold",
+  "last_changed": "2026-09-17T17:24:20.153888+00:00",
+  "last_updated": "2026-09-17T17:24:20.153888+00:00",
+  "state": "0"
+ },
+ "number.evcc_openwb_enable_delay": {
+  "attributes": {
+   "friendly_name": "openWB Verzögerung Aktivierung",
+   "icon": "mdi:weather-sunset-up",
+   "max": 6000,
+   "min": 0,
+   "mode": "box",
+   "step": 1,
+   "unit_of_measurement": "s"
+  },
+  "entity_id": "number.evcc_openwb_enable_delay",
+  "last_changed": "2026-09-17T17:24:20.154731+00:00",
+  "last_updated": "2026-09-17T17:24:20.154731+00:00",
+  "state": "60"
+ },
+ "number.evcc_openwb_enable_threshold": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "openWB Schwellwert Aktivierung",
+   "icon": "mdi:scale-balance",
+   "max": 25000,
+   "min": -5000,
+   "mode": "box",
+   "step": 50,
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "number.evcc_openwb_enable_threshold",
+  "last_changed": "2026-09-17T17:24:20.153668+00:00",
+  "last_updated": "2026-09-17T17:24:20.153668+00:00",
+  "state": "0"
+ },
+ "number.evcc_openwb_limit_energy": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "openWB Standard Ladelimit (Energie)",
+   "icon": "mdi:lightning-bolt-outline",
+   "max": 200,
+   "min": 0,
+   "mode": "box",
+   "step": 1,
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "number.evcc_openwb_limit_energy",
+  "last_changed": "2026-09-17T17:24:20.154104+00:00",
+  "last_updated": "2026-09-17T17:24:20.154104+00:00",
+  "state": "0"
+ },
+ "number.evcc_openwb_limit_soc": {
+  "attributes": {
+   "device_class": "battery",
+   "friendly_name": "openWB Standard Ladelimit (SOC)",
+   "icon": "mdi:battery-charging",
+   "max": 100,
+   "min": 20,
+   "mode": "slider",
+   "step": 5,
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "number.evcc_openwb_limit_soc",
+  "last_changed": "2026-09-17T17:24:20.153449+00:00",
+  "last_updated": "2026-09-17T17:24:20.153449+00:00",
+  "state": "90"
+ },
+ "number.evcc_openwb_priority": {
+  "attributes": {
+   "friendly_name": "openWB Priorität",
+   "icon": "mdi:priority-high",
+   "max": 10,
+   "min": 0,
+   "mode": "slider",
+   "step": 1
+  },
+  "entity_id": "number.evcc_openwb_priority",
+  "last_changed": "2026-09-17T17:24:20.155184+00:00",
+  "last_updated": "2026-09-17T17:24:20.155184+00:00",
+  "state": "1"
+ },
+ "number.evcc_openwb_smart_cost_limit": {
+  "attributes": {
+   "friendly_name": "openWB € Limit ≤",
+   "icon": "mdi:cash-multiple",
+   "max": 2.5,
+   "min": -0.5,
+   "mode": "box",
+   "step": 0.005,
+   "unit_of_measurement": "€/kWh"
+  },
+  "entity_id": "number.evcc_openwb_smart_cost_limit",
+  "last_changed": "2026-09-18T07:21:02.457864+00:00",
+  "last_updated": "2026-09-18T07:21:02.457864+00:00",
+  "state": "unknown"
+ },
+ "number.evcc_openwb_smart_feed_in_priority_limit": {
+  "attributes": {
+   "friendly_name": "openWB € Einspeisegrenze ≤",
+   "icon": "mdi:cash-multiple",
+   "max": 2.5,
+   "min": -0.5,
+   "mode": "box",
+   "step": 0.005,
+   "unit_of_measurement": "€/kWh"
+  },
+  "entity_id": "number.evcc_openwb_smart_feed_in_priority_limit",
+  "last_changed": "2026-09-17T17:24:20.154523+00:00",
+  "last_updated": "2026-09-17T17:24:20.154523+00:00",
+  "state": "unknown"
+ },
+ "number.evcc_residual_power": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "Restleistung",
+   "icon": "mdi:home-lightning-bolt-outline",
+   "max": 25000,
+   "min": -25000,
+   "mode": "box",
+   "step": 50,
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "number.evcc_residual_power",
+  "last_changed": "2026-09-17T17:24:20.152974+00:00",
+  "last_updated": "2026-09-17T17:24:20.152974+00:00",
+  "state": "100"
+ },
+ "number.evcc_wp_disable_delay": {
+  "attributes": {
+   "friendly_name": "WP Verzögerung Deaktivierung",
+   "icon": "mdi:weather-sunset-down",
+   "max": 6000,
+   "min": 0,
+   "mode": "box",
+   "step": 1,
+   "unit_of_measurement": "s"
+  },
+  "entity_id": "number.evcc_wp_disable_delay",
+  "last_changed": "2026-09-17T17:24:20.157091+00:00",
+  "last_updated": "2026-09-17T17:24:20.157091+00:00",
+  "state": "600"
+ },
+ "number.evcc_wp_disable_threshold": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "WP Schwellwert Deaktivierung",
+   "icon": "mdi:scale-balance",
+   "max": 25000,
+   "min": -5000,
+   "mode": "box",
+   "step": 50,
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "number.evcc_wp_disable_threshold",
+  "last_changed": "2026-09-17T17:24:20.155830+00:00",
+  "last_updated": "2026-09-17T17:24:20.155830+00:00",
+  "state": "10"
+ },
+ "number.evcc_wp_enable_delay": {
+  "attributes": {
+   "friendly_name": "WP Verzögerung Aktivierung",
+   "icon": "mdi:weather-sunset-up",
+   "max": 6000,
+   "min": 0,
+   "mode": "box",
+   "step": 1,
+   "unit_of_measurement": "s"
+  },
+  "entity_id": "number.evcc_wp_enable_delay",
+  "last_changed": "2026-09-17T17:24:20.156883+00:00",
+  "last_updated": "2026-09-17T17:24:20.156883+00:00",
+  "state": "180"
+ },
+ "number.evcc_wp_enable_threshold": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "WP Schwellwert Aktivierung",
+   "icon": "mdi:scale-balance",
+   "max": 25000,
+   "min": -5000,
+   "mode": "box",
+   "step": 50,
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "number.evcc_wp_enable_threshold",
+  "last_changed": "2026-09-17T17:24:20.155617+00:00",
+  "last_updated": "2026-09-17T17:24:20.155617+00:00",
+  "state": "-1200"
+ },
+ "number.evcc_wp_limit_soc": {
+  "attributes": {
+   "device_class": "temperature",
+   "friendly_name": "WP Standard Ladelimit (SOC)",
+   "icon": "mdi:thermometer",
+   "max": 100,
+   "min": 20,
+   "mode": "slider",
+   "step": 1,
+   "unit_of_measurement": "°C"
+  },
+  "entity_id": "number.evcc_wp_limit_soc",
+  "last_changed": "2026-09-17T17:24:20.155405+00:00",
+  "last_updated": "2026-09-17T17:24:20.155405+00:00",
+  "state": "60"
+ },
+ "number.evcc_wp_priority": {
+  "attributes": {
+   "friendly_name": "WP Priorität",
+   "icon": "mdi:priority-high",
+   "max": 10,
+   "min": 0,
+   "mode": "slider",
+   "step": 1
+  },
+  "entity_id": "number.evcc_wp_priority",
+  "last_changed": "2026-09-17T17:24:20.157296+00:00",
+  "last_updated": "2026-09-17T17:24:20.157296+00:00",
+  "state": "0"
+ },
+ "number.evcc_wp_smart_cost_limit": {
+  "attributes": {
+   "friendly_name": "WP € Limit ≤",
+   "icon": "mdi:cash-multiple",
+   "max": 2.5,
+   "min": -0.5,
+   "mode": "box",
+   "step": 0.005,
+   "unit_of_measurement": "€/kWh"
+  },
+  "entity_id": "number.evcc_wp_smart_cost_limit",
+  "last_changed": "2026-09-17T17:24:20.156156+00:00",
+  "last_updated": "2026-09-17T17:24:20.156156+00:00",
+  "state": "unknown"
+ },
+ "number.evcc_wp_smart_feed_in_priority_limit": {
+  "attributes": {
+   "friendly_name": "WP € Einspeisegrenze ≤",
+   "icon": "mdi:cash-multiple",
+   "max": 2.5,
+   "min": -0.5,
+   "mode": "box",
+   "step": 0.005,
+   "unit_of_measurement": "€/kWh"
+  },
+  "entity_id": "number.evcc_wp_smart_feed_in_priority_limit",
+  "last_changed": "2026-09-17T17:24:20.156665+00:00",
+  "last_updated": "2026-09-17T17:24:20.156665+00:00",
+  "state": "unknown"
+ },
+ "select.evcc_buffer_soc": {
+  "attributes": {
+   "friendly_name": "Hausbatterie: Fahrzeug zuerst",
+   "icon": "mdi:home-battery-outline",
+   "options": [
+    "20",
+    "25",
+    "30",
+    "35",
+    "40",
+    "45",
+    "50",
+    "55",
+    "60",
+    "65",
+    "70",
+    "75",
+    "80",
+    "85",
+    "90",
+    "95",
+    "100"
+   ]
+  },
+  "entity_id": "select.evcc_buffer_soc",
+  "last_changed": "2026-09-17T17:24:20.163064+00:00",
+  "last_updated": "2026-09-18T08:45:00.544162+00:00",
+  "state": "100"
+ },
+ "select.evcc_buffer_start_soc": {
+  "attributes": {
+   "friendly_name": "Hausbatterie: Fahrzeug Laden unterstützen",
+   "icon": "mdi:home-battery-outline",
+   "options": [
+    "100",
+    "0"
+   ]
+  },
+  "entity_id": "select.evcc_buffer_start_soc",
+  "last_changed": "2026-09-17T17:24:20.163248+00:00",
+  "last_updated": "2026-09-17T17:24:20.163248+00:00",
+  "state": "0"
+ },
+ "select.evcc_openwb_battery_boost_limit": {
+  "attributes": {
+   "friendly_name": "openWB Schnell aus Hausbatterie laden Limit",
+   "icon": "mdi:battery-plus-outline",
+   "options": [
+    "0",
+    "5",
+    "10",
+    "15",
+    "20",
+    "25",
+    "30",
+    "35",
+    "40",
+    "45",
+    "50",
+    "55",
+    "60",
+    "65",
+    "70",
+    "75",
+    "80",
+    "85",
+    "90",
+    "95",
+    "100"
+   ]
+  },
+  "entity_id": "select.evcc_openwb_battery_boost_limit",
+  "last_changed": "2026-09-18T07:54:27.835449+00:00",
+  "last_updated": "2026-09-18T07:54:27.835449+00:00",
+  "state": "100"
+ },
+ "select.evcc_openwb_limit_soc": {
+  "attributes": {
+   "friendly_name": "openWB Ladeplanung: Ankunft Standard Ladelimit",
+   "icon": "mdi:battery-charging",
+   "options": [
+    "0",
+    "5",
+    "10",
+    "15",
+    "20",
+    "25",
+    "30",
+    "35",
+    "40",
+    "45",
+    "50",
+    "55",
+    "60",
+    "65",
+    "70",
+    "75",
+    "80",
+    "85",
+    "90",
+    "95",
+    "100"
+   ]
+  },
+  "entity_id": "select.evcc_openwb_limit_soc",
+  "last_changed": "2026-09-17T17:24:20.164931+00:00",
+  "last_updated": "2026-09-17T17:24:20.164931+00:00",
+  "state": "90"
+ },
+ "select.evcc_openwb_max_current": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "openWB Max. Ladestrom",
+   "icon": "mdi:current-ac",
+   "options": [
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16",
+    "17",
+    "18",
+    "19",
+    "20",
+    "21",
+    "22",
+    "23",
+    "24",
+    "25",
+    "26",
+    "27",
+    "28",
+    "29",
+    "30",
+    "31",
+    "32",
+    "33",
+    "34",
+    "35",
+    "36",
+    "37",
+    "38",
+    "39",
+    "40",
+    "41",
+    "42",
+    "43",
+    "44",
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50",
+    "51",
+    "52",
+    "53",
+    "54",
+    "55",
+    "56",
+    "57",
+    "58",
+    "59",
+    "60",
+    "61",
+    "62",
+    "63",
+    "64"
+   ],
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "select.evcc_openwb_max_current",
+  "last_changed": "2026-09-17T17:24:20.164724+00:00",
+  "last_updated": "2026-09-17T17:24:20.164724+00:00",
+  "state": "16"
+ },
+ "select.evcc_openwb_min_current": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "openWB Min. Ladestrom",
+   "icon": "mdi:current-ac",
+   "options": [
+    "0.125",
+    "0.25",
+    "0.5",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ],
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "select.evcc_openwb_min_current",
+  "last_changed": "2026-09-17T17:24:20.164507+00:00",
+  "last_updated": "2026-09-17T17:24:20.164507+00:00",
+  "state": "6"
+ },
+ "select.evcc_openwb_min_soc": {
+  "attributes": {
+   "friendly_name": "openWB Ladeplanung: Ankunft Min. Ladung %",
+   "icon": "mdi:battery-charging",
+   "options": [
+    "0",
+    "5",
+    "10",
+    "15",
+    "20",
+    "25",
+    "30",
+    "35",
+    "40",
+    "45",
+    "50",
+    "55",
+    "60",
+    "65",
+    "70",
+    "75",
+    "80",
+    "85",
+    "90",
+    "95"
+   ]
+  },
+  "entity_id": "select.evcc_openwb_min_soc",
+  "last_changed": "2026-09-17T17:24:20.165136+00:00",
+  "last_updated": "2026-09-17T17:24:20.165136+00:00",
+  "state": "0"
+ },
+ "select.evcc_openwb_mode": {
+  "attributes": {
+   "friendly_name": "openWB Modus",
+   "icon": "mdi:state-machine",
+   "options": [
+    "off",
+    "pv",
+    "minpv",
+    "now"
+   ]
+  },
+  "entity_id": "select.evcc_openwb_mode",
+  "last_changed": "2026-09-17T17:24:20.163544+00:00",
+  "last_updated": "2026-09-17T17:24:20.163544+00:00",
+  "state": "pv"
+ },
+ "select.evcc_openwb_phases_configured": {
+  "attributes": {
+   "friendly_name": "openWB Ladestrom Phasen",
+   "icon": "mdi:lightning-bolt-outline",
+   "options": [
+    "0",
+    "1",
+    "3"
+   ]
+  },
+  "entity_id": "select.evcc_openwb_phases_configured",
+  "last_changed": "2026-09-17T17:24:20.163741+00:00",
+  "last_updated": "2026-09-17T17:24:20.163741+00:00",
+  "state": "0"
+ },
+ "select.evcc_openwb_plan_strategy_precondition": {
+  "attributes": {
+   "friendly_name": "openWB Ladeplanung: Spätes Laden",
+   "icon": "mdi:car-clock",
+   "options": [
+    "0",
+    "900",
+    "1800",
+    "3600",
+    "7200",
+    "604800"
+   ]
+  },
+  "entity_id": "select.evcc_openwb_plan_strategy_precondition",
+  "last_changed": "2026-09-17T17:24:20.165529+00:00",
+  "last_updated": "2026-09-17T17:24:20.165529+00:00",
+  "state": "0"
+ },
+ "select.evcc_openwb_vehicle_name": {
+  "attributes": {
+   "friendly_name": "openWB Fahrzeug",
+   "icon": "mdi:car-outline",
+   "options": [
+    "null",
+    "db:18",
+    "db:38"
+   ],
+   "vehicle": {
+    "capacity": 69,
+    "evccName": "db:18",
+    "id": "ex30",
+    "limitSoc": 90,
+    "minSoc": null,
+    "name": "EX30",
+    "originObject": {
+     "capacity": 69,
+     "icon": "car",
+     "limitSoc": 90,
+     "maxCurrent": 16,
+     "minCurrent": 6,
+     "mode": "pv",
+     "planStrategy": {
+      "continuous": false,
+      "precondition": 0
+     },
+     "repeatingPlans": [
+      {
+       "active": false,
+       "soc": 80,
+       "time": "07:00",
+       "tz": "Europe/Berlin",
+       "weekdays": [
+        1,
+        2,
+        4
+       ]
+      },
+      {
+       "active": false,
+       "soc": 90,
+       "time": "10:00",
+       "tz": "Europe/Berlin",
+       "weekdays": [
+        6,
+        0
+       ]
+      }
+     ],
+     "title": "EX30"
+    }
+   }
+  },
+  "entity_id": "select.evcc_openwb_vehicle_name",
+  "last_changed": "2026-09-17T17:24:20.163952+00:00",
+  "last_updated": "2026-09-17T17:24:20.163952+00:00",
+  "state": "db:18"
+ },
+ "select.evcc_priority_soc": {
+  "attributes": {
+   "friendly_name": "Hausbatterie: Haus hat Priorität",
+   "icon": "mdi:home-battery-outline",
+   "options": [
+    "0",
+    "5",
+    "10",
+    "15",
+    "20",
+    "25",
+    "30",
+    "35",
+    "40",
+    "45",
+    "50",
+    "55",
+    "60",
+    "65",
+    "70",
+    "75",
+    "80",
+    "85",
+    "90",
+    "95",
+    "100"
+   ]
+  },
+  "entity_id": "select.evcc_priority_soc",
+  "last_changed": "2026-09-18T08:45:00.543992+00:00",
+  "last_updated": "2026-09-18T08:45:00.543992+00:00",
+  "state": "20"
+ },
+ "select.evcc_wp_max_current": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "WP Max. Ladestrom",
+   "icon": "mdi:current-ac",
+   "options": [
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16",
+    "17",
+    "18",
+    "19",
+    "20",
+    "21",
+    "22",
+    "23",
+    "24",
+    "25",
+    "26",
+    "27",
+    "28",
+    "29",
+    "30",
+    "31",
+    "32",
+    "33",
+    "34",
+    "35",
+    "36",
+    "37",
+    "38",
+    "39",
+    "40",
+    "41",
+    "42",
+    "43",
+    "44",
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50",
+    "51",
+    "52",
+    "53",
+    "54",
+    "55",
+    "56",
+    "57",
+    "58",
+    "59",
+    "60",
+    "61",
+    "62",
+    "63",
+    "64"
+   ],
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "select.evcc_wp_max_current",
+  "last_changed": "2026-09-17T17:24:20.166308+00:00",
+  "last_updated": "2026-09-17T17:24:20.166308+00:00",
+  "state": "16"
+ },
+ "select.evcc_wp_min_current": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "WP Min. Ladestrom",
+   "icon": "mdi:current-ac",
+   "options": [
+    "0.125",
+    "0.25",
+    "0.5",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ],
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "select.evcc_wp_min_current",
+  "last_changed": "2026-09-17T17:24:20.166108+00:00",
+  "last_updated": "2026-09-17T17:24:20.166108+00:00",
+  "state": "5"
+ },
+ "select.evcc_wp_mode": {
+  "attributes": {
+   "friendly_name": "WP Modus",
+   "icon": "mdi:state-machine",
+   "options": [
+    "off",
+    "pv",
+    "minpv",
+    "now"
+   ]
+  },
+  "entity_id": "select.evcc_wp_mode",
+  "last_changed": "2026-09-17T17:24:20.165719+00:00",
+  "last_updated": "2026-09-17T17:24:20.165719+00:00",
+  "state": "pv"
+ },
+ "select.evcc_wp_phases_configured": {
+  "attributes": {
+   "friendly_name": "WP Ladestrom Phasen (Wie ist deine Wallbox angeschlossen?)",
+   "icon": "mdi:lightning-bolt-outline",
+   "options": [
+    "1",
+    "3"
+   ]
+  },
+  "entity_id": "select.evcc_wp_phases_configured",
+  "last_changed": "2026-09-17T17:24:20.165909+00:00",
+  "last_updated": "2026-09-17T17:24:20.165909+00:00",
+  "state": "1"
+ },
+ "sensor.evcc_antwortzeit": {
+  "attributes": {
+   "device_class": "duration",
+   "friendly_name": "EVCC Antwortzeit",
+   "state_class": "measurement",
+   "unit_of_measurement": "ms"
+  },
+  "entity_id": "sensor.evcc_antwortzeit",
+  "last_changed": "2026-09-18T09:22:47.174700+00:00",
+  "last_updated": "2026-09-18T09:22:47.174700+00:00",
+  "state": "13"
+ },
+ "sensor.evcc_antwortzeit_o_1_tag": {
+  "attributes": {
+   "device_class": "duration",
+   "friendly_name": "EVCC Antwortzeit Ø (1 Tag)",
+   "state_class": "measurement",
+   "unit_of_measurement": "ms"
+  },
+  "entity_id": "sensor.evcc_antwortzeit_o_1_tag",
+  "last_changed": "2026-09-18T09:22:47.183566+00:00",
+  "last_updated": "2026-09-18T09:22:47.183566+00:00",
+  "state": "15.1201388888889"
+ },
+ "sensor.evcc_antwortzeit_o_30_tage": {
+  "attributes": {
+   "device_class": "duration",
+   "friendly_name": "EVCC Antwortzeit Ø (30 Tage)",
+   "state_class": "measurement",
+   "unit_of_measurement": "ms"
+  },
+  "entity_id": "sensor.evcc_antwortzeit_o_30_tage",
+  "last_changed": "2026-09-18T09:22:47.184978+00:00",
+  "last_updated": "2026-09-18T09:22:47.184978+00:00",
+  "state": "19.6120616315342"
+ },
+ "sensor.evcc_antwortzeit_o_365_tage": {
+  "attributes": {
+   "device_class": "duration",
+   "friendly_name": "EVCC Antwortzeit Ø (365 Tage)",
+   "state_class": "measurement",
+   "unit_of_measurement": "ms"
+  },
+  "entity_id": "sensor.evcc_antwortzeit_o_365_tage",
+  "last_changed": "2026-09-18T09:22:47.191374+00:00",
+  "last_updated": "2026-09-18T09:22:47.191374+00:00",
+  "state": "19.9397226526801"
+ },
+ "sensor.evcc_battery_0_power": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "Leistung Batterie 1",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "sensor.evcc_battery_0_power",
+  "last_changed": "2026-09-18T09:23:11.478083+00:00",
+  "last_updated": "2026-09-18T09:23:11.478083+00:00",
+  "state": "2882"
+ },
+ "sensor.evcc_battery_0_soc": {
+  "attributes": {
+   "friendly_name": "Batterie Ladezustand 1",
+   "icon": "mdi:home-battery-outline",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_battery_0_soc",
+  "last_changed": "2026-09-18T09:23:11.479553+00:00",
+  "last_updated": "2026-09-18T09:23:11.479553+00:00",
+  "state": "30"
+ },
+ "sensor.evcc_battery_1_power": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "Leistung Batterie 2",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "sensor.evcc_battery_1_power",
+  "last_changed": "2026-09-17T17:24:20.197356+00:00",
+  "last_updated": "2026-09-17T17:24:20.197356+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_battery_1_soc": {
+  "attributes": {
+   "friendly_name": "Batterie Ladezustand 2",
+   "icon": "mdi:home-battery-outline",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_battery_1_soc",
+  "last_changed": "2026-09-17T17:24:20.198130+00:00",
+  "last_updated": "2026-09-17T17:24:20.198130+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_battery_capacity": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "Batterie Kapazität",
+   "icon": "mdi:battery",
+   "state_class": "total",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_battery_capacity",
+  "last_changed": "2026-09-17T17:24:20.198491+00:00",
+  "last_updated": "2026-09-17T17:24:20.198491+00:00",
+  "state": "10"
+ },
+ "sensor.evcc_battery_mode_value": {
+  "attributes": {
+   "friendly_name": "Batterie Modus",
+   "icon": "mdi:state-machine"
+  },
+  "entity_id": "sensor.evcc_battery_mode_value",
+  "last_changed": "2026-09-17T17:24:20.182310+00:00",
+  "last_updated": "2026-09-17T17:24:20.182310+00:00",
+  "state": "Unbekannt"
+ },
+ "sensor.evcc_battery_power": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "Leistung Batterie",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "sensor.evcc_battery_power",
+  "last_changed": "2026-09-18T09:23:11.478035+00:00",
+  "last_updated": "2026-09-18T09:23:11.478035+00:00",
+  "state": "2882"
+ },
+ "sensor.evcc_battery_soc": {
+  "attributes": {
+   "friendly_name": "Batterie Ladezustand",
+   "icon": "mdi:home-battery-outline",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_battery_soc",
+  "last_changed": "2026-09-18T09:23:11.479211+00:00",
+  "last_updated": "2026-09-18T09:23:11.479211+00:00",
+  "state": "30"
+ },
+ "sensor.evcc_charging_sessions": {
+  "attributes": {
+   "friendly_name": "Ladevorgänge",
+   "icon": "mdi:chart-box-multiple-outline",
+   "loadpoints": {
+    "WP": {
+     "chargeDuration": 1648246.0,
+     "chargedEnergy": 101.06163873978929,
+     "cost": 8.668037629404438
+    },
+    "openWB": {
+     "chargeDuration": 5255139.0,
+     "chargedEnergy": 2425.8899999999994,
+     "cost": 308.4079742425276
+    }
+   },
+   "state_class": "measurement",
+   "total": 370,
+   "vehicles": {
+    "EX30": {
+     "chargeDuration": 5254138.0,
+     "chargedEnergy": 2424.903999999999,
+     "cost": 308.32404229497854
+    },
+    "EX90": {
+     "chargeDuration": 1001.0,
+     "chargedEnergy": 0.9860000000001037,
+     "cost": 0.08393194754905552
+    },
+    "WP": {
+     "chargeDuration": 1648246.0,
+     "chargedEnergy": 101.06163873978929,
+     "cost": 8.668037629404438
+    }
+   }
+  },
+  "entity_id": "sensor.evcc_charging_sessions",
+  "last_changed": "2026-09-17T17:24:20.194698+00:00",
+  "last_updated": "2026-09-17T17:24:20.194698+00:00",
+  "state": "370"
+ },
+ "sensor.evcc_cstotal_ex30_charging_sessions_vehicle_chargedenergy": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "EX30 Ladevorgänge: Energie [Fzg.]",
+   "icon": "mdi:lightning-bolt-outline",
+   "state_class": "total",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_cstotal_ex30_charging_sessions_vehicle_chargedenergy",
+  "last_changed": "2026-09-17T17:24:20.223589+00:00",
+  "last_updated": "2026-09-17T17:24:20.223589+00:00",
+  "state": "2424.904"
+ },
+ "sensor.evcc_cstotal_ex30_charging_sessions_vehicle_chargeduration": {
+  "attributes": {
+   "device_class": "duration",
+   "friendly_name": "EX30 Ladevorgänge: Dauer [Fzg.]",
+   "icon": "mdi:clock-digital",
+   "state_class": "measurement",
+   "unit_of_measurement": "s"
+  },
+  "entity_id": "sensor.evcc_cstotal_ex30_charging_sessions_vehicle_chargeduration",
+  "last_changed": "2026-09-17T17:24:20.224042+00:00",
+  "last_updated": "2026-09-17T17:24:20.224042+00:00",
+  "state": "5254138.0"
+ },
+ "sensor.evcc_cstotal_ex30_charging_sessions_vehicle_cost": {
+  "attributes": {
+   "friendly_name": "EX30 Ladevorgänge: Kosten [Fzg.]",
+   "icon": "mdi:cash-multiple",
+   "state_class": "measurement",
+   "unit_of_measurement": "€"
+  },
+  "entity_id": "sensor.evcc_cstotal_ex30_charging_sessions_vehicle_cost",
+  "last_changed": "2026-09-17T17:24:20.223812+00:00",
+  "last_updated": "2026-09-17T17:24:20.223812+00:00",
+  "state": "308.324042294979"
+ },
+ "sensor.evcc_cstotal_id7_charging_sessions_vehicle_chargedenergy": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "id7 Ladevorgänge: Energie [Fzg.]",
+   "icon": "mdi:lightning-bolt-outline",
+   "state_class": "total",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_cstotal_id7_charging_sessions_vehicle_chargedenergy",
+  "last_changed": "2026-09-17T17:24:20.225155+00:00",
+  "last_updated": "2026-09-17T17:24:20.225155+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_cstotal_id7_charging_sessions_vehicle_chargeduration": {
+  "attributes": {
+   "device_class": "duration",
+   "friendly_name": "id7 Ladevorgänge: Dauer [Fzg.]",
+   "icon": "mdi:clock-digital",
+   "state_class": "measurement",
+   "unit_of_measurement": "s"
+  },
+  "entity_id": "sensor.evcc_cstotal_id7_charging_sessions_vehicle_chargeduration",
+  "last_changed": "2026-09-17T17:24:20.225592+00:00",
+  "last_updated": "2026-09-17T17:24:20.225592+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_cstotal_id7_charging_sessions_vehicle_cost": {
+  "attributes": {
+   "friendly_name": "id7 Ladevorgänge: Kosten [Fzg.]",
+   "icon": "mdi:cash-multiple",
+   "state_class": "measurement",
+   "unit_of_measurement": "€"
+  },
+  "entity_id": "sensor.evcc_cstotal_id7_charging_sessions_vehicle_cost",
+  "last_changed": "2026-09-17T17:24:20.225369+00:00",
+  "last_updated": "2026-09-17T17:24:20.225369+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_cstotal_openwb_charging_sessions_loadpoint_chargedenergy": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "openWB Ladevorgänge: Energie [LP]",
+   "icon": "mdi:lightning-bolt-outline",
+   "state_class": "total",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_cstotal_openwb_charging_sessions_loadpoint_chargedenergy",
+  "last_changed": "2026-09-17T17:24:20.209913+00:00",
+  "last_updated": "2026-09-17T17:24:20.209913+00:00",
+  "state": "2425.89"
+ },
+ "sensor.evcc_cstotal_openwb_charging_sessions_loadpoint_chargeduration": {
+  "attributes": {
+   "device_class": "duration",
+   "friendly_name": "openWB Ladevorgänge: Dauer [LP]",
+   "icon": "mdi:clock-digital",
+   "state_class": "measurement",
+   "unit_of_measurement": "s"
+  },
+  "entity_id": "sensor.evcc_cstotal_openwb_charging_sessions_loadpoint_chargeduration",
+  "last_changed": "2026-09-17T17:24:20.210369+00:00",
+  "last_updated": "2026-09-17T17:24:20.210369+00:00",
+  "state": "5255139.0"
+ },
+ "sensor.evcc_cstotal_openwb_charging_sessions_loadpoint_cost": {
+  "attributes": {
+   "friendly_name": "openWB Ladevorgänge: Kosten [LP]",
+   "icon": "mdi:cash-multiple",
+   "state_class": "measurement",
+   "unit_of_measurement": "€"
+  },
+  "entity_id": "sensor.evcc_cstotal_openwb_charging_sessions_loadpoint_cost",
+  "last_changed": "2026-09-17T17:24:20.210140+00:00",
+  "last_updated": "2026-09-17T17:24:20.210140+00:00",
+  "state": "308.407974242528"
+ },
+ "sensor.evcc_cstotal_wp_charging_sessions_loadpoint_chargedenergy": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "WP Ladevorgänge: Energie [LP]",
+   "icon": "mdi:lightning-bolt-outline",
+   "state_class": "total",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_cstotal_wp_charging_sessions_loadpoint_chargedenergy",
+  "last_changed": "2026-09-17T17:24:20.222852+00:00",
+  "last_updated": "2026-09-17T17:24:20.222852+00:00",
+  "state": "101.061638739789"
+ },
+ "sensor.evcc_cstotal_wp_charging_sessions_loadpoint_chargeduration": {
+  "attributes": {
+   "device_class": "duration",
+   "friendly_name": "WP Ladevorgänge: Dauer [LP]",
+   "icon": "mdi:clock-digital",
+   "state_class": "measurement",
+   "unit_of_measurement": "s"
+  },
+  "entity_id": "sensor.evcc_cstotal_wp_charging_sessions_loadpoint_chargeduration",
+  "last_changed": "2026-09-17T17:24:20.223345+00:00",
+  "last_updated": "2026-09-17T17:24:20.223345+00:00",
+  "state": "1648246.0"
+ },
+ "sensor.evcc_cstotal_wp_charging_sessions_loadpoint_cost": {
+  "attributes": {
+   "friendly_name": "WP Ladevorgänge: Kosten [LP]",
+   "icon": "mdi:cash-multiple",
+   "state_class": "measurement",
+   "unit_of_measurement": "€"
+  },
+  "entity_id": "sensor.evcc_cstotal_wp_charging_sessions_loadpoint_cost",
+  "last_changed": "2026-09-17T17:24:20.223114+00:00",
+  "last_updated": "2026-09-17T17:24:20.223114+00:00",
+  "state": "8.66803762940444"
+ },
+ "sensor.evcc_db_19_configmeter_energy_2": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "db:19 Bezug",
+   "icon": "mdi:home-import-outline",
+   "state_class": "total",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_db_19_configmeter_energy_2",
+  "last_changed": "2026-09-17T17:24:20.238873+00:00",
+  "last_updated": "2026-09-17T17:24:20.238873+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_19_configmeter_phasecurrents_0_2": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "db:19 Strom P1",
+   "icon": "mdi:current-ac",
+   "state_class": "measurement",
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "sensor.evcc_db_19_configmeter_phasecurrents_0_2",
+  "last_changed": "2026-09-17T17:24:20.239710+00:00",
+  "last_updated": "2026-09-17T17:24:20.239710+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_19_configmeter_phasecurrents_1_2": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "db:19 Strom P2",
+   "icon": "mdi:current-ac",
+   "state_class": "measurement",
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "sensor.evcc_db_19_configmeter_phasecurrents_1_2",
+  "last_changed": "2026-09-17T17:24:20.239938+00:00",
+  "last_updated": "2026-09-17T17:24:20.239938+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_19_configmeter_phasecurrents_2_2": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "db:19 Strom P3",
+   "icon": "mdi:current-ac",
+   "state_class": "measurement",
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "sensor.evcc_db_19_configmeter_phasecurrents_2_2",
+  "last_changed": "2026-09-17T17:24:20.240168+00:00",
+  "last_updated": "2026-09-17T17:24:20.240168+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_19_configmeter_phasevoltages_0_2": {
+  "attributes": {
+   "device_class": "voltage",
+   "friendly_name": "db:19 Spannung P1",
+   "icon": "mdi:lightning-bolt",
+   "state_class": "measurement",
+   "unit_of_measurement": "V"
+  },
+  "entity_id": "sensor.evcc_db_19_configmeter_phasevoltages_0_2",
+  "last_changed": "2026-09-17T17:24:20.240393+00:00",
+  "last_updated": "2026-09-17T17:24:20.240393+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_19_configmeter_phasevoltages_1_2": {
+  "attributes": {
+   "device_class": "voltage",
+   "friendly_name": "db:19 Spannung P2",
+   "icon": "mdi:lightning-bolt",
+   "state_class": "measurement",
+   "unit_of_measurement": "V"
+  },
+  "entity_id": "sensor.evcc_db_19_configmeter_phasevoltages_1_2",
+  "last_changed": "2026-09-17T17:24:20.240620+00:00",
+  "last_updated": "2026-09-17T17:24:20.240620+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_19_configmeter_phasevoltages_2_2": {
+  "attributes": {
+   "device_class": "voltage",
+   "friendly_name": "db:19 Spannung P3",
+   "icon": "mdi:lightning-bolt",
+   "state_class": "measurement",
+   "unit_of_measurement": "V"
+  },
+  "entity_id": "sensor.evcc_db_19_configmeter_phasevoltages_2_2",
+  "last_changed": "2026-09-17T17:24:20.240851+00:00",
+  "last_updated": "2026-09-17T17:24:20.240851+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_19_configmeter_power_2": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "db:19 Leistung",
+   "icon": "mdi:transmission-tower",
+   "state_class": "measurement",
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "sensor.evcc_db_19_configmeter_power_2",
+  "last_changed": "2026-09-18T08:34:08.838393+00:00",
+  "last_updated": "2026-09-18T08:34:08.838393+00:00",
+  "state": "4930"
+ },
+ "sensor.evcc_db_19_configmeter_soc_2": {
+  "attributes": {
+   "friendly_name": "db:19 Ladestand",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_db_19_configmeter_soc_2",
+  "last_changed": "2026-09-17T17:24:20.239259+00:00",
+  "last_updated": "2026-09-17T17:24:20.239259+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_19_configmeter_temp_2": {
+  "attributes": {
+   "friendly_name": "db:19 Temperatur",
+   "icon": "mdi:thermometer",
+   "state_class": "measurement",
+   "unit_of_measurement": "°C"
+  },
+  "entity_id": "sensor.evcc_db_19_configmeter_temp_2",
+  "last_changed": "2026-09-17T17:24:20.239477+00:00",
+  "last_updated": "2026-09-17T17:24:20.239477+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_30_configmeter_energy_2": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "db:30 Bezug",
+   "icon": "mdi:home-import-outline",
+   "state_class": "total",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_db_30_configmeter_energy_2",
+  "last_changed": "2026-09-18T08:34:08.837983+00:00",
+  "last_updated": "2026-09-18T08:34:08.837983+00:00",
+  "state": "10179.372"
+ },
+ "sensor.evcc_db_30_configmeter_phasecurrents_0_2": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "db:30 Strom P1",
+   "icon": "mdi:current-ac",
+   "state_class": "measurement",
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "sensor.evcc_db_30_configmeter_phasecurrents_0_2",
+  "last_changed": "2026-09-18T08:34:08.838127+00:00",
+  "last_updated": "2026-09-18T08:34:08.838127+00:00",
+  "state": "6.299"
+ },
+ "sensor.evcc_db_30_configmeter_phasecurrents_1_2": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "db:30 Strom P2",
+   "icon": "mdi:current-ac",
+   "state_class": "measurement",
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "sensor.evcc_db_30_configmeter_phasecurrents_1_2",
+  "last_changed": "2026-09-18T08:34:08.838174+00:00",
+  "last_updated": "2026-09-18T08:34:08.838174+00:00",
+  "state": "4.151"
+ },
+ "sensor.evcc_db_30_configmeter_phasecurrents_2_2": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "db:30 Strom P3",
+   "icon": "mdi:current-ac",
+   "state_class": "measurement",
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "sensor.evcc_db_30_configmeter_phasecurrents_2_2",
+  "last_changed": "2026-09-18T08:34:08.838219+00:00",
+  "last_updated": "2026-09-18T08:34:08.838219+00:00",
+  "state": "3.658"
+ },
+ "sensor.evcc_db_30_configmeter_phasevoltages_0_2": {
+  "attributes": {
+   "device_class": "voltage",
+   "friendly_name": "db:30 Spannung P1",
+   "icon": "mdi:lightning-bolt",
+   "state_class": "measurement",
+   "unit_of_measurement": "V"
+  },
+  "entity_id": "sensor.evcc_db_30_configmeter_phasevoltages_0_2",
+  "last_changed": "2026-09-18T08:34:08.838263+00:00",
+  "last_updated": "2026-09-18T08:34:08.838263+00:00",
+  "state": "235"
+ },
+ "sensor.evcc_db_30_configmeter_phasevoltages_1_2": {
+  "attributes": {
+   "device_class": "voltage",
+   "friendly_name": "db:30 Spannung P2",
+   "icon": "mdi:lightning-bolt",
+   "state_class": "measurement",
+   "unit_of_measurement": "V"
+  },
+  "entity_id": "sensor.evcc_db_30_configmeter_phasevoltages_1_2",
+  "last_changed": "2026-09-18T08:34:08.838307+00:00",
+  "last_updated": "2026-09-18T08:34:08.838307+00:00",
+  "state": "235.21"
+ },
+ "sensor.evcc_db_30_configmeter_phasevoltages_2_2": {
+  "attributes": {
+   "device_class": "voltage",
+   "friendly_name": "db:30 Spannung P3",
+   "icon": "mdi:lightning-bolt",
+   "state_class": "measurement",
+   "unit_of_measurement": "V"
+  },
+  "entity_id": "sensor.evcc_db_30_configmeter_phasevoltages_2_2",
+  "last_changed": "2026-09-18T08:34:08.838351+00:00",
+  "last_updated": "2026-09-18T08:34:08.838351+00:00",
+  "state": "234.9"
+ },
+ "sensor.evcc_db_30_configmeter_power_2": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "db:30 Leistung",
+   "icon": "mdi:transmission-tower",
+   "state_class": "measurement",
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "sensor.evcc_db_30_configmeter_power_2",
+  "last_changed": "2026-09-18T08:34:08.837937+00:00",
+  "last_updated": "2026-09-18T08:34:08.837937+00:00",
+  "state": "-65.43"
+ },
+ "sensor.evcc_db_30_configmeter_return_energy": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "db:30 Einspeisung",
+   "icon": "mdi:home-export-outline",
+   "state_class": "total",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_db_30_configmeter_return_energy",
+  "last_changed": "2026-09-18T08:34:08.838028+00:00",
+  "last_updated": "2026-09-18T08:34:08.838028+00:00",
+  "state": "12812.712"
+ },
+ "sensor.evcc_db_30_configmeter_soc_2": {
+  "attributes": {
+   "friendly_name": "db:30 Ladestand",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_db_30_configmeter_soc_2",
+  "last_changed": "2026-09-17T17:24:20.235919+00:00",
+  "last_updated": "2026-09-17T17:24:20.235919+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_30_configmeter_temp_2": {
+  "attributes": {
+   "friendly_name": "db:30 Temperatur",
+   "icon": "mdi:thermometer",
+   "state_class": "measurement",
+   "unit_of_measurement": "°C"
+  },
+  "entity_id": "sensor.evcc_db_30_configmeter_temp_2",
+  "last_changed": "2026-09-17T17:24:20.236135+00:00",
+  "last_updated": "2026-09-17T17:24:20.236135+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_41_configmeter_power": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "db:41 Leistung",
+   "icon": "mdi:transmission-tower",
+   "state_class": "measurement",
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "sensor.evcc_db_41_configmeter_power",
+  "last_changed": "2026-09-18T07:33:07.819702+00:00",
+  "last_updated": "2026-09-18T07:33:07.819702+00:00",
+  "state": "42"
+ },
+ "sensor.evcc_db_42_configmeter_power": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "db:42 Leistung",
+   "icon": "mdi:transmission-tower",
+   "state_class": "measurement",
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "sensor.evcc_db_42_configmeter_power",
+  "last_changed": "2026-09-18T07:33:07.818576+00:00",
+  "last_updated": "2026-09-18T07:33:07.818576+00:00",
+  "state": "42"
+ },
+ "sensor.evcc_db_5_configmeter_energy_2": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "db:5 Bezug",
+   "icon": "mdi:home-import-outline",
+   "state_class": "total",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_db_5_configmeter_energy_2",
+  "last_changed": "2026-09-18T08:34:07.799342+00:00",
+  "last_updated": "2026-09-18T08:34:07.799342+00:00",
+  "state": "1.869"
+ },
+ "sensor.evcc_db_5_configmeter_phasecurrents_0_2": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "db:5 Strom P1",
+   "icon": "mdi:current-ac",
+   "state_class": "measurement",
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "sensor.evcc_db_5_configmeter_phasecurrents_0_2",
+  "last_changed": "2026-09-17T17:24:20.229672+00:00",
+  "last_updated": "2026-09-17T17:24:20.229672+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_5_configmeter_phasecurrents_1_2": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "db:5 Strom P2",
+   "icon": "mdi:current-ac",
+   "state_class": "measurement",
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "sensor.evcc_db_5_configmeter_phasecurrents_1_2",
+  "last_changed": "2026-09-17T17:24:20.229897+00:00",
+  "last_updated": "2026-09-17T17:24:20.229897+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_5_configmeter_phasecurrents_2_2": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "db:5 Strom P3",
+   "icon": "mdi:current-ac",
+   "state_class": "measurement",
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "sensor.evcc_db_5_configmeter_phasecurrents_2_2",
+  "last_changed": "2026-09-17T17:24:20.230122+00:00",
+  "last_updated": "2026-09-17T17:24:20.230122+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_5_configmeter_phasevoltages_0_2": {
+  "attributes": {
+   "device_class": "voltage",
+   "friendly_name": "db:5 Spannung P1",
+   "icon": "mdi:lightning-bolt",
+   "state_class": "measurement",
+   "unit_of_measurement": "V"
+  },
+  "entity_id": "sensor.evcc_db_5_configmeter_phasevoltages_0_2",
+  "last_changed": "2026-09-17T17:24:20.230347+00:00",
+  "last_updated": "2026-09-17T17:24:20.230347+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_5_configmeter_phasevoltages_1_2": {
+  "attributes": {
+   "device_class": "voltage",
+   "friendly_name": "db:5 Spannung P2",
+   "icon": "mdi:lightning-bolt",
+   "state_class": "measurement",
+   "unit_of_measurement": "V"
+  },
+  "entity_id": "sensor.evcc_db_5_configmeter_phasevoltages_1_2",
+  "last_changed": "2026-09-17T17:24:20.230572+00:00",
+  "last_updated": "2026-09-17T17:24:20.230572+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_5_configmeter_phasevoltages_2_2": {
+  "attributes": {
+   "device_class": "voltage",
+   "friendly_name": "db:5 Spannung P3",
+   "icon": "mdi:lightning-bolt",
+   "state_class": "measurement",
+   "unit_of_measurement": "V"
+  },
+  "entity_id": "sensor.evcc_db_5_configmeter_phasevoltages_2_2",
+  "last_changed": "2026-09-17T17:24:20.230797+00:00",
+  "last_updated": "2026-09-17T17:24:20.230797+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_5_configmeter_power_2": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "db:5 Leistung",
+   "icon": "mdi:transmission-tower",
+   "state_class": "measurement",
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "sensor.evcc_db_5_configmeter_power_2",
+  "last_changed": "2026-09-18T08:34:07.795206+00:00",
+  "last_updated": "2026-09-18T08:34:07.795206+00:00",
+  "state": "-468"
+ },
+ "sensor.evcc_db_5_configmeter_return_energy": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "db:5 Einspeisung",
+   "icon": "mdi:home-export-outline",
+   "state_class": "total",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_db_5_configmeter_return_energy",
+  "last_changed": "2026-09-18T08:34:07.799420+00:00",
+  "last_updated": "2026-09-18T08:34:07.799420+00:00",
+  "state": "1.593"
+ },
+ "sensor.evcc_db_5_configmeter_soc_2": {
+  "attributes": {
+   "friendly_name": "db:5 Ladestand",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_db_5_configmeter_soc_2",
+  "last_changed": "2026-09-18T08:34:07.799467+00:00",
+  "last_updated": "2026-09-18T08:34:07.799467+00:00",
+  "state": "27"
+ },
+ "sensor.evcc_db_5_configmeter_temp_2": {
+  "attributes": {
+   "friendly_name": "db:5 Temperatur",
+   "icon": "mdi:thermometer",
+   "state_class": "measurement",
+   "unit_of_measurement": "°C"
+  },
+  "entity_id": "sensor.evcc_db_5_configmeter_temp_2",
+  "last_changed": "2026-09-17T17:24:20.229449+00:00",
+  "last_updated": "2026-09-17T17:24:20.229449+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_8_configmeter_energy_2": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "db:8 Bezug",
+   "icon": "mdi:home-import-outline",
+   "state_class": "total",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_db_8_configmeter_energy_2",
+  "last_changed": "2026-09-18T08:34:08.837564+00:00",
+  "last_updated": "2026-09-18T08:34:08.837564+00:00",
+  "state": "2533.442569"
+ },
+ "sensor.evcc_db_8_configmeter_phasecurrents_0_2": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "db:8 Strom P1",
+   "icon": "mdi:current-ac",
+   "state_class": "measurement",
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "sensor.evcc_db_8_configmeter_phasecurrents_0_2",
+  "last_changed": "2026-09-18T08:34:08.837726+00:00",
+  "last_updated": "2026-09-18T08:34:08.837726+00:00",
+  "state": "2.929"
+ },
+ "sensor.evcc_db_8_configmeter_phasecurrents_1_2": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "db:8 Strom P2",
+   "icon": "mdi:current-ac",
+   "state_class": "measurement",
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "sensor.evcc_db_8_configmeter_phasecurrents_1_2",
+  "last_changed": "2026-09-17T17:24:20.233929+00:00",
+  "last_updated": "2026-09-17T17:24:20.233929+00:00",
+  "state": "0"
+ },
+ "sensor.evcc_db_8_configmeter_phasecurrents_2_2": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "db:8 Strom P3",
+   "icon": "mdi:current-ac",
+   "state_class": "measurement",
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "sensor.evcc_db_8_configmeter_phasecurrents_2_2",
+  "last_changed": "2026-09-17T17:24:20.234159+00:00",
+  "last_updated": "2026-09-17T17:24:20.234159+00:00",
+  "state": "0"
+ },
+ "sensor.evcc_db_8_configmeter_phasevoltages_0_2": {
+  "attributes": {
+   "device_class": "voltage",
+   "friendly_name": "db:8 Spannung P1",
+   "icon": "mdi:lightning-bolt",
+   "state_class": "measurement",
+   "unit_of_measurement": "V"
+  },
+  "entity_id": "sensor.evcc_db_8_configmeter_phasevoltages_0_2",
+  "last_changed": "2026-09-18T08:34:08.837833+00:00",
+  "last_updated": "2026-09-18T08:34:08.837833+00:00",
+  "state": "237"
+ },
+ "sensor.evcc_db_8_configmeter_phasevoltages_1_2": {
+  "attributes": {
+   "device_class": "voltage",
+   "friendly_name": "db:8 Spannung P2",
+   "icon": "mdi:lightning-bolt",
+   "state_class": "measurement",
+   "unit_of_measurement": "V"
+  },
+  "entity_id": "sensor.evcc_db_8_configmeter_phasevoltages_1_2",
+  "last_changed": "2026-09-17T17:24:20.234623+00:00",
+  "last_updated": "2026-09-17T17:24:20.234623+00:00",
+  "state": "0"
+ },
+ "sensor.evcc_db_8_configmeter_phasevoltages_2_2": {
+  "attributes": {
+   "device_class": "voltage",
+   "friendly_name": "db:8 Spannung P3",
+   "icon": "mdi:lightning-bolt",
+   "state_class": "measurement",
+   "unit_of_measurement": "V"
+  },
+  "entity_id": "sensor.evcc_db_8_configmeter_phasevoltages_2_2",
+  "last_changed": "2026-09-17T17:24:20.234850+00:00",
+  "last_updated": "2026-09-17T17:24:20.234850+00:00",
+  "state": "0"
+ },
+ "sensor.evcc_db_8_configmeter_power_2": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "db:8 Leistung",
+   "icon": "mdi:transmission-tower",
+   "state_class": "measurement",
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "sensor.evcc_db_8_configmeter_power_2",
+  "last_changed": "2026-09-18T08:34:08.835983+00:00",
+  "last_updated": "2026-09-18T08:34:08.835983+00:00",
+  "state": "693"
+ },
+ "sensor.evcc_db_8_configmeter_return_energy": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "db:8 Einspeisung",
+   "icon": "mdi:home-export-outline",
+   "state_class": "total",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_db_8_configmeter_return_energy",
+  "last_changed": "2026-09-17T17:24:20.233033+00:00",
+  "last_updated": "2026-09-17T17:24:20.233033+00:00",
+  "state": "0.200533999999985"
+ },
+ "sensor.evcc_db_8_configmeter_soc_2": {
+  "attributes": {
+   "friendly_name": "db:8 Ladestand",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_db_8_configmeter_soc_2",
+  "last_changed": "2026-09-17T17:24:20.233251+00:00",
+  "last_updated": "2026-09-17T17:24:20.233251+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_db_8_configmeter_temp_2": {
+  "attributes": {
+   "friendly_name": "db:8 Temperatur",
+   "icon": "mdi:thermometer",
+   "state_class": "measurement",
+   "unit_of_measurement": "°C"
+  },
+  "entity_id": "sensor.evcc_db_8_configmeter_temp_2",
+  "last_changed": "2026-09-17T17:24:20.233467+00:00",
+  "last_updated": "2026-09-17T17:24:20.233467+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_ex30_configvehicle_limitsoc": {
+  "attributes": {
+   "friendly_name": "EX30 Ladelimit",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_ex30_configvehicle_limitsoc",
+  "last_changed": "2026-09-17T17:24:20.224923+00:00",
+  "last_updated": "2026-09-17T17:24:20.224923+00:00",
+  "state": "90"
+ },
+ "sensor.evcc_ex30_configvehicle_odometer": {
+  "attributes": {
+   "friendly_name": "EX30 Kilometerstand",
+   "icon": "mdi:counter",
+   "state_class": "measurement",
+   "unit_of_measurement": "km"
+  },
+  "entity_id": "sensor.evcc_ex30_configvehicle_odometer",
+  "last_changed": "2026-09-17T17:24:20.224485+00:00",
+  "last_updated": "2026-09-17T17:24:20.224485+00:00",
+  "state": "11445"
+ },
+ "sensor.evcc_ex30_configvehicle_range": {
+  "attributes": {
+   "friendly_name": "EX30 Reichweite",
+   "icon": "mdi:ev-station",
+   "state_class": "measurement",
+   "unit_of_measurement": "km"
+  },
+  "entity_id": "sensor.evcc_ex30_configvehicle_range",
+  "last_changed": "2026-09-17T17:24:20.224266+00:00",
+  "last_updated": "2026-09-17T17:24:20.224266+00:00",
+  "state": "184"
+ },
+ "sensor.evcc_ex30_configvehicle_soc": {
+  "attributes": {
+   "friendly_name": "EX30 Ladestand",
+   "icon": "mdi:car-electric-outline",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_ex30_configvehicle_soc",
+  "last_changed": "2026-09-17T17:24:20.224697+00:00",
+  "last_updated": "2026-09-17T17:24:20.224697+00:00",
+  "state": "52"
+ },
+ "sensor.evcc_forecast_solar": {
+  "attributes": {
+   "dayAfterTomorrow": {
+    "complete": true,
+    "energy": 25193
+   },
+   "friendly_name": "Solar Prognose",
+   "icon": "mdi:solar-power",
+   "scale": 1.46872279567218,
+   "state_class": "measurement",
+   "timeseries": {
+    "deltas_in_minutes": [
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15
+    ],
+    "start_utc": "2026-09-18T09:00:00+00:00",
+    "values": [
+     3412,
+     3314.25,
+     3216.5,
+     3118.75,
+     3021,
+     3012.75,
+     3004.5,
+     2996.25,
+     2988,
+     2952.75,
+     2917.5,
+     2882.25,
+     2847,
+     2771.25,
+     2695.5,
+     2619.75,
+     2544,
+     2472,
+     2400,
+     2328,
+     2256,
+     2117.75,
+     1979.5,
+     1841.25,
+     1703,
+     1499,
+     1295,
+     1091,
+     887,
+     735.75,
+     584.5,
+     433.25,
+     282,
+     222.5,
+     163,
+     103.5,
+     44,
+     34.75,
+     25.5,
+     16.25,
+     7,
+     5.5,
+     4,
+     2.5,
+     1,
+     0.75,
+     0.5,
+     0.25,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     5.75,
+     11.5,
+     17.25,
+     23,
+     63.25,
+     103.5,
+     143.75,
+     184,
+     281.5,
+     379,
+     476.5,
+     574,
+     698.25,
+     822.5,
+     946.75,
+     1071,
+     1195.25,
+     1319.5,
+     1443.75,
+     1568,
+     1671.5,
+     1775,
+     1878.5,
+     1982,
+     2053,
+     2124,
+     2195,
+     2266,
+     2295,
+     2324,
+     2353,
+     2382,
+     2368.25,
+     2354.5,
+     2340.75,
+     2327,
+     2273.75,
+     2220.5,
+     2167.25,
+     2114,
+     2025.5,
+     1937,
+     1848.5,
+     1760,
+     1646,
+     1532,
+     1418,
+     1304,
+     1163.25,
+     1022.5,
+     881.75,
+     741,
+     617.75,
+     494.5,
+     371.25,
+     248,
+     195.75,
+     143.5,
+     91.25,
+     39,
+     30.75,
+     22.5,
+     14.25,
+     6,
+     4.75,
+     3.5,
+     2.25,
+     1,
+     0.75,
+     0.5,
+     0.25,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     5.5,
+     11,
+     16.5,
+     22,
+     59.75,
+     97.5,
+     135.25,
+     173,
+     270.25,
+     367.5,
+     464.75,
+     562,
+     699,
+     836,
+     973,
+     1110,
+     1280.75,
+     1451.5,
+     1622.25,
+     1793,
+     1967.5,
+     2142,
+     2316.5,
+     2491,
+     2565,
+     2639,
+     2713,
+     2787,
+     2827.25,
+     2867.5,
+     2907.75,
+     2948,
+     3127.5,
+     3307,
+     3486.5,
+     3666,
+     3700.25,
+     3734.5,
+     3768.75,
+     3803,
+     3520.5,
+     3238,
+     2955.5,
+     2673,
+     2453,
+     2233,
+     2013,
+     1793,
+     1592.5,
+     1392,
+     1191.5,
+     991,
+     823.75,
+     656.5,
+     489.25,
+     322,
+     254,
+     186,
+     118,
+     50,
+     39.5,
+     29,
+     18.5,
+     8,
+     6.25,
+     4.5,
+     2.75,
+     1,
+     0.75,
+     0.5,
+     0.25,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     5,
+     10,
+     15,
+     20,
+     57.75,
+     95.5,
+     133.25,
+     171,
+     270.75,
+     370.5,
+     470.25,
+     570,
+     715.5,
+     861,
+     1006.5,
+     1152,
+     1308,
+     1464,
+     1620,
+     1776,
+     1912.5,
+     2049,
+     2185.5,
+     2322,
+     2415.5,
+     2509,
+     2602.5,
+     2696,
+     2739.75,
+     2783.5,
+     2827.25,
+     2871,
+     2880.75,
+     2890.5,
+     2900.25,
+     2910,
+     2888,
+     2866,
+     2844,
+     2822,
+     2744.25,
+     2666.5,
+     2588.75,
+     2511,
+     2363.5,
+     2216,
+     2068.5,
+     1921,
+     1708.75,
+     1496.5,
+     1284.25,
+     1072,
+     889.75,
+     707.5,
+     525.25,
+     343,
+     270.5,
+     198,
+     125.5,
+     53,
+     41.75,
+     30.5,
+     19.25,
+     8,
+     6.25,
+     4.5,
+     2.75,
+     1,
+     1,
+     1,
+     1,
+     1,
+     0.75,
+     0.5,
+     0.25,
+     0,
+     0,
+     0,
+     0
+    ]
+   },
+   "today": {
+    "complete": true,
+    "energy": 16996.774004731597
+   },
+   "tomorrow": {
+    "complete": true,
+    "energy": 18590
+   },
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "sensor.evcc_forecast_solar",
+  "last_changed": "2026-09-18T09:15:06.797903+00:00",
+  "last_updated": "2026-09-18T09:23:11.477582+00:00",
+  "state": "3314.25"
+ },
+ "sensor.evcc_grid_power": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "Leistung Netz",
+   "icon": "mdi:transmission-tower",
+   "state_class": "measurement",
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "sensor.evcc_grid_power",
+  "last_changed": "2026-09-18T09:23:11.477989+00:00",
+  "last_updated": "2026-09-18T09:23:11.477989+00:00",
+  "state": "-101.86"
+ },
+ "sensor.evcc_home_power": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "Leistung Heim",
+   "icon": "mdi:home-lightning-bolt",
+   "state_class": "measurement",
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "sensor.evcc_home_power",
+  "last_changed": "2026-09-18T09:23:11.474151+00:00",
+  "last_updated": "2026-09-18T09:23:11.474151+00:00",
+  "state": "808.74"
+ },
+ "sensor.evcc_id7_configvehicle_limitsoc": {
+  "attributes": {
+   "friendly_name": "id7 Ladelimit",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_id7_configvehicle_limitsoc",
+  "last_changed": "2026-09-17T17:24:20.226476+00:00",
+  "last_updated": "2026-09-17T17:24:20.226476+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_id7_configvehicle_odometer": {
+  "attributes": {
+   "friendly_name": "id7 Kilometerstand",
+   "icon": "mdi:counter",
+   "state_class": "measurement",
+   "unit_of_measurement": "km"
+  },
+  "entity_id": "sensor.evcc_id7_configvehicle_odometer",
+  "last_changed": "2026-09-17T17:24:20.226048+00:00",
+  "last_updated": "2026-09-17T17:24:20.226048+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_id7_configvehicle_range": {
+  "attributes": {
+   "friendly_name": "id7 Reichweite",
+   "icon": "mdi:ev-station",
+   "state_class": "measurement",
+   "unit_of_measurement": "km"
+  },
+  "entity_id": "sensor.evcc_id7_configvehicle_range",
+  "last_changed": "2026-09-17T17:24:20.225837+00:00",
+  "last_updated": "2026-09-17T17:24:20.225837+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_id7_configvehicle_soc": {
+  "attributes": {
+   "friendly_name": "id7 Ladestand",
+   "icon": "mdi:car-electric-outline",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_id7_configvehicle_soc",
+  "last_changed": "2026-09-17T17:24:20.226265+00:00",
+  "last_updated": "2026-09-17T17:24:20.226265+00:00",
+  "state": "0"
+ },
+ "sensor.evcc_openwb_charge_current": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "openWB Ladestrom",
+   "icon": "mdi:current-ac",
+   "state_class": "measurement",
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "sensor.evcc_openwb_charge_current",
+  "last_changed": "2026-09-18T09:20:11.682991+00:00",
+  "last_updated": "2026-09-18T09:20:11.682991+00:00",
+  "state": "6"
+ },
+ "sensor.evcc_openwb_charge_currents_0": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "openWB Ladestrom P1",
+   "icon": "mdi:current-ac",
+   "state_class": "measurement",
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "sensor.evcc_openwb_charge_currents_0",
+  "last_changed": "2026-09-18T09:23:11.479708+00:00",
+  "last_updated": "2026-09-18T09:23:11.479708+00:00",
+  "state": "5.96"
+ },
+ "sensor.evcc_openwb_charge_currents_1": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "openWB Ladestrom P2",
+   "icon": "mdi:current-ac",
+   "state_class": "measurement",
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "sensor.evcc_openwb_charge_currents_1",
+  "last_changed": "2026-09-18T09:22:41.493414+00:00",
+  "last_updated": "2026-09-18T09:22:41.493414+00:00",
+  "state": "5.88"
+ },
+ "sensor.evcc_openwb_charge_currents_2": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "openWB Ladestrom P3",
+   "icon": "mdi:current-ac",
+   "state_class": "measurement",
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "sensor.evcc_openwb_charge_currents_2",
+  "last_changed": "2026-09-18T09:22:41.493554+00:00",
+  "last_updated": "2026-09-18T09:22:41.493554+00:00",
+  "state": "5.86"
+ },
+ "sensor.evcc_openwb_charge_duration": {
+  "attributes": {
+   "device_class": "duration",
+   "friendly_name": "openWB Ladedauer",
+   "icon": "mdi:clock-digital",
+   "state_class": "measurement",
+   "unit_of_measurement": "s"
+  },
+  "entity_id": "sensor.evcc_openwb_charge_duration",
+  "last_changed": "2026-09-18T09:23:11.479809+00:00",
+  "last_updated": "2026-09-18T09:23:11.479809+00:00",
+  "state": "2040"
+ },
+ "sensor.evcc_openwb_charge_power": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "openWB Ladeleistung",
+   "icon": "mdi:meter-electric-outline",
+   "state_class": "measurement",
+   "unit_of_measurement": "kW"
+  },
+  "entity_id": "sensor.evcc_openwb_charge_power",
+  "last_changed": "2026-09-18T09:23:11.479888+00:00",
+  "last_updated": "2026-09-18T09:23:11.479888+00:00",
+  "state": "4.113"
+ },
+ "sensor.evcc_openwb_charge_remaining_duration": {
+  "attributes": {
+   "device_class": "duration",
+   "friendly_name": "openWB Laderestzeit",
+   "icon": "mdi:clock-digital",
+   "state_class": "measurement",
+   "unit_of_measurement": "s"
+  },
+  "entity_id": "sensor.evcc_openwb_charge_remaining_duration",
+  "last_changed": "2026-09-18T09:23:11.479847+00:00",
+  "last_updated": "2026-09-18T09:23:11.479847+00:00",
+  "state": "24465"
+ },
+ "sensor.evcc_openwb_charge_remaining_energy": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "openWB Ladeenergie verbleibend",
+   "icon": "mdi:lightning-bolt-outline",
+   "state_class": "total",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_openwb_charge_remaining_energy",
+  "last_changed": "2026-09-18T09:23:11.480240+00:00",
+  "last_updated": "2026-09-18T09:23:11.480240+00:00",
+  "state": "27.951059"
+ },
+ "sensor.evcc_openwb_charge_total_import": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "openWB Netzbezug",
+   "icon": "mdi:transmission-tower-export",
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_openwb_charge_total_import",
+  "last_changed": "2026-09-18T09:23:11.480151+00:00",
+  "last_updated": "2026-09-18T09:23:11.480151+00:00",
+  "state": "2443.886"
+ },
+ "sensor.evcc_openwb_charged_energy": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "openWB Ladeenergie",
+   "icon": "mdi:lightning-bolt-outline",
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_openwb_charged_energy",
+  "last_changed": "2026-09-18T09:23:11.480197+00:00",
+  "last_updated": "2026-09-18T09:23:11.480197+00:00",
+  "state": "2.795"
+ },
+ "sensor.evcc_openwb_effective_limit_soc": {
+  "attributes": {
+   "friendly_name": "openWB Effektives Ladelimit (SOC)",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_openwb_effective_limit_soc",
+  "last_changed": "2026-09-17T17:24:20.203753+00:00",
+  "last_updated": "2026-09-17T17:24:20.203753+00:00",
+  "state": "90"
+ },
+ "sensor.evcc_openwb_effective_plan_soc": {
+  "attributes": {
+   "friendly_name": "openWB Effektiver Plan: Abfahrt Ladeziel (SOC)",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_openwb_effective_plan_soc",
+  "last_changed": "2026-09-17T17:24:20.208966+00:00",
+  "last_updated": "2026-09-17T17:24:20.208966+00:00",
+  "state": "0"
+ },
+ "sensor.evcc_openwb_effective_plan_time": {
+  "attributes": {
+   "device_class": "timestamp",
+   "friendly_name": "openWB Effektiver Plan: Abfahrt Zeitpunkt (SOC)",
+   "icon": "mdi:calendar-arrow-right"
+  },
+  "entity_id": "sensor.evcc_openwb_effective_plan_time",
+  "last_changed": "2026-09-17T17:24:20.208328+00:00",
+  "last_updated": "2026-09-17T17:24:20.208328+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_openwb_phase_action": {
+  "attributes": {
+   "device_class": "enum",
+   "friendly_name": "openWB Phasen Aktivität [CODE]",
+   "icon": "mdi:numeric"
+  },
+  "entity_id": "sensor.evcc_openwb_phase_action",
+  "last_changed": "2026-09-18T09:21:12.520844+00:00",
+  "last_updated": "2026-09-18T09:21:12.520844+00:00",
+  "state": "inactive"
+ },
+ "sensor.evcc_openwb_phase_action_value": {
+  "attributes": {
+   "device_class": "enum",
+   "friendly_name": "openWB Phasen Aktivität",
+   "icon": "mdi:numeric"
+  },
+  "entity_id": "sensor.evcc_openwb_phase_action_value",
+  "last_changed": "2026-09-18T09:21:12.520889+00:00",
+  "last_updated": "2026-09-18T09:21:12.520889+00:00",
+  "state": "-keine-"
+ },
+ "sensor.evcc_openwb_phase_remaining": {
+  "attributes": {
+   "friendly_name": "openWB Phasen verbleibend",
+   "icon": "mdi:numeric",
+   "state_class": "measurement"
+  },
+  "entity_id": "sensor.evcc_openwb_phase_remaining",
+  "last_changed": "2026-09-18T09:21:12.520933+00:00",
+  "last_updated": "2026-09-18T09:21:12.520933+00:00",
+  "state": "0"
+ },
+ "sensor.evcc_openwb_phases_active": {
+  "attributes": {
+   "friendly_name": "openWB Phasen in Verwendung",
+   "icon": "mdi:numeric",
+   "state_class": "measurement"
+  },
+  "entity_id": "sensor.evcc_openwb_phases_active",
+  "last_changed": "2026-09-18T08:45:11.587332+00:00",
+  "last_updated": "2026-09-18T08:45:11.587332+00:00",
+  "state": "3"
+ },
+ "sensor.evcc_openwb_phases_enabled": {
+  "attributes": {
+   "friendly_name": "openWB Phasen aktiviert",
+   "icon": "mdi:numeric",
+   "state_class": "measurement"
+  },
+  "entity_id": "sensor.evcc_openwb_phases_enabled",
+  "last_changed": "2026-09-17T17:24:20.205044+00:00",
+  "last_updated": "2026-09-17T17:24:20.205044+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_openwb_plan_projected_end": {
+  "attributes": {
+   "device_class": "timestamp",
+   "friendly_name": "openWB Plan: Ende (erwartet)",
+   "icon": "mdi:calendar-end"
+  },
+  "entity_id": "sensor.evcc_openwb_plan_projected_end",
+  "last_changed": "2026-09-17T17:24:20.208755+00:00",
+  "last_updated": "2026-09-17T17:24:20.208755+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_openwb_plan_projected_start": {
+  "attributes": {
+   "device_class": "timestamp",
+   "friendly_name": "openWB Plan: Start (erwartet)",
+   "icon": "mdi:calendar-start"
+  },
+  "entity_id": "sensor.evcc_openwb_plan_projected_start",
+  "last_changed": "2026-09-17T17:24:20.208540+00:00",
+  "last_updated": "2026-09-17T17:24:20.208540+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_openwb_pv_action": {
+  "attributes": {
+   "device_class": "enum",
+   "friendly_name": "openWB PV Aktivität [CODE]",
+   "icon": "mdi:state-machine"
+  },
+  "entity_id": "sensor.evcc_openwb_pv_action",
+  "last_changed": "2026-09-18T09:20:11.684843+00:00",
+  "last_updated": "2026-09-18T09:20:11.684843+00:00",
+  "state": "disable"
+ },
+ "sensor.evcc_openwb_pv_action_value": {
+  "attributes": {
+   "device_class": "enum",
+   "friendly_name": "openWB PV Aktivität",
+   "icon": "mdi:state-machine"
+  },
+  "entity_id": "sensor.evcc_openwb_pv_action_value",
+  "last_changed": "2026-09-18T09:20:11.684792+00:00",
+  "last_updated": "2026-09-18T09:20:11.684792+00:00",
+  "state": "Unzureichende PV-Leistung, Aktivierung des Timeouts"
+ },
+ "sensor.evcc_openwb_pv_remaining": {
+  "attributes": {
+   "device_class": "timestamp",
+   "friendly_name": "openWB PV verbleibend",
+   "icon": "mdi:sun-clock"
+  },
+  "entity_id": "sensor.evcc_openwb_pv_remaining",
+  "last_changed": "2026-09-18T09:23:11.481089+00:00",
+  "last_updated": "2026-09-18T09:23:11.481089+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_openwb_session_co2_per_kwh": {
+  "attributes": {
+   "friendly_name": "openWB Ladevorgang CO₂/kWh",
+   "icon": "mdi:molecule-co2",
+   "state_class": "measurement",
+   "unit_of_measurement": "g/kWh"
+  },
+  "entity_id": "sensor.evcc_openwb_session_co2_per_kwh",
+  "last_changed": "2026-09-17T17:24:20.205274+00:00",
+  "last_updated": "2026-09-17T17:24:20.205274+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_openwb_session_energy": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "openWB Ladevorgang Energie",
+   "icon": "mdi:lightning-bolt-outline",
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_openwb_session_energy",
+  "last_changed": "2026-09-18T09:23:11.480447+00:00",
+  "last_updated": "2026-09-18T09:23:11.480447+00:00",
+  "state": "2.795"
+ },
+ "sensor.evcc_openwb_session_price": {
+  "attributes": {
+   "friendly_name": "openWB Ladevorgang Preis",
+   "icon": "mdi:cash-multiple",
+   "state_class": "measurement",
+   "unit_of_measurement": "€"
+  },
+  "entity_id": "sensor.evcc_openwb_session_price",
+  "last_changed": "2026-09-18T09:23:11.480488+00:00",
+  "last_updated": "2026-09-18T09:23:11.480488+00:00",
+  "state": "0.238504948081545"
+ },
+ "sensor.evcc_openwb_session_price_per_kwh": {
+  "attributes": {
+   "friendly_name": "openWB Ladevorgang €/kWh",
+   "icon": "mdi:cash-multiple",
+   "state_class": "measurement",
+   "unit_of_measurement": "€/kWh"
+  },
+  "entity_id": "sensor.evcc_openwb_session_price_per_kwh",
+  "last_changed": "2026-09-18T09:23:11.480527+00:00",
+  "last_updated": "2026-09-18T09:23:11.480527+00:00",
+  "state": "0.0853327184549332"
+ },
+ "sensor.evcc_openwb_session_solar_percentage": {
+  "attributes": {
+   "friendly_name": "openWB Ladevorgang PV Verwendung",
+   "icon": "mdi:solar-power",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_openwb_session_solar_percentage",
+  "last_changed": "2026-09-18T09:23:11.480565+00:00",
+  "last_updated": "2026-09-18T09:23:11.480565+00:00",
+  "state": "96.502"
+ },
+ "sensor.evcc_openwb_vehicle_limit_soc": {
+  "attributes": {
+   "friendly_name": "openWB Fahrzeug Ladelimit",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_openwb_vehicle_limit_soc",
+  "last_changed": "2026-09-17T17:24:20.206458+00:00",
+  "last_updated": "2026-09-17T17:24:20.206458+00:00",
+  "state": "90"
+ },
+ "sensor.evcc_openwb_vehicle_odometer": {
+  "attributes": {
+   "friendly_name": "openWB Fahrzeug Kilometerstand",
+   "icon": "mdi:counter",
+   "state_class": "measurement",
+   "unit_of_measurement": "km"
+  },
+  "entity_id": "sensor.evcc_openwb_vehicle_odometer",
+  "last_changed": "2026-09-17T17:24:20.206683+00:00",
+  "last_updated": "2026-09-17T17:24:20.206683+00:00",
+  "state": "11445"
+ },
+ "sensor.evcc_openwb_vehicle_plans_soc": {
+  "attributes": {
+   "friendly_name": "openWB Ladeplanung: Abfahrt Ladeziel (SOC)",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_openwb_vehicle_plans_soc",
+  "last_changed": "2026-09-17T17:24:20.207445+00:00",
+  "last_updated": "2026-09-17T17:24:20.207445+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_openwb_vehicle_plans_time": {
+  "attributes": {
+   "device_class": "timestamp",
+   "friendly_name": "openWB Ladeplanung: Abfahrt Zeitpunkt (SOC)",
+   "icon": "mdi:calendar-arrow-right"
+  },
+  "entity_id": "sensor.evcc_openwb_vehicle_plans_time",
+  "last_changed": "2026-09-17T17:24:20.207881+00:00",
+  "last_updated": "2026-09-17T17:24:20.207881+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_openwb_vehicle_range": {
+  "attributes": {
+   "friendly_name": "openWB Fahrzeug Reichweite",
+   "icon": "mdi:ev-station",
+   "state_class": "measurement",
+   "unit_of_measurement": "km"
+  },
+  "entity_id": "sensor.evcc_openwb_vehicle_range",
+  "last_changed": "2026-09-18T09:21:12.521229+00:00",
+  "last_updated": "2026-09-18T09:21:12.521229+00:00",
+  "state": "198"
+ },
+ "sensor.evcc_openwb_vehicle_soc": {
+  "attributes": {
+   "friendly_name": "openWB Fahrzeug Ladestand",
+   "icon": "mdi:car-electric-outline",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_openwb_vehicle_soc",
+  "last_changed": "2026-09-18T09:23:11.480677+00:00",
+  "last_updated": "2026-09-18T09:23:11.480677+00:00",
+  "state": "55.568"
+ },
+ "sensor.evcc_pv_0_energy": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "Energie PV 1",
+   "icon": "mdi:solar-power",
+   "state_class": "total",
+   "title": "BKW",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_pv_0_energy",
+  "last_changed": "2026-09-18T09:23:11.475168+00:00",
+  "last_updated": "2026-09-18T09:23:11.475168+00:00",
+  "state": "2533.849612"
+ },
+ "sensor.evcc_pv_0_power": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "Leistung PV 1",
+   "icon": "mdi:solar-power",
+   "state_class": "measurement",
+   "title": "BKW",
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "sensor.evcc_pv_0_power",
+  "last_changed": "2026-09-18T09:23:11.475254+00:00",
+  "last_updated": "2026-09-18T09:23:11.475254+00:00",
+  "state": "279.6"
+ },
+ "sensor.evcc_pv_1_power": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "Leistung PV 2",
+   "icon": "mdi:solar-power",
+   "state_class": "measurement",
+   "title": "Dach",
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "sensor.evcc_pv_1_power",
+  "last_changed": "2026-09-18T09:23:11.475294+00:00",
+  "last_updated": "2026-09-18T09:23:11.475294+00:00",
+  "state": "1904"
+ },
+ "sensor.evcc_pv_energy": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "Energie PV",
+   "icon": "mdi:solar-power",
+   "state_class": "total",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_pv_energy",
+  "last_changed": "2026-09-18T09:23:11.475098+00:00",
+  "last_updated": "2026-09-18T09:23:11.475098+00:00",
+  "state": "2533.85"
+ },
+ "sensor.evcc_pv_power": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "Leistung PV",
+   "icon": "mdi:solar-power",
+   "state_class": "measurement",
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "sensor.evcc_pv_power",
+  "last_changed": "2026-09-18T09:23:11.475210+00:00",
+  "last_updated": "2026-09-18T09:23:11.475210+00:00",
+  "state": "2183.6"
+ },
+ "sensor.evcc_stat30_avg_co2": {
+  "attributes": {
+   "friendly_name": "Statistik: letzten 30 Tage Ø CO₂",
+   "icon": "mdi:molecule-co2",
+   "state_class": "measurement",
+   "unit_of_measurement": "CO₂"
+  },
+  "entity_id": "sensor.evcc_stat30_avg_co2",
+  "last_changed": "2026-09-17T22:08:41.490057+00:00",
+  "last_updated": "2026-09-17T22:08:41.490057+00:00",
+  "state": "0.529692107076233"
+ },
+ "sensor.evcc_stat30_avg_price": {
+  "attributes": {
+   "friendly_name": "Statistik: letzten 30 Tage Ø Preis",
+   "icon": "mdi:cash-multiple",
+   "state_class": "measurement",
+   "unit_of_measurement": "€"
+  },
+  "entity_id": "sensor.evcc_stat30_avg_price",
+  "last_changed": "2026-09-17T22:08:41.490004+00:00",
+  "last_updated": "2026-09-17T22:08:41.490004+00:00",
+  "state": "0.0846274327255982"
+ },
+ "sensor.evcc_stat30_charged_kwh": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "Statistik: letzten 30 Tage Ladeenergie",
+   "icon": "mdi:lightning-bolt-outline",
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_stat30_charged_kwh",
+  "last_changed": "2026-09-17T22:08:41.489952+00:00",
+  "last_updated": "2026-09-17T22:08:41.489952+00:00",
+  "state": "170.176350751922"
+ },
+ "sensor.evcc_stat30_solar_k_wh_template": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "Statistik: letzten 30 Tage Solar-kWh",
+   "icon": "mdi:solar-power",
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_stat30_solar_k_wh_template",
+  "last_changed": "2026-09-17T22:08:41.489897+00:00",
+  "last_updated": "2026-09-17T22:08:41.489897+00:00",
+  "state": "165.2153"
+ },
+ "sensor.evcc_stat30_solar_percentage": {
+  "attributes": {
+   "friendly_name": "Statistik: letzten 30 Tage Sonnenenergie",
+   "icon": "mdi:solar-power",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_stat30_solar_percentage",
+  "last_changed": "2026-09-17T22:08:41.489832+00:00",
+  "last_updated": "2026-09-17T22:08:41.489832+00:00",
+  "state": "97.0847663424808"
+ },
+ "sensor.evcc_stat365_avg_co2": {
+  "attributes": {
+   "friendly_name": "Statistik: letzten 365 Tage Ø CO₂",
+   "icon": "mdi:molecule-co2",
+   "state_class": "measurement",
+   "unit_of_measurement": "CO₂"
+  },
+  "entity_id": "sensor.evcc_stat365_avg_co2",
+  "last_changed": "2026-09-17T17:24:20.190096+00:00",
+  "last_updated": "2026-09-17T17:24:20.190096+00:00",
+  "state": "40.3733828087985"
+ },
+ "sensor.evcc_stat365_avg_price": {
+  "attributes": {
+   "friendly_name": "Statistik: letzten 365 Tage Ø Preis",
+   "icon": "mdi:cash-multiple",
+   "state_class": "measurement",
+   "unit_of_measurement": "€"
+  },
+  "entity_id": "sensor.evcc_stat365_avg_price",
+  "last_changed": "2026-09-17T17:24:20.189897+00:00",
+  "last_updated": "2026-09-17T17:24:20.189897+00:00",
+  "state": "0.132108527617182"
+ },
+ "sensor.evcc_stat365_charged_kwh": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "Statistik: letzten 365 Tage Ladeenergie",
+   "icon": "mdi:lightning-bolt-outline",
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_stat365_charged_kwh",
+  "last_changed": "2026-09-17T17:24:20.189689+00:00",
+  "last_updated": "2026-09-17T17:24:20.189689+00:00",
+  "state": "2150.18807336743"
+ },
+ "sensor.evcc_stat365_solar_k_wh_template": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "Statistik: letzten 365 Tage Solar-kWh",
+   "icon": "mdi:solar-power",
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_stat365_solar_k_wh_template",
+  "last_changed": "2026-09-17T17:24:20.189260+00:00",
+  "last_updated": "2026-09-17T17:24:20.189260+00:00",
+  "state": "1318.5733"
+ },
+ "sensor.evcc_stat365_solar_percentage": {
+  "attributes": {
+   "friendly_name": "Statistik: letzten 365 Tage Sonnenenergie",
+   "icon": "mdi:solar-power",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_stat365_solar_percentage",
+  "last_changed": "2026-09-17T17:24:20.188890+00:00",
+  "last_updated": "2026-09-17T17:24:20.188890+00:00",
+  "state": "61.3236283903607"
+ },
+ "sensor.evcc_stat_this_year_avg_co2": {
+  "attributes": {
+   "friendly_name": "Statistik: dieses Jahr Ø CO₂",
+   "icon": "mdi:molecule-co2",
+   "state_class": "measurement",
+   "unit_of_measurement": "CO₂"
+  },
+  "entity_id": "sensor.evcc_stat_this_year_avg_co2",
+  "last_changed": "2026-09-17T17:24:20.188693+00:00",
+  "last_updated": "2026-09-17T17:24:20.188693+00:00",
+  "state": "40.3733828087985"
+ },
+ "sensor.evcc_stat_this_year_avg_price": {
+  "attributes": {
+   "friendly_name": "Statistik: dieses Jahr Ø Preis",
+   "icon": "mdi:cash-multiple",
+   "state_class": "measurement",
+   "unit_of_measurement": "€"
+  },
+  "entity_id": "sensor.evcc_stat_this_year_avg_price",
+  "last_changed": "2026-09-17T17:24:20.188493+00:00",
+  "last_updated": "2026-09-17T17:24:20.188493+00:00",
+  "state": "0.114737054777308"
+ },
+ "sensor.evcc_stat_this_year_charged_kwh": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "Statistik: dieses Jahr Ladeenergie",
+   "icon": "mdi:lightning-bolt-outline",
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_stat_this_year_charged_kwh",
+  "last_changed": "2026-09-17T17:24:20.188297+00:00",
+  "last_updated": "2026-09-17T17:24:20.188297+00:00",
+  "state": "1604.75607336743"
+ },
+ "sensor.evcc_stat_this_year_solar_k_wh_template": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "Statistik: dieses Jahr Solar-kWh",
+   "icon": "mdi:solar-power",
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_stat_this_year_solar_k_wh_template",
+  "last_changed": "2026-09-17T17:24:20.188090+00:00",
+  "last_updated": "2026-09-17T17:24:20.188090+00:00",
+  "state": "1188.493"
+ },
+ "sensor.evcc_stat_this_year_solar_percentage": {
+  "attributes": {
+   "friendly_name": "Statistik: dieses Jahr Sonnenenergie",
+   "icon": "mdi:solar-power",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_stat_this_year_solar_percentage",
+  "last_changed": "2026-09-17T17:24:20.187871+00:00",
+  "last_updated": "2026-09-17T17:24:20.187871+00:00",
+  "state": "74.0606650275364"
+ },
+ "sensor.evcc_stat_total_avg_co2": {
+  "attributes": {
+   "friendly_name": "Statistik: gesamt Ø CO₂",
+   "icon": "mdi:molecule-co2",
+   "state_class": "measurement",
+   "unit_of_measurement": "CO₂"
+  },
+  "entity_id": "sensor.evcc_stat_total_avg_co2",
+  "last_changed": "2026-09-17T17:24:20.187665+00:00",
+  "last_updated": "2026-09-17T17:24:20.187665+00:00",
+  "state": "40.3733828087985"
+ },
+ "sensor.evcc_stat_total_avg_price": {
+  "attributes": {
+   "friendly_name": "Statistik: gesamt Ø Preis",
+   "icon": "mdi:cash-multiple",
+   "state_class": "measurement",
+   "unit_of_measurement": "€"
+  },
+  "entity_id": "sensor.evcc_stat_total_avg_price",
+  "last_changed": "2026-09-17T17:24:20.187462+00:00",
+  "last_updated": "2026-09-17T17:24:20.187462+00:00",
+  "state": "0.125481175315776"
+ },
+ "sensor.evcc_stat_total_charged_kwh": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "Statistik: gesamt Ladeenergie",
+   "icon": "mdi:lightning-bolt-outline",
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_stat_total_charged_kwh",
+  "last_changed": "2026-09-17T17:24:20.187256+00:00",
+  "last_updated": "2026-09-17T17:24:20.187256+00:00",
+  "state": "2527.24607336743"
+ },
+ "sensor.evcc_stat_total_solar_k_wh_template": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "Statistik: gesamt Solar-kWh",
+   "icon": "mdi:solar-power",
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_stat_total_solar_k_wh_template",
+  "last_changed": "2026-09-17T17:24:20.187032+00:00",
+  "last_updated": "2026-09-17T17:24:20.187032+00:00",
+  "state": "1677.1062"
+ },
+ "sensor.evcc_stat_total_solar_percentage": {
+  "attributes": {
+   "friendly_name": "Statistik: gesamt Sonnenenergie",
+   "icon": "mdi:solar-power",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_stat_total_solar_percentage",
+  "last_changed": "2026-09-17T17:24:20.186011+00:00",
+  "last_updated": "2026-09-17T17:24:20.186011+00:00",
+  "state": "66.3610166884556"
+ },
+ "sensor.evcc_status": {
+  "attributes": {
+   "device_class": "enum",
+   "friendly_name": "EVCC Status",
+   "options": [
+    "down",
+    "up",
+    "pending",
+    "maintenance"
+   ]
+  },
+  "entity_id": "sensor.evcc_status",
+  "last_changed": "2026-09-17T17:24:17.434561+00:00",
+  "last_updated": "2026-09-17T17:24:17.434561+00:00",
+  "state": "up"
+ },
+ "sensor.evcc_tariff_api_solar": {
+  "attributes": {
+   "friendly_name": "Solar Prognose [Tariff-API]",
+   "icon": "mdi:solar-power",
+   "rates": {
+    "deltas_in_minutes": [
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15,
+     15
+    ],
+    "start_utc": "2026-09-18T09:00:00+00:00",
+    "values": [
+     3412,
+     3314.25,
+     3216.5,
+     3118.75,
+     3021,
+     3012.75,
+     3004.5,
+     2996.25,
+     2988,
+     2952.75,
+     2917.5,
+     2882.25,
+     2847,
+     2771.25,
+     2695.5,
+     2619.75,
+     2544,
+     2472,
+     2400,
+     2328,
+     2256,
+     2117.75,
+     1979.5,
+     1841.25,
+     1703,
+     1499,
+     1295,
+     1091,
+     887,
+     735.75,
+     584.5,
+     433.25,
+     282,
+     222.5,
+     163,
+     103.5,
+     44,
+     34.75,
+     25.5,
+     16.25,
+     7,
+     5.5,
+     4,
+     2.5,
+     1,
+     0.75,
+     0.5,
+     0.25,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     5.75,
+     11.5,
+     17.25,
+     23,
+     63.25,
+     103.5,
+     143.75,
+     184,
+     281.5,
+     379,
+     476.5,
+     574,
+     698.25,
+     822.5,
+     946.75,
+     1071,
+     1195.25,
+     1319.5,
+     1443.75,
+     1568,
+     1671.5,
+     1775,
+     1878.5,
+     1982,
+     2053,
+     2124,
+     2195,
+     2266,
+     2295,
+     2324,
+     2353,
+     2382,
+     2368.25,
+     2354.5,
+     2340.75,
+     2327,
+     2273.75,
+     2220.5,
+     2167.25,
+     2114,
+     2025.5,
+     1937,
+     1848.5,
+     1760,
+     1646,
+     1532,
+     1418,
+     1304,
+     1163.25,
+     1022.5,
+     881.75,
+     741,
+     617.75,
+     494.5,
+     371.25,
+     248,
+     195.75,
+     143.5,
+     91.25,
+     39,
+     30.75,
+     22.5,
+     14.25,
+     6,
+     4.75,
+     3.5,
+     2.25,
+     1,
+     0.75,
+     0.5,
+     0.25,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     5.5,
+     11,
+     16.5,
+     22,
+     59.75,
+     97.5,
+     135.25,
+     173,
+     270.25,
+     367.5,
+     464.75,
+     562,
+     699,
+     836,
+     973,
+     1110,
+     1280.75,
+     1451.5,
+     1622.25,
+     1793,
+     1967.5,
+     2142,
+     2316.5,
+     2491,
+     2565,
+     2639,
+     2713,
+     2787,
+     2827.25,
+     2867.5,
+     2907.75,
+     2948,
+     3127.5,
+     3307,
+     3486.5,
+     3666,
+     3700.25,
+     3734.5,
+     3768.75,
+     3803,
+     3520.5,
+     3238,
+     2955.5,
+     2673,
+     2453,
+     2233,
+     2013,
+     1793,
+     1592.5,
+     1392,
+     1191.5,
+     991,
+     823.75,
+     656.5,
+     489.25,
+     322,
+     254,
+     186,
+     118,
+     50,
+     39.5,
+     29,
+     18.5,
+     8,
+     6.25,
+     4.5,
+     2.75,
+     1,
+     0.75,
+     0.5,
+     0.25,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     5,
+     10,
+     15,
+     20,
+     57.75,
+     95.5,
+     133.25,
+     171,
+     270.75,
+     370.5,
+     470.25,
+     570,
+     715.5,
+     861,
+     1006.5,
+     1152,
+     1308,
+     1464,
+     1620,
+     1776,
+     1912.5,
+     2049,
+     2185.5,
+     2322,
+     2415.5,
+     2509,
+     2602.5,
+     2696,
+     2739.75,
+     2783.5,
+     2827.25,
+     2871,
+     2880.75,
+     2890.5,
+     2900.25,
+     2910,
+     2888,
+     2866,
+     2844,
+     2822,
+     2744.25,
+     2666.5,
+     2588.75,
+     2511,
+     2363.5,
+     2216,
+     2068.5,
+     1921,
+     1708.75,
+     1496.5,
+     1284.25,
+     1072,
+     889.75,
+     707.5,
+     525.25,
+     343,
+     270.5,
+     198,
+     125.5,
+     53,
+     41.75,
+     30.5,
+     19.25,
+     8,
+     6.25,
+     4.5,
+     2.75,
+     1,
+     1,
+     1,
+     1,
+     1,
+     0.75,
+     0.5,
+     0.25,
+     0,
+     0,
+     0,
+     0
+    ]
+   },
+   "state_class": "measurement",
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "sensor.evcc_tariff_api_solar",
+  "last_changed": "2026-09-18T09:15:06.797560+00:00",
+  "last_updated": "2026-09-18T09:15:07.804885+00:00",
+  "state": "3319.5"
+ },
+ "sensor.evcc_tariff_co2": {
+  "attributes": {
+   "friendly_name": "Kosten CO² [Standort]",
+   "icon": "mdi:molecule-co2",
+   "state_class": "measurement",
+   "unit_of_measurement": "g/kWh"
+  },
+  "entity_id": "sensor.evcc_tariff_co2",
+  "last_changed": "2026-09-17T17:24:20.184788+00:00",
+  "last_updated": "2026-09-17T17:24:20.184788+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_tariff_co2_home": {
+  "attributes": {
+   "friendly_name": "Kosten CO² Verbrauch [Standort]",
+   "icon": "mdi:molecule-co2",
+   "state_class": "measurement",
+   "unit_of_measurement": "g/kWh"
+  },
+  "entity_id": "sensor.evcc_tariff_co2_home",
+  "last_changed": "2026-09-17T17:24:20.184974+00:00",
+  "last_updated": "2026-09-17T17:24:20.184974+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_tariff_co2_loadpoints": {
+  "attributes": {
+   "friendly_name": "Kosten CO² Ladepunkte [Standort]",
+   "icon": "mdi:molecule-co2",
+   "state_class": "measurement",
+   "unit_of_measurement": "g/kWh"
+  },
+  "entity_id": "sensor.evcc_tariff_co2_loadpoints",
+  "last_changed": "2026-09-17T17:24:20.185166+00:00",
+  "last_updated": "2026-09-17T17:24:20.185166+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_tariff_feed_in": {
+  "attributes": {
+   "friendly_name": "Kosten Einspeisung [Standort]",
+   "icon": "mdi:cash-multiple",
+   "state_class": "measurement",
+   "unit_of_measurement": "€/kWh"
+  },
+  "entity_id": "sensor.evcc_tariff_feed_in",
+  "last_changed": "2026-09-17T17:24:20.185361+00:00",
+  "last_updated": "2026-09-17T17:24:20.185361+00:00",
+  "state": "0.081"
+ },
+ "sensor.evcc_tariff_grid": {
+  "attributes": {
+   "friendly_name": "Kosten Netz [Standort]",
+   "icon": "mdi:cash-multiple",
+   "state_class": "measurement",
+   "unit_of_measurement": "€/kWh"
+  },
+  "entity_id": "sensor.evcc_tariff_grid",
+  "last_changed": "2026-09-17T17:24:20.184402+00:00",
+  "last_updated": "2026-09-17T17:24:20.184402+00:00",
+  "state": "0.202"
+ },
+ "sensor.evcc_tariff_price_home": {
+  "attributes": {
+   "friendly_name": "Kosten Verbrauch [Standort]",
+   "icon": "mdi:cash-multiple",
+   "state_class": "measurement",
+   "unit_of_measurement": "€/kWh"
+  },
+  "entity_id": "sensor.evcc_tariff_price_home",
+  "last_changed": "2026-09-18T08:41:41.481027+00:00",
+  "last_updated": "2026-09-18T08:41:41.481027+00:00",
+  "state": "0.0811"
+ },
+ "sensor.evcc_tariff_price_loadpoints": {
+  "attributes": {
+   "friendly_name": "Kosten Ladepunkte [Standort]",
+   "icon": "mdi:cash-multiple",
+   "state_class": "measurement",
+   "unit_of_measurement": "€/kWh"
+  },
+  "entity_id": "sensor.evcc_tariff_price_loadpoints",
+  "last_changed": "2026-09-18T09:22:11.492538+00:00",
+  "last_updated": "2026-09-18T09:22:11.492538+00:00",
+  "state": "0.0811"
+ },
+ "sensor.evcc_tariff_solar": {
+  "attributes": {
+   "friendly_name": "Solar Prognose [Standort]",
+   "icon": "mdi:solar-power",
+   "state_class": "measurement",
+   "unit_of_measurement": "W"
+  },
+  "entity_id": "sensor.evcc_tariff_solar",
+  "last_changed": "2026-09-18T09:15:11.637028+00:00",
+  "last_updated": "2026-09-18T09:15:11.637028+00:00",
+  "state": "3314.25"
+ },
+ "sensor.evcc_uberwachte_url": {
+  "attributes": {
+   "friendly_name": "EVCC Überwachte URL"
+  },
+  "entity_id": "sensor.evcc_uberwachte_url",
+  "last_changed": "2026-09-17T17:24:17.468819+00:00",
+  "last_updated": "2026-09-17T17:24:17.468819+00:00",
+  "state": "https://evcc.as3b.de"
+ },
+ "sensor.evcc_uberwachungstyp": {
+  "attributes": {
+   "device_class": "enum",
+   "friendly_name": "EVCC Überwachungstyp",
+   "options": [
+    "http",
+    "keyword",
+    "port",
+    "ping",
+    "dns",
+    "docker",
+    "system_service",
+    "pm2",
+    "real_browser",
+    "group",
+    "push",
+    "manual",
+    "globalping",
+    "grpc_keyword",
+    "json_query",
+    "kafka_producer",
+    "mqtt",
+    "ntp",
+    "rabbit_mq",
+    "sip_options",
+    "smtp",
+    "snmp",
+    "tailscale_ping",
+    "websocket_upgrade",
+    "sqlserver",
+    "mongodb",
+    "mysql",
+    "oracledb",
+    "postgres",
+    "redis",
+    "radius",
+    "gamedig",
+    "steam",
+    "unknown"
+   ]
+  },
+  "entity_id": "sensor.evcc_uberwachungstyp",
+  "last_changed": "2026-09-17T17:24:17.451032+00:00",
+  "last_updated": "2026-09-17T17:24:17.451032+00:00",
+  "state": "keyword"
+ },
+ "sensor.evcc_verfugbarkeit_1_tag": {
+  "attributes": {
+   "friendly_name": "EVCC Verfügbarkeit (1 Tag)",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_verfugbarkeit_1_tag",
+  "last_changed": "2026-09-17T17:24:17.490828+00:00",
+  "last_updated": "2026-09-17T17:24:17.490828+00:00",
+  "state": "100.0"
+ },
+ "sensor.evcc_verfugbarkeit_30_tage": {
+  "attributes": {
+   "friendly_name": "EVCC Verfügbarkeit (30 Tage)",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_verfugbarkeit_30_tage",
+  "last_changed": "2026-09-18T09:22:47.180669+00:00",
+  "last_updated": "2026-09-18T09:22:47.180669+00:00",
+  "state": "99.9929109856093"
+ },
+ "sensor.evcc_verfugbarkeit_365_tage": {
+  "attributes": {
+   "friendly_name": "EVCC Verfügbarkeit (365 Tage)",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_verfugbarkeit_365_tage",
+  "last_changed": "2026-09-18T09:22:47.182104+00:00",
+  "last_updated": "2026-09-18T09:22:47.182104+00:00",
+  "state": "99.9851017550133"
+ },
+ "sensor.evcc_wp_charge_current": {
+  "attributes": {
+   "device_class": "current",
+   "friendly_name": "WP Ladestrom",
+   "icon": "mdi:current-ac",
+   "state_class": "measurement",
+   "unit_of_measurement": "A"
+  },
+  "entity_id": "sensor.evcc_wp_charge_current",
+  "last_changed": "2026-09-17T17:24:20.210604+00:00",
+  "last_updated": "2026-09-17T17:24:20.210604+00:00",
+  "state": "0"
+ },
+ "sensor.evcc_wp_charge_duration": {
+  "attributes": {
+   "device_class": "duration",
+   "friendly_name": "WP Ladedauer",
+   "icon": "mdi:clock-digital",
+   "state_class": "measurement",
+   "unit_of_measurement": "s"
+  },
+  "entity_id": "sensor.evcc_wp_charge_duration",
+  "last_changed": "2026-09-17T22:01:41.478608+00:00",
+  "last_updated": "2026-09-17T22:01:41.478608+00:00",
+  "state": "0"
+ },
+ "sensor.evcc_wp_charge_power": {
+  "attributes": {
+   "device_class": "power",
+   "friendly_name": "WP Ladeleistung",
+   "icon": "mdi:meter-electric-outline",
+   "state_class": "measurement",
+   "unit_of_measurement": "kW"
+  },
+  "entity_id": "sensor.evcc_wp_charge_power",
+  "last_changed": "2026-09-18T09:03:40.469879+00:00",
+  "last_updated": "2026-09-18T09:03:40.469879+00:00",
+  "state": "0.042"
+ },
+ "sensor.evcc_wp_charge_remaining_duration": {
+  "attributes": {
+   "device_class": "duration",
+   "friendly_name": "WP Laderestzeit",
+   "icon": "mdi:clock-digital",
+   "state_class": "measurement",
+   "unit_of_measurement": "s"
+  },
+  "entity_id": "sensor.evcc_wp_charge_remaining_duration",
+  "last_changed": "2026-09-17T17:24:20.211844+00:00",
+  "last_updated": "2026-09-17T17:24:20.211844+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_wp_charge_remaining_energy": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "WP Ladeenergie verbleibend",
+   "icon": "mdi:lightning-bolt-outline",
+   "state_class": "total",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_wp_charge_remaining_energy",
+  "last_changed": "2026-09-17T17:24:20.212753+00:00",
+  "last_updated": "2026-09-17T17:24:20.212753+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_wp_charge_total_import": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "WP Netzbezug",
+   "icon": "mdi:transmission-tower-export",
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_wp_charge_total_import",
+  "last_changed": "2026-09-17T17:24:20.212301+00:00",
+  "last_updated": "2026-09-17T17:24:20.212301+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_wp_charged_energy": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "WP Ladeenergie",
+   "icon": "mdi:lightning-bolt-outline",
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_wp_charged_energy",
+  "last_changed": "2026-09-17T22:00:41.478319+00:00",
+  "last_updated": "2026-09-17T22:00:41.478319+00:00",
+  "state": "0.0"
+ },
+ "sensor.evcc_wp_effective_limit_soc": {
+  "attributes": {
+   "device_class": "temperature",
+   "friendly_name": "WP Effektives Ladelimit (SOC)",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "°C"
+  },
+  "entity_id": "sensor.evcc_wp_effective_limit_soc",
+  "last_changed": "2026-09-17T17:24:20.213164+00:00",
+  "last_updated": "2026-09-17T17:24:20.213164+00:00",
+  "state": "60"
+ },
+ "sensor.evcc_wp_effective_plan_soc": {
+  "attributes": {
+   "device_class": "temperature",
+   "friendly_name": "WP Effektiver Plan: Abfahrt Ladeziel (SOC)",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "°C"
+  },
+  "entity_id": "sensor.evcc_wp_effective_plan_soc",
+  "last_changed": "2026-09-17T17:24:20.217105+00:00",
+  "last_updated": "2026-09-17T17:24:20.217105+00:00",
+  "state": "0"
+ },
+ "sensor.evcc_wp_effective_plan_time": {
+  "attributes": {
+   "device_class": "timestamp",
+   "friendly_name": "WP Effektiver Plan: Abfahrt Zeitpunkt (SOC)",
+   "icon": "mdi:calendar-arrow-right"
+  },
+  "entity_id": "sensor.evcc_wp_effective_plan_time",
+  "last_changed": "2026-09-17T17:24:20.216453+00:00",
+  "last_updated": "2026-09-17T17:24:20.216453+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_wp_phase_action_value": {
+  "attributes": {
+   "device_class": "enum",
+   "friendly_name": "WP Phasen Aktivität",
+   "icon": "mdi:numeric"
+  },
+  "entity_id": "sensor.evcc_wp_phase_action_value",
+  "last_changed": "2026-09-17T17:24:20.213564+00:00",
+  "last_updated": "2026-09-17T17:24:20.213564+00:00",
+  "state": "-keine-"
+ },
+ "sensor.evcc_wp_phase_remaining": {
+  "attributes": {
+   "friendly_name": "WP Phasen verbleibend",
+   "icon": "mdi:numeric",
+   "state_class": "measurement"
+  },
+  "entity_id": "sensor.evcc_wp_phase_remaining",
+  "last_changed": "2026-09-17T17:24:20.213866+00:00",
+  "last_updated": "2026-09-17T17:24:20.213866+00:00",
+  "state": "0"
+ },
+ "sensor.evcc_wp_phases_active": {
+  "attributes": {
+   "friendly_name": "WP Phasen in Verwendung",
+   "icon": "mdi:numeric",
+   "state_class": "measurement"
+  },
+  "entity_id": "sensor.evcc_wp_phases_active",
+  "last_changed": "2026-09-17T17:24:20.214128+00:00",
+  "last_updated": "2026-09-17T17:24:20.214128+00:00",
+  "state": "1"
+ },
+ "sensor.evcc_wp_phases_enabled": {
+  "attributes": {
+   "friendly_name": "WP Phasen aktiviert",
+   "icon": "mdi:numeric",
+   "state_class": "measurement"
+  },
+  "entity_id": "sensor.evcc_wp_phases_enabled",
+  "last_changed": "2026-09-17T17:24:20.214409+00:00",
+  "last_updated": "2026-09-17T17:24:20.214409+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_wp_plan_projected_end": {
+  "attributes": {
+   "device_class": "timestamp",
+   "friendly_name": "WP Plan: Ende (erwartet)",
+   "icon": "mdi:calendar-end"
+  },
+  "entity_id": "sensor.evcc_wp_plan_projected_end",
+  "last_changed": "2026-09-17T17:24:20.216876+00:00",
+  "last_updated": "2026-09-17T17:24:20.216876+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_wp_plan_projected_start": {
+  "attributes": {
+   "device_class": "timestamp",
+   "friendly_name": "WP Plan: Start (erwartet)",
+   "icon": "mdi:calendar-start"
+  },
+  "entity_id": "sensor.evcc_wp_plan_projected_start",
+  "last_changed": "2026-09-17T17:24:20.216665+00:00",
+  "last_updated": "2026-09-17T17:24:20.216665+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_wp_pv_action": {
+  "attributes": {
+   "device_class": "enum",
+   "friendly_name": "WP PV Aktivität [CODE]",
+   "icon": "mdi:state-machine"
+  },
+  "entity_id": "sensor.evcc_wp_pv_action",
+  "last_changed": "2026-09-18T08:49:41.522726+00:00",
+  "last_updated": "2026-09-18T08:49:41.522726+00:00",
+  "state": "inactive"
+ },
+ "sensor.evcc_wp_pv_action_value": {
+  "attributes": {
+   "device_class": "enum",
+   "friendly_name": "WP PV Aktivität",
+   "icon": "mdi:state-machine"
+  },
+  "entity_id": "sensor.evcc_wp_pv_action_value",
+  "last_changed": "2026-09-18T08:49:41.522666+00:00",
+  "last_updated": "2026-09-18T08:49:41.522666+00:00",
+  "state": "Auch nach dem Timeout ist keine PV-Leistung verfügbar"
+ },
+ "sensor.evcc_wp_pv_remaining": {
+  "attributes": {
+   "device_class": "timestamp",
+   "friendly_name": "WP PV verbleibend",
+   "icon": "mdi:sun-clock"
+  },
+  "entity_id": "sensor.evcc_wp_pv_remaining",
+  "last_changed": "2026-09-18T08:49:41.522771+00:00",
+  "last_updated": "2026-09-18T08:49:41.522771+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_wp_session_co2_per_kwh": {
+  "attributes": {
+   "friendly_name": "WP Ladevorgang CO₂/kWh",
+   "icon": "mdi:molecule-co2",
+   "state_class": "measurement",
+   "unit_of_measurement": "g/kWh"
+  },
+  "entity_id": "sensor.evcc_wp_session_co2_per_kwh",
+  "last_changed": "2026-09-17T17:24:20.214622+00:00",
+  "last_updated": "2026-09-17T17:24:20.214622+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_wp_session_energy": {
+  "attributes": {
+   "device_class": "energy",
+   "friendly_name": "WP Ladevorgang Energie",
+   "icon": "mdi:lightning-bolt-outline",
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_wp_session_energy",
+  "last_changed": "2026-09-17T22:00:41.478531+00:00",
+  "last_updated": "2026-09-17T22:00:41.478531+00:00",
+  "state": "0.0"
+ },
+ "sensor.evcc_wp_session_price": {
+  "attributes": {
+   "friendly_name": "WP Ladevorgang Preis",
+   "icon": "mdi:cash-multiple",
+   "state_class": "measurement",
+   "unit_of_measurement": "€"
+  },
+  "entity_id": "sensor.evcc_wp_session_price",
+  "last_changed": "2026-09-17T22:00:41.478571+00:00",
+  "last_updated": "2026-09-17T22:00:41.478571+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_wp_session_price_per_kwh": {
+  "attributes": {
+   "friendly_name": "WP Ladevorgang €/kWh",
+   "icon": "mdi:cash-multiple",
+   "state_class": "measurement",
+   "unit_of_measurement": "€/kWh"
+  },
+  "entity_id": "sensor.evcc_wp_session_price_per_kwh",
+  "last_changed": "2026-09-17T22:00:41.478606+00:00",
+  "last_updated": "2026-09-17T22:00:41.478606+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_wp_session_solar_percentage": {
+  "attributes": {
+   "friendly_name": "WP Ladevorgang PV Verwendung",
+   "icon": "mdi:solar-power",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_wp_session_solar_percentage",
+  "last_changed": "2026-09-17T22:00:41.478643+00:00",
+  "last_updated": "2026-09-17T22:00:41.478643+00:00",
+  "state": "0"
+ },
+ "sensor.evcc_wp_vehicle_limit_soc": {
+  "attributes": {
+   "device_class": "temperature",
+   "friendly_name": "WP Fahrzeug Ladelimit",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "°C"
+  },
+  "entity_id": "sensor.evcc_wp_vehicle_limit_soc",
+  "last_changed": "2026-09-17T17:24:20.215790+00:00",
+  "last_updated": "2026-09-17T17:24:20.215790+00:00",
+  "state": "60"
+ },
+ "sensor.evcc_wp_vehicle_soc": {
+  "attributes": {
+   "device_class": "temperature",
+   "friendly_name": "WP Fahrzeug Ladestand",
+   "icon": "mdi:car-electric-outline",
+   "state_class": "measurement",
+   "unit_of_measurement": "°C"
+  },
+  "entity_id": "sensor.evcc_wp_vehicle_soc",
+  "last_changed": "2026-09-18T09:21:41.500597+00:00",
+  "last_updated": "2026-09-18T09:21:41.500597+00:00",
+  "state": "42.2"
+ },
+ "sensor.evcc_zertifikatsablauf": {
+  "attributes": {
+   "device_class": "duration",
+   "friendly_name": "EVCC Zertifikatsablauf",
+   "unit_of_measurement": "d"
+  },
+  "entity_id": "sensor.evcc_zertifikatsablauf",
+  "last_changed": "2026-09-17T17:25:47.102734+00:00",
+  "last_updated": "2026-09-17T17:25:47.102734+00:00",
+  "state": "40"
+ },
+ "switch.evcc_battery_discharge_control": {
+  "attributes": {
+   "friendly_name": "Hausbatterie: Entladesperre",
+   "icon": "mdi:battery-off-outline"
+  },
+  "entity_id": "switch.evcc_battery_discharge_control",
+  "last_changed": "2026-09-17T17:24:20.246810+00:00",
+  "last_updated": "2026-09-17T17:24:20.246810+00:00",
+  "state": "on"
+ },
+ "switch.evcc_ex30_repeating_plan_2": {
+  "attributes": {
+   "active": false,
+   "friendly_name": "EX30 Ladeplan 2 (wiederholend)",
+   "icon": "mdi:calendar-clock",
+   "soc": 80,
+   "time": "07:00",
+   "tz": "Europe/Berlin",
+   "weekdays": [
+    1,
+    2,
+    4
+   ]
+  },
+  "entity_id": "switch.evcc_ex30_repeating_plan_2",
+  "last_changed": "2026-09-17T17:24:20.247720+00:00",
+  "last_updated": "2026-09-17T17:24:20.247720+00:00",
+  "state": "off"
+ },
+ "switch.evcc_ex30_repeating_plan_3": {
+  "attributes": {
+   "active": false,
+   "friendly_name": "EX30 Ladeplan 3 (wiederholend)",
+   "icon": "mdi:calendar-clock",
+   "soc": 90,
+   "time": "10:00",
+   "tz": "Europe/Berlin",
+   "weekdays": [
+    6,
+    0
+   ]
+  },
+  "entity_id": "switch.evcc_ex30_repeating_plan_3",
+  "last_changed": "2026-09-17T17:24:20.247934+00:00",
+  "last_updated": "2026-09-17T17:24:20.247934+00:00",
+  "state": "off"
+ },
+ "switch.evcc_ex30_repeating_plan_4": {
+  "attributes": {
+   "friendly_name": "EX30 Ladeplan 4 (wiederholend)",
+   "icon": "mdi:calendar-clock"
+  },
+  "entity_id": "switch.evcc_ex30_repeating_plan_4",
+  "last_changed": "2026-09-17T17:24:20.248135+00:00",
+  "last_updated": "2026-09-17T17:24:20.248135+00:00",
+  "state": "unavailable"
+ },
+ "switch.evcc_id7_repeating_plan_2": {
+  "attributes": {
+   "friendly_name": "id7 Ladeplan 2 (wiederholend)",
+   "icon": "mdi:calendar-clock"
+  },
+  "entity_id": "switch.evcc_id7_repeating_plan_2",
+  "last_changed": "2026-09-17T17:24:20.248936+00:00",
+  "last_updated": "2026-09-17T17:24:20.248936+00:00",
+  "state": "unavailable"
+ },
+ "switch.evcc_id7_repeating_plan_3": {
+  "attributes": {
+   "friendly_name": "id7 Ladeplan 3 (wiederholend)",
+   "icon": "mdi:calendar-clock"
+  },
+  "entity_id": "switch.evcc_id7_repeating_plan_3",
+  "last_changed": "2026-09-17T17:24:20.249133+00:00",
+  "last_updated": "2026-09-17T17:24:20.249133+00:00",
+  "state": "unavailable"
+ },
+ "switch.evcc_id7_repeating_plan_4": {
+  "attributes": {
+   "friendly_name": "id7 Ladeplan 4 (wiederholend)",
+   "icon": "mdi:calendar-clock"
+  },
+  "entity_id": "switch.evcc_id7_repeating_plan_4",
+  "last_changed": "2026-09-17T17:24:20.249326+00:00",
+  "last_updated": "2026-09-17T17:24:20.249326+00:00",
+  "state": "unavailable"
+ },
+ "switch.evcc_openwb_battery_boost": {
+  "attributes": {
+   "friendly_name": "openWB Schnell aus Hausbatterie laden.",
+   "icon": "mdi:battery-plus-outline"
+  },
+  "entity_id": "switch.evcc_openwb_battery_boost",
+  "last_changed": "2026-09-17T17:24:20.247091+00:00",
+  "last_updated": "2026-09-17T17:24:20.247091+00:00",
+  "state": "off"
+ },
+ "switch.evcc_openwb_plan_strategy_continuous": {
+  "attributes": {
+   "friendly_name": "openWB Ladeplanung: Optimierung",
+   "icon": "mdi:calendar-clock"
+  },
+  "entity_id": "switch.evcc_openwb_plan_strategy_continuous",
+  "last_changed": "2026-09-17T17:24:20.247300+00:00",
+  "last_updated": "2026-09-17T17:24:20.247300+00:00",
+  "state": "off"
+ },
+ "switch.evcc_wp_battery_boost": {
+  "attributes": {
+   "friendly_name": "WP Schnell aus Hausbatterie laden.",
+   "icon": "mdi:battery-plus-outline"
+  },
+  "entity_id": "switch.evcc_wp_battery_boost",
+  "last_changed": "2026-09-17T17:24:20.247499+00:00",
+  "last_updated": "2026-09-17T17:24:20.247499+00:00",
+  "state": "off"
+ }
+}

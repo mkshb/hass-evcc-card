@@ -188,6 +188,8 @@ Add the card to any Lovelace dashboard and use the **visual editor** to configur
 | `disabled_loadpoints` | `string` | `hide` | How to treat charge points disabled in the evcc configuration (ha-evcc 2026.8.8+): `hide` removes them from the card, `dim` shows them grayed out with a "Disabled" badge, `show` keeps the previous behavior |
 | `site_details` | `string` | `expanded` | `collapsed` to hide the IN/OUT detail table by default in `site` and `flow` mode |
 | `charge_current_settings` | `string` | `collapsed` | `expanded` to show charge settings expanded by default |
+| `hide_settings` | `list` | *(none)* | Remove individual settings from the `loadpoint` / `compact` card: `limit_soc`, `min_soc`, `phases`, `max_current`, `min_current`, `battery_boost`, `priority`, `smart_cost_limit`, `smart_feed_in_priority_limit`. See [Slider settings](#slider-settings) |
+| `slider_steps` | `map` | *(entity)* | **YAML only** — Override the step of a number slider per setting, e.g. `{ smart_cost_limit: 0.01, limit_soc: 5 }`. Also sets the increment of the − / + buttons in the direct-input panel. See [Slider settings](#slider-settings) |
 | `stats_period` | `string` | `total` | Default statistics period for the footer/summary: `month`, `year`, `total`, `none` |
 | `prefix` | `string` | *(auto)* | **YAML only** — Entity prefix, auto-detected from ha-evcc. Only needed for multiple EVCC instances with custom prefixes. |
 
@@ -202,7 +204,7 @@ The main charge point view. For each discovered charge point it shows:
 - Charge mode buttons (Off / PV / Min+PV / Now) - see [Charge modes](#charge-modes) for when which mode is shown
 - Vehicle SoC progress bar with percentage and estimated range
 - Current charging session: energy, cost, duration, phases
-- Sliders: Target SoC, Min SoC
+- Sliders: Target SoC, Min SoC - tap the value next to any slider to enter it directly, see [Slider settings](#slider-settings)
 - Charge plan block
 
 #### Charge modes
@@ -228,6 +230,35 @@ The **CHARGE SETTINGS** section is collapsed by default and can be toggled using
 - Feed-in priority limit - threshold above which EVCC prioritizes feeding into the grid over charging from PV surplus, shown directly under the smart charging limit. Like the smart charging limit, it follows EVCC's global cost mode, so the slider is in currency/kWh (price mode) or g/kWh (CO2 mode). It has a slider, an "active" hint (from the `smart_feed_in_priority_active` sensor) and a clear button. The `smart_feed_in_priority_limit` / `smart_feed_in_priority_active` entities ship **disabled by default** in ha-evcc, so the row stays hidden until you enable them
 
 > **Price mode - slider range issue:** When switching the smart charging mode in EVCC from CO2-based to price-based, ha-evcc may not recreate the limit entity. The slider then still shows the CO2 range (0-500 g/kWh) instead of the price range. To fix this, go to Settings -> Devices & Services -> ha-evcc -> **Reconfigure**, and enable the option **"Remove and recreate all Devices"**.
+
+#### Slider settings
+
+Every slider in the card (target SoC, min SoC, current limits, battery boost, priority, smart charging limit, feed-in priority limit, and the target SoC of the charge plan) can also be set without dragging:
+
+- **Direct input** - tap the value next to the slider. A touch-sized row opens below it with **−** and **+** buttons, a number field with the unit, and apply / cancel. The buttons walk the slider step (for the current sliders: the next available option), the field accepts an exact value with either a comma or a dot and is clamped to the slider range. **Enter** or **✓** writes the value, **Escape** or **✕** discards it. Only one panel is open at a time.
+- **Keyboard** - with the slider focused, the arrow keys, Home / End and PageUp / PageDown change the value and write it as well.
+- **Step size** - the step comes from the ha-evcc entity (for example 0.005 for the smart charging limit). Use `slider_steps` to make a slider coarser or finer per setting; the − / + buttons follow the same step:
+
+  ```yaml
+  type: custom:evcc-card
+  slider_steps:
+    smart_cost_limit: 0.01
+    limit_soc: 5
+  ```
+
+- **Hide settings** - settings you never touch can be removed from the card with `hide_settings` (also available as checkboxes in the visual editor). The list applies to every charge point on the card; use separate cards with a `loadpoints` filter if charge points need different sets. When everything in the charge settings section is hidden, the section and its gear button disappear:
+
+  ```yaml
+  type: custom:evcc-card
+  hide_settings:
+    - smart_feed_in_priority_limit
+    - priority
+    - phases
+  ```
+
+> **Resetting a limit:** the smart charging limit and the feed-in priority limit have a **clear** button that removes the limit in evcc. The other sliders have no default value in evcc, so there is nothing to reset them to.
+
+<img src="images/slider-input-dark.png" width="400"> <img src="images/slider-input-light.png" width="400">
 
 <img src="images/loadpoint-dark.png" width="400"> <img src="images/loadpoint-light.png" width="400">
 
@@ -363,7 +394,7 @@ Same content as `loadpoint`, but organized into four tabs - ideal for dashboards
 | Tab | Contents |
 |---|---|
 | **Control** | Charge mode buttons, vehicle SoC bar, current charging power |
-| **Settings** | Target SoC, Min SoC sliders, phase switch, current limits, battery boost, priority, smart charging limit, feed-in priority limit |
+| **Settings** | Target SoC, Min SoC sliders, phase switch, current limits, battery boost, priority, smart charging limit, feed-in priority limit (each can be hidden via `hide_settings`, values can be typed directly, see [Slider settings](#slider-settings)) |
 | **Plan** | Charge plan: vehicle selector, target time, target SoC, activate/delete |
 | **Session** | Energy, cost, duration and phases of the current session |
 
@@ -379,7 +410,7 @@ Minimalist charge plan view:
 
 - Vehicle selector
 - Target time picker
-- Target SoC slider
+- Target SoC slider (tap the value to type it, see [Slider settings](#slider-settings))
 - **Live preview** - as soon as a target SoC and time are set, a chart previews the planned charging window over the upcoming tariff/forecast, with the expected duration, charging power and the average price or CO₂ of the plan (ha-evcc 2026.6.x+). It updates while you drag and is debounced and cached so it never floods evcc
 - **Continuous charging** toggle - keeps the charge running without interruption once started
 - **Preconditioning** select - pre-heats/cools the battery before reaching the target SoC (off / minutes / hours / all)

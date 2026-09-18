@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Pre-commit hook for hass-evcc-card.
+#
+# Runs only when files under dist/ are part of the commit:
+#   1. syntax check of dist/evcc-card.js (as an ES module)
+#   2. headless render smoke of every card mode (test/run.py --only render)
+#   3. README screenshots regenerated from the harness (test/screenshots.py)
+#      and, if they changed, added to the commit
+#
+# Activate once per clone (this is not done automatically):
+#   git config core.hooksPath .githooks
+# Skip for one commit:  git commit --no-verify   or   EVCC_SKIP_HOOK=1 git commit
+# Tooling (Node, Chromium, Playwright):  bash test/setup.sh
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+[ "${EVCC_SKIP_HOOK:-0}" = "1" ] && exit 0
+git diff --cached --name-only --diff-filter=ACMR | grep -q '^dist/' || exit 0
+
+for tool in node chromium python3; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "pre-commit: '$tool' not found. Run 'bash test/setup.sh' or commit with --no-verify." >&2
+    exit 1
+  fi
+done
+
+echo "pre-commit: syntax check"
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+cp dist/evcc-card.js "$tmp/evcc-card.mjs"
+node --check "$tmp/evcc-card.mjs"
+
+echo "pre-commit: render smoke"
+python3 test/run.py --only render >"$tmp/render.log" 2>&1 || { tail -30 "$tmp/render.log" >&2; exit 1; }
+tail -1 "$tmp/render.log"
+
+echo "pre-commit: screenshots"
+python3 test/screenshots.py --out images >/dev/null
+changed="$(git status --porcelain -- images/ | awk '{print $2}')"
+if [ -n "$changed" ]; then
+  git add -- $changed
+  echo "pre-commit: updated screenshots added to the commit:"
+  printf '  %s\n' $changed
+else
+  echo "pre-commit: screenshots unchanged"
+fi
