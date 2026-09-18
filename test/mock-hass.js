@@ -6,11 +6,29 @@
 // `ws` is true (default). Rate timestamps in the forecast and plan-preview
 // fixtures are shifted so the series starts at the current hour; otherwise a
 // fixture captured yesterday would render as "no data" today.
-export async function createMockHass({ language = "de", ws = true } = {}) {
+//
+// Fixture variants (all optional):
+//   set:     { "binary_sensor.evcc_wp_disabled_in_config": "on", ... }  override states
+//   disable: ["number.evcc_openwb_smart_cost_limit", ...]  mark registry entries disabled and drop their state
+//   rename:  { from: "evcc_", to: "myevcc_" }  rename the entity prefix everywhere (multi-instance setups)
+export async function createMockHass({ language = "de", ws = true, set = {}, disable = [], rename = null } = {}) {
   const base = new URL("./fixtures/", import.meta.url);
   const json = (p) => fetch(new URL(p, base)).then(r => r.ok ? r.json() : Promise.reject(new Error(`fixture ${p}: ${r.status}`)));
 
-  const [states, registry] = await Promise.all([json("states.json"), json("entity_registry.json")]);
+  let [states, registry] = await Promise.all([json("states.json"), json("entity_registry.json")]);
+  states = { ...states }; registry = registry.map(e => ({ ...e }));
+  for (const [id, state] of Object.entries(set)) {
+    if (states[id]) states[id] = { ...states[id], state: String(state) };
+  }
+  for (const id of disable) {
+    delete states[id];
+    const e = registry.find(r => r.entity_id === id); if (e) e.disabled_by = "user";
+  }
+  if (rename?.from && rename?.to) {
+    const ren = (id) => id.replace(new RegExp(`^([a-z_]+\\.)${rename.from}`), `$1${rename.to}`);
+    states = Object.fromEntries(Object.entries(states).map(([id, s]) => [ren(id), { ...s, entity_id: ren(id) }]));
+    registry = registry.map(e => ({ ...e, entity_id: ren(e.entity_id) }));
+  }
   const fx = ws ? {
     capabilities: await json("ws/capabilities.json"),
     sessions:     await json("ws/sessions.json"),

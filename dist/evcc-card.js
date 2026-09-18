@@ -5635,7 +5635,7 @@ class EvccCard extends HTMLElement {
       .slider-edit-ok     { color: var(--evcc-green); font-weight: 700; }
       .slider-edit-cancel { color: var(--secondary-text-color); }
       .slider-edit-field {
-        flex: 1 1 80px; min-width: 80px; min-height: 44px; display: flex; align-items: center; box-sizing: border-box;
+        flex: 1 1 80px; min-width: 64px; min-height: 44px; display: flex; align-items: center; box-sizing: border-box;
         border: 1px solid var(--divider-color, #555); border-radius: 8px; padding: 0 10px;
         background: var(--card-background-color, #fff);
       }
@@ -5645,6 +5645,12 @@ class EvccCard extends HTMLElement {
         font-family: inherit; font-size: 1.15rem; color: var(--primary-text-color); text-align: right; padding: 0;
       }
       .slider-edit-unit { flex: 0 0 auto; margin-left: 6px; font-size: .9rem; color: var(--secondary-text-color); white-space: nowrap; }
+      /* Narrow cards (≈300 px): 4 × 40 px buttons + 4 gaps + a 64 px field still fit the content box. */
+      @container (max-width: 340px) {
+        .slider-edit { gap: 6px; }
+        .slider-edit-btn { min-width: 40px; }
+        .slider-edit-field { flex-basis: 64px; min-width: 64px; padding: 0 8px; }
+      }
       .smart-active-hint { font-size: .75rem; color: var(--evcc-green); margin-top: -4px; margin-bottom: 8px; }
       .smart-cost-clear-row { display: flex; justify-content: flex-end; margin-top: 6px; margin-bottom: 2px; }
       .smart-cost-clear-btn { background: none; border: 1px solid var(--divider-color, #555); border-radius: 4px; cursor: pointer; font-size: .75rem; color: var(--secondary-text-color); padding: 3px 8px; font-family: inherit; transition: border-color .15s, color .15s; }

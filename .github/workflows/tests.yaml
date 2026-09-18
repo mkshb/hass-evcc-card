@@ -1,0 +1,96 @@
+name: Tests
+
+# Headless browser tests of the card against a mock hass (test/run.py), the
+# ha-evcc entity contract check (test/check_ha_evcc.py) and a comparison of the
+# committed README screenshots with a fresh render. See test/README.md.
+
+on:
+  push:
+    branches: [main]      # confirmation of the merged state (what HACS ships)
+  pull_request:           # the check before the merge
+  schedule:
+    - cron: "30 3 * * *"   # nightly: catches renamed entities in a new ha-evcc release
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PLAYWRIGHT_VERSION: "1.63.0"
+
+jobs:
+  suite:
+    name: Test suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install browser and fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-dejavu-core fonts-liberation fonts-roboto
+          python3 -m pip install -q "playwright==${PLAYWRIGHT_VERSION}" pillow
+          python3 -m playwright install --with-deps chromium
+      - name: Syntax check (ES module)
+        run: |
+          cp dist/evcc-card.js /tmp/evcc-card.mjs
+          node --check /tmp/evcc-card.mjs
+      - name: Run test suite
+        run: python3 test/run.py
+      - name: Publish report
+        if: always()
+        run: |
+          if [ -f test/out/report.md ]; then cat test/out/report.md >> "$GITHUB_STEP_SUMMARY"; fi
+      - name: Upload report and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: test/out
+          retention-days: 14
+
+  screenshots:
+    name: README screenshots up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install browser and fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-dejavu-core fonts-liberation fonts-roboto
+          python3 -m pip install -q "playwright==${PLAYWRIGHT_VERSION}" pillow
+          python3 -m playwright install --with-deps chromium
+      - name: Render screenshots
+        run: python3 test/screenshots.py --out test/out
+      - name: Compare with committed images
+        # Playwright's Chromium is not the Debian build used locally; anti-aliasing
+        # differences stay well below the tolerance, layout changes do not.
+        run: python3 test/compare_images.py --new test/out --ref images --tolerance 2.0 --summary "$GITHUB_STEP_SUMMARY"
+      - name: Upload rendered screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-screenshots
+          path: test/out/*.png
+          retention-days: 14
+
+  ha-evcc-contract:
+    name: Entities exist in ha-evcc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check FEATURES against the latest marq24/ha-evcc
+        run: |
+          python3 test/check_ha_evcc.py --clone | tee /tmp/contract.txt
+          { echo '## ha-evcc contract'; echo; echo '```'; cat /tmp/contract.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

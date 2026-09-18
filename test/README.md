@@ -5,15 +5,39 @@ runtime: the card runs against a mock `hass` object fed from JSON fixtures.
 
 ## What is covered
 
-- **Render smoke**: every card mode in light and dark, screenshot per mode,
-  fails on any console error or uncaught exception.
-- **Interaction**: the direct-input panel on number sliders, select-backed
-  sliders (min/max current), battery boost and the plan target; keyboard
-  writes; outside click / tab switch closing the panel.
-- **Config**: `hide_settings`, `slider_steps`, and the editor checkboxes.
+Groups in `run.py` (`--only <group>`, repeatable):
 
-Assertions are made on the service calls the card issues (`hass.callService`),
-which the mock records instead of executing.
+| Group | Checks |
+|---|---|
+| `render` | Every card mode in light and dark, screenshot per mode, fails on any console error; stats bar chart from sessions; entity fallback without the WebSocket API |
+| `interaction` | Direct-input panel on number sliders, select-backed sliders (min/max current), battery boost and the plan target; keyboard writes; outside click / tab switch closing the panel; `hide_settings`, `slider_steps`; editor checkboxes; plan preview request |
+| `contracts` | Every writing control calls the right HA service with the right payload: mode, phases, clear-limit buttons, boost chip, continuous charging, preconditioning, vehicle select, set/delete plan, battery discharge control, battery selects |
+| `traffic` | Plan preview traffic rules promised to ha-evcc: one call per target change, none while idle, cache hit on repeat, one call per slider drag |
+| `priority` | Regression for #170: drag and drop reorders the rows without jitter, apply writes the new priorities |
+| `locales` | All 8 locale files share the same keys, `index.json` is complete, no untranslated key reaches the DOM in any language |
+| `discovery` | Custom entity prefix, `disabled_loadpoints` hide/dim/show, heating loadpoint (temperature label, no plan), disabled limit entities |
+| `widths` | 300 px and 650 px cards: the input panel stays inside the card, no horizontal overflow |
+
+Assertions are made on the service calls the card issues (`hass.callService`)
+and the WebSocket commands it sends, which the mock records instead of executing.
+
+## ha-evcc contract check
+
+`test/check_ha_evcc.py` verifies that every entity in the card's `FEATURES`
+array can be produced by ha-evcc (`evcc_intg`): it parses the tag definitions
+and entity description lists of the integration and compares the resulting
+`<domain>.<prefix>[<loadpoint>_]<suffix>` ids with the card. Exit code 1 on a
+missing counterpart; a second column reports whether the entity was seen in
+the registry fixture.
+
+```bash
+python3 test/check_ha_evcc.py                          # ../ha-evcc checkout next to this repo
+python3 test/check_ha_evcc.py --ha-evcc /path/to/config # any tree containing custom_components/evcc_intg
+python3 test/check_ha_evcc.py --clone                  # latest upstream, for CI
+```
+
+Check against the ha-evcc version you release for; an outdated checkout reports
+entities added later (e.g. `disabled_in_config`, the energy counters) as missing.
 
 ## Run
 
@@ -67,12 +91,25 @@ git config core.hooksPath .githooks
 
 Skip it for one commit with `git commit --no-verify` or `EVCC_SKIP_HOOK=1`.
 
+## Continuous integration
+
+`.github/workflows/tests.yaml` runs on every pull request, on pushes to `main`,
+nightly and on demand, in three jobs:
+
+| Job | What it does |
+|---|---|
+| Test suite | Syntax check, `test/run.py` with Playwright's bundled Chromium; `report.md` becomes the job summary, `test/out` is uploaded as an artifact |
+| README screenshots up to date | Renders all screenshots and compares them with `images/` via `test/compare_images.py` (tolerance 2 % differing pixels, absorbs anti-aliasing differences between Chromium builds). Fails when a card change was committed without regenerating the images |
+| Entities exist in ha-evcc | `test/check_ha_evcc.py --clone` against the latest marq24/ha-evcc; the nightly run catches renamed entities in new integration releases |
+
 ## Requirements
 
 `test/setup.sh` installs everything below on Debian/Ubuntu (idempotent, needs sudo).
 
-- Python 3 with `playwright` (`pip install playwright`)
-- Chromium at `/usr/bin/chromium` (Debian: `apt install chromium fonts-dejavu-core`)
+- Python 3 with `playwright` and `pillow` (`pip install playwright pillow`)
+- Chromium: `/usr/bin/chromium` (Debian: `apt install chromium fonts-dejavu-core fonts-roboto`)
+  or Playwright's own (`python3 -m playwright install chromium`). `EVCC_CHROMIUM=<path>` picks
+  a binary, `EVCC_CHROMIUM=bundled` forces the Playwright one (what CI uses)
 - Node.js for a plain syntax check:
   `cp dist/evcc-card.js /tmp/evcc-card.mjs && node --check /tmp/evcc-card.mjs`
   (the card uses `import.meta`, so it must be checked as an ES module)
@@ -88,6 +125,8 @@ Skip it for one commit with `git commit --no-verify` or `EVCC_SKIP_HOOK=1`.
 | `fixtures/ws/*.json` | Responses of the ha-evcc WebSocket data API: `capabilities`, `sessions`, `forecast_{grid,solar,planner}`, `plan_preview`. Timestamps are re-based to "now" by the mock |
 | `screenshots.py` | All README screenshots from the harness: one light/dark pair per mode (`images/<mode>-{light,dark}.png`, the card element at 470 px) plus the `slider-input` crop. `--only <name>` for a single pair |
 | `run.py` | Playwright runner: serves the repo root over HTTP, drives the harness |
+| `compare_images.py` | Compares a fresh render with the committed `images/` (used by CI) |
+| `check_ha_evcc.py` | Entity contract check against ha-evcc (see below) |
 
 ## Fixtures
 

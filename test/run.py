@@ -17,6 +17,12 @@ MODES = ["loadpoint", "compact", "battery", "site", "flow", "grid", "stats", "pl
 # The browser clock is frozen at the capture time of the fixtures so every run
 # renders the same pixels (hour labels, plan times, "current month"). Timezone
 # and locale match the instance the fixtures came from.
+# Browser: EVCC_CHROMIUM=<path> overrides, EVCC_CHROMIUM=bundled forces Playwright's own
+# Chromium (`playwright install chromium`, what CI uses); otherwise the system Chromium
+# (Debian) when present, else the bundled one.
+_chromium = os.environ.get("EVCC_CHROMIUM") or ("/usr/bin/chromium" if os.path.exists("/usr/bin/chromium") else None)
+BROWSER = {} if _chromium in (None, "bundled") else {"executable_path": _chromium}
+
 FIXED_TIME = "2026-09-18T13:00:00"
 TIMEZONE   = "Europe/Berlin"
 LOCALE     = "de-DE"
@@ -81,9 +87,12 @@ def new_page(browser, width=480, height=900):
     return page
 
 
-def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="de", ws=True):
+def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="de", ws=True, set=None, disable=None, rename=None):
     q = {"w": width, "lang": lang}
     if not ws: q["ws"] = 0
+    if set:     q["set"] = ",".join(f"{k}:{v}" for k, v in set.items())
+    if disable: q["disable"] = ",".join(disable)
+    if rename:  q["rename"] = f"{rename[0]}:{rename[1]}"
     if config is not None: q["config"] = json.dumps(config)
     else: q["mode"] = mode or "loadpoint"
     if dark: q["dark"] = 1
@@ -294,17 +303,224 @@ def interactions(browser, port, t):
     page.close()
 
 
+def contracts(browser, port, t):
+    """Every writing control must call the right HA service with the right payload."""
+    t.group("contracts - writing actions and their service calls")
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"})
+    last = lambda: svc(page)[-1]
+    exp  = lambda domain, service, data: {"domain": domain, "service": service, "data": data}
+
+    page.locator(in_card('button.mode-btn[data-value="now"]')).click(); page.wait_for_timeout(400)
+    t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_openwb_mode", "option": "now"}),
+            "mode button → select.select_option mode=now", json.dumps(last()))
+    page.locator(in_card('button.phase-btn[data-value="3"]')).click(); page.wait_for_timeout(400)
+    t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_openwb_phases_configured", "option": "3"}),
+            "phase button → select.select_option phases_configured=3", json.dumps(last()))
+    page.locator(in_card('button.smart-cost-clear-btn[data-entity="button.evcc_openwb_smart_cost_limit"]')).click()
+    t.check(last() == exp("button", "press", {"entity_id": "button.evcc_openwb_smart_cost_limit"}),
+            "clear limit → button.press smart_cost_limit", json.dumps(last()))
+    page.locator(in_card('button.smart-cost-clear-btn[data-entity="button.evcc_openwb_smart_feed_in_priority_limit"]')).click()
+    t.check(last() == exp("button", "press", {"entity_id": "button.evcc_openwb_smart_feed_in_priority_limit"}),
+            "clear feed-in limit → button.press", json.dumps(last()))
+    page.locator(in_card('button.toggle[data-entity="switch.evcc_openwb_plan_strategy_continuous"]')).click(); page.wait_for_timeout(400)
+    t.check(last() == exp("switch", "turn_on", {"entity_id": "switch.evcc_openwb_plan_strategy_continuous"}),
+            "continuous charging (off) → switch.turn_on", json.dumps(last()))
+    page.locator(in_card("select.plan-precondition-select")).select_option("1800"); page.wait_for_timeout(400)
+    t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_openwb_plan_strategy_precondition", "option": "1800"}),
+            "preconditioning → select.select_option 1800", json.dumps(last()))
+    page.locator(in_card("select.plan-vehicle-select")).select_option("db:38"); page.wait_for_timeout(400)
+    t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_openwb_vehicle_name", "option": "db:38"}),
+            "vehicle select → select.select_option vehicle_name=db:38", json.dumps(last()))
+    page.locator(in_card("select.plan-vehicle-select")).select_option("db:18"); page.wait_for_timeout(400)
+
+    # plan save: vehicle db:18, soc via panel, time via the datetime-local input
+    page.locator(in_card("button.plan-soc-val")).click()
+    page.locator(in_card(".slider-edit-input")).fill("80"); page.locator(in_card("[data-edit-ok]")).click()
+    page.locator(in_card("input.plan-time-input")).fill("2026-09-19T07:00"); page.wait_for_timeout(300)
+    page.locator(in_card("button.plan-btn.save")).click(); page.wait_for_timeout(400)
+    t.check(last() == exp("evcc_intg", "set_vehicle_plan", {"vehicle": "db:18", "soc": 80, "startdate": "2026-09-19 07:00:00"}),
+            "set plan → evcc_intg.set_vehicle_plan {vehicle, soc, startdate}", json.dumps(last()))
+    page.close()
+
+    # plan delete needs an active plan → state override
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]}, set={"binary_sensor.evcc_openwb_plan_active": "on"})
+    t.check(page.locator(in_card("button.plan-btn.delete")).count() == 1, "delete button shown while a plan is active")
+    page.locator(in_card("button.plan-btn.delete")).click(); page.wait_for_timeout(300)
+    t.check(last() == exp("evcc_intg", "del_vehicle_plan", {"vehicle": "db:18"}), "delete plan → evcc_intg.del_vehicle_plan", json.dumps(last()))
+    page.close()
+
+    # battery boost chip is only offered while the boost limit is below 100 %
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]}, set={"select.evcc_openwb_battery_boost_limit": "80"})
+    page.locator(in_card('button.boost-activate-btn[data-entity="switch.evcc_openwb_battery_boost"]')).click(); page.wait_for_timeout(300)
+    t.check(last() == exp("switch", "turn_on", {"entity_id": "switch.evcc_openwb_battery_boost"}),
+            "battery boost chip (off, limit 80 %) → switch.turn_on", json.dumps(last()))
+    page.close()
+
+    # battery mode
+    page = new_page(browser, 480, 900)
+    open_card(page, port, mode="battery")
+    page.locator(in_card("button.batt-discharge-toggle")).click(); page.wait_for_timeout(300)
+    t.check(last() == exp("switch", "turn_off", {"entity_id": "switch.evcc_battery_discharge_control"}),
+            "discharge control (on) → switch.turn_off", json.dumps(last()))
+    # the battery block renders its selects in more than one tab panel → take the visible first one
+    page.locator(in_card('select.batt-inline-select[data-entity="select.evcc_priority_soc"]')).first.select_option("30"); page.wait_for_timeout(300)
+    t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_priority_soc", "option": "30"}),
+            "priority soc → select.select_option 30", json.dumps(last()))
+    page.close()
+
+
+def traffic(browser, port, t):
+    """Plan preview traffic rules promised to ha-evcc: idle = zero calls, a drag = one call."""
+    t.group("traffic - plan preview backend calls")
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]})
+    count = lambda typ: len([c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == typ])
+    fc0, s0 = count("evcc_intg/forecast"), count("evcc_intg/sessions")
+    p0 = count("evcc_intg/plan_preview")
+    t.check(p0 == 1, "first render primes exactly one plan_preview for the default target", str(p0))
+    page.locator(in_card("button.plan-soc-val")).click()
+    page.locator(in_card(".slider-edit-input")).fill("80"); page.locator(in_card("[data-edit-ok]")).click()
+    page.wait_for_timeout(1500)
+    t.check(count("evcc_intg/plan_preview") == p0 + 1, "one target change → exactly one plan_preview call", str(count("evcc_intg/plan_preview")))
+    # idle: 8 hass updates over ~3.5 s must not trigger any backend call
+    for _ in range(8):
+        page.evaluate("window.__card.hass = { ...window.__hass, states: { ...window.__hass.states } }"); page.wait_for_timeout(420)
+    t.check(count("evcc_intg/plan_preview") == p0 + 1, "idle with hass updates → no further plan_preview calls", str(count("evcc_intg/plan_preview")))
+    t.check(count("evcc_intg/forecast") == fc0 and count("evcc_intg/sessions") == s0, "idle → no further forecast/sessions calls",
+            f"forecast {fc0}->{count('evcc_intg/forecast')}, sessions {s0}->{count('evcc_intg/sessions')}")
+    # same value again (re-apply 80) must hit the cache, not the backend
+    page.locator(in_card("button.plan-soc-val")).click(); page.locator(in_card("[data-edit-ok]")).click(); page.wait_for_timeout(1200)
+    t.check(count("evcc_intg/plan_preview") == p0 + 1, "re-applying the same target → served from cache", str(count("evcc_intg/plan_preview")))
+    # drag the plan slider through several values → one call on release
+    rng = page.locator(in_card("input.plan-soc-range")); box = rng.bounding_box()
+    y = box["y"] + box["height"] / 2
+    page.mouse.move(box["x"] + box["width"] * 0.75, y); page.mouse.down()
+    for i in range(1, 9): page.mouse.move(box["x"] + box["width"] * (0.75 - i * 0.06), y); page.wait_for_timeout(60)
+    page.mouse.up(); page.wait_for_timeout(1500)
+    t.check(count("evcc_intg/plan_preview") == p0 + 2, "slider drag over 8 positions → exactly one more plan_preview call", str(count("evcc_intg/plan_preview")))
+    page.close()
+
+
+def priority_dnd(browser, port, t):
+    """Regression for #170: drag & drop reorder in priority mode, then apply."""
+    t.group("priority - drag and drop (#170)")
+    page = new_page(browser, 480, 700)
+    errors = open_card(page, port, mode="priority")
+    order = lambda: page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.priority-row')].map(r => r.dataset.lp)")
+    t.check(order() == ["openwb", "wp"], "initial order by priority", str(order()))
+    handle = page.locator(in_card('.priority-row[data-lp="wp"] .priority-handle')); hb = handle.bounding_box()
+    target = page.locator(in_card('.priority-row[data-lp="openwb"]')).bounding_box()
+    x, y0 = hb["x"] + hb["width"] / 2, hb["y"] + hb["height"] / 2
+    y1 = target["y"] + 4
+    page.mouse.move(x, y0); page.mouse.down()
+    jitter = []
+    for i in range(1, 11):
+        page.mouse.move(x, y0 + (y1 - y0) * i / 10); page.wait_for_timeout(30)
+        jitter.append(page.evaluate("(() => { const r = window.__card.shadowRoot.querySelector('.priority-row.priority-dragging'); return r ? r.getBoundingClientRect().top : null; })()"))
+    steps = [b - a for a, b in zip(jitter, jitter[1:]) if a is not None and b is not None]
+    t.check(all(d <= 0.5 for d in steps), "dragged row moves monotonically with the pointer (no jitter)", f"top deltas: {[round(d, 1) for d in steps]}")
+    t.check(page.locator(in_card(".priority-placeholder")).count() == 1, "placeholder present during drag")
+    page.mouse.up(); page.wait_for_timeout(400)
+    t.check(order() == ["wp", "openwb"], "row dropped at the top → new order", str(order()))
+    t.check(page.locator(in_card(".priority-target.changed")).count() == 2, "both targets marked as changed")
+    page.locator(in_card("[data-priority-apply]")).click(); page.wait_for_timeout(400)
+    calls = {c["data"]["entity_id"]: c["data"]["value"] for c in svc(page) if c["domain"] == "number"}
+    t.check(calls == {"number.evcc_wp_priority": 1, "number.evcc_openwb_priority": 0}, "apply → number.set_value wp=1, openwb=0", json.dumps(calls))
+    t.check(not errors, "no console errors during drag", "; ".join(errors)[:200])
+    page.close()
+
+
+LANGS = ["de", "en", "es", "fr", "hr", "nl", "pl", "pt"]
+
+def locales(browser, port, t):
+    """Locale files are complete and no raw translation key reaches the DOM."""
+    t.group("locales - key parity and untranslated keys")
+    ref = json.loads((ROOT / "dist/locales/en.json").read_text(encoding="utf-8"))
+    for lang in LANGS:
+        d = json.loads((ROOT / f"dist/locales/{lang}.json").read_text(encoding="utf-8"))
+        missing, extra = sorted(set(ref) - set(d)), sorted(set(d) - set(ref))
+        t.check(not missing and not extra, f"{lang}.json has the same keys as en.json", f"missing {missing[:5]} extra {extra[:5]}")
+    index = json.loads((ROOT / "dist/locales/index.json").read_text(encoding="utf-8"))
+    t.check(sorted(index) == sorted(LANGS), "locales/index.json lists every language", str(index))
+    hook = """() => { const proto = customElements.get('evcc-card').prototype; if (proto.__wrapped) return;
+        const orig = proto._t; proto.__wrapped = true; window.__missingKeys = new Set();
+        proto._t = function(k, ...a) { const v = orig.call(this, k, ...a); if (v === k) window.__missingKeys.add(k); return v; }; }"""
+    for lang in LANGS:
+        missing = set()
+        for cfg in ({"mode": "loadpoint", "charge_current_settings": "expanded"}, {"mode": "stats"}, {"mode": "battery"}, {"mode": "site"}):
+            page = new_page(browser, 480, 1800)
+            open_card(page, port, config=cfg, lang=lang)
+            page.evaluate(hook); page.evaluate("window.__card._lastRenderKey = null; window.__card._render()"); page.wait_for_timeout(300)
+            missing |= set(page.evaluate("[...window.__missingKeys]"))
+            page.close()
+        t.check(not missing, f"{lang}: no untranslated keys rendered", str(sorted(missing))[:200])
+
+
+def discovery(browser, port, t):
+    """Entity discovery variants: custom prefix, disabled loadpoints, heating loadpoints, disabled entities."""
+    t.group("discovery - prefix, disabled and heating loadpoints")
+    page = new_page(browser, 480, 1400)
+    errors = open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]}, rename=("evcc_", "myevcc_"))
+    t.check(page.locator(in_card('button.mode-btn[data-entity="select.myevcc_openwb_mode"]')).count() > 0 and not errors,
+            "custom prefix myevcc_ detected from the registry", "; ".join(errors)[:200])
+    page.close()
+    for opt, want_rows, want_badge in (("hide", 1, 0), ("dim", 2, 1), ("show", 2, 0)):
+        page = new_page(browser, 480, 1800)
+        open_card(page, port, config={"mode": "loadpoint", "disabled_loadpoints": opt}, set={"binary_sensor.evcc_wp_disabled_in_config": "on"})
+        rows, badge = page.locator(in_card(".loadpoint")).count(), page.locator(in_card(".lp-badge.disabled")).count()
+        t.check(rows == want_rows and badge == want_badge, f"disabled_loadpoints: {opt} → {want_rows} loadpoint(s), {want_badge} disabled badge", f"rows={rows} badge={badge}")
+        page.close()
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["wp"]})
+    labels = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.slider-row label')].map(l => l.textContent.trim())")
+    t.check("Ziel-Temperatur" in labels and page.locator(in_card(".plan-block")).count() == 0,
+            "heating loadpoint: temperature label, no charge plan block", str(labels))
+    page.close()
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"},
+              disable=["number.evcc_openwb_smart_cost_limit", "number.evcc_openwb_smart_feed_in_priority_limit"])
+    t.check(page.locator(in_card(".smart-cost-section")).count() == 0 and page.locator(in_card(".current-block")).count() == 1,
+            "disabled limit entities: sections absent, block still rendered")
+    page.close()
+
+
+def widths(browser, port, t):
+    """Narrow and wide cards: the input panel stays inside the card, no console errors."""
+    t.group("widths - responsive layout")
+    for w in (300, 650):
+        page = new_page(browser, w + 40, 1600)
+        errors = open_card(page, port, width=w, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"})
+        page.locator(in_card('input[data-entity="number.evcc_openwb_smart_cost_limit"] + button.slider-val')).click(); page.wait_for_timeout(150)
+        card, panel = page.locator(in_card("ha-card")).bounding_box(), page.locator(in_card(".slider-edit")).bounding_box()
+        inside = panel["x"] >= card["x"] and panel["x"] + panel["width"] <= card["x"] + card["width"] + 0.5
+        scroll = page.evaluate("(() => { const c = window.__card.shadowRoot.querySelector('ha-card'); return c.scrollWidth - c.clientWidth; })()")
+        page.locator("#host").screenshot(path=str(OUT / f"width-{w}.png"))
+        t.check(inside and scroll <= 0 and not errors, f"{w} px: input panel inside the card, no horizontal overflow", f"overflow={scroll}; {'; '.join(errors)[:150]}")
+        page.close()
+
+
+GROUPS = {"render": render_smoke, "interaction": interactions, "contracts": contracts, "traffic": traffic,
+          "priority": priority_dnd, "locales": locales, "discovery": discovery, "widths": widths}
+
+
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--headed", action="store_true"); ap.add_argument("--only", choices=["render", "interaction"])
+    ap = argparse.ArgumentParser(); ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--only", action="append", choices=list(GROUPS), help="run only these groups (repeatable)")
     a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     from playwright.sync_api import sync_playwright
     srv, port = serve()
     t = T()
     with sync_playwright() as p:
-        browser = p.chromium.launch(executable_path="/usr/bin/chromium", headless=not a.headed, args=["--no-sandbox", "--lang=de-DE"])
-        if a.only in (None, "render"):      render_smoke(browser, port, t)
-        if a.only in (None, "interaction"): interactions(browser, port, t)
+        browser = p.chromium.launch(**BROWSER, headless=not a.headed, args=["--no-sandbox", "--lang=de-DE"])
+        for name, fn in GROUPS.items():
+            if not a.only or name in a.only:
+                try: fn(browser, port, t)
+                except Exception as e:   # a crashed group must not hide the other groups' results
+                    t.fail(f"{name}: group crashed", f"{type(e).__name__}: {str(e)[:300]}")
         browser.close()
     srv.shutdown()
     report = t.write_reports(OUT, sorted(p.name for p in OUT.glob("*.png")))

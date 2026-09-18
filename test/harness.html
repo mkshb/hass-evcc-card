@@ -52,7 +52,11 @@
     if (q.get("dark")) document.body.classList.add("dark");
     if (q.get("w"))    document.getElementById("host").style.setProperty("--w", `${q.get("w")}px`);
 
-    const hass = await createMockHass({ language: q.get("lang") || "de", ws: q.get("ws") !== "0" });
+    // Fixture variants via query: set=entity:state,... disable=entity,... rename=from:to
+    const set = Object.fromEntries((q.get("set") || "").split(",").filter(Boolean).map(kv => kv.split(":")));
+    const disable = (q.get("disable") || "").split(",").filter(Boolean);
+    const rename = q.get("rename") ? (([from, to]) => ({ from, to }))(q.get("rename").split(":")) : null;
+    const hass = await createMockHass({ language: q.get("lang") || "de", ws: q.get("ws") !== "0", set, disable, rename });
     await customElements.whenDefined("evcc-card");
     const card = document.createElement("evcc-card");
     card.setConfig(config);
