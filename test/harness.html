@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>evcc-card test harness</title>
+  <style>
+    /* HA default theme tokens (light) and the dark theme overrides, as the frontend sets them. */
+    :root {
+      --primary-color: #03a9f4; --primary-text-color: #212121; --secondary-text-color: #727272;
+      --primary-background-color: #fafafa; --card-background-color: #fff;
+      --divider-color: rgba(0, 0, 0, .12); --secondary-background-color: #e5e5e5;
+      --ha-card-border-radius: 12px; --ha-card-box-shadow: none; --ha-card-border-width: 1px;
+      /* --ha-card-background / --ha-card-border-color are left undefined on purpose: a var()
+         alias declared on :root would resolve there (light values) and ignore body.dark. */
+    }
+    body.dark {
+      --primary-text-color: #e1e1e1; --secondary-text-color: #9b9b9b;
+      --primary-background-color: #111111; --card-background-color: #1c1c1c;
+      --divider-color: rgba(225, 225, 225, .12); --secondary-background-color: #202020;
+    }
+    body { margin: 0; padding: 16px; background: var(--primary-background-color); font-family: Roboto, "Segoe UI", sans-serif; color: var(--primary-text-color); }
+    #host { width: var(--w, 400px); }
+  </style>
+</head>
+<body>
+  <div id="host"></div>
+  <script type="module">
+    import { createMockHass } from "./mock-hass.js";
+
+    // The card renders into an <ha-card>, which HA defines. Outside HA it is an
+    // unknown (transparent) element, so provide the essentials of HA's ha-card:
+    // background, border, radius and shadow from the theme tokens above.
+    if (!customElements.get("ha-card")) {
+      customElements.define("ha-card", class extends HTMLElement {
+        constructor() {
+          super();
+          this.attachShadow({ mode: "open" }).innerHTML = `<style>
+            :host { display: block; position: relative; box-sizing: border-box; color: var(--primary-text-color);
+                    background: var(--ha-card-background, var(--card-background-color, white));
+                    border-radius: var(--ha-card-border-radius, 12px); box-shadow: var(--ha-card-box-shadow, none);
+                    border-width: var(--ha-card-border-width, 1px); border-style: solid;
+                    border-color: var(--ha-card-border-color, var(--divider-color, #e0e0e0)); }
+          </style><slot></slot>`;
+        }
+      });
+    }
+
+    import("../dist/evcc-card.js");
+
+    const q      = new URLSearchParams(location.search);
+    const config = q.get("config") ? JSON.parse(q.get("config")) : { mode: q.get("mode") || "loadpoint" };
+    if (q.get("dark")) document.body.classList.add("dark");
+    if (q.get("w"))    document.getElementById("host").style.setProperty("--w", `${q.get("w")}px`);
+
+    // Fixture variants via query: set=entity:state,... disable=entity,... rename=from:to
+    const set = Object.fromEntries((q.get("set") || "").split(",").filter(Boolean).map(kv => kv.split(":")));
+    const disable = (q.get("disable") || "").split(",").filter(Boolean);
+    const rename = q.get("rename") ? (([from, to]) => ({ from, to }))(q.get("rename").split(":")) : null;
+    const hass = await createMockHass({ language: q.get("lang") || "de", ws: q.get("ws") !== "0", set, disable, rename });
+    await customElements.whenDefined("evcc-card");
+    const card = document.createElement("evcc-card");
+    card.setConfig(config);
+    card.hass = hass;
+    document.getElementById("host").appendChild(card);
+
+    // Mirror HA: every state change arrives as a new hass object.
+    window.addEventListener("mock-hass-updated", () => { card.hass = { ...hass, states: hass.states }; });
+
+    window.__card  = card;
+    window.__hass  = hass;
+    window.__ready = () => !!card.shadowRoot?.querySelector("ha-card") && card._translationsReady === true;
+  </script>
+</body>
+</html>

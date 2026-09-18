@@ -1,0 +1,2754 @@
+[
+ {
+  "entity_id": "binary_sensor.evcc_battery_grid_charge_active",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_battery_grid_charge_active",
+  "original_name": "Hausbatterie: Netzladen"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_openwb_disabled_in_config",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_disabled_in_config",
+  "original_name": "openWB Deaktiviert in evcc Konfiguration"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_openwb_charging",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_charging",
+  "original_name": "openWB Lädt"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_openwb_connected",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_connected",
+  "original_name": "openWB Verbunden"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_openwb_enabled",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_enabled",
+  "original_name": "openWB Aktiviert"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_openwb_smart_cost_active",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_smart_cost_active",
+  "original_name": "openWB Smartes Netzladen"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_openwb_smart_feed_in_priority_active",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_smart_feed_in_priority_active",
+  "original_name": "openWB Smarte Einspeisegrenze"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_openwb_vehicle_detection_active",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_vehicle_detection_active",
+  "original_name": "openWB Fahrzeugerkennung"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_openwb_vehicle_climater_active",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_vehicle_climater_active",
+  "original_name": "openWB Fahrzeug Klimatisierung"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_openwb_vehicle_welcome_active",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_vehicle_welcome_active",
+  "original_name": "openWB Fahrzeug Willkommensfunktion"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_openwb_plan_active",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_plan_active",
+  "original_name": "openWB Plan aktiviert"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_openwb_plan_active_alt",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_plan_active_alt",
+  "original_name": "openWB Plan aktiviert (alt)"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_wp_disabled_in_config",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_disabled_in_config",
+  "original_name": "WP Deaktiviert in evcc Konfiguration"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_wp_charging",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_charging",
+  "original_name": "WP Lädt"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_wp_enabled",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_enabled",
+  "original_name": "WP Aktiviert"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_wp_smart_cost_active",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_smart_cost_active",
+  "original_name": "WP Smartes Netzladen"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_wp_smart_feed_in_priority_active",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_smart_feed_in_priority_active",
+  "original_name": "WP Smarte Einspeisegrenze"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_wp_plan_active",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_plan_active",
+  "original_name": "WP Plan aktiviert"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_wp_plan_active_alt",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_plan_active_alt",
+  "original_name": "WP Plan aktiviert (alt)"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_garage_circuits_dimmed",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_garage_circuits_dimmed",
+  "original_name": "'GARAGE' Lastmanagement Begrenzung"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_garage_circuits_curtailed",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_garage_circuits_curtailed",
+  "original_name": "'GARAGE' Lastmanagement 'gekürzt'"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_main_circuits_dimmed",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_main_circuits_dimmed",
+  "original_name": "'MAIN' Lastmanagement Begrenzung"
+ },
+ {
+  "entity_id": "binary_sensor.evcc_main_circuits_curtailed",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_main_circuits_curtailed",
+  "original_name": "'MAIN' Lastmanagement 'gekürzt'"
+ },
+ {
+  "entity_id": "button.evcc_evcc_shutdown",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_evcc_shutdown",
+  "original_name": "Server stoppen"
+ },
+ {
+  "entity_id": "button.evcc_openwb_vehicle_plans_delete",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_vehicle_plans_delete",
+  "original_name": "openWB Ladeplanung: Abfahrt löschen (Fahrzeug/SOC)"
+ },
+ {
+  "entity_id": "button.evcc_openwb_plan_delete",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_plan_delete",
+  "original_name": "openWB Ladeplanung: Abfahrt löschen (Ladepunkt/Energie)"
+ },
+ {
+  "entity_id": "button.evcc_openwb_detectvehicle",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_detectvehicle",
+  "original_name": "openWB Fahrzeugerkennung starten"
+ },
+ {
+  "entity_id": "button.evcc_openwb_smart_cost_limit",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_smart_cost_limit",
+  "original_name": "openWB € Limit entfernen"
+ },
+ {
+  "entity_id": "button.evcc_openwb_smart_feed_in_priority_limit",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_smart_feed_in_priority_limit",
+  "original_name": "openWB € Einspeisegrenze entfernen"
+ },
+ {
+  "entity_id": "button.evcc_wp_smart_cost_limit",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_smart_cost_limit",
+  "original_name": "WP € Limit entfernen"
+ },
+ {
+  "entity_id": "button.evcc_wp_smart_feed_in_priority_limit",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_smart_feed_in_priority_limit",
+  "original_name": "WP € Einspeisegrenze entfernen"
+ },
+ {
+  "entity_id": "number.evcc_residual_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_residual_power",
+  "original_name": "Restleistung"
+ },
+ {
+  "entity_id": "number.evcc_battery_grid_charge_limit",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_battery_grid_charge_limit",
+  "original_name": "Hausbatterie: Netzladen € Limit ≤"
+ },
+ {
+  "entity_id": "number.evcc_openwb_limit_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_limit_soc",
+  "original_name": "openWB Standard Ladelimit (SOC)"
+ },
+ {
+  "entity_id": "number.evcc_openwb_enable_threshold",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_enable_threshold",
+  "original_name": "openWB Schwellwert Aktivierung"
+ },
+ {
+  "entity_id": "number.evcc_openwb_disable_threshold",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_disable_threshold",
+  "original_name": "openWB Schwellwert Deaktivierung"
+ },
+ {
+  "entity_id": "number.evcc_openwb_limit_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_limit_energy",
+  "original_name": "openWB Standard Ladelimit (Energie)"
+ },
+ {
+  "entity_id": "number.evcc_openwb_smart_cost_limit",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_smart_cost_limit",
+  "original_name": "openWB € Limit ≤"
+ },
+ {
+  "entity_id": "number.evcc_openwb_smart_feed_in_priority_limit",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_smart_feed_in_priority_limit",
+  "original_name": "openWB € Einspeisegrenze ≤"
+ },
+ {
+  "entity_id": "number.evcc_openwb_enable_delay",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_enable_delay",
+  "original_name": "openWB Verzögerung Aktivierung"
+ },
+ {
+  "entity_id": "number.evcc_openwb_disable_delay",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_disable_delay",
+  "original_name": "openWB Verzögerung Deaktivierung"
+ },
+ {
+  "entity_id": "number.evcc_openwb_priority",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_priority",
+  "original_name": "openWB Priorität"
+ },
+ {
+  "entity_id": "number.evcc_wp_limit_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_limit_soc",
+  "original_name": "WP Standard Ladelimit (SOC)"
+ },
+ {
+  "entity_id": "number.evcc_wp_enable_threshold",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_enable_threshold",
+  "original_name": "WP Schwellwert Aktivierung"
+ },
+ {
+  "entity_id": "number.evcc_wp_disable_threshold",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_disable_threshold",
+  "original_name": "WP Schwellwert Deaktivierung"
+ },
+ {
+  "entity_id": "number.evcc_wp_limit_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_limit_energy",
+  "original_name": "WP Standard Ladelimit (Energie)"
+ },
+ {
+  "entity_id": "number.evcc_wp_smart_cost_limit",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_smart_cost_limit",
+  "original_name": "WP € Limit ≤"
+ },
+ {
+  "entity_id": "number.evcc_wp_smart_feed_in_priority_limit",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_smart_feed_in_priority_limit",
+  "original_name": "WP € Einspeisegrenze ≤"
+ },
+ {
+  "entity_id": "number.evcc_wp_enable_delay",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_enable_delay",
+  "original_name": "WP Verzögerung Aktivierung"
+ },
+ {
+  "entity_id": "number.evcc_wp_disable_delay",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_disable_delay",
+  "original_name": "WP Verzögerung Deaktivierung"
+ },
+ {
+  "entity_id": "number.evcc_wp_priority",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_priority",
+  "original_name": "WP Priorität"
+ },
+ {
+  "entity_id": "select.evcc_priority_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_priority_soc",
+  "original_name": "Hausbatterie: Haus hat Priorität"
+ },
+ {
+  "entity_id": "select.evcc_buffer_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_buffer_soc",
+  "original_name": "Hausbatterie: Fahrzeug zuerst"
+ },
+ {
+  "entity_id": "select.evcc_buffer_start_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_buffer_start_soc",
+  "original_name": "Hausbatterie: Fahrzeug Laden unterstützen"
+ },
+ {
+  "entity_id": "select.evcc_battery_mode",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_battery_mode",
+  "original_name": "Batterie Modus (Auto-reset nach 60 sek)"
+ },
+ {
+  "entity_id": "select.evcc_openwb_mode",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_mode",
+  "original_name": "openWB Modus"
+ },
+ {
+  "entity_id": "select.evcc_openwb_phases_configured",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_phases_configured",
+  "original_name": "openWB Ladestrom Phasen"
+ },
+ {
+  "entity_id": "select.evcc_openwb_vehicle_name",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_vehicle_name",
+  "original_name": "openWB Fahrzeug"
+ },
+ {
+  "entity_id": "select.evcc_openwb_min_current",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_min_current",
+  "original_name": "openWB Min. Ladestrom"
+ },
+ {
+  "entity_id": "select.evcc_openwb_max_current",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_max_current",
+  "original_name": "openWB Max. Ladestrom"
+ },
+ {
+  "entity_id": "select.evcc_openwb_limit_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_limit_soc",
+  "original_name": "openWB Ladeplanung: Ankunft Standard Ladelimit"
+ },
+ {
+  "entity_id": "select.evcc_openwb_min_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_min_soc",
+  "original_name": "openWB Ladeplanung: Ankunft Min. Ladung %"
+ },
+ {
+  "entity_id": "select.evcc_openwb_battery_boost_limit",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_battery_boost_limit",
+  "original_name": "openWB Schnell aus Hausbatterie laden Limit"
+ },
+ {
+  "entity_id": "select.evcc_openwb_plan_strategy_precondition",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_plan_strategy_precondition",
+  "original_name": "openWB Ladeplanung: Spätes Laden"
+ },
+ {
+  "entity_id": "select.evcc_wp_mode",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_mode",
+  "original_name": "WP Modus"
+ },
+ {
+  "entity_id": "select.evcc_wp_phases_configured",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_phases_configured",
+  "original_name": "WP Ladestrom Phasen (Wie ist deine Wallbox angeschlossen?)"
+ },
+ {
+  "entity_id": "select.evcc_wp_min_current",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_min_current",
+  "original_name": "WP Min. Ladestrom"
+ },
+ {
+  "entity_id": "select.evcc_wp_max_current",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_max_current",
+  "original_name": "WP Max. Ladestrom"
+ },
+ {
+  "entity_id": "sensor.evcc_aux_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_aux_power",
+  "original_name": "Leistung AUX"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_mode_value",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_battery_mode_value",
+  "original_name": "Batterie Modus"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_mode",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_battery_mode",
+  "original_name": "Batterie Modus [CODE]"
+ },
+ {
+  "entity_id": "sensor.evcc_home_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_home_power",
+  "original_name": "Leistung Heim"
+ },
+ {
+  "entity_id": "sensor.evcc_pv_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_pv_energy",
+  "original_name": "Energie PV"
+ },
+ {
+  "entity_id": "sensor.evcc_pv_0_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_pv_0_energy",
+  "original_name": "Energie PV 1"
+ },
+ {
+  "entity_id": "sensor.evcc_pv_1_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_pv_1_energy",
+  "original_name": "Energie PV 2"
+ },
+ {
+  "entity_id": "sensor.evcc_pv_2_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_pv_2_energy",
+  "original_name": "Energie PV 3"
+ },
+ {
+  "entity_id": "sensor.evcc_pv_3_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_pv_3_energy",
+  "original_name": "Energie PV 4"
+ },
+ {
+  "entity_id": "sensor.evcc_pv_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_pv_power",
+  "original_name": "Leistung PV"
+ },
+ {
+  "entity_id": "sensor.evcc_pv_0_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_pv_0_power",
+  "original_name": "Leistung PV 1"
+ },
+ {
+  "entity_id": "sensor.evcc_pv_1_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_pv_1_power",
+  "original_name": "Leistung PV 2"
+ },
+ {
+  "entity_id": "sensor.evcc_pv_2_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_pv_2_power",
+  "original_name": "Leistung PV 3"
+ },
+ {
+  "entity_id": "sensor.evcc_pv_3_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_pv_3_power",
+  "original_name": "Leistung PV 4"
+ },
+ {
+  "entity_id": "sensor.evcc_tariff_grid",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_tariff_grid",
+  "original_name": "Kosten Netz [Standort]"
+ },
+ {
+  "entity_id": "sensor.evcc_tariff_price_home",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_tariff_price_home",
+  "original_name": "Kosten Verbrauch [Standort]"
+ },
+ {
+  "entity_id": "sensor.evcc_tariff_co2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_tariff_co2",
+  "original_name": "Kosten CO² [Standort]"
+ },
+ {
+  "entity_id": "sensor.evcc_tariff_co2_home",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_tariff_co2_home",
+  "original_name": "Kosten CO² Verbrauch [Standort]"
+ },
+ {
+  "entity_id": "sensor.evcc_tariff_co2_loadpoints",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_tariff_co2_loadpoints",
+  "original_name": "Kosten CO² Ladepunkte [Standort]"
+ },
+ {
+  "entity_id": "sensor.evcc_tariff_feed_in",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_tariff_feed_in",
+  "original_name": "Kosten Einspeisung [Standort]"
+ },
+ {
+  "entity_id": "sensor.evcc_tariff_price_loadpoints",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_tariff_price_loadpoints",
+  "original_name": "Kosten Ladepunkte [Standort]"
+ },
+ {
+  "entity_id": "sensor.evcc_tariff_solar",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_tariff_solar",
+  "original_name": "Solar Prognose [Standort]"
+ },
+ {
+  "entity_id": "sensor.evcc_stat_total_solar_percentage",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat_total_solar_percentage",
+  "original_name": "Statistik: gesamt Sonnenenergie"
+ },
+ {
+  "entity_id": "sensor.evcc_stat_total_solar_k_wh_template",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat_total_solar_k_wh_template",
+  "original_name": "Statistik: gesamt Solar-kWh"
+ },
+ {
+  "entity_id": "sensor.evcc_stat_total_charged_kwh_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat_total_charged_kwh",
+  "original_name": "Statistik: gesamt Ladeenergie"
+ },
+ {
+  "entity_id": "sensor.evcc_stat_total_avg_price",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat_total_avg_price",
+  "original_name": "Statistik: gesamt Ø Preis"
+ },
+ {
+  "entity_id": "sensor.evcc_stat_total_avg_co2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat_total_avg_co2",
+  "original_name": "Statistik: gesamt Ø CO₂"
+ },
+ {
+  "entity_id": "sensor.evcc_stat_this_year_solar_percentage",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat_this_year_solar_percentage",
+  "original_name": "Statistik: dieses Jahr Sonnenenergie"
+ },
+ {
+  "entity_id": "sensor.evcc_stat_this_year_solar_k_wh_template",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat_this_year_solar_k_wh_template",
+  "original_name": "Statistik: dieses Jahr Solar-kWh"
+ },
+ {
+  "entity_id": "sensor.evcc_stat_this_year_charged_kwh",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat_this_year_charged_kwh",
+  "original_name": "Statistik: dieses Jahr Ladeenergie"
+ },
+ {
+  "entity_id": "sensor.evcc_stat_this_year_avg_price",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat_this_year_avg_price",
+  "original_name": "Statistik: dieses Jahr Ø Preis"
+ },
+ {
+  "entity_id": "sensor.evcc_stat_this_year_avg_co2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat_this_year_avg_co2",
+  "original_name": "Statistik: dieses Jahr Ø CO₂"
+ },
+ {
+  "entity_id": "sensor.evcc_stat365_solar_percentage",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat365_solar_percentage",
+  "original_name": "Statistik: letzten 365 Tage Sonnenenergie"
+ },
+ {
+  "entity_id": "sensor.evcc_stat365_solar_k_wh_template",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat365_solar_k_wh_template",
+  "original_name": "Statistik: letzten 365 Tage Solar-kWh"
+ },
+ {
+  "entity_id": "sensor.evcc_stat365_charged_kwh",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat365_charged_kwh",
+  "original_name": "Statistik: letzten 365 Tage Ladeenergie"
+ },
+ {
+  "entity_id": "sensor.evcc_stat365_avg_price",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat365_avg_price",
+  "original_name": "Statistik: letzten 365 Tage Ø Preis"
+ },
+ {
+  "entity_id": "sensor.evcc_stat365_avg_co2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat365_avg_co2",
+  "original_name": "Statistik: letzten 365 Tage Ø CO₂"
+ },
+ {
+  "entity_id": "sensor.evcc_stat30_solar_percentage",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat30_solar_percentage",
+  "original_name": "Statistik: letzten 30 Tage Sonnenenergie"
+ },
+ {
+  "entity_id": "sensor.evcc_stat30_solar_k_wh_template",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat30_solar_k_wh_template",
+  "original_name": "Statistik: letzten 30 Tage Solar-kWh"
+ },
+ {
+  "entity_id": "sensor.evcc_stat30_charged_kwh",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat30_charged_kwh",
+  "original_name": "Statistik: letzten 30 Tage Ladeenergie"
+ },
+ {
+  "entity_id": "sensor.evcc_stat30_avg_price",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat30_avg_price",
+  "original_name": "Statistik: letzten 30 Tage Ø Preis"
+ },
+ {
+  "entity_id": "sensor.evcc_stat30_avg_co2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_stat30_avg_co2",
+  "original_name": "Statistik: letzten 30 Tage Ø CO₂"
+ },
+ {
+  "entity_id": "sensor.evcc_tariff_api_grid",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_tariff_api_grid",
+  "original_name": "Stromtarife [Tariff-API]"
+ },
+ {
+  "entity_id": "sensor.evcc_tariff_api_solar",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_tariff_api_solar",
+  "original_name": "Solar Prognose [Tariff-API]"
+ },
+ {
+  "entity_id": "sensor.evcc_tariff_api_feedin",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_tariff_api_feedin",
+  "original_name": "Einspeisetarife [Tariff-API]"
+ },
+ {
+  "entity_id": "sensor.evcc_tariff_api_planner",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_tariff_api_planner",
+  "original_name": "Planertarife [Tariff-API]"
+ },
+ {
+  "entity_id": "sensor.evcc_forecast_grid",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_forecast_grid",
+  "original_name": "Stromtarife"
+ },
+ {
+  "entity_id": "sensor.evcc_forecast_solar",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_forecast_solar",
+  "original_name": "Solar Prognose"
+ },
+ {
+  "entity_id": "sensor.evcc_forecast_feedin",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_forecast_feedin",
+  "original_name": "Einspeisetarife"
+ },
+ {
+  "entity_id": "sensor.evcc_forecast_planner",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_forecast_planner",
+  "original_name": "Planertarife"
+ },
+ {
+  "entity_id": "sensor.evcc_charging_sessions",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_charging_sessions",
+  "original_name": "Ladevorgänge"
+ },
+ {
+  "entity_id": "sensor.evcc_charging_sessions_vehicles",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_charging_sessions_vehicles",
+  "original_name": "Ladevorgänge: Anzahl Fahrzeuge"
+ },
+ {
+  "entity_id": "sensor.evcc_charging_sessions_loadpoints",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_charging_sessions_loadpoints",
+  "original_name": "Ladevorgänge: Anzahl Ladepunkte"
+ },
+ {
+  "entity_id": "sensor.evcc_evopt_time_series_dt",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_evopt_time_series_dt",
+  "original_name": "Optimizer: Timeseries Time"
+ },
+ {
+  "entity_id": "sensor.evcc_evopt_battery_0_charging_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_evopt_battery_0_charging_power",
+  "original_name": "Optimizer: Charging Energy"
+ },
+ {
+  "entity_id": "sensor.evcc_evopt_battery_0_discharging_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_evopt_battery_0_discharging_power",
+  "original_name": "Optimizer: Discharging Energy"
+ },
+ {
+  "entity_id": "sensor.evcc_evopt_battery_0_charged_total",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_evopt_battery_0_charged_total",
+  "original_name": "Optimizer: Total Energy Stored"
+ },
+ {
+  "entity_id": "sensor.evcc_evopt_battery_1_charging_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_evopt_battery_1_charging_power",
+  "original_name": "Optimizer BAT II: Charging Energy"
+ },
+ {
+  "entity_id": "sensor.evcc_evopt_battery_1_discharging_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_evopt_battery_1_discharging_power",
+  "original_name": "Optimizer BAT II: Discharging Energy"
+ },
+ {
+  "entity_id": "sensor.evcc_evopt_battery_1_charged_total",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_evopt_battery_1_charged_total",
+  "original_name": "Optimizer BAT II: Total Energy Stored"
+ },
+ {
+  "entity_id": "sensor.evcc_evopt_battery_2_charging_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_evopt_battery_2_charging_power",
+  "original_name": "Optimizer BAT III: Charging Energy"
+ },
+ {
+  "entity_id": "sensor.evcc_evopt_battery_2_discharging_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_evopt_battery_2_discharging_power",
+  "original_name": "Optimizer BAT III: Discharging Energy"
+ },
+ {
+  "entity_id": "sensor.evcc_evopt_battery_2_charged_total",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_evopt_battery_2_charged_total",
+  "original_name": "Optimizer BAT III: Total Energy Stored"
+ },
+ {
+  "entity_id": "sensor.evcc_grid_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_grid_power",
+  "original_name": "Leistung Netz"
+ },
+ {
+  "entity_id": "sensor.evcc_grid_currents_0",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_grid_currents_0",
+  "original_name": "Netzstrom P1"
+ },
+ {
+  "entity_id": "sensor.evcc_grid_currents_1",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_grid_currents_1",
+  "original_name": "Netzstrom P2"
+ },
+ {
+  "entity_id": "sensor.evcc_grid_currents_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_grid_currents_2",
+  "original_name": "Netzstrom P3"
+ },
+ {
+  "entity_id": "sensor.evcc_grid_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_grid_energy",
+  "original_name": "Netzbezug"
+ },
+ {
+  "entity_id": "sensor.evcc_grid_return_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_grid_return_energy",
+  "original_name": "Einspeisung"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_battery_power",
+  "original_name": "Leistung Batterie"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_0_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_battery_0_power",
+  "original_name": "Leistung Batterie 1"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_1_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_battery_1_power",
+  "original_name": "Leistung Batterie 2"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_2_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_battery_2_power",
+  "original_name": "Leistung Batterie 3"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_3_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_battery_3_power",
+  "original_name": "Leistung Batterie 4"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_battery_soc",
+  "original_name": "Batterie Ladezustand"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_0_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_battery_0_soc",
+  "original_name": "Batterie Ladezustand 1"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_1_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_battery_1_soc",
+  "original_name": "Batterie Ladezustand 2"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_2_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_battery_2_soc",
+  "original_name": "Batterie Ladezustand 3"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_3_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_battery_3_soc",
+  "original_name": "Batterie Ladezustand 4"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_capacity",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_battery_capacity",
+  "original_name": "Batterie Kapazität"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_battery_energy",
+  "original_name": "Batterie Entlade-Energie"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_0_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_battery_0_energy",
+  "original_name": "Batterie 1 Entlade-Energie"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_1_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_battery_1_energy",
+  "original_name": "Batterie 2 Entlade-Energie"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_2_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_battery_2_energy",
+  "original_name": "Batterie 3 Entlade-Energie"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_3_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_battery_3_energy",
+  "original_name": "Batterie 4 Entlade-Energie"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_return_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_battery_return_energy",
+  "original_name": "Batterie Energie (rückwärts)"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_0_returnenergy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_battery_0_returnenergy",
+  "original_name": "Batterie 1 Energie (rückwärts)"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_1_returnenergy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_battery_1_returnenergy",
+  "original_name": "Batterie 2 Energie (rückwärts)"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_2_returnenergy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_battery_2_returnenergy",
+  "original_name": "Batterie 3 Energie (rückwärts)"
+ },
+ {
+  "entity_id": "sensor.evcc_battery_3_returnenergy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_battery_3_returnenergy",
+  "original_name": "Batterie 4 Energie (rückwärts)"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_charge_current",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_charge_current",
+  "original_name": "openWB Ladestrom"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_charge_currents_0",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_charge_currents_0",
+  "original_name": "openWB Ladestrom P1"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_charge_currents_1",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_charge_currents_1",
+  "original_name": "openWB Ladestrom P2"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_charge_currents_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_charge_currents_2",
+  "original_name": "openWB Ladestrom P3"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_charge_voltages_0",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_charge_voltages_0",
+  "original_name": "openWB Ladespannung P1"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_charge_voltages_1",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_charge_voltages_1",
+  "original_name": "openWB Ladespannung P2"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_charge_voltages_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_charge_voltages_2",
+  "original_name": "openWB Ladespannung P3"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_charge_duration",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_charge_duration",
+  "original_name": "openWB Ladedauer"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_charge_remaining_duration",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_charge_remaining_duration",
+  "original_name": "openWB Laderestzeit"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_charge_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_charge_power",
+  "original_name": "openWB Ladeleistung"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_charge_total_import",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_charge_total_import",
+  "original_name": "openWB Netzbezug"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_charged_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_charged_energy",
+  "original_name": "openWB Ladeenergie"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_charge_remaining_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_charge_remaining_energy",
+  "original_name": "openWB Ladeenergie verbleibend"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_effective_limit_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_effective_limit_soc",
+  "original_name": "openWB Effektives Ladelimit (SOC)"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_phase_action",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_phase_action",
+  "original_name": "openWB Phasen Aktivität [CODE]"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_phase_action_value",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_phase_action_value",
+  "original_name": "openWB Phasen Aktivität"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_phase_remaining",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_phase_remaining",
+  "original_name": "openWB Phasen verbleibend"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_phases_active",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_phases_active",
+  "original_name": "openWB Phasen in Verwendung"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_phases_enabled",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_phases_enabled",
+  "original_name": "openWB Phasen aktiviert"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_session_co2_per_kwh",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_session_co2_per_kwh",
+  "original_name": "openWB Ladevorgang CO₂/kWh"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_session_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_session_energy",
+  "original_name": "openWB Ladevorgang Energie"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_session_price",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_session_price",
+  "original_name": "openWB Ladevorgang Preis"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_session_price_per_kwh",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_session_price_per_kwh",
+  "original_name": "openWB Ladevorgang €/kWh"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_session_solar_percentage",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_session_solar_percentage",
+  "original_name": "openWB Ladevorgang PV Verwendung"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_vehicle_limit_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_vehicle_limit_soc",
+  "original_name": "openWB Fahrzeug Ladelimit"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_vehicle_odometer",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_vehicle_odometer",
+  "original_name": "openWB Fahrzeug Kilometerstand"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_vehicle_range",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_vehicle_range",
+  "original_name": "openWB Fahrzeug Reichweite"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_vehicle_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_vehicle_soc",
+  "original_name": "openWB Fahrzeug Ladestand"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_vehicle_plans_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_vehicle_plans_soc",
+  "original_name": "openWB Ladeplanung: Abfahrt Ladeziel (SOC)"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_vehicle_plans_time",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_vehicle_plans_time",
+  "original_name": "openWB Ladeplanung: Abfahrt Zeitpunkt (SOC)"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_plan_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_plan_energy",
+  "original_name": "openWB Ladeplanung: Abfahrt Ladeziel (Energie)"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_plan_time",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_plan_time",
+  "original_name": "openWB Ladeplanung: Abfahrt Zeitpunkt (Energie)"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_effective_plan_time",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_effective_plan_time",
+  "original_name": "openWB Effektiver Plan: Abfahrt Zeitpunkt (SOC)"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_plan_projected_start",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_plan_projected_start",
+  "original_name": "openWB Plan: Start (erwartet)"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_plan_projected_end",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_plan_projected_end",
+  "original_name": "openWB Plan: Ende (erwartet)"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_effective_plan_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_effective_plan_soc",
+  "original_name": "openWB Effektiver Plan: Abfahrt Ladeziel (SOC)"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_pv_action_value",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_pv_action_value",
+  "original_name": "openWB PV Aktivität"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_pv_action",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_pv_action",
+  "original_name": "openWB PV Aktivität [CODE]"
+ },
+ {
+  "entity_id": "sensor.evcc_openwb_pv_remaining",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_pv_remaining",
+  "original_name": "openWB PV verbleibend"
+ },
+ {
+  "entity_id": "sensor.evcc_cstotal_openwb_charging_sessions_loadpoint_chargedenergy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_cstotal_openwb_charging_sessions_loadpoint_chargedenergy",
+  "original_name": "openWB Ladevorgänge: Energie [LP]"
+ },
+ {
+  "entity_id": "sensor.evcc_cstotal_openwb_charging_sessions_loadpoint_cost",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_cstotal_openwb_charging_sessions_loadpoint_cost",
+  "original_name": "openWB Ladevorgänge: Kosten [LP]"
+ },
+ {
+  "entity_id": "sensor.evcc_cstotal_openwb_charging_sessions_loadpoint_chargeduration",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_cstotal_openwb_charging_sessions_loadpoint_chargeduration",
+  "original_name": "openWB Ladevorgänge: Dauer [LP]"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_charge_current",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_charge_current",
+  "original_name": "WP Ladestrom"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_charge_currents_0",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_charge_currents_0",
+  "original_name": "WP Ladestrom P1"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_charge_currents_1",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_charge_currents_1",
+  "original_name": "WP Ladestrom P2"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_charge_currents_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_charge_currents_2",
+  "original_name": "WP Ladestrom P3"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_charge_voltages_0",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_charge_voltages_0",
+  "original_name": "WP Ladespannung P1"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_charge_voltages_1",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_charge_voltages_1",
+  "original_name": "WP Ladespannung P2"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_charge_voltages_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_charge_voltages_2",
+  "original_name": "WP Ladespannung P3"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_charge_duration",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_charge_duration",
+  "original_name": "WP Ladedauer"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_charge_remaining_duration",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_charge_remaining_duration",
+  "original_name": "WP Laderestzeit"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_charge_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_charge_power",
+  "original_name": "WP Ladeleistung"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_charge_total_import",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_charge_total_import",
+  "original_name": "WP Netzbezug"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_charged_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_charged_energy",
+  "original_name": "WP Ladeenergie"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_charge_remaining_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_charge_remaining_energy",
+  "original_name": "WP Ladeenergie verbleibend"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_effective_limit_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_effective_limit_soc",
+  "original_name": "WP Effektives Ladelimit (SOC)"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_phase_action",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_phase_action",
+  "original_name": "WP Phasen Aktivität [CODE]"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_phase_action_value",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_phase_action_value",
+  "original_name": "WP Phasen Aktivität"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_phase_remaining",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_phase_remaining",
+  "original_name": "WP Phasen verbleibend"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_phases_active",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_phases_active",
+  "original_name": "WP Phasen in Verwendung"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_phases_enabled",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_phases_enabled",
+  "original_name": "WP Phasen aktiviert"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_session_co2_per_kwh",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_session_co2_per_kwh",
+  "original_name": "WP Ladevorgang CO₂/kWh"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_session_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_session_energy",
+  "original_name": "WP Ladevorgang Energie"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_session_price",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_session_price",
+  "original_name": "WP Ladevorgang Preis"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_session_price_per_kwh",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_session_price_per_kwh",
+  "original_name": "WP Ladevorgang €/kWh"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_session_solar_percentage",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_session_solar_percentage",
+  "original_name": "WP Ladevorgang PV Verwendung"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_vehicle_limit_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_vehicle_limit_soc",
+  "original_name": "WP Fahrzeug Ladelimit"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_vehicle_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_vehicle_soc",
+  "original_name": "WP Fahrzeug Ladestand"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_plan_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_plan_energy",
+  "original_name": "WP Ladeplanung: Abfahrt Ladeziel (Energie)"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_plan_time",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_plan_time",
+  "original_name": "WP Ladeplanung: Abfahrt Zeitpunkt (Energie)"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_effective_plan_time",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_effective_plan_time",
+  "original_name": "WP Effektiver Plan: Abfahrt Zeitpunkt (SOC)"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_plan_projected_start",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_plan_projected_start",
+  "original_name": "WP Plan: Start (erwartet)"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_plan_projected_end",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_plan_projected_end",
+  "original_name": "WP Plan: Ende (erwartet)"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_effective_plan_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_effective_plan_soc",
+  "original_name": "WP Effektiver Plan: Abfahrt Ladeziel (SOC)"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_pv_action_value",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_pv_action_value",
+  "original_name": "WP PV Aktivität"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_pv_action",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_pv_action",
+  "original_name": "WP PV Aktivität [CODE]"
+ },
+ {
+  "entity_id": "sensor.evcc_wp_pv_remaining",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_pv_remaining",
+  "original_name": "WP PV verbleibend"
+ },
+ {
+  "entity_id": "sensor.evcc_cstotal_wp_charging_sessions_loadpoint_chargedenergy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_cstotal_wp_charging_sessions_loadpoint_chargedenergy",
+  "original_name": "WP Ladevorgänge: Energie [LP]"
+ },
+ {
+  "entity_id": "sensor.evcc_cstotal_wp_charging_sessions_loadpoint_cost",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_cstotal_wp_charging_sessions_loadpoint_cost",
+  "original_name": "WP Ladevorgänge: Kosten [LP]"
+ },
+ {
+  "entity_id": "sensor.evcc_cstotal_wp_charging_sessions_loadpoint_chargeduration",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_cstotal_wp_charging_sessions_loadpoint_chargeduration",
+  "original_name": "WP Ladevorgänge: Dauer [LP]"
+ },
+ {
+  "entity_id": "sensor.evcc_cstotal_ex30_charging_sessions_vehicle_chargedenergy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_cstotal_ex30_charging_sessions_vehicle_chargedenergy",
+  "original_name": "EX30 Ladevorgänge: Energie [Fzg.]"
+ },
+ {
+  "entity_id": "sensor.evcc_cstotal_ex30_charging_sessions_vehicle_cost",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_cstotal_ex30_charging_sessions_vehicle_cost",
+  "original_name": "EX30 Ladevorgänge: Kosten [Fzg.]"
+ },
+ {
+  "entity_id": "sensor.evcc_cstotal_ex30_charging_sessions_vehicle_chargeduration",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_cstotal_ex30_charging_sessions_vehicle_chargeduration",
+  "original_name": "EX30 Ladevorgänge: Dauer [Fzg.]"
+ },
+ {
+  "entity_id": "sensor.evcc_ex30_configvehicle_range",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_ex30_configvehicle_range",
+  "original_name": "EX30 Reichweite"
+ },
+ {
+  "entity_id": "sensor.evcc_ex30_configvehicle_odometer",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_ex30_configvehicle_odometer",
+  "original_name": "EX30 Kilometerstand"
+ },
+ {
+  "entity_id": "sensor.evcc_ex30_configvehicle_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_ex30_configvehicle_soc",
+  "original_name": "EX30 Ladestand"
+ },
+ {
+  "entity_id": "sensor.evcc_ex30_configvehicle_limitsoc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_ex30_configvehicle_limitsoc",
+  "original_name": "EX30 Ladelimit"
+ },
+ {
+  "entity_id": "sensor.evcc_cstotal_id7_charging_sessions_vehicle_chargedenergy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_cstotal_id7_charging_sessions_vehicle_chargedenergy",
+  "original_name": "id7 Ladevorgänge: Energie [Fzg.]"
+ },
+ {
+  "entity_id": "sensor.evcc_cstotal_id7_charging_sessions_vehicle_cost",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_cstotal_id7_charging_sessions_vehicle_cost",
+  "original_name": "id7 Ladevorgänge: Kosten [Fzg.]"
+ },
+ {
+  "entity_id": "sensor.evcc_cstotal_id7_charging_sessions_vehicle_chargeduration",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_cstotal_id7_charging_sessions_vehicle_chargeduration",
+  "original_name": "id7 Ladevorgänge: Dauer [Fzg.]"
+ },
+ {
+  "entity_id": "sensor.evcc_id7_configvehicle_range",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_id7_configvehicle_range",
+  "original_name": "id7 Reichweite"
+ },
+ {
+  "entity_id": "sensor.evcc_id7_configvehicle_odometer",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_id7_configvehicle_odometer",
+  "original_name": "id7 Kilometerstand"
+ },
+ {
+  "entity_id": "sensor.evcc_id7_configvehicle_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_id7_configvehicle_soc",
+  "original_name": "id7 Ladestand"
+ },
+ {
+  "entity_id": "sensor.evcc_id7_configvehicle_limitsoc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_id7_configvehicle_limitsoc",
+  "original_name": "id7 Ladelimit"
+ },
+ {
+  "entity_id": "sensor.evcc_garage_circuits_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_garage_circuits_power",
+  "original_name": "'GARAGE' Lastmanagement Leistung"
+ },
+ {
+  "entity_id": "sensor.evcc_garage_circuits_current",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_garage_circuits_current",
+  "original_name": "'GARAGE' Lastmanagement Strom"
+ },
+ {
+  "entity_id": "sensor.evcc_main_circuits_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_main_circuits_power",
+  "original_name": "'MAIN' Lastmanagement Leistung"
+ },
+ {
+  "entity_id": "sensor.evcc_main_circuits_current",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_main_circuits_current",
+  "original_name": "'MAIN' Lastmanagement Strom"
+ },
+ {
+  "entity_id": "sensor.evcc_db_42_configmeter_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_42_configmeter_power",
+  "original_name": "db:42 Leistung"
+ },
+ {
+  "entity_id": "sensor.evcc_db_42_configmeter_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_42_configmeter_energy",
+  "original_name": "db:42 Bezug"
+ },
+ {
+  "entity_id": "sensor.evcc_db_42_configmeter_return_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_42_configmeter_return_energy",
+  "original_name": "db:42 Einspeisung"
+ },
+ {
+  "entity_id": "sensor.evcc_db_42_configmeter_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_42_configmeter_soc",
+  "original_name": "db:42 Ladestand"
+ },
+ {
+  "entity_id": "sensor.evcc_db_42_configmeter_temp",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_42_configmeter_temp",
+  "original_name": "db:42 Temperatur"
+ },
+ {
+  "entity_id": "sensor.evcc_db_42_configmeter_phasecurrents_0",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_42_configmeter_phasecurrents_0",
+  "original_name": "db:42 Strom P1"
+ },
+ {
+  "entity_id": "sensor.evcc_db_42_configmeter_phasecurrents_1",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_42_configmeter_phasecurrents_1",
+  "original_name": "db:42 Strom P2"
+ },
+ {
+  "entity_id": "sensor.evcc_db_42_configmeter_phasecurrents_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_42_configmeter_phasecurrents_2",
+  "original_name": "db:42 Strom P3"
+ },
+ {
+  "entity_id": "sensor.evcc_db_42_configmeter_phasevoltages_0",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_42_configmeter_phasevoltages_0",
+  "original_name": "db:42 Spannung P1"
+ },
+ {
+  "entity_id": "sensor.evcc_db_42_configmeter_phasevoltages_1",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_42_configmeter_phasevoltages_1",
+  "original_name": "db:42 Spannung P2"
+ },
+ {
+  "entity_id": "sensor.evcc_db_42_configmeter_phasevoltages_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_42_configmeter_phasevoltages_2",
+  "original_name": "db:42 Spannung P3"
+ },
+ {
+  "entity_id": "sensor.evcc_db_5_configmeter_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_5_configmeter_power",
+  "original_name": "db:5 Leistung"
+ },
+ {
+  "entity_id": "sensor.evcc_db_5_configmeter_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_5_configmeter_energy",
+  "original_name": "db:5 Bezug"
+ },
+ {
+  "entity_id": "sensor.evcc_db_5_configmeter_return_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_5_configmeter_return_energy",
+  "original_name": "db:5 Einspeisung"
+ },
+ {
+  "entity_id": "sensor.evcc_db_5_configmeter_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_5_configmeter_soc",
+  "original_name": "db:5 Ladestand"
+ },
+ {
+  "entity_id": "sensor.evcc_db_5_configmeter_temp",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_5_configmeter_temp",
+  "original_name": "db:5 Temperatur"
+ },
+ {
+  "entity_id": "sensor.evcc_db_5_configmeter_phasecurrents_0",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_5_configmeter_phasecurrents_0",
+  "original_name": "db:5 Strom P1"
+ },
+ {
+  "entity_id": "sensor.evcc_db_5_configmeter_phasecurrents_1",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_5_configmeter_phasecurrents_1",
+  "original_name": "db:5 Strom P2"
+ },
+ {
+  "entity_id": "sensor.evcc_db_5_configmeter_phasecurrents_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_5_configmeter_phasecurrents_2",
+  "original_name": "db:5 Strom P3"
+ },
+ {
+  "entity_id": "sensor.evcc_db_5_configmeter_phasevoltages_0",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_5_configmeter_phasevoltages_0",
+  "original_name": "db:5 Spannung P1"
+ },
+ {
+  "entity_id": "sensor.evcc_db_5_configmeter_phasevoltages_1",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_5_configmeter_phasevoltages_1",
+  "original_name": "db:5 Spannung P2"
+ },
+ {
+  "entity_id": "sensor.evcc_db_5_configmeter_phasevoltages_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_5_configmeter_phasevoltages_2",
+  "original_name": "db:5 Spannung P3"
+ },
+ {
+  "entity_id": "sensor.evcc_db_41_configmeter_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_41_configmeter_power",
+  "original_name": "db:41 Leistung"
+ },
+ {
+  "entity_id": "sensor.evcc_db_41_configmeter_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_41_configmeter_energy",
+  "original_name": "db:41 Bezug"
+ },
+ {
+  "entity_id": "sensor.evcc_db_41_configmeter_return_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_41_configmeter_return_energy",
+  "original_name": "db:41 Einspeisung"
+ },
+ {
+  "entity_id": "sensor.evcc_db_41_configmeter_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_41_configmeter_soc",
+  "original_name": "db:41 Ladestand"
+ },
+ {
+  "entity_id": "sensor.evcc_db_41_configmeter_temp",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_41_configmeter_temp",
+  "original_name": "db:41 Temperatur"
+ },
+ {
+  "entity_id": "sensor.evcc_db_41_configmeter_phasecurrents_0",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_41_configmeter_phasecurrents_0",
+  "original_name": "db:41 Strom P1"
+ },
+ {
+  "entity_id": "sensor.evcc_db_41_configmeter_phasecurrents_1",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_41_configmeter_phasecurrents_1",
+  "original_name": "db:41 Strom P2"
+ },
+ {
+  "entity_id": "sensor.evcc_db_41_configmeter_phasecurrents_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_41_configmeter_phasecurrents_2",
+  "original_name": "db:41 Strom P3"
+ },
+ {
+  "entity_id": "sensor.evcc_db_41_configmeter_phasevoltages_0",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_41_configmeter_phasevoltages_0",
+  "original_name": "db:41 Spannung P1"
+ },
+ {
+  "entity_id": "sensor.evcc_db_41_configmeter_phasevoltages_1",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_41_configmeter_phasevoltages_1",
+  "original_name": "db:41 Spannung P2"
+ },
+ {
+  "entity_id": "sensor.evcc_db_41_configmeter_phasevoltages_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_41_configmeter_phasevoltages_2",
+  "original_name": "db:41 Spannung P3"
+ },
+ {
+  "entity_id": "sensor.evcc_db_8_configmeter_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_8_configmeter_power",
+  "original_name": "db:8 Leistung"
+ },
+ {
+  "entity_id": "sensor.evcc_db_8_configmeter_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_8_configmeter_energy",
+  "original_name": "db:8 Bezug"
+ },
+ {
+  "entity_id": "sensor.evcc_db_8_configmeter_return_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_8_configmeter_return_energy",
+  "original_name": "db:8 Einspeisung"
+ },
+ {
+  "entity_id": "sensor.evcc_db_8_configmeter_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_8_configmeter_soc",
+  "original_name": "db:8 Ladestand"
+ },
+ {
+  "entity_id": "sensor.evcc_db_8_configmeter_temp",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_8_configmeter_temp",
+  "original_name": "db:8 Temperatur"
+ },
+ {
+  "entity_id": "sensor.evcc_db_8_configmeter_phasecurrents_0",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_8_configmeter_phasecurrents_0",
+  "original_name": "db:8 Strom P1"
+ },
+ {
+  "entity_id": "sensor.evcc_db_8_configmeter_phasecurrents_1",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_8_configmeter_phasecurrents_1",
+  "original_name": "db:8 Strom P2"
+ },
+ {
+  "entity_id": "sensor.evcc_db_8_configmeter_phasecurrents_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_8_configmeter_phasecurrents_2",
+  "original_name": "db:8 Strom P3"
+ },
+ {
+  "entity_id": "sensor.evcc_db_8_configmeter_phasevoltages_0",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_8_configmeter_phasevoltages_0",
+  "original_name": "db:8 Spannung P1"
+ },
+ {
+  "entity_id": "sensor.evcc_db_8_configmeter_phasevoltages_1",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_8_configmeter_phasevoltages_1",
+  "original_name": "db:8 Spannung P2"
+ },
+ {
+  "entity_id": "sensor.evcc_db_8_configmeter_phasevoltages_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_8_configmeter_phasevoltages_2",
+  "original_name": "db:8 Spannung P3"
+ },
+ {
+  "entity_id": "sensor.evcc_db_30_configmeter_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_30_configmeter_power",
+  "original_name": "db:30 Leistung"
+ },
+ {
+  "entity_id": "sensor.evcc_db_30_configmeter_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_30_configmeter_energy",
+  "original_name": "db:30 Bezug"
+ },
+ {
+  "entity_id": "sensor.evcc_db_30_configmeter_return_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_30_configmeter_return_energy",
+  "original_name": "db:30 Einspeisung"
+ },
+ {
+  "entity_id": "sensor.evcc_db_30_configmeter_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_30_configmeter_soc",
+  "original_name": "db:30 Ladestand"
+ },
+ {
+  "entity_id": "sensor.evcc_db_30_configmeter_temp",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_30_configmeter_temp",
+  "original_name": "db:30 Temperatur"
+ },
+ {
+  "entity_id": "sensor.evcc_db_30_configmeter_phasecurrents_0",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_30_configmeter_phasecurrents_0",
+  "original_name": "db:30 Strom P1"
+ },
+ {
+  "entity_id": "sensor.evcc_db_30_configmeter_phasecurrents_1",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_30_configmeter_phasecurrents_1",
+  "original_name": "db:30 Strom P2"
+ },
+ {
+  "entity_id": "sensor.evcc_db_30_configmeter_phasecurrents_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_30_configmeter_phasecurrents_2",
+  "original_name": "db:30 Strom P3"
+ },
+ {
+  "entity_id": "sensor.evcc_db_30_configmeter_phasevoltages_0",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_30_configmeter_phasevoltages_0",
+  "original_name": "db:30 Spannung P1"
+ },
+ {
+  "entity_id": "sensor.evcc_db_30_configmeter_phasevoltages_1",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_30_configmeter_phasevoltages_1",
+  "original_name": "db:30 Spannung P2"
+ },
+ {
+  "entity_id": "sensor.evcc_db_30_configmeter_phasevoltages_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_30_configmeter_phasevoltages_2",
+  "original_name": "db:30 Spannung P3"
+ },
+ {
+  "entity_id": "sensor.evcc_db_19_configmeter_power",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_19_configmeter_power",
+  "original_name": "db:19 Leistung"
+ },
+ {
+  "entity_id": "sensor.evcc_db_19_configmeter_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_19_configmeter_energy",
+  "original_name": "db:19 Bezug"
+ },
+ {
+  "entity_id": "sensor.evcc_db_19_configmeter_return_energy",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_19_configmeter_return_energy",
+  "original_name": "db:19 Einspeisung"
+ },
+ {
+  "entity_id": "sensor.evcc_db_19_configmeter_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_19_configmeter_soc",
+  "original_name": "db:19 Ladestand"
+ },
+ {
+  "entity_id": "sensor.evcc_db_19_configmeter_temp",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_19_configmeter_temp",
+  "original_name": "db:19 Temperatur"
+ },
+ {
+  "entity_id": "sensor.evcc_db_19_configmeter_phasecurrents_0",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_19_configmeter_phasecurrents_0",
+  "original_name": "db:19 Strom P1"
+ },
+ {
+  "entity_id": "sensor.evcc_db_19_configmeter_phasecurrents_1",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_19_configmeter_phasecurrents_1",
+  "original_name": "db:19 Strom P2"
+ },
+ {
+  "entity_id": "sensor.evcc_db_19_configmeter_phasecurrents_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_19_configmeter_phasecurrents_2",
+  "original_name": "db:19 Strom P3"
+ },
+ {
+  "entity_id": "sensor.evcc_db_19_configmeter_phasevoltages_0",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_19_configmeter_phasevoltages_0",
+  "original_name": "db:19 Spannung P1"
+ },
+ {
+  "entity_id": "sensor.evcc_db_19_configmeter_phasevoltages_1",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_19_configmeter_phasevoltages_1",
+  "original_name": "db:19 Spannung P2"
+ },
+ {
+  "entity_id": "sensor.evcc_db_19_configmeter_phasevoltages_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_db_19_configmeter_phasevoltages_2",
+  "original_name": "db:19 Spannung P3"
+ },
+ {
+  "entity_id": "switch.evcc_battery_discharge_control",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_battery_discharge_control",
+  "original_name": "Hausbatterie: Entladesperre"
+ },
+ {
+  "entity_id": "switch.evcc_openwb_battery_boost",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_battery_boost",
+  "original_name": "openWB Schnell aus Hausbatterie laden."
+ },
+ {
+  "entity_id": "switch.evcc_openwb_plan_strategy_continuous",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_plan_strategy_continuous",
+  "original_name": "openWB Ladeplanung: Optimierung"
+ },
+ {
+  "entity_id": "switch.evcc_wp_battery_boost",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_wp_battery_boost",
+  "original_name": "WP Schnell aus Hausbatterie laden."
+ },
+ {
+  "entity_id": "switch.evcc_ex30_repeating_plan_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_ex30_repeating_plan_2",
+  "original_name": "EX30 Ladeplan 2 (wiederholend)"
+ },
+ {
+  "entity_id": "switch.evcc_ex30_repeating_plan_3",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_ex30_repeating_plan_3",
+  "original_name": "EX30 Ladeplan 3 (wiederholend)"
+ },
+ {
+  "entity_id": "switch.evcc_ex30_repeating_plan_4",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_ex30_repeating_plan_4",
+  "original_name": "EX30 Ladeplan 4 (wiederholend)"
+ },
+ {
+  "entity_id": "switch.evcc_ex30_repeating_plan_5",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_ex30_repeating_plan_5",
+  "original_name": "EX30 Ladeplan 5 (wiederholend)"
+ },
+ {
+  "entity_id": "switch.evcc_ex30_repeating_plan_6",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_ex30_repeating_plan_6",
+  "original_name": "EX30 Ladeplan 6 (wiederholend)"
+ },
+ {
+  "entity_id": "switch.evcc_ex30_repeating_plan_7",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_ex30_repeating_plan_7",
+  "original_name": "EX30 Ladeplan 7 (wiederholend)"
+ },
+ {
+  "entity_id": "switch.evcc_ex30_repeating_plan_8",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_ex30_repeating_plan_8",
+  "original_name": "EX30 Ladeplan 8 (wiederholend)"
+ },
+ {
+  "entity_id": "switch.evcc_ex30_repeating_plan_9",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_ex30_repeating_plan_9",
+  "original_name": "EX30 Ladeplan 9 (wiederholend)"
+ },
+ {
+  "entity_id": "switch.evcc_ex30_repeating_plan_10",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_ex30_repeating_plan_10",
+  "original_name": "EX30 Ladeplan 10 (wiederholend)"
+ },
+ {
+  "entity_id": "switch.evcc_id7_repeating_plan_2",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_id7_repeating_plan_2",
+  "original_name": "id7 Ladeplan 2 (wiederholend)"
+ },
+ {
+  "entity_id": "switch.evcc_id7_repeating_plan_3",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_id7_repeating_plan_3",
+  "original_name": "id7 Ladeplan 3 (wiederholend)"
+ },
+ {
+  "entity_id": "switch.evcc_id7_repeating_plan_4",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_id7_repeating_plan_4",
+  "original_name": "id7 Ladeplan 4 (wiederholend)"
+ },
+ {
+  "entity_id": "switch.evcc_id7_repeating_plan_5",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_id7_repeating_plan_5",
+  "original_name": "id7 Ladeplan 5 (wiederholend)"
+ },
+ {
+  "entity_id": "switch.evcc_id7_repeating_plan_6",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_id7_repeating_plan_6",
+  "original_name": "id7 Ladeplan 6 (wiederholend)"
+ },
+ {
+  "entity_id": "switch.evcc_id7_repeating_plan_7",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_id7_repeating_plan_7",
+  "original_name": "id7 Ladeplan 7 (wiederholend)"
+ },
+ {
+  "entity_id": "switch.evcc_id7_repeating_plan_8",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_id7_repeating_plan_8",
+  "original_name": "id7 Ladeplan 8 (wiederholend)"
+ },
+ {
+  "entity_id": "switch.evcc_id7_repeating_plan_9",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_id7_repeating_plan_9",
+  "original_name": "id7 Ladeplan 9 (wiederholend)"
+ },
+ {
+  "entity_id": "switch.evcc_id7_repeating_plan_10",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": "integration",
+  "unique_id": "evcc_intg.evcc_id7_repeating_plan_10",
+  "original_name": "id7 Ladeplan 10 (wiederholend)"
+ }
+]

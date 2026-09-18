@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Pre-commit hook for hass-evcc-card.
+#
+# Runs only when files under dist/ are part of the commit:
+#   1. syntax check of dist/evcc-card.js (as an ES module)
+#   2. README screenshots regenerated from the harness (test/screenshots.py);
+#      every mode is rendered light + dark and must be free of console errors,
+#      so this doubles as the render smoke. Changed images are added to the commit.
+#
+# Output: test/out/pre-commit.log (full log), test/out/report.md (per-page result).
+# Editors such as VS Code show nothing while the hook runs (about 40 s) and only
+# surface stderr on failure; commit from a terminal to watch progress.
+#
+# Activate once per clone (not done automatically):  git config core.hooksPath .githooks
+# Skip for one commit:  git commit --no-verify   or   EVCC_SKIP_HOOK=1 git commit
+# Tooling (Node, Chromium, Playwright, fonts):  bash test/setup.sh
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+[ "${EVCC_SKIP_HOOK:-0}" = "1" ] && exit 0
+git diff --cached --name-only --diff-filter=ACMR | grep -q '^dist/' || exit 0
+
+for tool in node chromium python3; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "pre-commit: '$tool' not found. Run 'bash test/setup.sh' or commit with --no-verify." >&2
+    exit 1
+  fi
+done
+
+mkdir -p test/out
+log="test/out/pre-commit.log"
+: > "$log"
+fail() {
+  echo "pre-commit: $1" >&2
+  echo "pre-commit: full log in $log, per-page results in test/out/report.md" >&2
+  tail -n 15 "$log" >&2
+  exit 1
+}
+
+echo "pre-commit: syntax check" | tee -a "$log"
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+cp dist/evcc-card.js "$tmp/evcc-card.mjs"
+node --check "$tmp/evcc-card.mjs" >>"$log" 2>&1 || fail "syntax error in dist/evcc-card.js"
+
+echo "pre-commit: screenshots (all modes, light + dark)" | tee -a "$log"
+python3 test/screenshots.py --out images >>"$log" 2>&1 || fail "screenshot run failed (render error or console error in a mode)"
+tail -n 1 "$log"
+
+changed="$(git status --porcelain -- images/ | awk '{print $2}')"
+if [ -n "$changed" ]; then
+  git add -- $changed
+  { echo "pre-commit: updated screenshots added to the commit:"; printf '  %s\n' $changed; } | tee -a "$log"
+else
+  echo "pre-commit: screenshots unchanged" | tee -a "$log"
+fi

@@ -8,7 +8,7 @@
  *                /config/www/evcc-card/locales/en.json
  */
 
-const EVCC_CARD_VERSION = "0.7.8";
+const EVCC_CARD_VERSION = "0.7.9";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -134,6 +134,21 @@ const FEATURES = [
 // PR 32490, and for the "pv relabelled as Smart" pseudo-mode that older evcc
 // versions need when PV is hidden but a dynamic tariff exists (Mode.vue).
 const SMART_MODE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12,6A6,6 0 0,1 18,12C18,14.22 16.79,16.16 15,17.2V19A1,1 0 0,1 14,20H10A1,1 0 0,1 9,19V17.2C7.21,16.16 6,14.22 6,12A6,6 0 0,1 12,6M14,21V22A1,1 0 0,1 13,23H11A1,1 0 0,1 10,22V21H14M20,11H23V13H20V11M1,11H4V13H1V11M13,1V4H11V1H13M4.92,3.5L7.05,5.64L5.63,7.05L3.5,4.93L4.92,3.5M16.95,5.63L19.07,3.5L20.5,4.93L18.37,7.05L16.95,5.63Z"/></svg>`;
+
+// Settings the user can drop from the loadpoint/compact card via
+// `hide_settings: [...]`. Keys are the ha-evcc feature suffixes (plus the two
+// non-slider controls); the label keys are shared with the card itself.
+const HIDEABLE_SETTINGS = [
+  ["limit_soc",                    "targetSoc"],
+  ["min_soc",                      "minSoc"],
+  ["phases",                       "phases"],
+  ["max_current",                  "maxCurrent"],
+  ["min_current",                  "minCurrent"],
+  ["battery_boost",                "batteryBoost"],
+  ["priority",                     "priority"],
+  ["smart_cost_limit",             "smartCostLimitPrice"],
+  ["smart_feed_in_priority_limit", "feedInPriorityLimit"],
+];
 
 const CHARGE_MODES = {
   "off":   { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M13,3H11V13H13V3M17.83,5.17L16.41,6.59C17.99,7.86 19,9.81 19,12A7,7 0 0,1 12,19A7,7 0 0,1 5,12C5,9.81 6.01,7.86 7.58,6.58L6.17,5.17C4.23,6.82 3,9.26 3,12A9,9 0 0,0 12,21A9,9 0 0,0 21,12C21,9.26 19.77,6.82 17.83,5.17Z"/></svg>`,  tKey: "modeOff"  },
@@ -295,6 +310,20 @@ function displayUnit(hass, entityId) {
   return rawUnit || (entityId.includes("soc") ? "%" : "");
 }
 
+// Decimal places implied by a slider step (0.005 → 3, 1 → 0).
+function stepDecimals(step) {
+  const s = String(step);
+  if (s.includes("e-")) return parseInt(s.split("e-")[1], 10) || 0;
+  return (s.split(".")[1] || "").length;
+}
+
+// Round to `decimals` places and drop trailing zeros ("0.250" → "0.25").
+function fmtNum(v, decimals) {
+  const n = Number(v);
+  if (isNaN(n)) return "";
+  return String(Number(n.toFixed(decimals)));
+}
+
 function isOn(hass, entityId) {
   const s = stateVal(hass, entityId);
   return s === "on" || s === "true";
@@ -437,6 +466,8 @@ class EvccCard extends HTMLElement {
     this._config        = {};
     this._isDragging    = false;
     this._pendingRender = false;
+    this._sliderEditing = false;   // direct-input panel open (defers re-renders like a drag)
+    this._sliderEditPanel = null;
     this._renderTimer   = null;
     this._lastRenderKey = null;
     this._countdownInterval = null;
@@ -733,7 +764,7 @@ class EvccCard extends HTMLElement {
       });
     }
 
-    if (this._isDragging) {
+    if (this._isDragging || this._sliderEditing) {
       this._pendingRender = true;
       this._updateLiveValues();
       return;
@@ -843,6 +874,11 @@ class EvccCard extends HTMLElement {
     // handle). Replacing the shadow DOM now would orphan it and leave
     // _isDragging stuck. Defer; _priorityDragEnd re-renders.
     if (this._priorityDragging) { this._pendingRender = true; return; }
+    // A full re-render replaces the shadow DOM, so an open direct-input panel is
+    // gone afterwards; clear the flag or hass updates would stay deferred.
+    this._sliderEditing   = false;
+    this._sliderEditPanel = null;
+    this._dropSliderEditOutside();
     if (!this._cardId) {
       this._cardId = Math.random().toString(36).slice(2);
       window.__evccCards = window.__evccCards || new Map();
@@ -1524,19 +1560,29 @@ class EvccCard extends HTMLElement {
     ];
 
     const rows = SLIDER_FEATURES
-      .filter(({ key }) => ents[key])
+      .filter(({ key }) => ents[key] && !this._isSettingHidden(key))
       .map(({ key, label }) => this._sliderRow(ents[key], label));
 
     return rows.length ? `<div class="sliders">${rows.join("")}</div>` : "";
   }
 
+  // `hide_settings: [smart_cost_limit, priority, phases, …]` — see HIDEABLE_SETTINGS.
+  _isSettingHidden(key) {
+    const h = this._config?.hide_settings;
+    return Array.isArray(h) && h.includes(key);
+  }
+
   _renderCurrentBlock(ents, lpName = "") {
-    const hasPhases     = !!ents.phases_configured;
-    const hasCurrent    = ents.min_current || ents.max_current;
-    const hasSmartCost  = !!ents.smart_cost_limit;
-    const hasFeedIn     = !!ents.smart_feed_in_priority_limit;
-    const hasPriority   = !!ents.priority;
-    const hasBoost      = !!ents.battery_boost_limit;
+    const hide          = k => this._isSettingHidden(k);
+    const hasPhases     = !!ents.phases_configured && !hide("phases");
+    const hasMaxCurrent = !!ents.max_current && !hide("max_current");
+    const hasMinCurrent = !!ents.min_current && !hide("min_current");
+    const hasCurrent    = hasMaxCurrent || hasMinCurrent;
+    const hasSmartCost  = !!ents.smart_cost_limit && !hide("smart_cost_limit");
+    const hasFeedIn     = !!ents.smart_feed_in_priority_limit && !hide("smart_feed_in_priority_limit");
+    const hasPriority   = !!ents.priority && !hide("priority");
+    const hasBoost      = !!ents.battery_boost_limit && !hide("battery_boost");
+    // Everything hidden or missing: no block, no gear button.
     if (!hasPhases && !hasCurrent && !hasSmartCost && !hasFeedIn && !hasPriority && !hasBoost) return "";
 
     const configDefault = this._config.charge_current_settings === "expanded";
@@ -1567,8 +1613,8 @@ class EvccCard extends HTMLElement {
     }
 
     const currentRows = [
-      ents.max_current ? this._sliderRow(ents.max_current, this._t("maxCurrent")) : "",
-      ents.min_current ? this._sliderRow(ents.min_current, this._t("minCurrent")) : "",
+      hasMaxCurrent ? this._sliderRow(ents.max_current, this._t("maxCurrent")) : "",
+      hasMinCurrent ? this._sliderRow(ents.min_current, this._t("minCurrent")) : "",
     ].join("");
 
     const gearIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.68 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"/></svg>`;
@@ -1665,10 +1711,14 @@ class EvccCard extends HTMLElement {
     } else {
       min  = attr(this._hass, entityId, "min")  ?? 0;
       max  = attr(this._hass, entityId, "max")  ?? 100;
-      step = attr(this._hass, entityId, "step") ?? 1;
+      // `slider_steps: { smart_cost_limit: 0.01 }` overrides the entity's own step.
+      step = this._sliderStepOverride(entityId) ?? (attr(this._hass, entityId, "step") ?? 1);
       sliderVal = val;
     }
 
+    // The value doubles as a tap target that opens the direct-input panel
+    // (see _openSliderEdit); it must stay the range input's next sibling
+    // because the live "input" handler updates it by that relation.
     return `
       <div class="slider-row">
         <label>${label}</label>
@@ -1677,9 +1727,157 @@ class EvccCard extends HTMLElement {
                  min="${min}" max="${max}" step="${step}" value="${sliderVal}"
                  data-entity="${entityId}"
                  data-domain="${domain}" />
-          <span class="slider-val">${zeroLabel && val === 0 ? zeroLabel : `${val} ${unit}`}</span>
+          <button type="button" class="slider-val" data-slider-edit
+                  title="${this._t("sliderEditHint")}">${zeroLabel && val === 0 ? zeroLabel : `${val} ${unit}`}</button>
         </div>
       </div>`;
+  }
+
+  // Optional per-feature step override from the card config, keyed by the
+  // ha-evcc feature suffix: `slider_steps: { smart_cost_limit: 0.01, limit_soc: 5 }`.
+  // Only meaningful for number-backed sliders; select-backed ones walk options.
+  _sliderStepOverride(entityId) {
+    const steps = this._config?.slider_steps;
+    if (!steps || typeof steps !== "object") return null;
+    for (const [suffix, raw] of Object.entries(steps)) {
+      const step = parseFloat(raw);
+      if (!(step > 0)) continue;
+      if (entityId.endsWith(`_${suffix}`)) return step;
+    }
+    return null;
+  }
+
+  _sliderWrite(entityId, domain, value) {
+    if (domain === "select") {
+      if (this._sliderOptions(entityId).length === 0) return;
+      this._hass.callService("select", "select_option", { entity_id: entityId, option: String(value) });
+    } else {
+      this._hass.callService("number", "set_value", { entity_id: entityId, value });
+    }
+  }
+
+  // ── Slider direct input ──────────────────────────────────────────────
+  // Tapping the value next to a slider opens a touch-sized row below it:
+  // [−] [ value unit ] [+] [apply] [cancel] (SVG icons). −/+ walk the slider step (or the next
+  // select option), the field takes an exact value (comma or dot), ✓/Enter
+  // writes, ✕/Escape discards. One panel at a time; hass updates are deferred
+  // while it is open, exactly like during a drag.
+  // `local` (optional) describes a slider that does not go through _sliderWrite,
+  // e.g. the charge-plan target or battery boost: { unit, value, onApply(value),
+  // format?(value) → label }. Entity sliders derive everything from the range
+  // input's data attributes and write via _sliderWrite.
+  _openSliderEdit(btn, local = null) {
+    this._closeSliderEdit();
+    const input = btn.previousElementSibling;
+    const row   = btn.closest(".slider-row, .plan-row");
+    if (!input || !row || input.type !== "range") return;
+
+    const entityId = local ? null : input.dataset.entity;
+    const domain   = local ? "number" : input.dataset.domain;
+    const unit     = local ? (local.unit ?? "") : displayUnit(this._hass, entityId);
+    const opts     = domain === "select" ? this._sliderOptions(entityId) : [];
+    const min      = parseFloat(input.min), max = parseFloat(input.max);
+    const step     = parseFloat(input.step) || 1;
+    const decimals = domain === "select" ? 3 : stepDecimals(step);
+    const raw      = local ? parseFloat(local.value) : parseFloat(stateVal(this._hass, entityId));
+    let cur        = !isNaN(raw) ? raw : (domain === "select" ? (opts[0] ?? 0) : min);
+
+    const panel = document.createElement("div");
+    panel.className = "slider-edit";
+    panel.innerHTML = `
+      <button type="button" class="slider-edit-btn" data-edit-dec aria-label="−"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M19,13H5V11H19V13Z"/></svg></button>
+      <div class="slider-edit-field">
+        <input type="text" inputmode="decimal" class="slider-edit-input" autocomplete="off" spellcheck="false" />
+        <span class="slider-edit-unit">${unit}</span>
+      </div>
+      <button type="button" class="slider-edit-btn" data-edit-inc aria-label="+"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"/></svg></button>
+      <button type="button" class="slider-edit-btn slider-edit-ok" data-edit-ok
+              title="${this._t("sliderEditApply")}" aria-label="${this._t("sliderEditApply")}"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/></svg></button>
+      <button type="button" class="slider-edit-btn slider-edit-cancel" data-edit-cancel
+              title="${this._t("sliderEditCancel")}" aria-label="${this._t("sliderEditCancel")}"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/></svg></button>`;
+    row.appendChild(panel);
+    btn.classList.add("editing");
+    this._sliderEditing   = true;
+    this._sliderEditPanel = panel;
+
+    // Any click elsewhere in the card dismisses the panel. Without this a tab
+    // switch or the gear toggle (both only flip `hidden`, no re-render) would
+    // leave the panel open in a hidden section and keep hass updates deferred.
+    // Runs in the capture phase so the click still reaches its own target;
+    // a pending re-render is deferred past the click for the same reason.
+    this._sliderEditOutside = (e) => {
+      const path = e.composedPath();
+      if (path.includes(panel) || path.includes(btn)) return;
+      this._closeSliderEdit(true);
+    };
+    this.shadowRoot.addEventListener("click", this._sliderEditOutside, true);
+
+    const field = panel.querySelector(".slider-edit-input");
+    const parse = () => parseFloat(String(field.value).trim().replace(",", "."));
+    const snap  = v => {
+      if (isNaN(v)) return cur;
+      if (domain === "select") {
+        return opts.length ? opts.reduce((b, o) => Math.abs(o - v) < Math.abs(b - v) ? o : b, opts[0]) : v;
+      }
+      const clamped = Math.min(Math.max(v, min), max);
+      return Number((Math.round((clamped - min) / step) * step + min).toFixed(decimals));
+    };
+    const show  = () => { field.value = fmtNum(cur, decimals); };
+    const nudge = dir => {
+      if (domain === "select") {
+        const i = opts.indexOf(snap(parse()));
+        cur = opts[Math.min(Math.max((i < 0 ? 0 : i) + dir, 0), opts.length - 1)] ?? cur;
+      } else {
+        cur = snap(snap(parse()) + dir * step);
+      }
+      show();
+    };
+    const apply = () => {
+      cur = snap(parse());
+      // Reflect immediately; for entity sliders the next hass update re-renders anyway.
+      input.value     = domain === "select" ? String(Math.max(opts.indexOf(cur), 0)) : String(cur);
+      btn.textContent = local?.format ? local.format(cur) : `${fmtNum(cur, decimals)} ${unit}`;
+      if (local) local.onApply?.(cur);
+      else       this._sliderWrite(entityId, domain, cur);
+      this._closeSliderEdit();
+    };
+    show();
+
+    panel.querySelector("[data-edit-dec]").addEventListener("click", () => nudge(-1));
+    panel.querySelector("[data-edit-inc]").addEventListener("click", () => nudge(+1));
+    panel.querySelector("[data-edit-ok]").addEventListener("click", apply);
+    panel.querySelector("[data-edit-cancel]").addEventListener("click", () => this._closeSliderEdit());
+    field.addEventListener("keydown", e => {
+      if (e.key === "Enter")       { e.preventDefault(); apply(); }
+      else if (e.key === "Escape") { e.preventDefault(); this._closeSliderEdit(); }
+    });
+    field.focus();
+    field.select();
+  }
+
+  _closeSliderEdit(deferRender = false) {
+    const panel = this._sliderEditPanel;
+    if (panel) {
+      panel.parentNode?.querySelector(".slider-val.editing")?.classList.remove("editing");
+      panel.remove();
+    }
+    this._sliderEditPanel = null;
+    this._dropSliderEditOutside();
+    if (this._sliderEditing) {
+      this._sliderEditing = false;
+      if (this._pendingRender) {
+        this._pendingRender = false;
+        if (deferRender) setTimeout(() => { if (!this._sliderEditing) this._render(); }, 0);
+        else this._render();
+      }
+    }
+  }
+
+  _dropSliderEditOutside() {
+    if (this._sliderEditOutside) {
+      this.shadowRoot.removeEventListener("click", this._sliderEditOutside, true);
+      this._sliderEditOutside = null;
+    }
   }
 
   _boostCommit(input) {
@@ -1725,7 +1923,8 @@ class EvccCard extends HTMLElement {
                  min="${min}" max="${max}" step="${step}" value="${curPct}"
                  data-boost-entity="${limitId}"
                  data-options='${JSON.stringify(options)}' />
-          <span class="slider-val boost-val">${label}</span>
+          <button type="button" class="slider-val boost-val" data-boost-edit
+                  title="${this._t("sliderEditHint")}">${label}</button>
         </div>
       </div>`;
   }
@@ -1936,7 +2135,8 @@ class EvccCard extends HTMLElement {
               <input type="range" class="plan-soc-range"
                      min="20" max="100" step="5" value="${defaultSoc}"
                      data-lp="${lpName}" />
-              <span class="plan-soc-val">${defaultSoc} %</span>
+              <button type="button" class="slider-val plan-soc-val" data-plan-soc-edit
+                      title="${this._t("sliderEditHint")}">${defaultSoc} %</button>
             </div>
           </div>
           ${contHtml}
@@ -4679,7 +4879,10 @@ class EvccCard extends HTMLElement {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const lpName   = btn.dataset.lpCurrentToggle;
-        const expanded = this._currentBlockExpanded[lpName] === true;
+        // Same fallback as the render: with `charge_current_settings: expanded`
+        // the block starts open, so the first click must collapse it.
+        const expanded = this._currentBlockExpanded[lpName]
+          ?? (this._config.charge_current_settings === "expanded");
         this._currentBlockExpanded[lpName] = !expanded;
 
         const block = this.shadowRoot.querySelector(`[data-lp-current="${lpName}"]`);
@@ -4914,6 +5117,22 @@ class EvccCard extends HTMLElement {
       input.addEventListener("blur",       () => this._boostCommit(input));
     });
 
+    // Direct input for battery boost: the range already carries the option
+    // list, so apply just moves the range and reuses _boostCommit.
+    this.shadowRoot.querySelectorAll("button.boost-val[data-boost-edit]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (btn.classList.contains("editing")) { this._closeSliderEdit(); return; }
+        const input = btn.previousElementSibling;
+        this._openSliderEdit(btn, {
+          unit:    "%",
+          value:   parseInt(input?.value, 10),
+          format:  v => v === 100 ? this._t("toggleOff") : v === 0 ? `0 % (${this._t("fullDischarge")})` : `${v} %`,
+          onApply: () => this._boostCommit(input),
+        });
+      });
+    });
+
     this.shadowRoot.querySelectorAll("input.plan-soc-range").forEach(input => {
       input.addEventListener("pointerdown", () => {
         this._isDragging    = true;
@@ -4936,6 +5155,30 @@ class EvccCard extends HTMLElement {
           this._isDragging = false;
           if (this._pendingRender) { this._pendingRender = false; this._render(); }
         }
+      });
+      // Keyboard changes update the state via "input" but never asked for a preview.
+      input.addEventListener("keyup", (e) => {
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(e.key)) {
+          this._requestPlanPreview(input.dataset.lp);
+        }
+      });
+    });
+
+    // Direct input for the plan target (local state, no entity behind it).
+    this.shadowRoot.querySelectorAll("button.plan-soc-val[data-plan-soc-edit]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (btn.classList.contains("editing")) { this._closeSliderEdit(); return; }
+        const input  = btn.previousElementSibling;
+        const lpName = input?.dataset.lp;
+        this._openSliderEdit(btn, {
+          unit:  "%",
+          value: parseInt(input?.value, 10),
+          onApply: (val) => {
+            if (this._planState[lpName]) this._planState[lpName].soc = val;
+            this._requestPlanPreview(lpName);
+          },
+        });
       });
     });
 
@@ -5082,6 +5325,22 @@ class EvccCard extends HTMLElement {
           this._isDragging = false;
           if (this._pendingRender) { this._pendingRender = false; this._render(); }
         }
+      });
+      // Keyboard changes (arrows, Home/End, PageUp/Down) never went through
+      // pointerup, so they updated the label but were never written to HA.
+      input.addEventListener("keyup", (e) => {
+        if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(e.key)) return;
+        const domain   = input.dataset.domain;
+        const entityId = input.dataset.entity;
+        this._sliderWrite(entityId, domain, domain === "select" ? this._sliderValueFor(input) : parseFloat(input.value));
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.slider-val[data-slider-edit]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (btn.classList.contains("editing")) this._closeSliderEdit();
+        else this._openSliderEdit(btn);
       });
     });
 
@@ -5353,7 +5612,45 @@ class EvccCard extends HTMLElement {
       .slider-row label { flex: 0 0 auto; min-width: 70px; white-space: nowrap; color: var(--secondary-text-color); }
       .slider-control { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 120px; }
       .slider-control input { flex: 1; min-width: 0; accent-color: var(--primary-color); }
-      .slider-val { flex-shrink: 0; width: 52px; text-align: right; font-size: .8rem; }
+      .slider-val { flex-shrink: 0; min-width: 52px; text-align: right; font-size: .8rem; }
+      /* The value is a tap target: same look as before, but a thumb-sized hit
+         area (padding + negative margin keeps the row height unchanged). */
+      button.slider-val {
+        background: none; border: none; font-family: inherit; color: inherit; cursor: pointer;
+        padding: 8px 6px; margin: -8px -6px; border-radius: 6px; line-height: 1.2;
+        text-decoration: underline dotted; text-decoration-color: var(--secondary-text-color, #888);
+        text-underline-offset: 3px; touch-action: manipulation;
+      }
+      button.slider-val:hover, button.slider-val.editing { color: var(--primary-color); text-decoration-color: currentColor; }
+      button.slider-val:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+      /* Direct-input panel: full-width row under the slider, every control ≥44px. */
+      .slider-edit { flex: 0 0 100%; display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; }
+      .slider-edit-btn {
+        flex: 0 0 auto; min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center;
+        border: 1px solid var(--divider-color, #555); border-radius: 8px; cursor: pointer; font-family: inherit;
+        background: var(--secondary-background-color, rgba(127,127,127,0.12)); color: var(--primary-text-color);
+        font-size: 1.3rem; line-height: 1; padding: 0; touch-action: manipulation; user-select: none;
+      }
+      .slider-edit-btn:active { filter: brightness(0.9); }
+      .slider-edit-ok     { color: var(--evcc-green); font-weight: 700; }
+      .slider-edit-cancel { color: var(--secondary-text-color); }
+      .slider-edit-field {
+        flex: 1 1 80px; min-width: 64px; min-height: 44px; display: flex; align-items: center; box-sizing: border-box;
+        border: 1px solid var(--divider-color, #555); border-radius: 8px; padding: 0 10px;
+        background: var(--card-background-color, #fff);
+      }
+      .slider-edit-field:focus-within { border-color: var(--primary-color); }
+      .slider-edit-input {
+        flex: 1; min-width: 0; width: 100%; border: none; background: none; outline: none;
+        font-family: inherit; font-size: 1.15rem; color: var(--primary-text-color); text-align: right; padding: 0;
+      }
+      .slider-edit-unit { flex: 0 0 auto; margin-left: 6px; font-size: .9rem; color: var(--secondary-text-color); white-space: nowrap; }
+      /* Narrow cards (≈300 px): 4 × 40 px buttons + 4 gaps + a 64 px field still fit the content box. */
+      @container (max-width: 340px) {
+        .slider-edit { gap: 6px; }
+        .slider-edit-btn { min-width: 40px; }
+        .slider-edit-field { flex-basis: 64px; min-width: 64px; padding: 0 8px; }
+      }
       .smart-active-hint { font-size: .75rem; color: var(--evcc-green); margin-top: -4px; margin-bottom: 8px; }
       .smart-cost-clear-row { display: flex; justify-content: flex-end; margin-top: 6px; margin-bottom: 2px; }
       .smart-cost-clear-btn { background: none; border: 1px solid var(--divider-color, #555); border-radius: 4px; cursor: pointer; font-size: .75rem; color: var(--secondary-text-color); padding: 3px 8px; font-family: inherit; transition: border-color .15s, color .15s; }
@@ -5656,7 +5953,7 @@ class EvccCard extends HTMLElement {
       .plan-row label { flex: 0 0 auto; min-width: 60px; white-space: nowrap; color: var(--secondary-text-color); }
       .plan-soc-control { display: flex; align-items: center; gap: 8px; flex: 1; }
       .plan-soc-range { flex: 1; accent-color: var(--primary-color); }
-      .plan-soc-val { width: 42px; text-align: right; font-size: .8rem; }
+      .plan-soc-val { min-width: 42px; text-align: right; font-size: .8rem; }
       input.plan-time-input { flex: 1; padding: 4px 8px; border: 1px solid var(--divider-color, #4b5563); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); font-size: .82rem; color-scheme: dark light; }
       .plan-actions { display: flex; gap: 8px; }
       .plan-btn { flex: 1; padding: 7px 10px; border-radius: 7px; border: 1px solid var(--divider-color); font-size: .8rem; font-weight: 600; cursor: pointer; transition: all .15s; background: transparent; color: var(--primary-text-color); }
@@ -6001,6 +6298,7 @@ class EvccCardEditor extends HTMLElement {
     const showLoadpoints    = ["loadpoint", "compact", "plan", "priority"].includes(mode);
     const showNoPlan        = ["loadpoint", "compact"].includes(mode);
     const showChargeCurrent = ["loadpoint", "compact"].includes(mode);
+    const hideSettings      = Array.isArray(c.hide_settings) ? c.hide_settings : [];
     const showSiteDetails   = ["site", "flow"].includes(mode);
     const showStatsPeriod   = ["stats", "site", "flow", "grid"].includes(mode);
     const showVehicleFilter = mode === "repeatplan";
@@ -6141,6 +6439,17 @@ class EvccCardEditor extends HTMLElement {
             ["collapsed", this._t("editorCollapsed")],
             ["expanded",  this._t("editorExpanded")],
           ], c.charge_current_settings || "collapsed")}
+        </div>
+        ` : ""}
+        ${showChargeCurrent ? `
+        <div class="field">
+          <div class="section-title">${this._t("editorHideSettingsTitle")}</div>
+          <div class="hint">${this._t("editorHideSettingsHint")}</div>
+          ${HIDEABLE_SETTINGS.map(([key, labelKey]) => `
+            <label class="cb-row">
+              <input type="checkbox" data-field="hide_settings" data-lp="${key}" ${hideSettings.includes(key) ? "checked" : ""}>
+              <span>${this._esc(this._t(labelKey))}</span>
+            </label>`).join("")}
         </div>
         ` : ""}
         ${showSiteDetails ? `
