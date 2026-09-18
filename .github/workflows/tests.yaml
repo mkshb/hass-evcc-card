@@ -57,23 +57,24 @@ jobs:
   screenshots:
     name: README screenshots up to date
     runs-on: ubuntu-latest
+    # Same software as the local dev container: Debian bookworm, its Chromium
+    # package and font packages. Text rendering differs between distributions
+    # (line heights, hinting), so the comparison is only strict when the
+    # reference images and the CI render come from the same build.
+    container: debian:bookworm-slim
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install browser and fonts
+      - name: Install Chromium, fonts and Python
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq fonts-dejavu-core fonts-liberation fonts-roboto
-          python3 -m pip install -q "playwright==${PLAYWRIGHT_VERSION}" pillow
-          python3 -m playwright install --with-deps chromium
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            chromium fonts-dejavu-core fonts-liberation fonts-roboto \
+            python3 python3-pip python3-pil ca-certificates git
+          python3 -m pip install -q --break-system-packages "playwright==${PLAYWRIGHT_VERSION}"
+      - uses: actions/checkout@v4
       - name: Render screenshots
         run: python3 test/screenshots.py --out test/out
       - name: Compare with committed images
-        # Playwright's Chromium is not the Debian build used locally; anti-aliasing
-        # differences stay well below the tolerance, layout changes do not.
-        run: python3 test/compare_images.py --new test/out --ref images --tolerance 2.0 --summary "$GITHUB_STEP_SUMMARY"
+        run: python3 test/compare_images.py --new test/out --ref images --tolerance 0.5 --summary "$GITHUB_STEP_SUMMARY"
       - name: Upload rendered screenshots
         if: failure()
         uses: actions/upload-artifact@v4

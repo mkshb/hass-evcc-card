@@ -99,7 +99,7 @@ nightly and on demand, in three jobs:
 | Job | What it does |
 |---|---|
 | Test suite | Syntax check, `test/run.py` with Playwright's bundled Chromium; `report.md` becomes the job summary, `test/out` is uploaded as an artifact |
-| README screenshots up to date | Renders all screenshots and compares them with `images/` via `test/compare_images.py` (tolerance 2 % differing pixels, absorbs anti-aliasing differences between Chromium builds). Fails when a card change was committed without regenerating the images |
+| README screenshots up to date | Renders all screenshots in a `debian:bookworm-slim` container with the same Chromium and font packages as the dev container, and compares them with `images/` via `test/compare_images.py` (tolerance 0.5 % differing pixels). Fails when a card change was committed without regenerating the images. Text rendering differs between distributions by a few pixels per line, so an Ubuntu runner cannot be used for this job |
 | Entities exist in ha-evcc | `test/check_ha_evcc.py --clone` against the latest marq24/ha-evcc; the nightly run catches renamed entities in new integration releases |
 
 ## Requirements
