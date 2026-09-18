@@ -69,6 +69,8 @@ share the files, so the report always describes the most recent of the two.
 (`FIXED_TIME`, 2026-09-18 13:00 Europe/Berlin, locale de-DE). Hour labels,
 plan times and the "current month" therefore never drift, and two runs produce
 byte-identical screenshots. A changed PNG means the rendering changed.
+`FIXED_TIME` carries an explicit UTC offset on purpose: a naive time is read in
+the host's timezone, which shifted the plan chart by two hours on a UTC runner.
 
 Known cosmetic difference to the HA frontend: headless Chromium formats the
 native `datetime-local` input (charge plan "finish by") in US notation

@@ -23,7 +23,9 @@ MODES = ["loadpoint", "compact", "battery", "site", "flow", "grid", "stats", "pl
 _chromium = os.environ.get("EVCC_CHROMIUM") or ("/usr/bin/chromium" if os.path.exists("/usr/bin/chromium") else None)
 BROWSER = {} if _chromium in (None, "bundled") else {"executable_path": _chromium}
 
-FIXED_TIME = "2026-09-18T13:00:00"
+# With an explicit offset: a naive time would be read in the host's timezone,
+# i.e. 13:00 UTC on a CI runner instead of 13:00 Berlin.
+FIXED_TIME = "2026-09-18T13:00:00+02:00"
 TIMEZONE   = "Europe/Berlin"
 LOCALE     = "de-DE"
 
