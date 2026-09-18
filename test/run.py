@@ -69,7 +69,9 @@ class T:
         if failed:
             lines += ["## Failures", ""] + [f"- **{r['section']}** / {r['name']}" + (f": {r['detail']}" if r['detail'] else "") for r in self.failed] + [""]
         lines += ["## All checks", "", "| Result | Section | Check | Detail |", "|---|---|---|---|"]
-        lines += [f"| {'PASS' if r['ok'] else 'FAIL'} | {r['section']} | {r['name']} | {r['detail'].replace('|', '\\|')} |" for r in self.results]
+        # (no backslashes inside f-string expressions: Debian's Python 3.11 rejects them)
+        cell = lambda v: str(v).replace("|", "&#124;")
+        lines += [f"| {'PASS' if r['ok'] else 'FAIL'} | {cell(r['section'])} | {cell(r['name'])} | {cell(r['detail'])} |" for r in self.results]
         if screenshots:
             lines += ["", "## Screenshots", ""] + [f"- {s}" for s in screenshots]
         (out / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
