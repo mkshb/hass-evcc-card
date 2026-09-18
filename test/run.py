@@ -6,8 +6,9 @@ Serves the repo root over HTTP, opens test/harness.html in Chromium, renders
 every card mode (light + dark, screenshots in test/out/) and runs interaction
 scenarios that assert on the recorded service calls. Exit code 1 on failure.
 """
-import argparse, http.server, json, os, socketserver, sys, threading, time, urllib.parse
+import argparse, datetime, http.server, json, os, re, socketserver, sys, threading, time, urllib.parse
 from pathlib import Path
+from xml.sax.saxutils import escape as xml_escape
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT  = ROOT / "test" / "out"
@@ -32,11 +33,45 @@ def serve():
     return srv, srv.server_address[1]
 
 
+def card_version():
+    m = re.search(r'EVCC_CARD_VERSION\s*=\s*"([^"]+)"', (ROOT / "dist" / "evcc-card.js").read_text(encoding="utf-8"))
+    return m.group(1) if m else "?"
+
+
 class T:
-    def __init__(self): self.results = []
-    def ok(self, name, detail=""):   self.results.append((True, name, detail));  print(f"  PASS {name}" + (f"  ({detail})" if detail else ""))
-    def fail(self, name, detail=""): self.results.append((False, name, detail)); print(f"  FAIL {name}  {detail}")
+    """Collects check results and writes report.md / report.json / junit.xml."""
+    def __init__(self, suite="evcc-card tests"):
+        self.suite, self.results, self.started, self.section = suite, [], time.time(), ""
+    def group(self, title):        self.section = title; print(f"\n[{title}]")
+    def ok(self, name, detail=""):   self._add(True, name, detail);  print(f"  PASS {name}" + (f"  ({detail})" if detail else ""))
+    def fail(self, name, detail=""): self._add(False, name, detail); print(f"  FAIL {name}  {detail}")
     def check(self, cond, name, detail=""): (self.ok if cond else self.fail)(name, detail)
+    def _add(self, ok, name, detail): self.results.append({"ok": ok, "section": self.section, "name": name, "detail": str(detail)[:500]})
+    @property
+    def failed(self): return [r for r in self.results if not r["ok"]]
+
+    def write_reports(self, out, screenshots=()):
+        out = Path(out); out.mkdir(parents=True, exist_ok=True)
+        passed, failed = len(self.results) - len(self.failed), len(self.failed)
+        meta = {"suite": self.suite, "card_version": card_version(), "run_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                "duration_s": round(time.time() - self.started, 1), "fixed_browser_time": FIXED_TIME, "passed": passed, "failed": failed}
+        (out / "report.json").write_text(json.dumps({**meta, "results": self.results, "screenshots": [str(s) for s in screenshots]}, indent=1, ensure_ascii=False))
+        lines = [f"# {self.suite}", "",
+                 f"**{'FAILED' if failed else 'PASSED'}**: {passed} passed, {failed} failed", "",
+                 f"- Card version: {meta['card_version']}", f"- Run at: {meta['run_at']} ({meta['duration_s']} s)",
+                 f"- Browser clock frozen at: {FIXED_TIME} {TIMEZONE}", ""]
+        if failed:
+            lines += ["## Failures", ""] + [f"- **{r['section']}** / {r['name']}" + (f": {r['detail']}" if r['detail'] else "") for r in self.failed] + [""]
+        lines += ["## All checks", "", "| Result | Section | Check | Detail |", "|---|---|---|---|"]
+        lines += [f"| {'PASS' if r['ok'] else 'FAIL'} | {r['section']} | {r['name']} | {r['detail'].replace('|', '\\|')} |" for r in self.results]
+        if screenshots:
+            lines += ["", "## Screenshots", ""] + [f"- {s}" for s in screenshots]
+        (out / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        cases = "".join(
+            f'  <testcase classname="{xml_escape(r["section"] or self.suite)}" name="{xml_escape(r["name"])}">'
+            + (f'<failure message="{xml_escape(r["detail"])}"/>' if not r["ok"] else "") + "</testcase>\n" for r in self.results)
+        (out / "junit.xml").write_text(f'<?xml version="1.0" encoding="UTF-8"?>\n<testsuite name="{xml_escape(self.suite)}" tests="{len(self.results)}" failures="{failed}" time="{meta["duration_s"]}">\n{cases}</testsuite>\n', encoding="utf-8")
+        return out / "report.md"
 
 
 def new_page(browser, width=480, height=900):
@@ -72,7 +107,7 @@ def in_card(sel):
 
 
 def render_smoke(browser, port, t):
-    print("\n[render] all modes, light + dark")
+    t.group("render - all modes, light + dark")
     for mode in MODES:
         for dark in (False, True):
             page = new_page(browser, 480, 900)
@@ -97,7 +132,7 @@ def render_smoke(browser, port, t):
 
 
 def interactions(browser, port, t):
-    print("\n[interaction] direct input panel")
+    t.group("interaction - direct input panel")
     page = new_page(browser, 480, 1400)
     errors = open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"})
     t.check(not errors, "loadpoint openwb renders without errors", "; ".join(errors)[:300])
@@ -192,7 +227,7 @@ def interactions(browser, port, t):
     page.close()
 
     # --- compact: tab switch closes the panel ------------------------------------------
-    print("\n[interaction] compact tab switch")
+    t.group("interaction - compact tab switch")
     page = new_page(browser, 480, 1200)
     open_card(page, port, config={"mode": "compact", "loadpoints": ["openwb"]})
     page.locator(in_card("button.compact-tab")).nth(1).click(); page.wait_for_timeout(200)
@@ -205,7 +240,7 @@ def interactions(browser, port, t):
     page.close()
 
     # --- plan preview via WebSocket fixture ------------------------------------------------
-    print("\n[interaction] plan preview")
+    t.group("interaction - plan preview")
     page = new_page(browser, 480, 1200)
     open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]})
     page.locator(in_card("button.plan-soc-val")).click()
@@ -222,7 +257,7 @@ def interactions(browser, port, t):
     page.close()
 
     # --- hide_settings + slider_steps ---------------------------------------------------
-    print("\n[config] hide_settings / slider_steps")
+    t.group("config - hide_settings / slider_steps")
     page = new_page(browser, 480, 1200)
     all_keys = ["limit_soc", "min_soc", "phases", "max_current", "min_current", "battery_boost", "priority", "smart_cost_limit", "smart_feed_in_priority_limit"]
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "hide_settings": all_keys})
@@ -244,7 +279,7 @@ def interactions(browser, port, t):
     page.close()
 
     # --- editor renders the hide checkboxes ------------------------------------------
-    print("\n[editor] hide_settings checkboxes")
+    t.group("editor - hide_settings checkboxes")
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint"})
     n = page.evaluate("""async () => {
@@ -272,9 +307,9 @@ def main():
         if a.only in (None, "interaction"): interactions(browser, port, t)
         browser.close()
     srv.shutdown()
-    failed = [r for r in t.results if not r[0]]
-    print(f"\n{len(t.results) - len(failed)} passed, {len(failed)} failed  (screenshots in {OUT})")
-    sys.exit(1 if failed else 0)
+    report = t.write_reports(OUT, sorted(p.name for p in OUT.glob("*.png")))
+    print(f"\n{len(t.results) - len(t.failed)} passed, {len(t.failed)} failed  (report: {report}, screenshots in {OUT})")
+    sys.exit(1 if t.failed else 0)
 
 
 if __name__ == "__main__":

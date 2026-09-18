@@ -25,6 +25,20 @@ python3 test/run.py --headed        # watch it in a window
 
 Screenshots land in `test/out/` (git-ignored). Exit code 1 on failure.
 
+## Reports
+
+Every run of `run.py` or `screenshots.py` writes to `test/out/`:
+
+| File | Content |
+|---|---|
+| `report.md` | Human-readable summary: result, card version, run time, every check with its detail, failures first |
+| `report.json` | The same as data |
+| `junit.xml` | JUnit format for CI test summaries |
+| `pre-commit.log` | Full output of the last pre-commit hook run |
+
+The reports are overwritten by the next run; `screenshots.py` and `run.py`
+share the files, so the report always describes the most recent of the two.
+
 ## Deterministic output
 
 `run.py` freezes the browser clock at the capture time of the fixtures
@@ -39,9 +53,13 @@ installed (`apt install fonts-roboto`).
 
 ## Pre-commit hook
 
-`.githooks/pre-commit` runs the syntax check, the render smoke and regenerates
-the README screenshots whenever `dist/` is part of a commit, and adds changed
-images to that commit. Activate it once per clone:
+`.githooks/pre-commit` runs the syntax check and regenerates the README
+screenshots whenever `dist/` is part of a commit, and adds changed images to
+that commit. The screenshot run renders every mode light and dark and fails on
+any console error, so it doubles as the render smoke (about 40 s; the full
+suite with interaction tests stays in `run.py`). On failure the commit is
+aborted, the reason goes to stderr and the details to `test/out/pre-commit.log`
+and `test/out/report.md`. Activate the hook once per clone:
 
 ```bash
 git config core.hooksPath .githooks

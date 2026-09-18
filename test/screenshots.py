@@ -8,7 +8,7 @@ element itself (470 px wide) for each mode, plus the slider-input crop.
 import argparse, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from run import serve, open_card, in_card, new_page, OUT
+from run import serve, open_card, in_card, new_page, OUT, T
 
 WIDTH = 470
 LP = ["openwb"]   # the EV loadpoint; "wp" is a heating loadpoint and would double the height
@@ -36,17 +36,17 @@ def union(*boxes):
 
 def shot_mode(browser, port, name, config, dark, out):
     page = new_page(browser, WIDTH + 50, 1600)
-    open_card(page, port, dark=dark, width=WIDTH, config=config)
+    errors = open_card(page, port, dark=dark, width=WIDTH, config=config)
     path = out / f"{name}-{'dark' if dark else 'light'}.png"
     page.locator(in_card("ha-card")).screenshot(path=str(path))
     page.close()
-    return path
+    return path, errors
 
 
 def shot_slider_input(browser, port, dark, out):
     page = new_page(browser, WIDTH + 50, 1600)
-    open_card(page, port, dark=dark, width=WIDTH,
-              config={"mode": "loadpoint", "loadpoints": LP, "charge_current_settings": "expanded"})
+    errors = open_card(page, port, dark=dark, width=WIDTH,
+                       config={"mode": "loadpoint", "loadpoints": LP, "charge_current_settings": "expanded"})
     page.locator(in_card('input[data-entity="number.evcc_openwb_limit_soc"] + button.slider-val')).click()
     page.locator(in_card(".slider-edit-input")).fill("85")
     page.wait_for_timeout(150)
@@ -56,7 +56,7 @@ def shot_slider_input(browser, port, dark, out):
     path = out / f"slider-input-{'dark' if dark else 'light'}.png"
     page.screenshot(path=str(path), clip={"x": card["x"], "y": y0 - 10, "width": card["width"], "height": (y1 - y0) + 20})
     page.close()
-    return path
+    return path, errors
 
 
 def main():
@@ -66,17 +66,26 @@ def main():
     a = ap.parse_args()
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     from playwright.sync_api import sync_playwright
+    t = T("evcc-card screenshots"); shots = []
     srv, port = serve()
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path="/usr/bin/chromium", headless=True, args=["--no-sandbox", "--lang=de-DE"])
         for dark in (False, True):
-            for name, config in SHOTS.items():
-                if a.only and a.only != name: continue
-                print("wrote", shot_mode(browser, port, name, config, dark, out))
+            t.group("dark" if dark else "light")
+            jobs = [(name, lambda n=name, c=config: shot_mode(browser, port, n, c, dark, out))
+                    for name, config in SHOTS.items() if not a.only or a.only == name]
             if not a.only or a.only == "slider-input":
-                print("wrote", shot_slider_input(browser, port, dark, out))
+                jobs.append(("slider-input", lambda: shot_slider_input(browser, port, dark, out)))
+            for name, job in jobs:
+                path, errors = job()
+                shots.append(str(path))
+                # A screenshot of a page with console errors is not a valid README image.
+                t.check(not errors, f"{name}: rendered without console errors → {path.name}", "; ".join(errors)[:300])
         browser.close()
     srv.shutdown()
+    report = t.write_reports(OUT, shots)
+    print(f"\n{len(t.results) - len(t.failed)} ok, {len(t.failed)} with errors  (report: {report})")
+    sys.exit(1 if t.failed else 0)
 
 
 if __name__ == "__main__":
