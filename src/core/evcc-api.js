@@ -15,9 +15,14 @@ export const evccApi = {
   // callWS rejects — we then mark the feature set empty so the UI degrades.
   _loadCapabilities() {
     if (this._capsLoaded || this._capsLoading || !this._hass) return this._capsLoading;
+    // A prefix change swaps the entry while this is in flight; the answer for
+    // the old entry is then dropped and the new one's probe is already running.
+    const entryId = this._entryId;
+    const stale   = () => entryId !== this._entryId;
     this._capsLoading = this._hass
-      .callWS({ type: "evcc_intg/capabilities", entry_id: this._entryId })
+      .callWS({ type: "evcc_intg/capabilities", entry_id: entryId })
       .then(res => {
+        if (stale()) return;
         this._caps = {
           version:  res?.version ?? null,
           commands: Array.isArray(res?.commands) ? res.commands : [],
@@ -30,10 +35,12 @@ export const evccApi = {
         }
       })
       .catch(e => {
+        if (stale()) return;
         console.warn("[evcc-card] evcc_intg/capabilities not available:", e?.message || e);
         this._caps = { version: null, commands: [] };
       })
-      .finally(() => {
+      .then(() => {
+        if (stale()) return;
         this._capsLoaded  = true;
         this._capsLoading = null;
         // Pre-fetch debug probes so data is cached before the debug block renders.
@@ -63,17 +70,22 @@ export const evccApi = {
     if (cached && (now - cached.ts) < ttlMs) return cached.result;
 
     if (!this._wsInflight[cacheKey]) {
+      const entryId = this._entryId;
+      const stale   = () => entryId !== this._entryId;   // entry swapped meanwhile, see _syncIntegrationInstance
       this._wsInflight[cacheKey] = this._hass
-        .callWS({ type, entry_id: this._entryId, ...params })
+        .callWS({ type, entry_id: entryId, ...params })
         .then(data => {
+          if (stale()) return;
           this._wsCache[cacheKey] = { ts: Date.now(), result: { data } };
         })
         .catch(e => {
+          if (stale()) return;
           const msg = e?.message || (typeof e === "object" ? JSON.stringify(e) : String(e));
           console.warn(`[evcc-card] ${type} failed:`, msg);
           this._wsCache[cacheKey] = { ts: Date.now(), result: { error: msg } };
         })
         .finally(() => {
+          if (stale()) return;
           delete this._wsInflight[cacheKey];
           // Throttle the re-render to avoid rapid DOM replacements.
           if (!this._wsRenderTimer) {

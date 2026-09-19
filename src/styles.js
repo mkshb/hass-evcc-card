@@ -410,12 +410,6 @@ export const styles = {
       }
 
       .battery-block { padding: 0; }
-      .batt-tabs { display: flex; border-bottom: 1px solid var(--divider-color, #333); margin-bottom: 14px; }
-      button.batt-tab {
-        background: transparent; border: none; border-bottom: 2px solid transparent;
-        color: var(--secondary-text-color); padding: 7px 16px; font-size: .84rem; cursor: pointer; margin-bottom: -1px;
-      }
-      button.batt-tab.active { color: var(--primary-text-color); border-bottom-color: var(--primary-text-color); font-weight: 600; }
       .batt-main-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
       .batt-text-col { flex: 1; min-width: 0; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 12px; }
       .batt-text-item { display: flex; gap: 8px; align-items: flex-start; }

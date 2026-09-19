@@ -2,7 +2,8 @@
 # Pre-commit hook for hass-evcc-card.
 #
 # Runs only when files under src/ or dist/ are part of the commit:
-#   1. dist/evcc-card.js rebuilt from src/ (npm run build) and added to the commit
+#   1. dist/evcc-card.js rebuilt from src/ (npm run build) and added to the commit,
+#      together with package.json when the build synced its version
 #   2. syntax check of dist/evcc-card.js (as an ES module)
 #   3. README screenshots regenerated from the harness (test/screenshots.py);
 #      every mode is rendered light + dark and must be free of console errors,
@@ -44,10 +45,14 @@ if [ ! -d node_modules ]; then
 fi
 echo "pre-commit: build dist/evcc-card.js from src/" | tee -a "$log"
 npm run --silent build >>"$log" 2>&1 || fail "build failed (rollup)"
-if ! git diff --quiet -- dist/evcc-card.js || ! git diff --cached --quiet -- dist/evcc-card.js; then
-  git add -- dist/evcc-card.js
-  echo "pre-commit: rebuilt dist/evcc-card.js added to the commit" | tee -a "$log"
-fi
+# The build also syncs package.json's version from src/core/constants.js
+# (prebuild); CI checks both files against src/, so both go into the commit.
+for f in dist/evcc-card.js package.json; do
+  if ! git diff --quiet -- "$f"; then
+    git add -- "$f"
+    echo "pre-commit: rebuilt $f added to the commit" | tee -a "$log"
+  fi
+done
 
 echo "pre-commit: syntax check" | tee -a "$log"
 node --check dist/evcc-card.js >>"$log" 2>&1 || fail "syntax error in dist/evcc-card.js"

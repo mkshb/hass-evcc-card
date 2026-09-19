@@ -115,8 +115,10 @@ in `_render`.
 `en.json` is the reference; the `locales` test group fails on a missing key in
 any language and on a raw key reaching the DOM.
 
-**A new version.** Bump `EVCC_CARD_VERSION` in `src/core/constants.js` and
-`version` in `package.json` at the start of the work, then build.
+**A new version.** Bump `EVCC_CARD_VERSION` in `src/core/constants.js` at the
+start of the work, then build. `package.json` follows on its own: `npm run
+build` copies the constant into it (`scripts/sync-version.mjs`), so its
+`version` is never edited by hand.
 
 ## Opening a pull request
 

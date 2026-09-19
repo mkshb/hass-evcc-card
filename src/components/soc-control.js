@@ -255,17 +255,23 @@ export const socControl = {
     this._sliderEditing   = true;
     this._sliderEditPanel = panel;
 
-    // Any click elsewhere in the card dismisses the panel. Without this a tab
+    // Any click elsewhere on the page dismisses the panel. Inside the card a tab
     // switch or the gear toggle (both only flip `hidden`, no re-render) would
-    // leave the panel open in a hidden section and keep hass updates deferred.
-    // Runs in the capture phase so the click still reaches its own target;
-    // a pending re-render is deferred past the click for the same reason.
+    // otherwise leave the panel open in a hidden section; outside the card
+    // nothing else ever closes it, and an open panel keeps hass updates deferred
+    // for as long as it lives. Listening on the document covers both (the
+    // composed path still names the shadow nodes). Runs in the capture phase so
+    // the click still reaches its own target; a pending re-render is deferred
+    // past the click for the same reason. A hidden tab (phone lock, app switch)
+    // closes the panel too, so the card is live again when it comes back.
     this._sliderEditOutside = (e) => {
       const path = e.composedPath();
       if (path.includes(panel) || path.includes(btn)) return;
       this._closeSliderEdit(true);
     };
-    this.shadowRoot.addEventListener("click", this._sliderEditOutside, true);
+    this._sliderEditHidden = () => { if (document.hidden) this._closeSliderEdit(); };
+    document.addEventListener("click", this._sliderEditOutside, true);
+    document.addEventListener("visibilitychange", this._sliderEditHidden);
 
     const field = panel.querySelector(".slider-edit-input");
     const parse = () => parseFloat(String(field.value).trim().replace(",", "."));
@@ -321,17 +327,30 @@ export const socControl = {
     if (this._sliderEditing) {
       this._sliderEditing = false;
       if (this._pendingRender) {
-        this._pendingRender = false;
-        if (deferRender) setTimeout(() => { if (!this._sliderEditing) this._render(); }, 0);
-        else this._render();
+        if (deferRender) {
+          // The click that closed this panel may open another one before the
+          // timeout runs; the flag then stays set and closing that panel renders.
+          setTimeout(() => {
+            if (this._sliderEditing || !this._pendingRender) return;
+            this._pendingRender = false;
+            this._render();
+          }, 0);
+        } else {
+          this._pendingRender = false;
+          this._render();
+        }
       }
     }
   },
 
   _dropSliderEditOutside() {
     if (this._sliderEditOutside) {
-      this.shadowRoot.removeEventListener("click", this._sliderEditOutside, true);
+      document.removeEventListener("click", this._sliderEditOutside, true);
       this._sliderEditOutside = null;
+    }
+    if (this._sliderEditHidden) {
+      document.removeEventListener("visibilitychange", this._sliderEditHidden);
+      this._sliderEditHidden = null;
     }
   },
 

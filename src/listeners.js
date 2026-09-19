@@ -216,15 +216,6 @@ export const listeners = {
       });
     }
 
-    this.shadowRoot.querySelectorAll("button.batt-tab").forEach(btn => {
-      btn.addEventListener("click", () => {
-        block.querySelectorAll("button.batt-tab").forEach((b, i) =>
-          b.classList.toggle("active", i === tabIdx));
-        block.querySelectorAll(".batt-tab-content").forEach((c, i) =>
-          i === tabIdx ? c.removeAttribute("hidden") : c.setAttribute("hidden", ""));
-      });
-    });
-
     this.shadowRoot.querySelectorAll("button.batt-discharge-toggle").forEach(btn => {
       btn.addEventListener("click", () => {
         const on     = btn.dataset.on === "true";

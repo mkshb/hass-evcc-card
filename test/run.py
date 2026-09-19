@@ -445,6 +445,26 @@ def lifecycle(browser, port, t):
     for _ in range(3): remount()
     t.check(page.evaluate("window.__evccCards.size") == 1, "repeated re-mounts keep exactly one registry entry",
             str(page.evaluate("window.__evccCards.size")))
+
+    # A hass update arms the 300 ms render timer; detaching inside that window
+    # must cancel it (a render on a detached element would re-register the card
+    # after the delete hook ran), and the re-mount must pick the update up again.
+    page.evaluate("""() => {
+      const c = window.__card, host = c.parentNode, id = 'sensor.evcc_openwb_charge_power';
+      const st = { ...window.__hass.states, [id]: { ...window.__hass.states[id], state: '5151' } };
+      window.__hass.states = st; c.hass = { ...window.__hass, states: st };
+      window.__armed = !!c._renderTimer;
+      host.removeChild(c);
+      window.__afterDetach = { timer: !!c._renderTimer, cards: window.__evccCards.size };
+    }""")
+    page.wait_for_timeout(500)
+    t.check(page.evaluate("window.__armed") and page.evaluate("window.__afterDetach.timer") is False,
+            "detach cancels a pending render", json.dumps(page.evaluate("window.__afterDetach")))
+    t.check(page.evaluate("window.__evccCards.size") == 0, "no render ran on the detached element (registry stays empty)",
+            str(page.evaluate("window.__evccCards.size")))
+    page.evaluate("() => document.getElementById('host').appendChild(window.__card)")
+    page.wait_for_timeout(500)
+    t.check("5151" in (page.evaluate("window.__card._lastRenderKey") or ""), "re-mount renders the update that was pending at detach")
     t.check(not errors, "no console errors across the re-mounts", "; ".join(errors)[:200])
     page.close()
 
@@ -559,6 +579,36 @@ def interactions(browser, port, t):
     t.check(expanded_before != expanded_after, "gear click still toggles the block", f"{expanded_before}->{expanded_after}")
     editing = page.evaluate("window.__card._sliderEditing")
     t.check(editing is False, "editing flag cleared after outside close", str(editing))
+
+    # --- a click outside the CARD closes the panel too ------------------------------------
+    # Nothing else ever closes it (no blur, no timeout), and an open panel keeps
+    # every hass update deferred, so a tap on the rest of the dashboard has to end it.
+    page.locator(in_card('input[data-entity="number.evcc_openwb_limit_soc"] + button.slider-val')).click()
+    t.check(page.locator(in_card(".slider-edit")).count() == 1, "panel open before a click outside the card")
+    page.mouse.click(5, 5); page.wait_for_timeout(300)
+    t.check(page.locator(in_card(".slider-edit")).count() == 0 and page.evaluate("window.__card._sliderEditing") is False,
+            "a click outside the card closes the panel")
+
+    # --- a hass update deferred by panel A is not lost when the same tap opens panel B ----
+    page.evaluate("""() => {
+      const c = window.__card, orig = c._render.bind(c);
+      window.__renders = 0;
+      c._render = function (...a) { window.__renders++; return orig(...a); };
+    }""")
+    page.locator(in_card('input[data-entity="number.evcc_openwb_limit_soc"] + button.slider-val')).click()
+    page.evaluate("""() => { const id = 'sensor.evcc_openwb_charge_power';
+      const st = { ...window.__hass.states, [id]: { ...window.__hass.states[id], state: '4343' } };
+      window.__hass.states = st; window.__card.hass = { ...window.__hass, states: st }; }""")
+    t.check(page.evaluate("window.__card._pendingRender") is True and page.evaluate("window.__renders") == 0,
+            "hass update is deferred while panel A is open")
+    page.locator(in_card('input[data-entity="select.evcc_openwb_min_soc"] + button.slider-val')).click(); page.wait_for_timeout(200)
+    t.check(page.locator(in_card(".slider-edit")).count() == 1 and page.evaluate("window.__renders") == 0,
+            "tapping another value swaps the panel without rendering in between",
+            f"panels={page.locator(in_card('.slider-edit')).count()} renders={page.evaluate('window.__renders')}")
+    t.check(page.evaluate("window.__card._pendingRender") is True, "the deferred update is still pending behind panel B")
+    page.locator(in_card("[data-edit-cancel]")).click(); page.wait_for_timeout(200)
+    t.check(page.evaluate("window.__renders") == 1, "closing panel B renders the deferred update", str(page.evaluate("window.__renders")))
+    t.check(page.evaluate("window.__card._pendingRender") is False, "and nothing stays pending")
     page.close()
 
     # --- compact: tab switch closes the panel ------------------------------------------
@@ -1018,6 +1068,27 @@ def discovery(browser, port, t):
     t.check(d["wsEntryIds"] == [first_entry],
             "and the WebSocket commands follow the configured instance", json.dumps(d["wsEntryIds"]))
     t.check(not d["errors"], "no console errors with two instances present", "; ".join(d["errors"])[:200])
+
+    # The registry is probed once. A prefix set afterwards (editor, YAML reload)
+    # must still move the entry id along, or the entities come from one
+    # installation and forecast/sessions/plan previews from the other.
+    page = new_page(browser, 480, 1200)
+    errors = open_card(page, port, config={"mode": "loadpoint"}, second=second_last)
+    page.evaluate("() => { window.__hass.wsCalls.length = 0; window.__card.setConfig({ mode: 'loadpoint', prefix: 'evcc2_' }); }")
+    page.wait_for_timeout(900)
+    after = {
+        "prefix": page.evaluate("window.__card._getPrefix()"),
+        "entryId": page.evaluate("window.__card._entryId"),
+        "wsEntryIds": sorted({c.get("entry_id") for c in page.evaluate("window.__hass.wsCalls")
+                              if str(c["type"]).startswith("evcc_intg/") and c.get("entry_id")}),
+        "probes": len([c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "config/entity_registry/list"]),
+    }
+    t.check(after["prefix"] == "evcc2_" and after["entryId"] == SECOND,
+            "a prefix configured after the probe re-selects the entry id", json.dumps({k: after[k] for k in ("prefix", "entryId")}))
+    t.check(after["wsEntryIds"] == [SECOND], "and the WebSocket commands switch to that entry", json.dumps(after["wsEntryIds"]))
+    t.check(after["probes"] == 0, "without a second registry call", str(after["probes"]))
+    t.check(not errors, "no console errors across the prefix change", "; ".join(errors)[:200])
+    page.close()
 
 
 

@@ -53,6 +53,8 @@ export class EvccCard extends HTMLElement {
     this._entryId             = null;   // config_entry_id, needed by the WS commands
     this._integrationDetected = false;  // entity-registry probe done once
     this._detectingIntegration = false;
+    this._evccInstances = null;         // [{ prefix, entryId }] from that probe, registry order
+    this._instancePrefix = undefined;   // config.prefix the current entry_id was chosen for
     this._caps        = null;   // { version, commands[] } from evcc_intg/capabilities
     this._capsLoaded  = false;
     this._capsLoading = null;   // in-flight promise guard
@@ -96,6 +98,9 @@ export class EvccCard extends HTMLElement {
     if (!this._countdownInterval) {
       this._countdownInterval = setInterval(() => this._tickCountdowns(), 1000);
     }
+    // A render that was cancelled on detach is scheduled again from the state
+    // we already hold; the setter renders only when something changed.
+    if (this._hass) this.hass = this._hass;
   }
 
   disconnectedCallback() {
@@ -105,6 +110,16 @@ export class EvccCard extends HTMLElement {
       clearInterval(this._countdownInterval);
       this._countdownInterval = null;
     }
+    // Nothing may render on a detached element: a first render would register
+    // the card in window.__evccCards after the delete above, and the deferred
+    // work would run against a DOM nobody sees.
+    if (this._renderTimer)   { clearTimeout(this._renderTimer);   this._renderTimer   = null; }
+    if (this._wsRenderTimer) { clearTimeout(this._wsRenderTimer); this._wsRenderTimer = null; }
+    for (const k of Object.keys(this._planPreviewDebounce)) clearTimeout(this._planPreviewDebounce[k]);
+    this._planPreviewDebounce = {};
+    // An open direct-input panel would keep hass updates deferred after re-mount.
+    this._pendingRender = false;
+    this._closeSliderEdit();
     // Drop the on-demand WS caches. Capabilities and entry_id are kept on
     // purpose: they do not change while the page lives, and re-probing them on
     // every re-mount would be a backend call for nothing.
@@ -127,12 +142,17 @@ export class EvccCard extends HTMLElement {
 
     if (!this._integrationDetected && !this._detectingIntegration) {
       this._detectingIntegration = true;
-      detectIntegration(hass, this._config.prefix ?? null).then(({ prefix, entryId }) => {
+      const probePrefix = this._config.prefix || null;
+      detectIntegration(hass, probePrefix).then(({ prefix, entryId, instances }) => {
         this._detectingIntegration = false;
         this._integrationDetected = true;
+        this._evccInstances = instances;
+        this._instancePrefix = probePrefix;
         this._entryId = entryId;
         // Probe the ha-evcc WebSocket data API once the entry_id is known.
         this._loadCapabilities();
+        // The config may have changed while the registry call was in flight.
+        this._syncIntegrationInstance();
         // Honour an explicitly configured prefix, but still keep the detected one.
         const changed = (!this._config.prefix && prefix !== this._detectedPrefix);
         this._detectedPrefix = prefix;
@@ -146,6 +166,8 @@ export class EvccCard extends HTMLElement {
         }
       });
     }
+
+    this._syncIntegrationInstance();
 
     if (this._isDragging || this._sliderEditing) {
       this._pendingRender = true;
@@ -161,6 +183,28 @@ export class EvccCard extends HTMLElement {
       this._lastRenderKey = this._buildRenderKey(this._hass);
       this._render();
     }, 300);
+  }
+
+  // The registry probe runs once, but `prefix` can change afterwards (editor,
+  // YAML reload). Re-pick the instance from the probe result so entry_id and
+  // prefix always name the same installation; everything derived from the
+  // entry (capabilities, loadpoint index map, WS caches) starts over.
+  _syncIntegrationInstance() {
+    if (!this._evccInstances) return;
+    const wanted = this._config.prefix || null;
+    if (wanted === this._instancePrefix) return;
+    this._instancePrefix = wanted;
+    const chosen  = (wanted && this._evccInstances.find(i => i.prefix === wanted)) || this._evccInstances[0] || null;
+    const entryId = chosen?.entryId ?? null;
+    if (entryId === this._entryId) return;
+    this._entryId     = entryId;
+    this._caps        = null;
+    this._capsLoaded  = false;
+    this._capsLoading = null;
+    this._lpIndexMap  = {};
+    this._wsCache     = {};
+    this._wsInflight  = {};
+    this._loadCapabilities();
   }
 
   _buildRenderKey(hass) {
@@ -204,6 +248,7 @@ export class EvccCard extends HTMLElement {
 
   setConfig(config) {
     this._config = config || {};
+    this._syncIntegrationInstance();
     // Both stats paths are fed from the same normalised value, so the current
     // vocabulary (month/year/total/none) and the legacy one (30d/365d/thisYear)
     // steer them the same way. The stats mode opens on the most recent month

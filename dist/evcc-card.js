@@ -550,9 +550,14 @@ const evccApi = {
   // callWS rejects — we then mark the feature set empty so the UI degrades.
   _loadCapabilities() {
     if (this._capsLoaded || this._capsLoading || !this._hass) return this._capsLoading;
+    // A prefix change swaps the entry while this is in flight; the answer for
+    // the old entry is then dropped and the new one's probe is already running.
+    const entryId = this._entryId;
+    const stale   = () => entryId !== this._entryId;
     this._capsLoading = this._hass
-      .callWS({ type: "evcc_intg/capabilities", entry_id: this._entryId })
+      .callWS({ type: "evcc_intg/capabilities", entry_id: entryId })
       .then(res => {
+        if (stale()) return;
         this._caps = {
           version:  res?.version ?? null,
           commands: Array.isArray(res?.commands) ? res.commands : [],
@@ -565,10 +570,12 @@ const evccApi = {
         }
       })
       .catch(e => {
+        if (stale()) return;
         console.warn("[evcc-card] evcc_intg/capabilities not available:", e?.message || e);
         this._caps = { version: null, commands: [] };
       })
-      .finally(() => {
+      .then(() => {
+        if (stale()) return;
         this._capsLoaded  = true;
         this._capsLoading = null;
         // Pre-fetch debug probes so data is cached before the debug block renders.
@@ -598,17 +605,22 @@ const evccApi = {
     if (cached && (now - cached.ts) < ttlMs) return cached.result;
 
     if (!this._wsInflight[cacheKey]) {
+      const entryId = this._entryId;
+      const stale   = () => entryId !== this._entryId;   // entry swapped meanwhile, see _syncIntegrationInstance
       this._wsInflight[cacheKey] = this._hass
-        .callWS({ type, entry_id: this._entryId, ...params })
+        .callWS({ type, entry_id: entryId, ...params })
         .then(data => {
+          if (stale()) return;
           this._wsCache[cacheKey] = { ts: Date.now(), result: { data } };
         })
         .catch(e => {
+          if (stale()) return;
           const msg = e?.message || (typeof e === "object" ? JSON.stringify(e) : String(e));
           console.warn(`[evcc-card] ${type} failed:`, msg);
           this._wsCache[cacheKey] = { ts: Date.now(), result: { error: msg } };
         })
         .finally(() => {
+          if (stale()) return;
           delete this._wsInflight[cacheKey];
           // Throttle the re-render to avoid rapid DOM replacements.
           if (!this._wsRenderTimer) {
@@ -1515,17 +1527,23 @@ const socControl = {
     this._sliderEditing   = true;
     this._sliderEditPanel = panel;
 
-    // Any click elsewhere in the card dismisses the panel. Without this a tab
+    // Any click elsewhere on the page dismisses the panel. Inside the card a tab
     // switch or the gear toggle (both only flip `hidden`, no re-render) would
-    // leave the panel open in a hidden section and keep hass updates deferred.
-    // Runs in the capture phase so the click still reaches its own target;
-    // a pending re-render is deferred past the click for the same reason.
+    // otherwise leave the panel open in a hidden section; outside the card
+    // nothing else ever closes it, and an open panel keeps hass updates deferred
+    // for as long as it lives. Listening on the document covers both (the
+    // composed path still names the shadow nodes). Runs in the capture phase so
+    // the click still reaches its own target; a pending re-render is deferred
+    // past the click for the same reason. A hidden tab (phone lock, app switch)
+    // closes the panel too, so the card is live again when it comes back.
     this._sliderEditOutside = (e) => {
       const path = e.composedPath();
       if (path.includes(panel) || path.includes(btn)) return;
       this._closeSliderEdit(true);
     };
-    this.shadowRoot.addEventListener("click", this._sliderEditOutside, true);
+    this._sliderEditHidden = () => { if (document.hidden) this._closeSliderEdit(); };
+    document.addEventListener("click", this._sliderEditOutside, true);
+    document.addEventListener("visibilitychange", this._sliderEditHidden);
 
     const field = panel.querySelector(".slider-edit-input");
     const parse = () => parseFloat(String(field.value).trim().replace(",", "."));
@@ -1581,17 +1599,30 @@ const socControl = {
     if (this._sliderEditing) {
       this._sliderEditing = false;
       if (this._pendingRender) {
-        this._pendingRender = false;
-        if (deferRender) setTimeout(() => { if (!this._sliderEditing) this._render(); }, 0);
-        else this._render();
+        if (deferRender) {
+          // The click that closed this panel may open another one before the
+          // timeout runs; the flag then stays set and closing that panel renders.
+          setTimeout(() => {
+            if (this._sliderEditing || !this._pendingRender) return;
+            this._pendingRender = false;
+            this._render();
+          }, 0);
+        } else {
+          this._pendingRender = false;
+          this._render();
+        }
       }
     }
   },
 
   _dropSliderEditOutside() {
     if (this._sliderEditOutside) {
-      this.shadowRoot.removeEventListener("click", this._sliderEditOutside, true);
+      document.removeEventListener("click", this._sliderEditOutside, true);
       this._sliderEditOutside = null;
+    }
+    if (this._sliderEditHidden) {
+      document.removeEventListener("visibilitychange", this._sliderEditHidden);
+      this._sliderEditHidden = null;
     }
   },
 
@@ -4895,15 +4926,6 @@ const listeners = {
       });
     }
 
-    this.shadowRoot.querySelectorAll("button.batt-tab").forEach(btn => {
-      btn.addEventListener("click", () => {
-        block.querySelectorAll("button.batt-tab").forEach((b, i) =>
-          b.classList.toggle("active", i === tabIdx));
-        block.querySelectorAll(".batt-tab-content").forEach((c, i) =>
-          i === tabIdx ? c.removeAttribute("hidden") : c.setAttribute("hidden", ""));
-      });
-    });
-
     this.shadowRoot.querySelectorAll("button.batt-discharge-toggle").forEach(btn => {
       btn.addEventListener("click", () => {
         const on     = btn.dataset.on === "true";
@@ -5634,12 +5656,6 @@ const styles = {
       }
 
       .battery-block { padding: 0; }
-      .batt-tabs { display: flex; border-bottom: 1px solid var(--divider-color, #333); margin-bottom: 14px; }
-      button.batt-tab {
-        background: transparent; border: none; border-bottom: 2px solid transparent;
-        color: var(--secondary-text-color); padding: 7px 16px; font-size: .84rem; cursor: pointer; margin-bottom: -1px;
-      }
-      button.batt-tab.active { color: var(--primary-text-color); border-bottom-color: var(--primary-text-color); font-weight: 600; }
       .batt-main-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
       .batt-text-col { flex: 1; min-width: 0; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 12px; }
       .batt-text-item { display: flex; gap: 8px; align-items: flex-start; }
@@ -5945,6 +5961,8 @@ class EvccCard extends HTMLElement {
     this._entryId             = null;   // config_entry_id, needed by the WS commands
     this._integrationDetected = false;  // entity-registry probe done once
     this._detectingIntegration = false;
+    this._evccInstances = null;         // [{ prefix, entryId }] from that probe, registry order
+    this._instancePrefix = undefined;   // config.prefix the current entry_id was chosen for
     this._caps        = null;   // { version, commands[] } from evcc_intg/capabilities
     this._capsLoaded  = false;
     this._capsLoading = null;   // in-flight promise guard
@@ -5988,6 +6006,9 @@ class EvccCard extends HTMLElement {
     if (!this._countdownInterval) {
       this._countdownInterval = setInterval(() => this._tickCountdowns(), 1000);
     }
+    // A render that was cancelled on detach is scheduled again from the state
+    // we already hold; the setter renders only when something changed.
+    if (this._hass) this.hass = this._hass;
   }
 
   disconnectedCallback() {
@@ -5997,6 +6018,16 @@ class EvccCard extends HTMLElement {
       clearInterval(this._countdownInterval);
       this._countdownInterval = null;
     }
+    // Nothing may render on a detached element: a first render would register
+    // the card in window.__evccCards after the delete above, and the deferred
+    // work would run against a DOM nobody sees.
+    if (this._renderTimer)   { clearTimeout(this._renderTimer);   this._renderTimer   = null; }
+    if (this._wsRenderTimer) { clearTimeout(this._wsRenderTimer); this._wsRenderTimer = null; }
+    for (const k of Object.keys(this._planPreviewDebounce)) clearTimeout(this._planPreviewDebounce[k]);
+    this._planPreviewDebounce = {};
+    // An open direct-input panel would keep hass updates deferred after re-mount.
+    this._pendingRender = false;
+    this._closeSliderEdit();
     // Drop the on-demand WS caches. Capabilities and entry_id are kept on
     // purpose: they do not change while the page lives, and re-probing them on
     // every re-mount would be a backend call for nothing.
@@ -6019,12 +6050,17 @@ class EvccCard extends HTMLElement {
 
     if (!this._integrationDetected && !this._detectingIntegration) {
       this._detectingIntegration = true;
-      detectIntegration(hass, this._config.prefix ?? null).then(({ prefix, entryId }) => {
+      const probePrefix = this._config.prefix || null;
+      detectIntegration(hass, probePrefix).then(({ prefix, entryId, instances }) => {
         this._detectingIntegration = false;
         this._integrationDetected = true;
+        this._evccInstances = instances;
+        this._instancePrefix = probePrefix;
         this._entryId = entryId;
         // Probe the ha-evcc WebSocket data API once the entry_id is known.
         this._loadCapabilities();
+        // The config may have changed while the registry call was in flight.
+        this._syncIntegrationInstance();
         // Honour an explicitly configured prefix, but still keep the detected one.
         const changed = (!this._config.prefix && prefix !== this._detectedPrefix);
         this._detectedPrefix = prefix;
@@ -6038,6 +6074,8 @@ class EvccCard extends HTMLElement {
         }
       });
     }
+
+    this._syncIntegrationInstance();
 
     if (this._isDragging || this._sliderEditing) {
       this._pendingRender = true;
@@ -6053,6 +6091,28 @@ class EvccCard extends HTMLElement {
       this._lastRenderKey = this._buildRenderKey(this._hass);
       this._render();
     }, 300);
+  }
+
+  // The registry probe runs once, but `prefix` can change afterwards (editor,
+  // YAML reload). Re-pick the instance from the probe result so entry_id and
+  // prefix always name the same installation; everything derived from the
+  // entry (capabilities, loadpoint index map, WS caches) starts over.
+  _syncIntegrationInstance() {
+    if (!this._evccInstances) return;
+    const wanted = this._config.prefix || null;
+    if (wanted === this._instancePrefix) return;
+    this._instancePrefix = wanted;
+    const chosen  = (wanted && this._evccInstances.find(i => i.prefix === wanted)) || this._evccInstances[0] || null;
+    const entryId = chosen?.entryId ?? null;
+    if (entryId === this._entryId) return;
+    this._entryId     = entryId;
+    this._caps        = null;
+    this._capsLoaded  = false;
+    this._capsLoading = null;
+    this._lpIndexMap  = {};
+    this._wsCache     = {};
+    this._wsInflight  = {};
+    this._loadCapabilities();
   }
 
   _buildRenderKey(hass) {
@@ -6096,6 +6156,7 @@ class EvccCard extends HTMLElement {
 
   setConfig(config) {
     this._config = config || {};
+    this._syncIntegrationInstance();
     // Both stats paths are fed from the same normalised value, so the current
     // vocabulary (month/year/total/none) and the legacy one (30d/365d/thisYear)
     // steer them the same way. The stats mode opens on the most recent month
