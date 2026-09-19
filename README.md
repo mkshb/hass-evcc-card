@@ -507,6 +507,9 @@ The solar share is taken from each charging session's recorded solar percentage.
 
 Pull requests are welcome! Please open an issue first to discuss what you'd like to change.
 
+[CONTRIBUTING.md](CONTRIBUTING.md) has the details: project layout, how the
+mixins fit together, the test groups and the checks a pull request has to pass.
+
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/my-feature`
 3. Commit your changes: `git commit -m 'Add my feature'`

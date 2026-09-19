@@ -9,9 +9,13 @@ Groups in `run.py` (`--only <group>`, repeatable):
 
 | Group | Checks |
 |---|---|
-| `render` | Every card mode in light and dark, screenshot per mode, fails on any console error; stats bar chart from sessions; entity fallback without the WebSocket API |
-| `interaction` | Direct-input panel on number sliders, select-backed sliders (min/max current), battery boost and the plan target; keyboard writes; outside click / tab switch closing the panel; `hide_settings`, `slider_steps`; editor checkboxes; plan preview request |
+| `unit` | Pure functions from `src/utils` in node, no browser: number/step formatting, the dual-format evcc timestamp parser, duration and countdown strings, the SoC gradients, HTML escaping |
+| `render` | Every card mode in light and dark, screenshot per mode, fails on any console error; stats bar chart from sessions |
+| `stats_fallback` | Stats mode on an ha-evcc without `evcc_intg/sessions`: the recorder is queried for sum buckets, the chart is rebuilt from the deltas, the solar split survives, the `30d` tab switches to day buckets |
+| `interaction` | Direct-input panel on number sliders, select-backed sliders (min/max current), battery boost and the plan target; keyboard writes; outside click / tab switch closing the panel; `hide_settings`, `slider_steps`; plan preview request |
+| `editor` | The visual editor emits every field into the config (text, all selects, all checkbox groups), emits the complete config rather than a patch, and drops a key again when a field returns to its default; the mode switch re-renders the form |
 | `contracts` | Every writing control calls the right HA service with the right payload: mode, phases, clear-limit buttons, boost chip, continuous charging, preconditioning, vehicle select, set/delete plan, battery discharge control, battery selects |
+| `tariff` | Loadpoints without solar (`no_pv`): which mode buttons remain, and `pv` relabelled as the smart mode when a tariff is available; the same on a co2 signal, where the card must read `tariff_co2` instead of `tariff_grid`; plan preview in g/kWh with a price counter-check |
 | `traffic` | Plan preview traffic rules promised to ha-evcc: one call per target change, none while idle, cache hit on repeat, one call per slider drag |
 | `priority` | Regression for #170: drag and drop reorders the rows without jitter, apply writes the new priorities |
 | `locales` | All 8 locale files share the same keys, `index.json` is complete, no untranslated key reaches the DOM in any language |
@@ -20,6 +24,22 @@ Groups in `run.py` (`--only <group>`, repeatable):
 
 Assertions are made on the service calls the card issues (`hass.callService`)
 and the WebSocket commands it sends, which the mock records instead of executing.
+
+## Unit tests
+
+`test/unit/*.test.mjs` import the ES modules under `src/utils/` directly and run
+in node's own test runner, with no browser and no card involved. They cover the
+edge cases a render test can only reach indirectly: a missing entity, the two
+timestamp formats evcc emits, a SoC of 0 in the gradient maths, escaping.
+
+```bash
+node --test test/unit/            # on their own, ~0.2 s
+python3 test/run.py --only unit   # the same tests inside the suite report
+```
+
+The suite runs each file through node's junit reporter and feeds the individual
+cases into the same `report.md` / `junit.xml` as the browser checks, so a broken
+helper shows up in one place with everything else.
 
 ## ha-evcc contract check
 
@@ -117,13 +137,21 @@ nightly and on demand, in three jobs:
 
 | Job | What it does |
 |---|---|
-| Test suite (chromium, webkit) | Matrix over both engines: `npm run build` and a check that the committed `dist/evcc-card.js` equals the build (a stale bundle fails), syntax check, `test/run.py --browser <engine>` with Playwright's bundled browser; `report.md` becomes the job summary, `test/out` is uploaded as an artifact per engine |
+| Test suite (chromium, webkit) | Matrix over both engines: `npm run build` and a check that the committed `dist/evcc-card.js` equals the build (a stale bundle fails), syntax check, `test/run.py --browser <engine>` with Playwright's bundled browser (the unit tests run inside it, node is already set up for the build); `report.md` becomes the job summary, `test/out` is uploaded as an artifact per engine |
 | README screenshots up to date | Renders all screenshots in a `debian:bookworm-slim` container with the same Chromium and font packages as the dev container, and compares them with `images/` via `test/compare_images.py` (tolerance 0.5 % differing pixels). Fails when a card change was committed without regenerating the images. Text rendering differs between distributions by a few pixels per line, so an Ubuntu runner cannot be used for this job |
 | Entities exist in ha-evcc | `test/check_ha_evcc.py --clone` against the latest marq24/ha-evcc; the nightly run catches renamed entities in new integration releases |
 
 ## Requirements
 
-`test/setup.sh` installs everything below on Debian/Ubuntu (idempotent, needs sudo).
+The dev container image (`mkshb/homelab`, `hass-production/sidecar`) ships everything
+below, so a rebuilt pod is ready without any setup: the toolchain survives the pod
+recreation that every Home Assistant update triggers, which a manual install into
+the container overlay does not.
+
+`test/setup.sh` is the fallback for a plain container and the repair on an older
+image. It checks every item first and installs only what is missing (idempotent,
+needs sudo, a second when nothing is missing). `PLAYWRIGHT_BROWSERS_PATH` decides
+where the browsers live; the image puts them in `/opt/ms-playwright`.
 
 - Python 3 with `playwright` and `pillow` (`pip install playwright pillow`)
 - Chromium: `/usr/bin/chromium` (Debian: `apt install chromium fonts-dejavu-core fonts-roboto fonts-noto-color-emoji`)
@@ -141,13 +169,14 @@ nightly and on demand, in three jobs:
 
 | File | Purpose |
 |---|---|
-| `harness.html` | Loads `dist/evcc-card.js` (run `npm run build` after editing `src/`), builds the mock hass, mounts one card. Query params: `mode`, `config` (JSON), `dark`, `w` (width px), `lang` |
-| `mock-hass.js` | Minimal `hass`: `states`, `language`, `localize`, `callWS` (entity registry + capabilities), `callService` (recorded, simple writes mirrored into `states`) |
+| `harness.html` | Loads `dist/evcc-card.js` (run `npm run build` after editing `src/`), builds the mock hass, mounts one card. Query params: `mode`, `config` (JSON), `dark`, `w` (width px), `lang`, plus the fixture variants below |
+| `mock-hass.js` | Minimal `hass`: `states`, `language`, `localize`, `callWS` (entity registry, the `evcc_intg` commands and `recorder/statistics_during_period`), `callService` (recorded, simple writes mirrored into `states`) |
 | `fixtures/states.json` | Entity states, keyed by entity id |
 | `fixtures/entity_registry.json` | Registry entries of the `evcc_intg` platform (what `config/entity_registry/list` returns, slimmed) |
 | `fixtures/ws/*.json` | Responses of the ha-evcc WebSocket data API: `capabilities`, `sessions`, `forecast_{grid,solar,planner}`, `plan_preview`. Timestamps are re-based to "now" by the mock |
 | `screenshots.py` | All README screenshots from the harness: one light/dark pair per mode (`images/<mode>-{light,dark}.png`, the card element at 470 px) plus the `slider-input` crop. `--only <name>` for a single pair |
-| `run.py` | Playwright runner: serves the repo root over HTTP, drives the harness |
+| `run.py` | Playwright runner: serves the repo root over HTTP, drives the harness, and runs the unit tests through node |
+| `unit/*.test.mjs` | Unit tests for `src/utils/`, run by node's test runner (see above) |
 | `compare_images.py` | Compares a fresh render with the committed `images/` (used by CI) |
 | `check_ha_evcc.py` | Entity contract check against ha-evcc (see below) |
 
@@ -174,6 +203,26 @@ To refresh them from a running instance, evaluate this template in
 The registry fixture comes from `.storage/core.entity_registry` filtered to
 `platform == "evcc_intg"`, keeping `entity_id`, `platform`, `config_entry_id`,
 `disabled_by`, `unique_id` and `original_name`.
+
+### Fixture variants
+
+One captured snapshot cannot hold every setup, so the harness derives variants
+from it. Each is a query parameter, and `open_card()` in `run.py` takes the
+matching keyword:
+
+| Parameter | Keyword | Effect |
+|---|---|---|
+| `set=<id>:<state>,...` | `set={...}` | Override entity states |
+| `attrs=<json>` | `attrs={...}` | Override entity attributes (JSON, because values may contain any character) |
+| `disable=<id>,...` | `disable=[...]` | Mark registry entries `disabled_by` and drop their state, as HA does for entities disabled by default |
+| `rename=<from>:<to>` | `rename=(from, to)` | Rename the entity prefix everywhere, for multi-instance setups |
+| `ws=0` | `ws=False` | No ha-evcc WebSocket data API, so the entity and recorder fallbacks run |
+| `tariff=co2` | `tariff="co2"` | The data API reports a co2 signal instead of prices: `smartCostType: "co2"`, no currency, and the rate values are replaced by a fixed daily emission curve (180..420 g/kWh, lowest around midday) |
+
+`recorder/statistics_during_period` is answered by the mock as well, generated
+over the window the card asks for so the series always ends at "now", and
+derived from the bucket index so two runs produce the same chart. That is what
+the `stats_fallback` group renders its chart from.
 
 ### WebSocket data API fixtures
 

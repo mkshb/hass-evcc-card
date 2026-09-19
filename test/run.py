@@ -12,7 +12,8 @@ companion app renders the frontend in). The WebKit run is functional only, its
 screenshots go to test/out/webkit/ and are not compared with images/ (text
 rendering differs between engines).
 """
-import argparse, datetime, http.server, json, os, re, socketserver, sys, threading, time, urllib.parse
+import argparse, datetime, http.server, json, os, re, socketserver, subprocess, sys, threading, time, urllib.parse
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
@@ -106,12 +107,15 @@ def new_page(browser, width=480, height=900):
     return page
 
 
-def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="de", ws=True, set=None, disable=None, rename=None):
+def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="de", ws=True, set=None, disable=None,
+              rename=None, attrs=None, tariff=None):
     q = {"w": width, "lang": lang}
     if not ws: q["ws"] = 0
     if set:     q["set"] = ",".join(f"{k}:{v}" for k, v in set.items())
+    if attrs:   q["attrs"] = json.dumps(attrs)
     if disable: q["disable"] = ",".join(disable)
     if rename:  q["rename"] = f"{rename[0]}:{rename[1]}"
+    if tariff:  q["tariff"] = tariff
     if config is not None: q["config"] = json.dumps(config)
     else: q["mode"] = mode or "loadpoint"
     if dark: q["dark"] = 1
@@ -151,11 +155,54 @@ def render_smoke(browser, port, t):
                 t.check(page.locator(in_card(".stats-chart-loading")).count() == 0, "stats: no loading placeholder left")
             page.close()
 
-    # Entity/recorder fallback (no ha-evcc WebSocket API): must still render, no chart data
+
+
+def stats_fallback(browser, port, t):
+    """Stats mode on an ha-evcc without evcc_intg/sessions.
+
+    The card then reconstructs the chart from the stat_* template sensors and
+    the HA recorder, which the mock serves from `recorder/statistics_during_period`.
+    """
+    t.group("stats fallback - stat_* entities and the HA recorder")
     page = new_page(browser, 480, 900)
     errors = open_card(page, port, mode="stats", ws=False)
     page.locator("#host").screenshot(path=str(OUT / "stats-fallback.png"))
-    t.check(page.locator(in_card("ha-card")).count() > 0 and not errors, "render stats without WS API (fallback)", "; ".join(errors)[:300])
+    t.check(page.locator(in_card("ha-card")).count() > 0 and not errors, "renders without the WebSocket data API", "; ".join(errors)[:300])
+
+    calls = page.evaluate("window.__hass.wsCalls")
+    rec = [c for c in calls if c["type"] == "recorder/statistics_during_period"]
+    t.check(len(rec) >= 1, "asks the recorder for statistics", f"{len(rec)} call(s)")
+    # Probing capabilities is how the card finds out the API is missing; asking for
+    # data after that reply would be the bug.
+    data_cmds = [c["type"] for c in calls if str(c["type"]).startswith("evcc_intg/") and c["type"] != "evcc_intg/capabilities"]
+    t.check(not data_cmds, "no evcc_intg data command is attempted after capabilities fails", str(data_cmds)[:200])
+    if rec:
+        q = rec[-1]
+        t.check(q.get("types") == ["sum"] and q.get("period") in ("day", "month") and "start_time" in q,
+                "recorder query asks for sum buckets over a period", json.dumps({k: q.get(k) for k in ("period", "types", "start_time")}))
+        t.check("sensor.evcc_stat_total_charged_kwh" in (q.get("statistic_ids") or []),
+                "recorder query names the cumulative kWh sensor", json.dumps(q.get("statistic_ids")))
+
+    bars = page.locator(in_card("rect.evcc-bar")).count()
+    t.check(bars > 0, "chart is rebuilt from recorder deltas", f"{bars} bars")
+    totals = [float(v) for v in page.evaluate("[...window.__card.shadowRoot.querySelectorAll('rect.evcc-bar')].map(r => r.dataset.total)") if v]
+    solars = [float(v) for v in page.evaluate("[...window.__card.shadowRoot.querySelectorAll('rect.evcc-bar')].map(r => r.dataset.solar)") if v]
+    t.check(bool(totals) and all(v >= 0 for v in totals), "every bar carries a non-negative delta", f"{len(totals)} values, min {min(totals) if totals else '-'}")
+    t.check(bool(solars) and any(v > 0 for v in solars), "the solar split survives the fallback", f"{len(solars)} values, max {max(solars) if solars else '-'}")
+    t.check(all(sv <= tv + 0.05 for sv, tv in zip(solars, totals)), "no bar claims more solar than total energy",
+            str([(s, v) for s, v in zip(solars, totals) if s > v + 0.05][:3]))
+
+    # The period tabs pick a different recorder resolution; "30d" is the only one
+    # that asks for day buckets, so without this the daily branch never runs.
+    tab = page.locator(in_card('.stats-period-tab[data-period="30d"]'))
+    t.check(tab.count() == 1, "legacy period tabs are offered", f"{tab.count()} tab(s) named 30d")
+    if tab.count() == 1:
+        tab.click()
+        page.wait_for_timeout(900)
+        daily = [c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "recorder/statistics_during_period" and c.get("period") == "day"]
+        t.check(len(daily) >= 1, "30d tab queries day buckets", f"{len(daily)} call(s)")
+        n = page.locator(in_card("rect.evcc-bar")).count()
+        t.check(n == 30, "30d chart shows one bar per day", f"{n} bars")
     page.close()
 
 
@@ -306,19 +353,99 @@ def interactions(browser, port, t):
     page.locator("#host").screenshot(path=str(OUT / "panel-open.png"))
     page.close()
 
-    # --- editor renders the hide checkboxes ------------------------------------------
-    t.group("editor - hide_settings checkboxes")
+
+
+def editor(browser, port, t):
+    """The visual editor writes the whole card config on every change.
+
+    Two rules matter for a Lovelace editor and neither is visible in the card:
+    a change must emit the complete config (not a patch), and setting a field
+    back to its default must drop the key again instead of writing an empty
+    string into the dashboard YAML.
+    """
+    t.group("editor - config emission")
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint"})
-    n = page.evaluate("""async () => {
-      const ed = document.createElement("evcc-card-editor");
-      ed.setConfig({ mode: "loadpoint", hide_settings: ["priority"] });
-      ed.hass = window.__hass; document.body.appendChild(ed);
-      await new Promise(r => setTimeout(r, 800));
-      const boxes = [...ed.shadowRoot.querySelectorAll('input[data-field="hide_settings"]')];
-      return { count: boxes.length, checked: boxes.filter(b => b.checked).map(b => b.dataset.lp) };
+
+    def mount(config):
+        page.evaluate("""async (config) => {
+          document.querySelectorAll("evcc-card-editor").forEach(e => e.remove());
+          const ed = document.createElement("evcc-card-editor");
+          window.__cfg = [];
+          // JSON round trip: exactly what survives into the stored dashboard config,
+          // so a key set to undefined disappears here the way it does in YAML.
+          ed.addEventListener("config-changed", e => window.__cfg.push(JSON.parse(JSON.stringify(e.detail.config))));
+          ed.setConfig(config);
+          ed.hass = window.__hass;
+          document.body.appendChild(ed);
+          await new Promise(r => setTimeout(r, 900));
+        }""", config)
+
+    last  = lambda: page.evaluate("window.__cfg.length ? window.__cfg[window.__cfg.length - 1] : {}")
+    count = lambda: page.evaluate("window.__cfg.length")
+    fld   = lambda sel: page.locator(f"evcc-card-editor {sel}")
+    cb    = lambda field, lp: page.locator(f'evcc-card-editor input[data-field="{field}"][data-lp="{lp}"]')
+
+    mount({"mode": "loadpoint", "hide_settings": ["priority"]})
+    boxes = page.evaluate("""() => {
+      const b = [...document.querySelector("evcc-card-editor").shadowRoot.querySelectorAll('input[data-field="hide_settings"]')];
+      return { count: b.length, checked: b.filter(x => x.checked).map(x => x.dataset.lp) };
     }""")
-    t.check(n["count"] == 9 and n["checked"] == ["priority"], "editor shows 9 hide checkboxes with config applied", json.dumps(n))
+    t.check(boxes["count"] == 9 and boxes["checked"] == ["priority"], "existing config is reflected in the checkboxes", json.dumps(boxes))
+    t.check(count() == 0, "mounting alone emits nothing", f"{count()} events")
+
+    # --- free text ---------------------------------------------------------------
+    fld("#title").fill("Garage")
+    t.check(last().get("title") == "Garage", "title input writes config.title", json.dumps(last()))
+    t.check(last().get("mode") == "loadpoint" and last().get("hide_settings") == ["priority"],
+            "the emitted config is complete, not just the changed key", json.dumps(last()))
+    fld("#title").fill("   ")
+    t.check("title" not in last(), "a blank title drops the key instead of storing an empty string", json.dumps(last()))
+
+    # --- selects -----------------------------------------------------------------
+    for sel, value in (("language", "en"), ("size", "large"), ("disabled_loadpoints", "dim"),
+                       ("charge_current_settings", "expanded")):
+        before = count()
+        fld(f"#{sel}").select_option(value)
+        t.check(last().get(sel) == value and count() == before + 1,
+                f"{sel} writes config.{sel} in one event", json.dumps({k: last().get(k) for k in (sel,)}))
+    for sel in ("language", "size", "disabled_loadpoints"):
+        fld(f"#{sel}").select_option("")
+        t.check(sel not in last(), f"{sel} back to its default drops the key", json.dumps(last()))
+
+    # --- checkbox groups ---------------------------------------------------------
+    for field, a, b in (("loadpoints", "openwb", "wp"), ("no_plan", "openwb", "wp"), ("no_pv", "openwb", "wp"),
+                        ("hide_settings", "min_soc", "phases")):
+        cb(field, a).check()
+        t.check(last().get(field, [])[-1:] == [a], f"{field}: checking {a} appends it", json.dumps(last().get(field)))
+        cb(field, b).check()
+        got = last().get(field, [])
+        t.check(a in got and b in got, f"{field}: a second box adds to the list", json.dumps(got))
+        cb(field, a).uncheck()
+        t.check(a not in last().get(field, []) and b in last().get(field, []),
+                f"{field}: unchecking removes only that entry", json.dumps(last().get(field)))
+    cb("no_pv", "wp").uncheck()
+    t.check("no_pv" not in last(), "emptying a checkbox group drops the key", json.dumps(last()))
+
+    # --- mode switch re-renders the form -----------------------------------------
+    fld("#mode").select_option("site")
+    page.wait_for_timeout(400)
+    t.check(last().get("mode") == "site", "mode select writes config.mode", json.dumps(last().get("mode")))
+    t.check(fld("#site_details").count() == 1 and fld("#charge_current_settings").count() == 0,
+            "the form re-renders with the fields of the new mode",
+            f"site_details={fld('#site_details').count()} charge_current={fld('#charge_current_settings').count()}")
+    fld("#site_details").select_option("collapsed")
+    t.check(last().get("site_details") == "collapsed", "site_details writes config.site_details", json.dumps(last()))
+    fld("#stats_period").select_option("month")
+    t.check(last().get("stats_period") == "month", "stats_period writes config.stats_period", json.dumps(last()))
+
+    fld("#mode").select_option("repeatplan")
+    page.wait_for_timeout(400)
+    t.check(fld('input[data-field="repeating_plan_vehicles"]').count() == 2,
+            "repeatplan offers the vehicles discovered from the registry",
+            str(fld('input[data-field="repeating_plan_vehicles"]').count()))
+    cb("repeating_plan_vehicles", "ex30").check()
+    t.check(last().get("repeating_plan_vehicles") == ["ex30"], "vehicle filter writes config.repeating_plan_vehicles", json.dumps(last()))
     page.close()
 
 
@@ -388,6 +515,88 @@ def contracts(browser, port, t):
     page.locator(in_card('select.batt-inline-select[data-entity="select.evcc_priority_soc"]')).first.select_option("30"); page.wait_for_timeout(300)
     t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_priority_soc", "option": "30"}),
             "priority soc → select.select_option 30", json.dumps(last()))
+    page.close()
+
+
+def tariff_modes(browser, port, t):
+    """no_pv mode sets and the co2 tariff variant.
+
+    A loadpoint without solar mirrors evcc's Mode.vue: the PV modes disappear,
+    and if a dynamic tariff is available 'pv' is relabelled as the smart mode.
+    Which tariff sensor decides that depends on whether evcc runs on prices or
+    on a co2 signal, which the card reads from the smart cost limit's unit.
+    """
+    t.group("tariff - no_pv mode sets")
+    modes = lambda page: page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.mode-btn')].map(b => b.dataset.value)")
+
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+    t.check(modes(page) == ["off", "pv", "minpv", "now"], "with solar: the full mode set", str(modes(page)))
+    page.close()
+
+    # no_pv + a valid price tariff → [off, smart, now]; 'pv' carries the smart label
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]})
+    got = modes(page)
+    t.check(got == ["off", "pv", "now"], "no_pv with a price tariff: minpv is dropped", str(got))
+    smart_label = page.evaluate("window.__card._t('modeSmart')")
+    label = page.evaluate("window.__card.shadowRoot.querySelector('.mode-btn[data-value=\"pv\"] .mode-label').textContent.trim()")
+    t.check(label == smart_label, "no_pv: the pv button is relabelled as the smart mode", f"{label!r} vs {smart_label!r}")
+    page.close()
+
+    # no_pv without any tariff → [off, now]
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]},
+              set={"sensor.evcc_tariff_grid": "unknown", "select.evcc_openwb_mode": "off"})
+    got = modes(page)
+    t.check(got == ["off", "now"], "no_pv without a tariff: no smart mode either", str(got))
+    page.close()
+
+    t.group("tariff - co2 signal instead of prices")
+    # The unit on the smart cost limit is what tells the card to read tariff_co2
+    # rather than tariff_grid; with a valid co2 value the smart mode comes back.
+    co2_attrs = {"number.evcc_openwb_smart_cost_limit": {"unit_of_measurement": "g/kWh"}}
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]},
+              attrs=co2_attrs, tariff="co2",
+              set={"sensor.evcc_tariff_grid": "unknown", "sensor.evcc_tariff_co2": "310", "select.evcc_openwb_mode": "off"})
+    got = modes(page)
+    t.check(got == ["off", "pv", "now"], "co2 tariff: the smart mode is read from tariff_co2, not tariff_grid", str(got))
+    page.close()
+
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]},
+              attrs=co2_attrs, tariff="co2",
+              set={"sensor.evcc_tariff_grid": "0.202", "sensor.evcc_tariff_co2": "unknown", "select.evcc_openwb_mode": "off"})
+    got = modes(page)
+    t.check(got == ["off", "now"], "co2 tariff: a valid price sensor does not stand in for a missing co2 value", str(got))
+    page.close()
+
+    # Plan preview: units, label and the forecast it draws behind the plan all switch
+    page = new_page(browser, 480, 1400)
+    errors = open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]}, tariff="co2")
+    page.locator(in_card("button.plan-soc-val")).click()
+    page.locator(in_card(".slider-edit-input")).fill("80"); page.locator(in_card("[data-edit-ok]")).click()
+    page.wait_for_timeout(1500)
+    header = page.locator(in_card(".plan-preview-header")).inner_text()
+    t.check("g/kWh" in header and "\u20ac" not in header, "co2 plan preview is priced in g/kWh, not currency", " ".join(header.split())[:160])
+    avg = re.search(r"([\d.,]+)\s*g/kWh", header)
+    # The fixture's co2 curve runs 180..420 g/kWh; a price average would be well below 10.
+    t.check(bool(avg) and 180 <= float(avg.group(1).replace(",", ".")) <= 420,
+            "the average is computed from the co2 values, not the price ones", avg.group(0) if avg else header[:80])
+    bars = page.locator(in_card(".plan-preview svg rect")).count()
+    t.check(bars > 0 and not errors, "co2 plan preview still renders a chart", f"{bars} bars; {'; '.join(errors)[:150]}")
+    page.locator("#host").screenshot(path=str(OUT / "plan-preview-co2.png"))
+    page.close()
+
+    # Counter-check on the same fixtures: as a price tariff it is currency again.
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]})
+    page.locator(in_card("button.plan-soc-val")).click()
+    page.locator(in_card(".slider-edit-input")).fill("80"); page.locator(in_card("[data-edit-ok]")).click()
+    page.wait_for_timeout(1500)
+    header = page.locator(in_card(".plan-preview-header")).inner_text()
+    t.check("\u20ac/kWh" in header and "g/kWh" not in header, "price tariff keeps currency per kWh", " ".join(header.split())[:160])
     page.close()
 
 
@@ -521,8 +730,46 @@ def widths(browser, port, t):
         page.close()
 
 
-GROUPS = {"render": render_smoke, "interaction": interactions, "contracts": contracts, "traffic": traffic,
-          "priority": priority_dnd, "locales": locales, "discovery": discovery, "widths": widths}
+def unit(browser, port, t):
+    """Pure functions from src/utils, executed in node.
+
+    No browser is involved (the signature is the one every group has). Each file
+    runs on its own so a failure names the module it came from; node's junit
+    reporter gives one testcase per `test()`, which is fed into the same report
+    as the browser checks.
+    """
+    files = sorted((ROOT / "test" / "unit").glob("*.test.mjs"))
+    if not files:
+        t.group("unit - pure functions")
+        t.fail("unit test files found", f"none in {ROOT / 'test/unit'}")
+        return
+    for f in files:
+        t.group(f"unit - {f.stem.replace('.test', '')}")
+        try:
+            p = subprocess.run(["node", "--test", "--test-reporter=junit", str(f)],
+                               cwd=str(ROOT), capture_output=True, text=True, timeout=120)
+        except FileNotFoundError:
+            t.fail("node available for the unit tests", "node not found in PATH")
+            return
+        except subprocess.TimeoutExpired:
+            t.fail(f"{f.name} completes", "timed out after 120 s")
+            continue
+        try:
+            cases = list(ET.fromstring(p.stdout).iter("testcase"))
+        except ET.ParseError as e:
+            t.fail(f"{f.name} reports junit", f"{e}; stdout={p.stdout[:150]} stderr={p.stderr[:150]}")
+            continue
+        for c in cases:
+            failure = c.find("failure")
+            detail = "" if failure is None else (failure.get("message") or failure.text or "").strip()
+            t.check(failure is None, c.get("name", "?"), " ".join(detail.split())[:300])
+        if not cases:
+            t.fail(f"{f.name} contains tests", f"no testcase in the report; stderr={p.stderr[:200]}")
+
+
+GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "interaction": interactions, "editor": editor, "contracts": contracts,
+          "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
+          "widths": widths}
 
 
 def main():

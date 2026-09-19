@@ -759,10 +759,10 @@ const loadpointView = {
 
   _loadpointTitle(lp, ents) {
     const hass = this._hass;
-    // 1) hass-evcc style: loadpoint_title attribute on mode entity
+    // 1) a loadpoint_title attribute on the mode entity, when one is present
     const fromAttr = ents.mode && attr(hass, ents.mode, "loadpoint_title");
     if (fromAttr) return fromAttr;
-    // 2) ha-evcc style: device registry. ha-evcc names the loadpoint device like
+    // 2) the device registry: ha-evcc names the loadpoint device like
     //    "evcc - Ladepunkt openWB [evcc]" — extract the title by locating the lp slug
     //    inside the device name case-insensitively (underscores match space/dash too).
     const probeEntity = ents.mode || ents.charge_power || ents.priority;

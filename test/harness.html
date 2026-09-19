@@ -53,10 +53,13 @@
     if (q.get("w"))    document.getElementById("host").style.setProperty("--w", `${q.get("w")}px`);
 
     // Fixture variants via query: set=entity:state,... disable=entity,... rename=from:to
+    // tariff=co2, and attrs as JSON because attribute values may contain any character.
     const set = Object.fromEntries((q.get("set") || "").split(",").filter(Boolean).map(kv => kv.split(":")));
+    const attrs = q.get("attrs") ? JSON.parse(q.get("attrs")) : {};
     const disable = (q.get("disable") || "").split(",").filter(Boolean);
     const rename = q.get("rename") ? (([from, to]) => ({ from, to }))(q.get("rename").split(":")) : null;
-    const hass = await createMockHass({ language: q.get("lang") || "de", ws: q.get("ws") !== "0", set, disable, rename });
+    const hass = await createMockHass({ language: q.get("lang") || "de", ws: q.get("ws") !== "0",
+                                        set, attrs, disable, rename, tariff: q.get("tariff") || "price" });
     await customElements.whenDefined("evcc-card");
     const card = document.createElement("evcc-card");
     card.setConfig(config);
