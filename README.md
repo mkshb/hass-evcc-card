@@ -513,6 +513,22 @@ Pull requests are welcome! Please open an issue first to discuss what you'd like
 4. Push to the branch: `git push origin feature/my-feature`
 5. Open a Pull Request
 
+### Development
+
+The card is written as plain ES modules under `src/` and bundled with Rollup into
+`dist/evcc-card.js`, the file HACS installs. The bundle is committed, so every
+change under `src/` needs a rebuild before the commit (CI rejects a stale bundle):
+
+```bash
+npm ci            # once per clone, installs Rollup
+npm run build     # src/ -> dist/evcc-card.js
+npm run watch     # rebuild on every save
+python3 test/run.py   # headless tests against a mock Home Assistant, see test/README.md
+```
+
+`git config core.hooksPath .githooks` activates a pre-commit hook that rebuilds
+the bundle and regenerates the README screenshots for you.
+
 Contributions that are especially appreciated:
 
 - **New translations** - see the [Translations](#translations) section above

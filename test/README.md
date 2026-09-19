@@ -79,8 +79,9 @@ installed (`apt install fonts-roboto`).
 
 ## Pre-commit hook
 
-`.githooks/pre-commit` runs the syntax check and regenerates the README
-screenshots whenever `dist/` is part of a commit, and adds changed images to
+`.githooks/pre-commit` rebuilds `dist/evcc-card.js` from `src/` (`npm run build`),
+runs the syntax check and regenerates the README screenshots whenever `src/` or
+`dist/` is part of a commit, and adds the rebuilt bundle and changed images to
 that commit. The screenshot run renders every mode light and dark and fails on
 any console error, so it doubles as the render smoke (about 40 s; the full
 suite with interaction tests stays in `run.py`). On failure the commit is
@@ -100,7 +101,7 @@ nightly and on demand, in three jobs:
 
 | Job | What it does |
 |---|---|
-| Test suite | Syntax check, `test/run.py` with Playwright's bundled Chromium; `report.md` becomes the job summary, `test/out` is uploaded as an artifact |
+| Test suite | `npm run build` and a check that the committed `dist/evcc-card.js` equals the build (a stale bundle fails), syntax check, `test/run.py` with Playwright's bundled Chromium; `report.md` becomes the job summary, `test/out` is uploaded as an artifact |
 | README screenshots up to date | Renders all screenshots in a `debian:bookworm-slim` container with the same Chromium and font packages as the dev container, and compares them with `images/` via `test/compare_images.py` (tolerance 0.5 % differing pixels). Fails when a card change was committed without regenerating the images. Text rendering differs between distributions by a few pixels per line, so an Ubuntu runner cannot be used for this job |
 | Entities exist in ha-evcc | `test/check_ha_evcc.py --clone` against the latest marq24/ha-evcc; the nightly run catches renamed entities in new integration releases |
 
@@ -112,15 +113,15 @@ nightly and on demand, in three jobs:
 - Chromium: `/usr/bin/chromium` (Debian: `apt install chromium fonts-dejavu-core fonts-roboto`)
   or Playwright's own (`python3 -m playwright install chromium`). `EVCC_CHROMIUM=<path>` picks
   a binary, `EVCC_CHROMIUM=bundled` forces the Playwright one (what CI uses)
-- Node.js for a plain syntax check:
-  `cp dist/evcc-card.js /tmp/evcc-card.mjs && node --check /tmp/evcc-card.mjs`
-  (the card uses `import.meta`, so it must be checked as an ES module)
+- Node.js 18+ with npm: `npm ci` installs Rollup, `npm run build` bundles `src/` into
+  `dist/evcc-card.js` (what the harness loads), `node --check dist/evcc-card.js` is the
+  syntax check (`package.json` declares `"type": "module"`, so the file is parsed as ESM)
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `harness.html` | Loads `dist/evcc-card.js`, builds the mock hass, mounts one card. Query params: `mode`, `config` (JSON), `dark`, `w` (width px), `lang` |
+| `harness.html` | Loads `dist/evcc-card.js` (run `npm run build` after editing `src/`), builds the mock hass, mounts one card. Query params: `mode`, `config` (JSON), `dark`, `w` (width px), `lang` |
 | `mock-hass.js` | Minimal `hass`: `states`, `language`, `localize`, `callWS` (entity registry + capabilities), `callService` (recorded, simple writes mirrored into `states`) |
 | `fixtures/states.json` | Entity states, keyed by entity id |
 | `fixtures/entity_registry.json` | Registry entries of the `evcc_intg` platform (what `config/entity_registry/list` returns, slimmed) |

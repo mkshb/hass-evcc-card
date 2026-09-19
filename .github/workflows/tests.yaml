@@ -36,10 +36,20 @@ jobs:
           sudo apt-get install -y -qq fonts-dejavu-core fonts-liberation fonts-roboto
           python3 -m pip install -q "playwright==${PLAYWRIGHT_VERSION}" pillow
           python3 -m playwright install --with-deps chromium
-      - name: Syntax check (ES module)
+      - name: Build dist from src
         run: |
-          cp dist/evcc-card.js /tmp/evcc-card.mjs
-          node --check /tmp/evcc-card.mjs
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: dist/evcc-card.js is up to date
+        # The bundle is committed (HACS ships it). A change under src/ without a
+        # rebuild would ship stale code, so the committed file must equal the build.
+        run: |
+          if ! git diff --exit-code --stat -- dist/evcc-card.js; then
+            echo "::error::dist/evcc-card.js does not match src/. Run 'npm run build' and commit the result."
+            exit 1
+          fi
+      - name: Syntax check (ES module)
+        run: node --check dist/evcc-card.js
       - name: Run test suite
         run: python3 test/run.py
       - name: Publish report
