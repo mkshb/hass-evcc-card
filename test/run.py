@@ -566,6 +566,11 @@ def interactions(browser, port, t):
     rng = page.locator(in_card('input[data-entity="number.evcc_openwb_limit_soc"]'))
     rng.focus(); rng.press("ArrowRight")
     t.check(len(svc(page)) == n_before + 1 and svc(page)[-1]["domain"] == "number", "arrow key on slider writes to HA", json.dumps(svc(page)[-1]))
+    # A key that moves nothing (already at the bound) must not write the same value again.
+    rng.press("Home"); page.wait_for_timeout(100)
+    n_at_min = len(svc(page))
+    rng.press("ArrowLeft"); rng.press("ArrowLeft"); page.wait_for_timeout(100)
+    t.check(len(svc(page)) == n_at_min, "arrow key at the range bound writes nothing", f"{len(svc(page)) - n_at_min} extra call(s)")
     page.wait_for_timeout(500)
 
     # --- outside click closes the panel and the click still lands (gear toggle) ------

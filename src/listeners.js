@@ -514,8 +514,19 @@ export const listeners = {
       });
       // Keyboard changes (arrows, Home/End, PageUp/Down) never went through
       // pointerup, so they updated the label but were never written to HA.
+      // The value at the first keydown is the reference (key repeat fires
+      // keydown again, keyup once): a key that moved nothing, e.g. at a bound
+      // of the range, causes no write.
+      const NAV_KEYS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"];
+      let keyStart = null;
+      input.addEventListener("keydown", (e) => {
+        if (NAV_KEYS.includes(e.key) && keyStart === null) keyStart = input.value;
+      });
       input.addEventListener("keyup", (e) => {
-        if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(e.key)) return;
+        if (!NAV_KEYS.includes(e.key)) return;
+        const unchanged = keyStart !== null && keyStart === input.value;
+        keyStart = null;
+        if (unchanged) return;
         const domain   = input.dataset.domain;
         const entityId = input.dataset.entity;
         this._sliderWrite(entityId, domain, domain === "select" ? this._sliderValueFor(input) : parseFloat(input.value));
