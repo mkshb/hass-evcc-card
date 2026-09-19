@@ -1,5 +1,6 @@
 import { _discoverDeviceSources } from "../core/entity-discovery.js";
 import { stateVal, attr, unitStr } from "../utils/state.js";
+import { escHtml } from "../utils/html.js";
 
 // Flow mode (Sankey). Methods are mixed into EvccCard.prototype.
 export const flowView = {
@@ -222,7 +223,7 @@ export const flowView = {
       const textX = iconX - 4;
       const sub = s.sub ? `
         <text x="${textX}" y="${s.cy + 12}" text-anchor="end" dominant-baseline="central"
-              font-size="9" style="fill:var(--secondary-text-color)">${s.sub}</text>` : "";
+              font-size="9" style="fill:var(--secondary-text-color)">${escHtml(s.sub)}</text>` : "";
       const inner = `
         <rect x="${s.x}" y="${s.y}" width="${NODE_W}" height="${s.h}" rx="3" fill="${s.color}"/>
         ${iconPath ? svgMdi(iconPath, iconX, iconY, s.color) : ""}
@@ -241,7 +242,7 @@ export const flowView = {
       const textX = iconX + ICON_SIZE + 4;
       const sub = d.sub ? `
         <text x="${textX}" y="${d.cy + 12}" text-anchor="start" dominant-baseline="central"
-              font-size="9" style="fill:var(--secondary-text-color)">${d.sub}</text>` : "";
+              font-size="9" style="fill:var(--secondary-text-color)">${escHtml(d.sub)}</text>` : "";
       const inner = `
         <rect x="${d.x}" y="${d.y}" width="${NODE_W}" height="${d.h}" rx="3" fill="${d.color}"/>
         ${iconPath ? svgMdi(iconPath, iconX, iconY, d.color) : ""}
@@ -294,8 +295,8 @@ export const flowView = {
       <div class="site-row ${indent ? "site-row-indent" : ""}${entityId ? " site-row-clickable" : ""}"${entityId ? ` data-more-info="${entityId}"` : ""}>
         <span class="site-row-icon">${icon}</span>
         <span class="site-row-label">
-          <span class="site-row-name">${label}</span>
-          ${sub ? `<span class="site-row-sub">${sub}</span>` : ""}
+          <span class="site-row-name">${escHtml(label)}</span>
+          ${sub ? `<span class="site-row-sub">${escHtml(sub)}</span>` : ""}
         </span>
         <span class="site-row-pw ${pwClass}">${fmtPow(pw)}</span>
       </div>`;
@@ -303,7 +304,7 @@ export const flowView = {
     const section = (title, total, rows) => `
       <div class="site-section">
         <div class="site-section-head">
-          <span class="site-section-title">${title}</span>
+          <span class="site-section-title">${escHtml(title)}</span>
           <span class="site-section-total">${fmtPow(total)}</span>
         </div>
         ${rows}
@@ -383,7 +384,7 @@ export const flowView = {
     return `
       <div class="site-block">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("energyFlow") || this._t("overview")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("energyFlow") || this._t("overview"))}</span>
         </div>
         ${sankeySvg}
         <div class="site-table" style="${siteExpanded ? '' : 'display:none'}">

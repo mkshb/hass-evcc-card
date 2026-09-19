@@ -13,7 +13,10 @@
 //   disable: ["number.evcc_openwb_smart_cost_limit", ...]  mark registry entries disabled and drop their state
 //   rename:  { from: "evcc_", to: "myevcc_" }  rename the entity prefix everywhere (multi-instance setups)
 //   tariff:  "price" (default) or "co2" - what the WS data API reports as smartCostType
-export async function createMockHass({ language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price" } = {}) {
+//   second:  { prefix, entryId, first } - clone the fixture as a second ha-evcc config entry
+//   wsName:  "…"  put this string into every name the WS data API reports (session
+//            loadpoint/vehicle, currency) - used by the escaping tests
+export async function createMockHass({ language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null } = {}) {
   const base = new URL("./fixtures/", import.meta.url);
   const json = (p) => fetch(new URL(p, base)).then(r => r.ok ? r.json() : Promise.reject(new Error(`fixture ${p}: ${r.status}`)));
 
@@ -34,6 +37,29 @@ export async function createMockHass({ language = "de", ws = true, set = {}, att
     states = Object.fromEntries(Object.entries(states).map(([id, s]) => [ren(id), { ...s, entity_id: ren(id) }]));
     registry = registry.map(e => ({ ...e, entity_id: ren(e.entity_id) }));
   }
+  // A second ha-evcc config entry. ha-evcc derives the entity prefix from the
+  // entry title (system_id = slugify(config_entry.title)), so two instances
+  // always come with two prefixes AND two config_entry_ids. `first` puts the
+  // clone ahead of the original in the registry, which is what decides who wins
+  // the automatic detection.
+  if (second) {
+    const { prefix: p2 = "evcc2_", entryId: e2 = "SECOND_ENTRY_ID", first = false } = second;
+    const isEvcc = (id) => /^[a-z_]+\.evcc_/.test(id);
+    const clone  = (id) => id.replace(/^([a-z_]+\.)evcc_/, `$1${p2}`);
+    const extraStates = {};
+    for (const [id, st] of Object.entries(states)) {
+      if (!isEvcc(id)) continue;
+      const nid = clone(id);
+      extraStates[nid] = { ...st, entity_id: nid };
+    }
+    const extraReg = registry.filter(e => isEvcc(e.entity_id)).map(e => ({
+      ...e, entity_id: clone(e.entity_id), config_entry_id: e2,
+      unique_id: `evcc_intg.${clone(e.entity_id)}`,
+    }));
+    states   = first ? { ...extraStates, ...states } : { ...states, ...extraStates };
+    registry = first ? [...extraReg, ...registry] : [...registry, ...extraReg];
+  }
+
   // evcc runs either on a price tariff or on a co2 signal, and the card switches
   // units, labels and which forecast it draws behind the plan on smartCostType.
   // The captured fixtures are a price tariff, so the co2 variant is derived:
@@ -60,6 +86,13 @@ export async function createMockHass({ language = "de", ws = true, set = {}, att
     },
     plan_preview: await json("ws/plan_preview.json"),
   } : null;
+
+  // Every name the integration passes through from evcc, replaced in one go.
+  if (fx && wsName) {
+    fx.sessions = { ...fx.sessions, sessions: fx.sessions.sessions.map(s => ({ ...s, loadpoint: wsName, vehicle: wsName })) };
+    for (const k of Object.keys(fx.forecast)) fx.forecast[k] = { ...fx.forecast[k], currency: wsName };
+    fx.plan_preview = { ...fx.plan_preview, currency: wsName };
+  }
 
   // Shift every ISO timestamp in `rates`/`plan` (+ planTime) by the same offset so
   // the first slot starts at the top of the current hour. Keeps the fixture's

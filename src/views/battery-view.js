@@ -1,4 +1,5 @@
 import { stateVal, attr, isOn } from "../utils/state.js";
+import { escHtml } from "../utils/html.js";
 
 // Battery mode. Methods are mixed into EvccCard.prototype.
 export const batteryView = {
@@ -126,7 +127,7 @@ export const batteryView = {
     return `
       <div class="battery-block">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("homeBattery")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("homeBattery"))}</span>
         </div>
         ${tabUsage}
       </div>`;

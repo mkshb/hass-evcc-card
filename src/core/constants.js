@@ -125,6 +125,56 @@ export const FEATURES = [
 // versions need when PV is hidden but a dynamic tariff exists (Mode.vue).
 export const SMART_MODE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12,6A6,6 0 0,1 18,12C18,14.22 16.79,16.16 15,17.2V19A1,1 0 0,1 14,20H10A1,1 0 0,1 9,19V17.2C7.21,16.16 6,14.22 6,12A6,6 0 0,1 12,6M14,21V22A1,1 0 0,1 13,23H11A1,1 0 0,1 10,22V21H14M20,11H23V13H20V11M1,11H4V13H1V11M13,1V4H11V1H13M4.92,3.5L7.05,5.64L5.63,7.05L3.5,4.93L4.92,3.5M16.95,5.63L19.07,3.5L20.5,4.93L18.37,7.05L16.95,5.63Z"/></svg>`;
 
+// `stats_period` exists in two vocabularies. The current one, which the editor
+// writes and the README documents: month | year | total | none. And the legacy
+// one from before the sessions stats path, still valid in existing YAML:
+// 30d | 365d | thisYear | total.
+//
+// Everything is normalised to the current vocabulary here, in one place, so the
+// two stats paths cannot drift apart again. The fallback is the caller's,
+// because the defaults differ: the stats mode opens on the most recent month,
+// the compact footer under site/grid/flow summarises everything.
+const STATS_PERIOD_ALIASES = {
+  month: "month", "30d": "month",
+  year:  "year",  "365d": "year", thisYear: "year",
+  total: "total",
+  none:  "none",
+};
+
+export function normalizeStatsPeriod(value, fallback = "total") {
+  return STATS_PERIOD_ALIASES[value] ?? fallback;
+}
+
+// How a normalised period falls back onto the legacy entity/recorder path,
+// which has periods of its own. A configured legacy value is passed through
+// untouched instead (365d is "the last 365 days", not the calendar year), so
+// existing dashboards keep exactly the view they had.
+export const STATS_PERIOD_LEGACY_VALUES = ["30d", "365d", "thisYear", "total"];
+export const STATS_PERIOD_TO_LEGACY = { month: "30d", year: "thisYear", total: "total", none: "total" };
+
+// The legacy period a configured value ends up on. Used by the stats mode and
+// by the compact footer, so both reach the same stat_* entities.
+export function legacyStatsPeriod(value, fallback = "total") {
+  return STATS_PERIOD_LEGACY_VALUES.includes(value)
+    ? value
+    : STATS_PERIOD_TO_LEGACY[normalizeStatsPeriod(value, fallback)];
+}
+
+// Entity attributes the card reads while rendering. The render key is built from
+// these next to the state, because HA hands out a new state object for a pure
+// attribute change too: a select whose options change, a number whose min/max
+// moves, a vehicle whose metadata arrives. Without them the card would keep
+// showing the previous options or slider bounds.
+//
+// This list is not documentation, it is load bearing: an attribute missing here
+// is an attribute whose change the card ignores. The test group `renderkey`
+// proxies the attribute objects during a render of every mode and fails when
+// something outside this list is read.
+export const RENDER_ATTRS = [
+  "options", "min", "max", "step", "unit_of_measurement", "device_class",
+  "title", "loadpoint_title", "vehicle", "soc", "time", "weekdays",
+];
+
 // Settings the user can drop from the loadpoint/compact card via
 // `hide_settings: [...]`. Keys are the ha-evcc feature suffixes (plus the two
 // non-slider controls); the label keys are shared with the card itself.

@@ -108,7 +108,7 @@ def new_page(browser, width=480, height=900):
 
 
 def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="de", ws=True, set=None, disable=None,
-              rename=None, attrs=None, tariff=None):
+              rename=None, attrs=None, tariff=None, second=None, wsname=None):
     q = {"w": width, "lang": lang}
     if not ws: q["ws"] = 0
     if set:     q["set"] = ",".join(f"{k}:{v}" for k, v in set.items())
@@ -116,6 +116,8 @@ def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="d
     if disable: q["disable"] = ",".join(disable)
     if rename:  q["rename"] = f"{rename[0]}:{rename[1]}"
     if tariff:  q["tariff"] = tariff
+    if second:  q["second"] = json.dumps(second)
+    if wsname:  q["wsname"] = wsname
     if config is not None: q["config"] = json.dumps(config)
     else: q["mode"] = mode or "loadpoint"
     if dark: q["dark"] = 1
@@ -203,6 +205,264 @@ def stats_fallback(browser, port, t):
         t.check(len(daily) >= 1, "30d tab queries day buckets", f"{len(daily)} call(s)")
         n = page.locator(in_card("rect.evcc-bar")).count()
         t.check(n == 30, "30d chart shows one bar per day", f"{n} bars")
+    page.close()
+
+
+def render_attrs():
+    """RENDER_ATTRS as the source declares it, so the test cannot drift from it."""
+    src = (ROOT / "src/core/constants.js").read_text(encoding="utf-8")
+    m = re.search(r"export const RENDER_ATTRS = \[(.*?)\]", src, re.S)
+    return sorted(re.findall(r'"([^"]+)"', m.group(1))) if m else []
+
+
+def stats_period(browser, port, t):
+    """`stats_period` has to steer both stats paths the same way.
+
+    The editor writes month/year/total/none, older dashboards carry
+    30d/365d/thisYear/total, and the card runs either the sessions path or the
+    entity/recorder fallback depending on the ha-evcc version. Every combination
+    has to land on the period the user asked for.
+    """
+    # config value -> (tab with the sessions API, tab on the legacy path)
+    CASES = [
+        ("month",    "month", "30d"),
+        ("year",     "year",  "thisYear"),
+        ("total",    "total", "total"),
+        ("none",     "month", "total"),    # none only hides the footer
+        ("30d",      "month", "30d"),
+        ("365d",     "year",  "365d"),     # a rolling window, kept as configured
+        ("thisYear", "year",  "thisYear"),
+        (None,       "month", "total"),    # unconfigured: newest month / everything
+    ]
+    active = """(() => { const el = window.__card.shadowRoot.querySelector('.stats-period-tab.active');
+                         return el ? (el.dataset.scope ?? el.dataset.period) : null; })()"""
+
+    for ws, label in ((True, "sessions API"), (False, "legacy path")):
+        t.group(f"stats_period - {label}")
+        for value, want_ws, want_legacy in CASES:
+            want = want_ws if ws else want_legacy
+            config = {"mode": "stats"}
+            if value: config["stats_period"] = value
+            page = new_page(browser, 480, 1200)
+            errors = open_card(page, port, config=config, ws=ws)
+            got = page.evaluate(active)
+            t.check(got == want and not errors, f"stats_period: {value or '(unset)'} selects {want}",
+                    f"got {got}; {'; '.join(errors)[:120]}")
+            page.close()
+
+    # The compact footer under site/grid/flow carries the same period. `none`
+    # is about this footer only, it never hides the tabs of the stats mode.
+    loc = json.loads((ROOT / f"dist/locales/{LOCALE.split('-')[0]}.json").read_text(encoding="utf-8"))
+    # Rounded kWh of the stat_*_charged_kwh entities in the fixtures. Distinct
+    # per period, so the number shows which entity the footer actually read.
+    LEGACY_KWH  = {"30d": "170", "365d": "2150", "thisYear": "1605", "total": "2527"}
+    LEGACY_TKEY = {"30d": "statsPeriod30d", "365d": "statsPeriod365d", "thisYear": "statsPeriodThisYear", "total": "statsPeriodTotal"}
+    # config value -> (label key with the sessions API, legacy period without it)
+    FOOTER = [
+        ("month",    "statsPeriodMonth", "30d"),
+        ("year",     "statsPeriodYear",  "thisYear"),
+        ("total",    "statsPeriodTotal", "total"),
+        ("30d",      "statsPeriodMonth", "30d"),
+        ("365d",     "statsPeriodYear",  "365d"),     # a rolling window on the legacy path
+        ("thisYear", "statsPeriodYear",  "thisYear"),
+        (None,       "statsPeriodTotal", "total"),
+        ("none",     None,               None),       # hidden on both paths
+    ]
+
+    for ws, label in ((True, "sessions API"), (False, "legacy path")):
+        t.group(f"stats_period - compact footer, {label}")
+        for value, want_ws_key, want_legacy in FOOTER:
+            config = {"mode": "site"}
+            if value: config["stats_period"] = value
+            page = new_page(browser, 480, 1600)
+            errors = open_card(page, port, config=config, ws=ws)
+            foot = page.locator(in_card(".stats-footer"))
+            name = f"footer with stats_period {value or '(unset)'}"
+            if want_legacy is None:
+                t.check(foot.count() == 0 and not errors, f"{name}: hidden", f"found {foot.count()}")
+            elif ws:
+                # the label is uppercased in CSS, so compare case-insensitively
+                got = page.locator(in_card(".stats-footer .sf-period")).inner_text().strip()
+                want = loc[want_ws_key]
+                t.check(got.casefold() == want.casefold() and not errors, f"{name}: sessions footer says {want}", f"got {got}")
+            else:
+                got_label = page.locator(in_card(".stats-footer .sf-period")).inner_text().strip()
+                got_kwh   = page.locator(in_card(".stats-footer .sf-val")).first.inner_text().strip()
+                want_label, want_kwh = loc[LEGACY_TKEY[want_legacy]], LEGACY_KWH[want_legacy]
+                t.check(got_label.casefold() == want_label.casefold() and got_kwh.startswith(want_kwh) and not errors,
+                        f"{name}: reads the {want_legacy} entities", f"got {got_label} / {got_kwh}")
+            page.close()
+
+
+def renderkey(browser, port, t):
+    """The render key decides whether a hass update reaches the DOM.
+
+    It is built from the entity states, but the card renders from attributes as
+    well: the options of a select, the bounds of a number, vehicle metadata. HA
+    hands out a new state object for a pure attribute change, so those have to be
+    part of the key or the card keeps showing the previous options and bounds.
+    """
+    t.group("renderkey - attribute changes reach the DOM")
+    page = new_page(browser, 480, 1400)
+    errors = open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"})
+    page.evaluate("""() => {
+      const c = window.__card, orig = c._render.bind(c);
+      window.__renders = 0;
+      c._render = function (...a) { window.__renders++; return orig(...a); };
+      // Push a new hass object the way HA does, after mutating the state table.
+      window.__push = (mut) => {
+        const st = { ...window.__hass.states };
+        if (mut) mut(st);
+        window.__hass.states = st;
+        window.__card.hass = { ...window.__hass, states: st };
+      };
+    }""")
+    # One state change first: straight after mount _lastRenderKey is still null,
+    # which would make the next update render no matter what the key says.
+    page.evaluate("""() => window.__push(st => {
+      const id = 'sensor.evcc_openwb_charge_power';
+      st[id] = { ...st[id], state: '4242' };
+    })""")
+    page.wait_for_timeout(900)
+    t.check(page.evaluate("window.__card._lastRenderKey !== null"), "a state change primes the render key")
+
+    modes = lambda: page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.mode-btn')].map(x => x.dataset.value)")
+    before = modes()
+    page.evaluate("window.__renders = 0")
+    page.evaluate("""() => window.__push(st => {
+      const id = 'select.evcc_openwb_mode';
+      st[id] = { ...st[id], attributes: { ...st[id].attributes, options: ['off', 'smart', 'now'] } };
+    })""")
+    page.wait_for_timeout(900)
+    t.check(page.evaluate("window.__renders") >= 1, "changed select options trigger a render", str(page.evaluate("window.__renders")))
+    t.check(modes() != before and "smart" in modes(), "the mode buttons follow the new options", f"{before} -> {modes()}")
+
+    slider_max = lambda: page.evaluate("""(() => { const el = window.__card.shadowRoot
+        .querySelector("input[data-entity='number.evcc_openwb_limit_soc']"); return el ? el.max : null; })()""")
+    t.check(slider_max() == "100", "slider starts at the fixture's bound", str(slider_max()))
+    page.evaluate("window.__renders = 0")
+    page.evaluate("""() => window.__push(st => {
+      const id = 'number.evcc_openwb_limit_soc';
+      st[id] = { ...st[id], attributes: { ...st[id].attributes, max: 80 } };
+    })""")
+    page.wait_for_timeout(900)
+    t.check(page.evaluate("window.__renders") >= 1, "a changed number bound triggers a render", str(page.evaluate("window.__renders")))
+    t.check(slider_max() == "80", "the slider follows the new maximum", str(slider_max()))
+
+    # The key is a saving measure: an update that changes nothing must stay cheap.
+    page.evaluate("window.__renders = 0")
+    for _ in range(4):
+        page.evaluate("() => window.__push(null)")
+        page.wait_for_timeout(250)
+    t.check(page.evaluate("window.__renders") == 0, "an update without changes still renders nothing", str(page.evaluate("window.__renders")))
+    t.check(not errors, "no console errors", "; ".join(errors)[:200])
+    page.close()
+
+    # Every attribute the card reads while rendering has to be in RENDER_ATTRS,
+    # otherwise its changes are invisible again. Proxying the attribute objects
+    # catches every access path, including destructuring and direct lookups.
+    t.group("renderkey - RENDER_ATTRS is complete")
+    declared = render_attrs()
+    t.check(bool(declared), "RENDER_ATTRS is readable from the source", str(declared))
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "charge_current_settings": "expanded"})
+    read = page.evaluate("""(modes) => {
+      const c = window.__card, hass = window.__hass, reads = new Set();
+      const states = Object.fromEntries(Object.entries(hass.states).map(([id, s]) => [id, {
+        ...s,
+        attributes: new Proxy(s.attributes ?? {}, {
+          get(target, k) { if (typeof k === 'string') reads.add(k); return target[k]; },
+          has(target, k) { if (typeof k === 'string') reads.add(k); return k in target; },
+        }),
+      }]));
+      for (const mode of modes) {
+        c.setConfig({ mode, charge_current_settings: 'expanded' });
+        c.hass = { ...hass, states };
+        c._lastRenderKey = null;
+        c._render();
+      }
+      return [...reads];
+    }""", MODES)
+    unknown = sorted(set(read) - set(declared))
+    t.check(not unknown, "no attribute is read that the render key ignores", f"read {len(read)}, missing from RENDER_ATTRS: {unknown}")
+    unused = sorted(set(declared) - set(read))
+    t.check(not unused, "RENDER_ATTRS carries no attribute the card never reads", f"never read: {unused}")
+    page.close()
+
+
+def lifecycle(browser, port, t):
+    """Detach the same card element and attach it again.
+
+    Lovelace re-mounts a card on a view switch, a re-order or when leaving edit
+    mode. Everything `disconnectedCallback` tears down has to be rebuilt in
+    `connectedCallback`, otherwise the re-mounted card is only half alive: it
+    stops reacting to `evcc-plan-reset`, and it is missing from the registry the
+    inline handlers of the site and flow views resolve through.
+    """
+    t.group("lifecycle - unmount and re-mount")
+    page = new_page(browser, 480, 1200)
+    errors = open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]})
+
+    def plan_reset_works():
+        """Mark the local plan state, fire the event, report whether it was cleared."""
+        page.evaluate("""() => {
+          window.__card._planState['openwb'] = { soc: 42 };
+          window.dispatchEvent(new CustomEvent('evcc-plan-reset', { detail: { lpName: 'openwb' } }));
+        }""")
+        page.wait_for_timeout(1800)   # the handler waits 1500 ms before it cleans up
+        return page.evaluate("window.__card._planState['openwb']?.soc ?? null") != 42
+
+    def remount():
+        page.evaluate("""() => {
+          const c = window.__card, host = c.parentNode;
+          host.removeChild(c);
+          window.__whileDetached = { cards: window.__evccCards.size, interval: !!c._countdownInterval };
+          host.appendChild(c);
+        }""")
+        page.wait_for_timeout(300)
+        return page.evaluate("window.__whileDetached")
+
+    card_id = page.evaluate("window.__card._cardId")
+    t.check(plan_reset_works(), "mounted: evcc-plan-reset clears the local plan state")
+    t.check(page.evaluate(f"window.__evccCards.has('{card_id}')"), "mounted: the card is in the registry")
+
+    detached = remount()
+    t.check(detached["cards"] == 0, "detached: the registry entry is released, no instance leaks", json.dumps(detached))
+    t.check(detached["interval"] is False, "detached: the countdown interval is stopped", json.dumps(detached))
+
+    t.check(plan_reset_works(), "re-mounted: evcc-plan-reset is handled again")
+    t.check(page.evaluate(f"window.__evccCards.get('{card_id}') === window.__card"), "re-mounted: the registry entry is restored")
+    t.check(page.evaluate("!!window.__card._countdownInterval"), "re-mounted: the countdown interval runs again")
+
+    # capabilities and entry_id survive on purpose: re-probing them on every
+    # re-mount would be a backend call for nothing (see the traffic rules).
+    t.check(page.evaluate("window.__card._capsLoaded"), "re-mounted: capabilities are still marked as loaded", "kept")
+    n_before = len([c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/capabilities"])
+    remount()
+    t.check(len([c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/capabilities"]) == n_before,
+            "re-mounting costs no extra backend call", f"{n_before} capabilities call(s) before and after")
+
+    for _ in range(3): remount()
+    t.check(page.evaluate("window.__evccCards.size") == 1, "repeated re-mounts keep exactly one registry entry",
+            str(page.evaluate("window.__evccCards.size")))
+    t.check(not errors, "no console errors across the re-mounts", "; ".join(errors)[:200])
+    page.close()
+
+    # The site view wires its expand toggle through the registry with an inline
+    # onclick, so a lost entry breaks it in a way no other check would notice.
+    page = new_page(browser, 480, 1400)
+    errors = open_card(page, port, mode="site")
+    shown = lambda: page.evaluate("""(() => { const el = window.__card.shadowRoot.querySelector('.site-table');
+                                             return el ? getComputedStyle(el).display !== 'none' : null; })()""")
+    before = shown()
+    page.locator(in_card(".flow-wrap-clickable")).click(); page.wait_for_timeout(300)
+    t.check(shown() != before, "site toggle works while mounted", f"{before} -> {shown()}")
+    page.evaluate("""() => { const c = window.__card, host = c.parentNode; host.removeChild(c); host.appendChild(c); }""")
+    page.wait_for_timeout(300)
+    before = shown()
+    page.locator(in_card(".flow-wrap-clickable")).click(); page.wait_for_timeout(300)
+    t.check(shown() != before, "site toggle still works after a re-mount", f"{before} -> {shown()}")
+    t.check(not errors, "no console errors from the inline handler after a re-mount", "; ".join(errors)[:200])
     page.close()
 
 
@@ -714,6 +974,52 @@ def discovery(browser, port, t):
             "disabled limit entities: sections absent, block still rendered")
     page.close()
 
+    # --- two ha-evcc config entries ------------------------------------------------
+    # ha-evcc derives the entity prefix from the config entry title, so a second
+    # evcc instance brings a second prefix AND a second entry id. Prefix and entry
+    # id have to come from the same entry, otherwise the card shows one
+    # installation and asks the other one for forecast, sessions and plan previews.
+    t.group("discovery - two ha-evcc instances")
+    first_entry = json.loads((ROOT / "test/fixtures/entity_registry.json").read_text(encoding="utf-8"))[0]["config_entry_id"]
+    SECOND = "SECOND_ENTRY_ID"
+    second_first = {"prefix": "evcc2_", "entryId": SECOND, "first": True}
+    second_last  = {"prefix": "evcc2_", "entryId": SECOND}
+
+    def detected(config, second):
+        page = new_page(browser, 480, 1200)
+        errors = open_card(page, port, config=config, second=second)
+        out = {
+            "prefix": page.evaluate("window.__card._getPrefix()"),
+            "entryId": page.evaluate("window.__card._entryId"),
+            "wsEntryIds": sorted({c.get("entry_id") for c in page.evaluate("window.__hass.wsCalls")
+                                  if str(c["type"]).startswith("evcc_intg/") and c.get("entry_id")}),
+            "errors": errors,
+        }
+        page.close()
+        return out
+
+    d = detected({"mode": "loadpoint"}, None)
+    t.check(d["prefix"] == "evcc_" and d["entryId"] == first_entry,
+            "a single instance is unchanged", json.dumps({k: d[k] for k in ("prefix", "entryId")}))
+
+    d = detected({"mode": "loadpoint"}, second_last)
+    t.check(d["prefix"] == "evcc_" and d["entryId"] == first_entry,
+            "two instances, no configured prefix: the first registry entry wins", json.dumps({k: d[k] for k in ("prefix", "entryId")}))
+
+    d = detected({"mode": "loadpoint", "prefix": "evcc2_"}, second_last)
+    t.check(d["prefix"] == "evcc2_" and d["entryId"] == SECOND,
+            "configured prefix picks the entry id of the same instance", json.dumps({k: d[k] for k in ("prefix", "entryId")}))
+    t.check(d["wsEntryIds"] == [SECOND],
+            "the WebSocket commands address that instance, not the other one", json.dumps(d["wsEntryIds"]))
+
+    d = detected({"mode": "loadpoint", "prefix": "evcc_"}, second_first)
+    t.check(d["prefix"] == "evcc_" and d["entryId"] == first_entry,
+            "registry order does not decide when a prefix is configured", json.dumps({k: d[k] for k in ("prefix", "entryId")}))
+    t.check(d["wsEntryIds"] == [first_entry],
+            "and the WebSocket commands follow the configured instance", json.dumps(d["wsEntryIds"]))
+    t.check(not d["errors"], "no console errors with two instances present", "; ".join(d["errors"])[:200])
+
+
 
 def widths(browser, port, t):
     """Narrow and wide cards: the input panel stays inside the card, no console errors."""
@@ -727,6 +1033,56 @@ def widths(browser, port, t):
         scroll = page.evaluate("(() => { const c = window.__card.shadowRoot.querySelector('ha-card'); return c.scrollWidth - c.clientWidth; })()")
         page.locator("#host").screenshot(path=str(OUT / f"width-{w}.png"))
         t.check(inside and scroll <= 0 and not errors, f"{w} px: input panel inside the card, no horizontal overflow", f"overflow={scroll}; {'; '.join(errors)[:150]}")
+        page.close()
+
+
+def escaping(browser, port, t):
+    """Names from HA and from evcc reach the DOM as text, never as markup.
+
+    Loadpoint and vehicle titles, device titles, units and the currency are all
+    free text in an evcc/HA configuration, and the card builds its DOM from
+    template literals. Every case below puts a payload into one of those and
+    asserts that the card renders it verbatim and creates no element from it.
+    """
+    TEXT = 'Garage <img src=x onerror="window.__xss=1">'
+    ATTR = 'Zoe" onmouseover="window.__xss=1'
+    # (name, config, open_card kwargs, selector whose text has to carry the payload)
+    CASES = [
+        ("card title",       {"mode": "loadpoint", "loadpoints": ["openwb"], "title": TEXT}, {}, ".lp-name"),
+        ("vehicle title",    {"mode": "loadpoint", "loadpoints": ["openwb"]},
+         {"attrs": {"select.evcc_openwb_vehicle_name": {"vehicle": {"name": TEXT}}}}, ".vehicle-name"),
+        ("charge power unit", {"mode": "loadpoint", "loadpoints": ["openwb"]},
+         {"attrs": {"sensor.evcc_openwb_charge_power": {"unit_of_measurement": TEXT}}}, ".power-value"),
+        ("loadpoint title",  {"mode": "site"},
+         {"attrs": {"select.evcc_openwb_mode": {"loadpoint_title": TEXT}}}, ".site-table"),
+        ("pv device title",  {"mode": "site"},
+         {"attrs": {"sensor.evcc_pv_1_power": {"title": TEXT}}}, ".site-block"),
+        ("session names",    {"mode": "stats"}, {"wsname": TEXT}, ".stats-legend"),
+        ("config dump",      {"mode": "debug", "title": TEXT}, {}, ".debug-yaml"),
+        # An attribute payload: the vehicle ids become <option value="…">.
+        ("vehicle option id", {"mode": "plan", "loadpoints": ["openwb"]},
+         {"attrs": {"select.evcc_openwb_vehicle_name": {"options": ["null", "db:18", ATTR]}}}, ".plan-vehicle-select"),
+    ]
+
+    t.group("escaping - untrusted names stay text")
+    for name, config, kwargs, sel in CASES:
+        payload = ATTR if name == "vehicle option id" else TEXT
+        page = new_page(browser, 480, 1800)
+        errors = open_card(page, port, config=config, **kwargs)
+        injected = page.evaluate("""() => {
+            const r = window.__card.shadowRoot;
+            return { nodes: r.querySelectorAll('img, script, [onerror], [onmouseover]').length,
+                     flag: window.__xss ?? null,
+                     text: r.textContent,
+                     html: r.innerHTML }; }""")
+        where = page.locator(in_card(sel))
+        shown = payload in (where.first.inner_text() if where.count() else "") \
+                or payload in injected["text"] \
+                or (name == "vehicle option id" and payload in page.evaluate(
+                    "() => [...window.__card.shadowRoot.querySelectorAll('option')].map(o => o.value).join('|')"))
+        t.check(injected["nodes"] == 0 and injected["flag"] is None and shown and not errors,
+                f"{name}: rendered as text, no element created",
+                f"nodes={injected['nodes']} flag={injected['flag']} shown={shown}; {'; '.join(errors)[:120]}")
         page.close()
 
 
@@ -767,7 +1123,7 @@ def unit(browser, port, t):
             t.fail(f"{f.name} contains tests", f"no testcase in the report; stderr={p.stderr[:200]}")
 
 
-GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "interaction": interactions, "editor": editor, "contracts": contracts,
+GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
           "widths": widths}
 

@@ -58,8 +58,10 @@
     const attrs = q.get("attrs") ? JSON.parse(q.get("attrs")) : {};
     const disable = (q.get("disable") || "").split(",").filter(Boolean);
     const rename = q.get("rename") ? (([from, to]) => ({ from, to }))(q.get("rename").split(":")) : null;
+    const second = q.get("second") ? JSON.parse(q.get("second")) : null;
     const hass = await createMockHass({ language: q.get("lang") || "de", ws: q.get("ws") !== "0",
-                                        set, attrs, disable, rename, tariff: q.get("tariff") || "price" });
+                                        set, attrs, disable, rename, tariff: q.get("tariff") || "price", second,
+                                        wsName: q.get("wsname") });
     await customElements.whenDefined("evcc-card");
     const card = document.createElement("evcc-card");
     card.setConfig(config);

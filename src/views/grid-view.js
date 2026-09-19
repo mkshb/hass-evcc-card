@@ -1,5 +1,6 @@
 import { _discoverDeviceSources } from "../core/entity-discovery.js";
 import { stateVal, attr, unitStr } from "../utils/state.js";
+import { escHtml } from "../utils/html.js";
 
 // Grid mode (site2). Methods are mixed into EvccCard.prototype.
 export const gridView = {
@@ -58,8 +59,8 @@ export const gridView = {
     const chip = (dot, label, sub, entityId = null) =>
       `<div class="s2-chip${entityId ? " s2-chip-clickable" : ""}"${entityId ? ` data-more-info="${entityId}"` : ""}>
         <span class="s2-chip-dot" style="background:${dot}"></span>
-        <span class="s2-chip-name">${label}</span>
-        ${sub ? `<span class="s2-chip-sub">${sub}</span>` : ""}
+        <span class="s2-chip-name">${escHtml(label)}</span>
+        ${sub ? `<span class="s2-chip-sub">${escHtml(sub)}</span>` : ""}
       </div>`;
 
     const lpChips = Object.entries(loadpoints)
@@ -117,7 +118,7 @@ export const gridView = {
     return `
       <div class="s2-block">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("grid")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("grid"))}</span>
         </div>
         <div class="s2-net">
           <div class="s2-net-label">${this._t("gridStatus")}</div>

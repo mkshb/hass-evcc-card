@@ -126,6 +126,56 @@ const FEATURES = [
 // versions need when PV is hidden but a dynamic tariff exists (Mode.vue).
 const SMART_MODE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12,6A6,6 0 0,1 18,12C18,14.22 16.79,16.16 15,17.2V19A1,1 0 0,1 14,20H10A1,1 0 0,1 9,19V17.2C7.21,16.16 6,14.22 6,12A6,6 0 0,1 12,6M14,21V22A1,1 0 0,1 13,23H11A1,1 0 0,1 10,22V21H14M20,11H23V13H20V11M1,11H4V13H1V11M13,1V4H11V1H13M4.92,3.5L7.05,5.64L5.63,7.05L3.5,4.93L4.92,3.5M16.95,5.63L19.07,3.5L20.5,4.93L18.37,7.05L16.95,5.63Z"/></svg>`;
 
+// `stats_period` exists in two vocabularies. The current one, which the editor
+// writes and the README documents: month | year | total | none. And the legacy
+// one from before the sessions stats path, still valid in existing YAML:
+// 30d | 365d | thisYear | total.
+//
+// Everything is normalised to the current vocabulary here, in one place, so the
+// two stats paths cannot drift apart again. The fallback is the caller's,
+// because the defaults differ: the stats mode opens on the most recent month,
+// the compact footer under site/grid/flow summarises everything.
+const STATS_PERIOD_ALIASES = {
+  month: "month", "30d": "month",
+  year:  "year",  "365d": "year", thisYear: "year",
+  total: "total",
+  none:  "none",
+};
+
+function normalizeStatsPeriod(value, fallback = "total") {
+  return STATS_PERIOD_ALIASES[value] ?? fallback;
+}
+
+// How a normalised period falls back onto the legacy entity/recorder path,
+// which has periods of its own. A configured legacy value is passed through
+// untouched instead (365d is "the last 365 days", not the calendar year), so
+// existing dashboards keep exactly the view they had.
+const STATS_PERIOD_LEGACY_VALUES = ["30d", "365d", "thisYear", "total"];
+const STATS_PERIOD_TO_LEGACY = { month: "30d", year: "thisYear", total: "total", none: "total" };
+
+// The legacy period a configured value ends up on. Used by the stats mode and
+// by the compact footer, so both reach the same stat_* entities.
+function legacyStatsPeriod(value, fallback = "total") {
+  return STATS_PERIOD_LEGACY_VALUES.includes(value)
+    ? value
+    : STATS_PERIOD_TO_LEGACY[normalizeStatsPeriod(value, fallback)];
+}
+
+// Entity attributes the card reads while rendering. The render key is built from
+// these next to the state, because HA hands out a new state object for a pure
+// attribute change too: a select whose options change, a number whose min/max
+// moves, a vehicle whose metadata arrives. Without them the card would keep
+// showing the previous options or slider bounds.
+//
+// This list is not documentation, it is load bearing: an attribute missing here
+// is an attribute whose change the card ignores. The test group `renderkey`
+// proxies the attribute objects during a render of every mode and fails when
+// something outside this list is read.
+const RENDER_ATTRS = [
+  "options", "min", "max", "step", "unit_of_measurement", "device_class",
+  "title", "loadpoint_title", "vehicle", "soc", "time", "weekdays",
+];
+
 // Settings the user can drop from the loadpoint/compact card via
 // `hide_settings: [...]`. Keys are the ha-evcc feature suffixes (plus the two
 // non-slider controls); the label keys are shared with the card itself.
@@ -178,31 +228,50 @@ function isOn(hass, entityId) {
 // `config/entity_registry/list` call. The entry_id is required by the ha-evcc
 // WebSocket data API commands (evcc_intg/forecast|sessions|plan_preview); every
 // evcc_intg registry entry carries it in `config_entry_id`.
-async function detectIntegration(hass) {
+//
+// Both values are taken from the SAME config entry. ha-evcc builds the entity
+// prefix from the entry title (system_id = slugify(config_entry.title)), so a
+// second evcc instance means a second prefix and a second entry id. Reading the
+// prefix from one entry and the entry id from another would show the entities of
+// one installation while asking the other one for forecast, sessions and plan
+// previews. `preferredPrefix` is the card's configured prefix, which decides
+// which instance is meant; without it the first entry in the registry wins.
+async function detectIntegration(hass, preferredPrefix = null) {
   try {
     const entities = await hass.callWS({ type: "config/entity_registry/list" });
     const evccEnts = entities.filter(e => e.platform === "evcc_intg");
-    if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null };
-
-    const entryId = evccEnts.find(e => e.config_entry_id)?.config_entry_id ?? null;
+    if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null, instances: [] };
 
     const siteSuffixes = FEATURES.filter(f => !f.lp);
-    for (const ent of evccEnts) {
-      const dotIdx = ent.entity_id.indexOf(".");
-      const domain = ent.entity_id.slice(0, dotIdx);
-      const slug   = ent.entity_id.slice(dotIdx + 1);
-
+    const prefixOf = (entityId) => {
+      const dotIdx = entityId.indexOf(".");
+      const domain = entityId.slice(0, dotIdx);
+      const slug   = entityId.slice(dotIdx + 1);
       for (const feat of siteSuffixes) {
         if (feat.domain === domain && slug.endsWith(feat.suffix)) {
           const detected = slug.slice(0, slug.length - feat.suffix.length);
-          if (detected.length > 0) return { prefix: detected, entryId };
+          if (detected.length > 0) return detected;
         }
       }
+      return null;
+    };
+
+    // One group per config entry, in registry order; the prefix of a group comes
+    // from its own first site entity.
+    const byEntry = new Map();
+    for (const ent of evccEnts) {
+      const key = ent.config_entry_id ?? null;
+      if (!byEntry.has(key)) byEntry.set(key, { entryId: key, prefix: null });
+      const group = byEntry.get(key);
+      if (!group.prefix) group.prefix = prefixOf(ent.entity_id);
     }
-    return { prefix: "evcc_", entryId };
+
+    const instances = [...byEntry.values()].map(g => ({ prefix: g.prefix ?? "evcc_", entryId: g.entryId }));
+    const chosen = (preferredPrefix && instances.find(i => i.prefix === preferredPrefix)) || instances[0];
+    return { prefix: chosen.prefix, entryId: chosen.entryId, instances };
   } catch (e) {
     console.warn("[evcc-card] Could not detect integration from entity registry:", e);
-    return { prefix: "evcc_", entryId: null };
+    return { prefix: "evcc_", entryId: null, instances: [] };
   }
 }
 
@@ -304,6 +373,21 @@ function _discoverDeviceSources(site, prefix, primarySuffix, secondarySuffix) {
     sources.push(entry);
   }
   return sources;
+}
+
+// The card builds its DOM from template literals, so anything that is free text
+// in an evcc or HA configuration has to pass through these before it reaches
+// innerHTML: loadpoint, vehicle and device titles, units, the currency, the
+// card title and the option lists of the ha-evcc select entities. Entity ids
+// are not escaped: HA validates them down to [a-z0-9_] plus one dot.
+
+function escHtml(str) {
+  return String(str).replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function escAttr(str) {
+  return escHtml(str);
 }
 
 // Decimal places implied by a slider step (0.005 → 3, 1 → 0).
@@ -648,15 +732,6 @@ const evccApi = {
   },
 };
 
-function escHtml(str) {
-  return String(str).replace(/[&<>"']/g, c =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
-function escAttr(str) {
-  return escHtml(str);
-}
-
 // Loadpoint and compact modes: header, mode selector, power row, vehicle and session info, toggles. Methods are mixed into EvccCard.prototype.
 const loadpointView = {
   _renderLoadpoint(lpName, ents) {
@@ -672,7 +747,7 @@ const loadpointView = {
     return `
       <div class="loadpoint">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || lpName}</span>
+          <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
           ${remaining ? `<span class="lp-remaining" title="${this._t("remaining")}">${remaining}</span>` : ""}
           <span class="lp-badge ${statusClass}">
             ${statusLabel}
@@ -713,7 +788,7 @@ const loadpointView = {
       <div class="compact-tabs">
         ${tabs.map((tab, i) => `
           <button class="compact-tab ${activeTab === i ? "active" : ""}"
-                  data-lp="${lpName}" data-tab="${i}">
+                  data-lp="${escAttr(lpName)}" data-tab="${i}">
             <span class="compact-tab-icon">${tab.icon}</span>
             <span class="compact-tab-label">${this._t(tab.key)}</span>
           </button>
@@ -742,9 +817,9 @@ const loadpointView = {
     const remaining = charging ? fmtRemainingDuration(this._hass, ents.charge_remaining_duration) : "";
 
     return `
-      <div class="loadpoint" data-lp-compact="${lpName}">
+      <div class="loadpoint" data-lp-compact="${escAttr(lpName)}">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || lpName}</span>
+          <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
           ${remaining ? `<span class="lp-remaining" title="${this._t("remaining")}">${remaining}</span>` : ""}
           <span class="lp-badge ${statusClass}">
             ${statusLabel}
@@ -934,8 +1009,8 @@ const loadpointView = {
     };
     const buttons = options.map(opt => `
         <button class="phase-btn ${opt === current ? "active" : ""}"
-                data-entity="${entityId}" data-value="${opt}">
-          ${LABELS[opt] ?? opt}
+                data-entity="${entityId}" data-value="${escAttr(opt)}">
+          ${LABELS[opt] ?? escHtml(opt)}
         </button>`).join("");
 
     // Same subline evcc shows under its Always-charge dropdown, as a tooltip so
@@ -981,8 +1056,8 @@ const loadpointView = {
     const euroIcon   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M15,18.5C12.49,18.5 10.32,17.08 9.24,15H15V13H8.58C8.53,12.67 8.5,12.34 8.5,12C8.5,11.66 8.53,11.33 8.58,11H15V9H9.24C10.32,6.92 12.5,5.5 15,5.5C16.61,5.5 18.09,6.09 19.23,7.07L21,5.3C19.41,3.87 17.3,3 15,3C11.08,3 7.76,5.51 6.52,9H3V11H6.06C6.02,11.33 6,11.66 6,12C6,12.34 6.02,12.67 6.06,13H3V15H6.52C7.76,18.49 11.08,21 15,21C17.31,21 19.41,20.13 21,18.7L19.22,16.93C18.09,17.91 16.61,18.5 15,18.5Z"/></svg>`;
     const smartChip  = smartLimit !== null ? `
       <button class="smart-cost-chip ${smartActive ? "active" : ""}"
-              data-lp-smart-cost-open="${lpName}">
-        ${isCo2Chip ? leafIcon : euroIcon} ≤ ${smartLimit} ${isCo2Chip ? "g" : smartUnit}
+              data-lp-smart-cost-open="${escAttr(lpName)}">
+        ${isCo2Chip ? leafIcon : euroIcon} ≤ ${smartLimit} ${isCo2Chip ? "g" : escHtml(smartUnit)}
       </button>` : "";
 
     const _boostLimitRaw = ents.battery_boost_limit
@@ -1002,8 +1077,8 @@ const loadpointView = {
     return `
       <div class="soc-section">
         <div class="soc-label-row">
-          ${validName ? `<span class="vehicle-name"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M5,11L6.5,6.5H17.5L19,11M17.5,16A1.5,1.5 0 0,1 16,14.5A1.5,1.5 0 0,1 17.5,13A1.5,1.5 0 0,1 19,14.5A1.5,1.5 0 0,1 17.5,16M6.5,16A1.5,1.5 0 0,1 5,14.5A1.5,1.5 0 0,1 6.5,13A1.5,1.5 0 0,1 8,14.5A1.5,1.5 0 0,1 6.5,16M18.92,6C18.72,5.42 18.16,5 17.5,5H6.5C5.84,5 5.28,5.42 5.08,6L3,12V20A1,1 0 0,0 4,21H5A1,1 0 0,0 6,20V19H18V20A1,1 0 0,0 19,21H20A1,1 0 0,0 21,20V12L18.92,6Z"/></svg> ${validName}</span>` : ""}
-          ${soc !== null ? `<span data-live-entity="${ents.vehicle_soc}" data-live-type="soc-pct"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${unitStr(this._hass, ents.vehicle_soc)}</span>` : ""}
+          ${validName ? `<span class="vehicle-name"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M5,11L6.5,6.5H17.5L19,11M17.5,16A1.5,1.5 0 0,1 16,14.5A1.5,1.5 0 0,1 17.5,13A1.5,1.5 0 0,1 19,14.5A1.5,1.5 0 0,1 17.5,16M6.5,16A1.5,1.5 0 0,1 5,14.5A1.5,1.5 0 0,1 6.5,13A1.5,1.5 0 0,1 8,14.5A1.5,1.5 0 0,1 6.5,16M18.92,6C18.72,5.42 18.16,5 17.5,5H6.5C5.84,5 5.28,5.42 5.08,6L3,12V20A1,1 0 0,0 4,21H5A1,1 0 0,0 6,20V19H18V20A1,1 0 0,0 19,21H20A1,1 0 0,0 21,20V12L18.92,6Z"/></svg> ${escHtml(validName)}</span>` : ""}
+          ${soc !== null ? `<span data-live-entity="${ents.vehicle_soc}" data-live-type="soc-pct"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${escHtml(unitStr(this._hass, ents.vehicle_soc))}</span>` : ""}
           ${range !== null ? `<span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M11.5 0L9 8H11V16H13V8H15L11.5 0M3 18V20H21V18L11.5 16L3 18Z"/></svg> ${range} km</span>` : ""}
         </div>
         ${soc !== null ? `
@@ -1063,7 +1138,7 @@ const loadpointView = {
       <div class="power-row ${charging ? "charging" : ""}">
         <span class="power-value"
               data-live-entity="${ents.charge_power}" data-live-type="power">
-          ${power} ${unit}
+          ${power} ${escHtml(unit)}
         </span>
         ${phaseStr ? `<span class="power-sep">·</span><span class="power-current">${phaseStr}</span>` : ""}
         ${current !== null ? `<span class="power-sep">·</span><span class="power-current">${current} A</span>` : ""}
@@ -1081,16 +1156,16 @@ const loadpointView = {
       const v = parseFloat(stateVal(this._hass, entityId));
       if (isNaN(v)) return "—";
       const unit = unitStr(this._hass, entityId);
-      return `${v.toFixed(decimals)}${unit ? " " + unit : ""}`;
+      return `${v.toFixed(decimals)}${unit ? " " + escHtml(unit) : ""}`;
     };
 
     const energy      = ents.session_energy          ? (() => { const v = parseFloat(stateVal(this._hass, ents.session_energy)); return isNaN(v) ? "—" : `${v.toFixed(2)} kWh`; })() : null;
-    const price       = ents.session_price           ? (() => { const v = parseFloat(stateVal(this._hass, ents.session_price)); const u = unitStr(this._hass, ents.session_price) || "€"; return isNaN(v) ? "—" : `${v.toFixed(2)} ${u}`; })() : null;
+    const price       = ents.session_price           ? (() => { const v = parseFloat(stateVal(this._hass, ents.session_price)); const u = unitStr(this._hass, ents.session_price) || "€"; return isNaN(v) ? "—" : `${v.toFixed(2)} ${escHtml(u)}`; })() : null;
     const fmtPerKwh = (entityId, decimals) => {
       const v = parseFloat(stateVal(this._hass, entityId));
       if (isNaN(v)) return "—";
       const unit = (unitStr(this._hass, entityId) || "").replace("/kWh", "").trim();
-      return `${v.toFixed(decimals)}${unit ? " " + unit : ""}`;
+      return `${v.toFixed(decimals)}${unit ? " " + escHtml(unit) : ""}`;
     };
     const pricePerKwh = ents.session_price_per_kwh   ? fmtPerKwh(ents.session_price_per_kwh, 3) : null;
     const co2PerKwh   = ents.session_co2_per_kwh     ? fmtPerKwh(ents.session_co2_per_kwh, 0)   : null;
@@ -1149,7 +1224,7 @@ const loadpointView = {
   _renderEmpty(allLoadpoints = {}) {
     const available = Object.keys(allLoadpoints);
     const hint = available.length > 0
-      ? `<p>${this._t("availableLoadpoints", { list: `<code>${available.join(", ")}</code>` })}</p>`
+      ? `<p>${this._t("availableLoadpoints", { list: `<code>${available.map(escHtml).join(", ")}</code>` })}</p>`
       : "";
     return `
       <div class="empty">
@@ -1180,7 +1255,7 @@ const loadpointView = {
     return `
       <div class="loadpoint lp-disabled" data-entity="${ents.disabled_in_config || ""}">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || lpName}</span>
+          <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
           <span class="lp-badge disabled">${this._t("loadpointDisabled")}</span>
         </div>
       </div>
@@ -1242,8 +1317,8 @@ const socControl = {
       };
       const buttons = options.map(opt => `
         <button class="phase-btn ${opt === current ? "active" : ""}"
-                data-entity="${entityId}" data-value="${opt}">
-          ${PHASE_LABELS[opt] ?? opt}
+                data-entity="${entityId}" data-value="${escAttr(opt)}">
+          ${PHASE_LABELS[opt] ?? escHtml(opt)}
         </button>`).join("");
       phasesHtml = `
         <div class="select-row">
@@ -1260,11 +1335,11 @@ const socControl = {
     const gearIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.68 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"/></svg>`;
 
     return `
-      <div class="current-block" data-lp-current="${lpName}">
+      <div class="current-block" data-lp-current="${escAttr(lpName)}">
         <div class="block-title-row">
           <span class="block-title">${this._t("chargeSettings")}</span>
           <button class="current-toggle-btn ${expanded ? "active" : ""}"
-                  data-lp-current-toggle="${lpName}"
+                  data-lp-current-toggle="${escAttr(lpName)}"
                   title="${expanded ? this._t("hideSettings") : this._t("showSettings")}">
             ${gearIcon}
           </button>
@@ -1286,7 +1361,7 @@ const socControl = {
             const active     = !isNaN(scTariff) && scTariff <= parseFloat(stateVal(this._hass, ents.smart_cost_limit) || 0);
             const clearId   = ents.smart_cost_limit.replace(/^number\./, "button.");
             const hasClear  = !!this._hass.states[clearId];
-            return `<div class="smart-cost-section" data-lp-smart-cost-section="${lpName}">` +
+            return `<div class="smart-cost-section" data-lp-smart-cost-section="${escAttr(lpName)}">` +
               this._sliderRow(ents.smart_cost_limit, label) +
               (active ? `<div class="smart-active-hint">⚡ ${this._t("smartCostActive")}</div>` : "") +
               (hasClear ? `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` : "") +
@@ -1304,7 +1379,7 @@ const socControl = {
               : false;
             const clearId   = ents.smart_feed_in_priority_limit.replace(/^number\./, "button.");
             const hasClear  = !!this._hass.states[clearId];
-            return `<div class="smart-cost-section" data-lp-feed-in-section="${lpName}">` +
+            return `<div class="smart-cost-section" data-lp-feed-in-section="${escAttr(lpName)}">` +
               this._sliderRow(ents.smart_feed_in_priority_limit, this._t("feedInPriorityLimit")) +
               (active ? `<div class="smart-active-hint">⚡ ${this._t("feedInPriorityActive")}</div>` : "") +
               (hasClear ? `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` : "") +
@@ -1368,7 +1443,7 @@ const socControl = {
                  data-entity="${entityId}"
                  data-domain="${domain}" />
           <button type="button" class="slider-val" data-slider-edit
-                  title="${this._t("sliderEditHint")}">${zeroLabel && val === 0 ? zeroLabel : `${val} ${unit}`}</button>
+                  title="${this._t("sliderEditHint")}">${zeroLabel && val === 0 ? zeroLabel : `${val} ${escHtml(unit)}`}</button>
         </div>
       </div>`;
   },
@@ -1428,7 +1503,7 @@ const socControl = {
       <button type="button" class="slider-edit-btn" data-edit-dec aria-label="−"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M19,13H5V11H19V13Z"/></svg></button>
       <div class="slider-edit-field">
         <input type="text" inputmode="decimal" class="slider-edit-input" autocomplete="off" spellcheck="false" />
-        <span class="slider-edit-unit">${unit}</span>
+        <span class="slider-edit-unit">${escHtml(unit)}</span>
       </div>
       <button type="button" class="slider-edit-btn" data-edit-inc aria-label="+"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"/></svg></button>
       <button type="button" class="slider-edit-btn slider-edit-ok" data-edit-ok
@@ -1562,7 +1637,7 @@ const socControl = {
           <input type="range"
                  min="${min}" max="${max}" step="${step}" value="${curPct}"
                  data-boost-entity="${limitId}"
-                 data-options='${JSON.stringify(options)}' />
+                 data-options='${escAttr(JSON.stringify(options))}' />
           <button type="button" class="slider-val boost-val" data-boost-edit
                   title="${this._t("sliderEditHint")}">${label}</button>
         </div>
@@ -1656,9 +1731,9 @@ const planningView = {
     const vehicleSelectHtml = allOptions.length > 0 ? `
       <div class="plan-row">
         <label>${this._t("vehicle")}</label>
-        <select class="plan-vehicle-select" data-lp="${lpName}" data-entity="${vehicleEntityId ?? ""}">
+        <select class="plan-vehicle-select" data-lp="${escAttr(lpName)}" data-entity="${vehicleEntityId ?? ""}">
           ${allOptions.map(id => `
-            <option value="${id}" ${id === defaultVehicle ? "selected" : ""}>${dbIdToName[id]}</option>
+            <option value="${escAttr(id)}" ${id === defaultVehicle ? "selected" : ""}>${escHtml(dbIdToName[id])}</option>
           `).join("")}
         </select>
       </div>` : "";
@@ -1686,7 +1761,7 @@ const planningView = {
                 data-entity="${contEntityId}"
                 data-domain="switch"
                 data-on="${contOn}"
-                data-lp="${lpName}">
+                data-lp="${escAttr(lpName)}">
           ${contOn ? this._t("toggleOn") : this._t("toggleOff")}
         </button>
       </div>` : "";
@@ -1705,9 +1780,9 @@ const planningView = {
     const preHtml = (preState && preOptions.length) ? `
       <div class="plan-row">
         <label>${this._t("planStrategyPrecondition")}</label>
-        <select class="plan-precondition-select" data-entity="${preEntityId}" data-lp="${lpName}">
+        <select class="plan-precondition-select" data-entity="${preEntityId}" data-lp="${escAttr(lpName)}">
           ${preOptions.map(opt => `
-            <option value="${opt}" ${opt === preCurrent ? "selected" : ""}>${fmtPre(opt)}</option>
+            <option value="${escAttr(opt)}" ${opt === preCurrent ? "selected" : ""}>${fmtPre(opt)}</option>
           `).join("")}
         </select>
       </div>` : "";
@@ -1725,7 +1800,7 @@ const planningView = {
       </div>` : "";
 
     return `
-      <div class="plan-block" data-lp="${lpName}">
+      <div class="plan-block" data-lp="${escAttr(lpName)}">
         <div class="plan-header">
           <span class="session-title">${this._t("chargePlan")}</span>
           ${planBadge}
@@ -1736,14 +1811,14 @@ const planningView = {
           <div class="plan-row">
             <label>${this._t("finishBy")}</label>
             <input type="datetime-local" class="plan-time-input"
-                   value="${defaultDt}" data-lp="${lpName}" />
+                   value="${defaultDt}" data-lp="${escAttr(lpName)}" />
           </div>
           <div class="plan-row">
             <label>${this._t("targetSoc")}</label>
             <div class="plan-soc-control">
               <input type="range" class="plan-soc-range"
                      min="20" max="100" step="5" value="${defaultSoc}"
-                     data-lp="${lpName}" />
+                     data-lp="${escAttr(lpName)}" />
               <button type="button" class="slider-val plan-soc-val" data-plan-soc-edit
                       title="${this._t("sliderEditHint")}">${defaultSoc} %</button>
             </div>
@@ -1753,9 +1828,9 @@ const planningView = {
         </div>
         ${this._renderPlanPreview(lpName)}
         <div class="plan-actions">
-          <button class="plan-btn save" data-lp="${lpName}">${this._t("setPlan")}</button>
+          <button class="plan-btn save" data-lp="${escAttr(lpName)}">${this._t("setPlan")}</button>
           ${(planActive || (planTime && planTime !== "unknown" && planTime !== "unavailable"))
-            ? `<button class="plan-btn delete" data-lp="${lpName}">${this._t("deletePlan")}</button>`
+            ? `<button class="plan-btn delete" data-lp="${escAttr(lpName)}">${this._t("deletePlan")}</button>`
             : ""}
         </div>
       </div>
@@ -1797,7 +1872,7 @@ const planningView = {
         forecastRates = primary.data.rates;
       }
     }
-    const unit = isCo2 ? "g CO₂/kWh" : (preview.currency ? `${preview.currency}/kWh` : "");
+    const unit = isCo2 ? "g CO₂/kWh" : (preview.currency ? `${escHtml(preview.currency)}/kWh` : "");
 
     const chart = this._renderPlanPreviewChart(forecastRates, preview.plan, preview, unit);
     const summary = this._renderPlanPreviewSummary(preview, unit);
@@ -1945,7 +2020,7 @@ const planningView = {
     const avgLabel = isCo2 ? "CO₂-Emission Ø" : `${this._t("planPreviewCost")} Ø`;
     const avgStr = isCo2
       ? `${Math.round(avgVal)} g/kWh`
-      : `${avgVal.toFixed(2)} ${currency}/kWh`;
+      : `${avgVal.toFixed(2)} ${escHtml(currency)}/kWh`;
 
     return `<div class="plan-preview-header">
       <div class="plan-preview-left">
@@ -1968,7 +2043,7 @@ const planningView = {
       return `
         <div class="loadpoint">
           <div class="lp-header">
-            <span class="lp-name">${this._config.title || lpName}</span>
+            <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
           </div>
           ${planHtml}
           ${sessionHtml}
@@ -2086,7 +2161,7 @@ const planningView = {
       return `
         <div class="loadpoint">
           <div class="lp-header">
-            <span class="lp-name">${name}</span>
+            <span class="lp-name">${escHtml(name)}</span>
           </div>
           ${this._renderRepeatPlansBlock(g)}
         </div>`;
@@ -2156,7 +2231,7 @@ const priorityView = {
     return `
       <div class="priority-mode" data-priority-root>
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("priority")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("priority"))}</span>
         </div>
         <div class="priority-hint">${this._t("priorityHint")}</div>
         <div class="priority-list">${rowsHtml}</div>
@@ -2533,7 +2608,7 @@ const siteView = {
       const fs = s.w < 80 ? 18 : 24;
       return `<text x="${s.xMid}" y="${BAR_Y + BAR_H / 2 + (fs === 18 ? 6 : 8)}"
                     text-anchor="middle" font-size="${fs}" font-weight="700"
-                    fill="#fff" style="text-shadow:0 1px 3px rgba(0,0,0,0.5)">${s.label}</text>`;
+                    fill="#fff" style="text-shadow:0 1px 3px rgba(0,0,0,0.5)">${escHtml(s.label)}</text>`;
     }).join("");
 
     const MDI = {
@@ -2636,8 +2711,8 @@ const siteView = {
       <div class="site-row ${indent ? "site-row-indent" : ""}${entityId ? " site-row-clickable" : ""}"${entityId ? ` data-more-info="${entityId}"` : ""}>
         <span class="site-row-icon">${icon}</span>
         <span class="site-row-label">
-          <span class="site-row-name">${label}</span>
-          ${sub ? `<span class="site-row-sub">${sub}</span>` : ""}
+          <span class="site-row-name">${escHtml(label)}</span>
+          ${sub ? `<span class="site-row-sub">${escHtml(sub)}</span>` : ""}
         </span>
         <span class="site-row-pw ${pwClass}">${fmtPow(pw)}</span>
       </div>`;
@@ -2645,7 +2720,7 @@ const siteView = {
     const section = (title, total, rows) => `
       <div class="site-section">
         <div class="site-section-head">
-          <span class="site-section-title">${title}</span>
+          <span class="site-section-title">${escHtml(title)}</span>
           <span class="site-section-total">${fmtPow(total)}</span>
         </div>
         ${rows}
@@ -2723,7 +2798,7 @@ const siteView = {
     const energyRow = (mdiPath, label, v, entityId) => v === null ? "" : `
       <div class="site-row${entityId ? " site-row-clickable" : ""}"${entityId ? ` data-more-info="${entityId}"` : ""}>
         <span class="site-row-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="vertical-align:middle"><path d="${mdiPath}"/></svg></span>
-        <span class="site-row-label"><span class="site-row-name">${label}</span></span>
+        <span class="site-row-label"><span class="site-row-name">${escHtml(label)}</span></span>
         <span class="site-row-pw">${fmtKwh(v)}</span>
       </div>`;
     const energyRows = [
@@ -2749,7 +2824,7 @@ const siteView = {
     return `
       <div class="site-block">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("overview")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("overview"))}</span>
         </div>
         <div class="flow-wrap-clickable" role="button" tabindex="0"
              onclick="window.__evccCards.get('${this._cardId}')._toggleSite()"
@@ -2988,7 +3063,7 @@ const flowView = {
       const textX = iconX - 4;
       const sub = s.sub ? `
         <text x="${textX}" y="${s.cy + 12}" text-anchor="end" dominant-baseline="central"
-              font-size="9" style="fill:var(--secondary-text-color)">${s.sub}</text>` : "";
+              font-size="9" style="fill:var(--secondary-text-color)">${escHtml(s.sub)}</text>` : "";
       const inner = `
         <rect x="${s.x}" y="${s.y}" width="${NODE_W}" height="${s.h}" rx="3" fill="${s.color}"/>
         ${iconPath ? svgMdi(iconPath, iconX, iconY, s.color) : ""}
@@ -3007,7 +3082,7 @@ const flowView = {
       const textX = iconX + ICON_SIZE + 4;
       const sub = d.sub ? `
         <text x="${textX}" y="${d.cy + 12}" text-anchor="start" dominant-baseline="central"
-              font-size="9" style="fill:var(--secondary-text-color)">${d.sub}</text>` : "";
+              font-size="9" style="fill:var(--secondary-text-color)">${escHtml(d.sub)}</text>` : "";
       const inner = `
         <rect x="${d.x}" y="${d.y}" width="${NODE_W}" height="${d.h}" rx="3" fill="${d.color}"/>
         ${iconPath ? svgMdi(iconPath, iconX, iconY, d.color) : ""}
@@ -3060,8 +3135,8 @@ const flowView = {
       <div class="site-row ${indent ? "site-row-indent" : ""}${entityId ? " site-row-clickable" : ""}"${entityId ? ` data-more-info="${entityId}"` : ""}>
         <span class="site-row-icon">${icon}</span>
         <span class="site-row-label">
-          <span class="site-row-name">${label}</span>
-          ${sub ? `<span class="site-row-sub">${sub}</span>` : ""}
+          <span class="site-row-name">${escHtml(label)}</span>
+          ${sub ? `<span class="site-row-sub">${escHtml(sub)}</span>` : ""}
         </span>
         <span class="site-row-pw ${pwClass}">${fmtPow(pw)}</span>
       </div>`;
@@ -3069,7 +3144,7 @@ const flowView = {
     const section = (title, total, rows) => `
       <div class="site-section">
         <div class="site-section-head">
-          <span class="site-section-title">${title}</span>
+          <span class="site-section-title">${escHtml(title)}</span>
           <span class="site-section-total">${fmtPow(total)}</span>
         </div>
         ${rows}
@@ -3149,7 +3224,7 @@ const flowView = {
     return `
       <div class="site-block">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("energyFlow") || this._t("overview")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("energyFlow") || this._t("overview"))}</span>
         </div>
         ${sankeySvg}
         <div class="site-table" style="${siteExpanded ? '' : 'display:none'}">
@@ -3219,8 +3294,8 @@ const gridView = {
     const chip = (dot, label, sub, entityId = null) =>
       `<div class="s2-chip${entityId ? " s2-chip-clickable" : ""}"${entityId ? ` data-more-info="${entityId}"` : ""}>
         <span class="s2-chip-dot" style="background:${dot}"></span>
-        <span class="s2-chip-name">${label}</span>
-        ${sub ? `<span class="s2-chip-sub">${sub}</span>` : ""}
+        <span class="s2-chip-name">${escHtml(label)}</span>
+        ${sub ? `<span class="s2-chip-sub">${escHtml(sub)}</span>` : ""}
       </div>`;
 
     const lpChips = Object.entries(loadpoints)
@@ -3278,7 +3353,7 @@ const gridView = {
     return `
       <div class="s2-block">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("grid")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("grid"))}</span>
         </div>
         <div class="s2-net">
           <div class="s2-net-label">${this._t("gridStatus")}</div>
@@ -3579,7 +3654,7 @@ const statisticsLegacy = {
 
       const hitRect = `<rect class="evcc-bar" x="${x0}" y="${MT}" width="${bw}" height="${CH}"
         fill="transparent" style="cursor:pointer"
-        data-label="${d.labelStr.replace(/"/g, "&quot;")}"
+        data-label="${escAttr(d.labelStr)}"
         data-total="${d.delta != null ? d.delta.toFixed(1) : ""}"
         data-solar="${d.solarDelta != null ? d.solarDelta.toFixed(1) : ""}"/>`;
 
@@ -3612,7 +3687,7 @@ const statisticsLegacy = {
     const kpis = [
       kpi(kwh,   this._t("statsTotalCharged"), v => `${Math.round(v)} kWh`, null),
       kpi(solar, this._t("statsSolarShare"),   v => `${Math.round(v)} %`,   solar > 0 ? "var(--evcc-green)" : null),
-      kpi(price, this._t("statsAvgPrice"),     v => `${v.toFixed(2)} ${unitStr(this._hass, priceId)}`, null),
+      kpi(price, this._t("statsAvgPrice"),     v => `${v.toFixed(2)} ${escHtml(unitStr(this._hass, priceId))}`, null),
     ].join("");
 
     const { kwhId: chartKwhId } = this._getStatEntityIds("total");
@@ -3639,7 +3714,7 @@ const statisticsLegacy = {
     return `
       <div>
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("statistics")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("statistics"))}</span>
         </div>
         ${this._renderStatsPeriodTabs()}
         ${noDataHint}
@@ -3704,10 +3779,10 @@ const statisticsView = {
 
   // Footer scope (compact, no stepper): current month / current year / all.
   _footerScope() {
-    const p = this._config.stats_period ?? "total";
+    const p = normalizeStatsPeriod(this._config.stats_period, "total");
     const now = new Date();
-    if (p === "month" || p === "30d") return { kind: "month", year: now.getFullYear(), month: now.getMonth() };
-    if (p === "year" || p === "365d" || p === "thisYear") return { kind: "year", year: now.getFullYear() };
+    if (p === "month") return { kind: "month", year: now.getFullYear(), month: now.getMonth() };
+    if (p === "year")  return { kind: "year",  year: now.getFullYear() };
     return { kind: "total" };
   },
 
@@ -3731,7 +3806,7 @@ const statisticsView = {
   },
 
   _metricFmt(metric, currency) {
-    if (metric === "cost") return { unit: currency || "", axis: currency || "", fmt: v => v.toFixed(2) };
+    if (metric === "cost") return { unit: escHtml(currency || ""), axis: escHtml(currency || ""), fmt: v => v.toFixed(2) };
     if (metric === "co2")  return { unit: "kg", axis: "kg", fmt: v => v >= 10 ? String(Math.round(v)) : v.toFixed(2) };
     return { unit: "kWh", axis: "kWh", fmt: v => v >= 100 ? String(Math.round(v)) : v.toFixed(1) };
   },
@@ -3961,7 +4036,7 @@ const statisticsView = {
       const hit = `<rect class="evcc-bar" data-idx="${i}" x="${x0}" y="${MT}" width="${bw}" height="${CH}" fill="transparent" style="cursor:pointer"/>`;
       return segs + hit + labelSvg;
     }).join("");
-    const legend = `<div class="stats-legend">${series.map(s => `<span class="sl-item"><span class="sl-dot" style="background:${s.color}"></span>${s.label}</span>`).join("")}</div>`;
+    const legend = `<div class="stats-legend">${series.map(s => `<span class="sl-item"><span class="sl-dot" style="background:${s.color}"></span>${escHtml(s.label)}</span>`).join("")}</div>`;
     return `<div class="evcc-chart-wrap"><svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${grid}${axisLbl}${bars}</svg><div class="evcc-chart-tooltip" hidden></div></div>${legend}`;
   },
 
@@ -3980,7 +4055,7 @@ const statisticsView = {
       </div>`;
     const kpis = [ kpi(k.kwh, this._t("statsTotalCharged"), v => `${Math.round(v)} kWh`, null) ];
     if (k.hasSolar) kpis.push(kpi(k.solarPct, this._t("statsSolarShare"), v => `${Math.round(v)} %`, k.solarPct > 0 ? "var(--evcc-green)" : null));
-    if (k.hasPrice) kpis.push(kpi(k.totalCost, this._t("statsTotalCost"), v => `${v.toFixed(2)} ${cur}`, null));
+    if (k.hasPrice) kpis.push(kpi(k.totalCost, this._t("statsTotalCost"), v => `${v.toFixed(2)} ${escHtml(cur)}`, null));
     if (k.hasCo2)   kpis.push(kpi(k.avgCo2, this._t("statsAvgCo2"), v => `${v >= 10 ? Math.round(v) : v.toFixed(1)} g/kWh`, null));
 
     // Stacked chart for the selected metric × grouping.
@@ -3995,7 +4070,7 @@ const statisticsView = {
     return `
       <div>
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("statistics")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("statistics"))}</span>
         </div>
         <div class="stats-controls">
           ${this._renderStatsScopeTabs()}
@@ -4019,15 +4094,14 @@ const statisticsView = {
     const items = [
       `<span class="sf-item"><span class="sf-val">${Math.round(k.kwh)} kWh</span><span class="sf-lbl">${this._t("statsCharged")}</span></span>`,
       k.hasSolar ? `<span class="sf-item"><span class="sf-val" style="color:var(--evcc-green)">${Math.round(k.solarPct)} %</span><span class="sf-lbl">${this._t("statsSolarShare")}</span></span>` : "",
-      k.hasPrice ? `<span class="sf-item"><span class="sf-val">${k.avgPrice.toFixed(2)} ${cur}/kWh</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
+      k.hasPrice ? `<span class="sf-item"><span class="sf-val">${k.avgPrice.toFixed(2)} ${escHtml(cur)}/kWh</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
     ].filter(Boolean);
     if (k.kwh <= 0) return "";
     return `<div class="stats-footer"><div class="sf-period">${periodLabel}</div><div class="sf-items">${items.join('<span class="sf-sep"></span>')}</div></div>`;
   },
 
   _renderStatsFooter() {
-    const period = this._config.stats_period ?? "total";
-    if (period === "none") return "";
+    if (normalizeStatsPeriod(this._config.stats_period, "total") === "none") return "";
     if (this._hasCmd("sessions")) {
       const res = this._wsSessions();
       if (res && res.data && Array.isArray(res.data.sessions)) {
@@ -4035,6 +4109,10 @@ const statisticsView = {
       }
       // pending/error → fall through to the entity path below
     }
+    // The legacy path has periods of its own, so the configured value is mapped
+    // onto them here. Not via this._statsPeriod: that one follows the period
+    // tabs of the stats mode, the footer stays on what the config asked for.
+    const period = legacyStatsPeriod(this._config.stats_period, "total");
     const { kwhId, solarId, priceId } = this._getStatEntityIds(period);
     if (!kwhId && !solarId && !priceId) return "";
 
@@ -4049,7 +4127,7 @@ const statisticsView = {
     const items = [
       kwhId   ? `<span class="sf-item"><span class="sf-val">${Math.round(kwh)} kWh</span><span class="sf-lbl">${this._t("statsCharged")}</span></span>` : "",
       solarId ? `<span class="sf-item"><span class="sf-val" style="color:var(--evcc-green)">${Math.round(solar)} %</span><span class="sf-lbl">${this._t("statsSolarShare")}</span></span>` : "",
-      priceId ? `<span class="sf-item"><span class="sf-val">${price.toFixed(2)} ${unitStr(this._hass, priceId)}</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
+      priceId ? `<span class="sf-item"><span class="sf-val">${price.toFixed(2)} ${escHtml(unitStr(this._hass, priceId))}</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
     ].filter(Boolean);
 
     if (items.length === 0) return "";
@@ -4069,7 +4147,7 @@ const statisticsView = {
       if (!res) {
         return `
           <div>
-            <div class="lp-header"><span class="lp-name">${this._config.title || this._t("statistics")}</span></div>
+            <div class="lp-header"><span class="lp-name">${escHtml(this._config.title || this._t("statistics"))}</span></div>
             ${this._renderStatsScopeTabs()}
             <div class="stats-chart-loading">…</div>
           </div>`;
@@ -4206,7 +4284,7 @@ const batteryView = {
     return `
       <div class="battery-block">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("homeBattery")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("homeBattery"))}</span>
         </div>
         ${tabUsage}
       </div>`;
@@ -4337,7 +4415,7 @@ const debugView = {
     const siteSplit    = this._splitCoreOptional(expectedSite, site || {}, coreSite);
 
     const pill = (tone, text) => `<span class="debug-pill ${tone}">${text}</span>`;
-    const escUa = ua.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const escUa = escHtml(ua);
 
     const lpRows = lpNames.length === 0
       ? `<div class="debug-empty">—</div>`
@@ -4349,7 +4427,7 @@ const debugView = {
           return `
             <li>
               <div class="debug-list-head">
-                <code>${name}</code>
+                <code>${escHtml(name)}</code>
                 ${pill(coreTone, `${this._t("debugCore")} ${split.foundCore}/${split.core}`)}
                 ${pill("info", `${this._t("debugOptional")} ${split.foundOpt}/${split.opt}`)}
               </div>
@@ -4368,7 +4446,7 @@ const debugView = {
           const count = Object.keys(meters[name]).length;
           return `<li>
             <div class="debug-list-head">
-              <code>${name}</code>
+              <code>${escHtml(name)}</code>
               <span class="debug-count">${count} ${this._t("debugEntities")}</span>
               ${pill("warn", this._t("debugOrphan"))}
             </div>
@@ -4400,9 +4478,9 @@ const debugView = {
           <div class="debug-section-title">${this._t("debugVersions")}</div>
           <ul class="debug-kv">
             <li><strong>Card:</strong> <code>${EVCC_CARD_VERSION}</code></li>
-            <li><strong>Home Assistant:</strong> <code>${haVer}</code></li>
+            <li><strong>Home Assistant:</strong> <code>${escHtml(haVer)}</code></li>
             <li><strong>Browser:</strong> <code>${escUa}</code></li>
-            <li><strong>Language:</strong> <code>${lang}</code>${cfgLang ? ` (configured: <code>${cfgLang}</code>)` : ""}</li>
+            <li><strong>Language:</strong> <code>${escHtml(lang)}</code>${cfgLang ? ` (configured: <code>${escHtml(cfgLang)}</code>)` : ""}</li>
           </ul>
         </div>
 
@@ -4410,8 +4488,8 @@ const debugView = {
           <div class="debug-section-title">${this._t("debugIntegration")}</div>
           <ul class="debug-kv">
             <li><strong>${this._t("debugEvccEntities")}:</strong> ${evccCount} ${evccCount > 0 ? pill("ok", "OK") : pill("err", "0")}</li>
-            <li><strong>${this._t("debugPrefixAuto")}:</strong> <code>${this._detectedPrefix || "—"}</code></li>
-            <li><strong>${this._t("debugPrefixCfg")}:</strong> <code>${this._config.prefix || "—"}</code></li>
+            <li><strong>${this._t("debugPrefixAuto")}:</strong> <code>${escHtml(this._detectedPrefix || "—")}</code></li>
+            <li><strong>${this._t("debugPrefixCfg")}:</strong> <code>${escHtml(this._config.prefix || "—")}</code></li>
           </ul>
           ${evccCount === 0 ? `<div class="debug-warn-box">${this._t("debugNoIntg")}</div>` : ""}
         </div>
@@ -4419,27 +4497,27 @@ const debugView = {
         <div class="debug-section">
           <div class="debug-section-title">WebSocket API</div>
           <ul class="debug-kv">
-            <li><strong>Config entry id:</strong> <code>${this._entryId || "—"}</code></li>
+            <li><strong>Config entry id:</strong> <code>${escHtml(this._entryId || "—")}</code></li>
             ${!this._capsLoaded
               ? `<li><em>Probing capabilities…</em></li>`
               : !this._caps || this._caps.commands.length === 0
                 ? `<li>${pill("warn", "not supported")} <em>(older ha-evcc / unknown command)</em></li>`
                 : (() => {
                     const items = [];
-                    items.push(`<li><strong>Integration version:</strong> <code>${this._caps.version ?? "—"}</code></li>`);
-                    items.push(`<li><strong>Commands:</strong> ${this._caps.commands.map(c => `<code>${c}</code>`).join(", ")}</li>`);
+                    items.push(`<li><strong>Integration version:</strong> <code>${escHtml(this._caps.version ?? "—")}</code></li>`);
+                    items.push(`<li><strong>Commands:</strong> ${this._caps.commands.map(c => `<code>${escHtml(c)}</code>`).join(", ")}</li>`);
                     const lpMap = Object.entries(this._lpIndexMap || {});
-                    items.push(`<li><strong>Loadpoint index map:</strong> ${lpMap.length ? lpMap.map(([id, i]) => `<code>${id}=${i}</code>`).join(", ") : `${pill("warn", "fallback")} <em>(heuristic/override; older ha-evcc)</em>`}</li>`);
+                    items.push(`<li><strong>Loadpoint index map:</strong> ${lpMap.length ? lpMap.map(([id, i]) => `<code>${escHtml(id)}=${i}</code>`).join(", ") : `${pill("warn", "fallback")} <em>(heuristic/override; older ha-evcc)</em>`}</li>`);
                     // Show cached probe results (prefetched by _prefetchDebugProbes).
                     const fmtProbe = (label, cacheKey, fmt) => {
                       const c = this._wsCache[cacheKey];
                       if (!c) return `<li><strong>${label}:</strong> <em>loading…</em></li>`;
-                      if (c.result.error) return `<li><strong>${label}:</strong> ${pill("err", "error")} <code>${c.result.error}</code></li>`;
+                      if (c.result.error) return `<li><strong>${label}:</strong> ${pill("err", "error")} <code>${escHtml(c.result.error)}</code></li>`;
                       return `<li><strong>${label}:</strong> ${fmt(c.result.data)}</li>`;
                     };
                     if (this._hasCmd("forecast"))
                       items.push(fmtProbe("forecast (grid)", "forecast:grid",
-                        d => `${Array.isArray(d?.rates) ? d.rates.length : 0} rates${d?.unit ? ` (${d.unit})` : ""}`));
+                        d => `${Array.isArray(d?.rates) ? d.rates.length : 0} rates${d?.unit ? ` (${escHtml(d.unit)})` : ""}`));
                     if (this._hasCmd("sessions"))
                       items.push(fmtProbe("sessions", "sessions::",
                         d => `${Array.isArray(d?.sessions) ? d.sessions.length : 0} sessions`));
@@ -4472,13 +4550,13 @@ const debugView = {
         <div class="debug-section">
           <div class="debug-section-title">${this._t("debugCardConfig")}</div>
           ${cfgNote}
-          <pre class="debug-yaml">${cfgYaml.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
+          <pre class="debug-yaml">${escHtml(cfgYaml)}</pre>
         </div>
 
         <div class="debug-section">
           <div class="debug-section-title">${this._t("debugTranslations")}</div>
           <ul class="debug-kv">
-            <li><strong>${this._t("debugLoaded")}:</strong> <code>${loadedLocales.join(", ") || "—"}</code></li>
+            <li><strong>${this._t("debugLoaded")}:</strong> <code>${escHtml(loadedLocales.join(", ")) || "—"}</code></li>
           </ul>
         </div>
       </div>
@@ -4774,8 +4852,8 @@ const listeners = {
           if (!b || !(b.total > 0)) { tooltip.hidden = true; return; }
           const mf = this._metricFmt(metric, currency);
           const rows = series.filter(s => (b.seg[s.key] || 0) > 0)
-            .map(s => `<div class="ectt-row">${dot(s.color)}<span class="ectt-name">${s.label}</span><span class="ectt-val">${mf.fmt(b.seg[s.key])} ${mf.unit}</span></div>`).join("");
-          tooltip.innerHTML = `<div class="ectt-header">${b.labelFull || b.labelStr}</div>${rows}<div class="ectt-summary">${mf.fmt(b.total)} ${mf.unit} ${this._t("total")}</div>`;
+            .map(s => `<div class="ectt-row">${dot(s.color)}<span class="ectt-name">${escHtml(s.label)}</span><span class="ectt-val">${mf.fmt(b.seg[s.key])} ${mf.unit}</span></div>`).join("");
+          tooltip.innerHTML = `<div class="ectt-header">${escHtml(b.labelFull || b.labelStr)}</div>${rows}<div class="ectt-summary">${mf.fmt(b.total)} ${mf.unit} ${this._t("total")}</div>`;
           positionTooltip(bar);
           tooltip.dataset.activeBar = barKey(bar);
           return;
@@ -4788,7 +4866,7 @@ const listeners = {
         const solarColor = getComputedStyle(chartWrap).getPropertyValue("--evcc-green").trim() || "#22c55e";
         const gridColor  = getComputedStyle(chartWrap).getPropertyValue("--primary-color").trim() || "#3b82f6";
         tooltip.innerHTML =
-          `<div class="ectt-header">${bar.dataset.label}</div>` +
+          `<div class="ectt-header">${escHtml(bar.dataset.label)}</div>` +
           (solar != null ? `<div class="ectt-row">${dot(solarColor)}<span class="ectt-name">${this._t("solar")}</span><span class="ectt-val">${bar.dataset.solar} kWh</span></div>` : "") +
           (grid  != null ? `<div class="ectt-row">${dot(gridColor)}<span class="ectt-name">${this._t("grid")}</span><span class="ectt-val">${grid} kWh</span></div>` : "") +
           `<div class="ectt-summary">${total} kWh ${this._t("total")}</div>`;
@@ -5893,10 +5971,20 @@ class EvccCard extends HTMLElement {
         if (this._hass) this._render();
       }, 1500);
     };
-    window.addEventListener("evcc-plan-reset", this._onPlanReset);
   }
 
+  // Lovelace may detach a card and attach the same instance again (view switch,
+  // re-order, edit mode). Everything disconnectedCallback tears down has to be
+  // rebuilt here, or the re-mounted card is only half alive.
   connectedCallback() {
+    window.addEventListener("evcc-plan-reset", this._onPlanReset);
+    // The inline handlers of the site and flow views reach the card through this
+    // map, so its entry has to come back with the element. On the very first
+    // mount there is no id yet; _render creates it.
+    if (this._cardId) {
+      window.__evccCards = window.__evccCards || new Map();
+      window.__evccCards.set(this._cardId, this);
+    }
     if (!this._countdownInterval) {
       this._countdownInterval = setInterval(() => this._tickCountdowns(), 1000);
     }
@@ -5904,11 +5992,14 @@ class EvccCard extends HTMLElement {
 
   disconnectedCallback() {
     window.removeEventListener("evcc-plan-reset", this._onPlanReset);
+    if (this._cardId) window.__evccCards?.delete(this._cardId);
     if (this._countdownInterval) {
       clearInterval(this._countdownInterval);
       this._countdownInterval = null;
     }
-    // Drop on-demand WS caches; a re-mount re-probes capabilities/entry_id.
+    // Drop the on-demand WS caches. Capabilities and entry_id are kept on
+    // purpose: they do not change while the page lives, and re-probing them on
+    // every re-mount would be a backend call for nothing.
     this._wsCache    = {};
     this._wsInflight = {};
   }
@@ -5928,7 +6019,7 @@ class EvccCard extends HTMLElement {
 
     if (!this._integrationDetected && !this._detectingIntegration) {
       this._detectingIntegration = true;
-      detectIntegration(hass).then(({ prefix, entryId }) => {
+      detectIntegration(hass, this._config.prefix ?? null).then(({ prefix, entryId }) => {
         this._detectingIntegration = false;
         this._integrationDetected = true;
         this._entryId = entryId;
@@ -5977,7 +6068,22 @@ class EvccCard extends HTMLElement {
     }
 
     const lang = this._config.language || (hass.language ?? "de");
-    return lang + "|" + this._evccIds.map(id => `${id}=${hass.states[id]?.state}`).join("|");
+    // \u001f (unit separator) keeps attribute values from colliding with the
+    // key's own delimiters; a title or an option may contain anything else.
+    return lang + "|" + this._evccIds.map(id => {
+      const s = hass.states[id];
+      if (!s) return `${id}=`;
+      let part = `${id}=${s.state}`;
+      const a = s.attributes;
+      if (a) {
+        for (const name of RENDER_ATTRS) {
+          const v = a[name];
+          if (v === undefined) continue;
+          part += `\u001f${name}=${typeof v === "object" && v !== null ? JSON.stringify(v) : v}`;
+        }
+      }
+      return part;
+    }).join("|");
   }
 
   static getConfigElement() {
@@ -5990,13 +6096,17 @@ class EvccCard extends HTMLElement {
 
   setConfig(config) {
     this._config = config || {};
-    const validPeriods = ["30d", "365d", "thisYear", "total"];
-    if (validPeriods.includes(config?.stats_period)) {
-      this._statsPeriod = config.stats_period;
-    }
-    // Sessions stats path scope (Month/Year/Total); map legacy values too.
-    const scopeMap = { total: "total", "30d": "month", "365d": "year", thisYear: "year" };
-    this._statsScope = scopeMap[config?.stats_period] ?? "month";
+    // Both stats paths are fed from the same normalised value, so the current
+    // vocabulary (month/year/total/none) and the legacy one (30d/365d/thisYear)
+    // steer them the same way. The stats mode opens on the most recent month
+    // when nothing is configured; `none` only hides the footer, so the full view
+    // shows that default too.
+    const rawPeriod  = config?.stats_period;
+    const scope      = normalizeStatsPeriod(rawPeriod, "month");
+    this._statsScope = scope === "none" ? "month" : scope;
+    // The legacy path keeps a configured legacy value exactly as it is, and
+    // defaults to "total" rather than to the stats mode's most recent month.
+    this._statsPeriod = legacyStatsPeriod(rawPeriod, "total");
     if (this._statsMetric == null) this._statsMetric = "energy"; // energy | cost | co2
     if (this._statsGroup  == null) this._statsGroup  = "solar";  // solar | loadpoint | vehicle
     const validSizes = ["small", "medium", "large"];
@@ -6184,7 +6294,7 @@ class EvccCard extends HTMLElement {
         el.style.background = socFillGradient(soc, minSoc, limitSoc);
       } else if (type === "soc-pct") {
         const soc = parseFloat(stateVal(this._hass, entityId)) || 0;
-        el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${unitStr(this._hass, entityId)}`;
+        el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${escHtml(unitStr(this._hass, entityId))}`;
       } else if (type === "power") {
         el.textContent = `${parseFloat(stateVal(this._hass, entityId)).toFixed(1)} ${unitStr(this._hass, entityId)}`;
       }
@@ -6282,7 +6392,7 @@ class EvccCardEditor extends HTMLElement {
   }
 
   _esc(str) {
-    return String(str).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return escHtml(str);
   }
 
   _fire() {

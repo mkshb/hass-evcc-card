@@ -5,31 +5,50 @@ import { isOn } from "../utils/state.js";
 // `config/entity_registry/list` call. The entry_id is required by the ha-evcc
 // WebSocket data API commands (evcc_intg/forecast|sessions|plan_preview); every
 // evcc_intg registry entry carries it in `config_entry_id`.
-export async function detectIntegration(hass) {
+//
+// Both values are taken from the SAME config entry. ha-evcc builds the entity
+// prefix from the entry title (system_id = slugify(config_entry.title)), so a
+// second evcc instance means a second prefix and a second entry id. Reading the
+// prefix from one entry and the entry id from another would show the entities of
+// one installation while asking the other one for forecast, sessions and plan
+// previews. `preferredPrefix` is the card's configured prefix, which decides
+// which instance is meant; without it the first entry in the registry wins.
+export async function detectIntegration(hass, preferredPrefix = null) {
   try {
     const entities = await hass.callWS({ type: "config/entity_registry/list" });
     const evccEnts = entities.filter(e => e.platform === "evcc_intg");
-    if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null };
-
-    const entryId = evccEnts.find(e => e.config_entry_id)?.config_entry_id ?? null;
+    if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null, instances: [] };
 
     const siteSuffixes = FEATURES.filter(f => !f.lp);
-    for (const ent of evccEnts) {
-      const dotIdx = ent.entity_id.indexOf(".");
-      const domain = ent.entity_id.slice(0, dotIdx);
-      const slug   = ent.entity_id.slice(dotIdx + 1);
-
+    const prefixOf = (entityId) => {
+      const dotIdx = entityId.indexOf(".");
+      const domain = entityId.slice(0, dotIdx);
+      const slug   = entityId.slice(dotIdx + 1);
       for (const feat of siteSuffixes) {
         if (feat.domain === domain && slug.endsWith(feat.suffix)) {
           const detected = slug.slice(0, slug.length - feat.suffix.length);
-          if (detected.length > 0) return { prefix: detected, entryId };
+          if (detected.length > 0) return detected;
         }
       }
+      return null;
+    };
+
+    // One group per config entry, in registry order; the prefix of a group comes
+    // from its own first site entity.
+    const byEntry = new Map();
+    for (const ent of evccEnts) {
+      const key = ent.config_entry_id ?? null;
+      if (!byEntry.has(key)) byEntry.set(key, { entryId: key, prefix: null });
+      const group = byEntry.get(key);
+      if (!group.prefix) group.prefix = prefixOf(ent.entity_id);
     }
-    return { prefix: "evcc_", entryId };
+
+    const instances = [...byEntry.values()].map(g => ({ prefix: g.prefix ?? "evcc_", entryId: g.entryId }));
+    const chosen = (preferredPrefix && instances.find(i => i.prefix === preferredPrefix)) || instances[0];
+    return { prefix: chosen.prefix, entryId: chosen.entryId, instances };
   } catch (e) {
     console.warn("[evcc-card] Could not detect integration from entity registry:", e);
-    return { prefix: "evcc_", entryId: null };
+    return { prefix: "evcc_", entryId: null, instances: [] };
   }
 }
 

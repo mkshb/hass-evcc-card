@@ -1,5 +1,6 @@
 import { EVCC_CARD_VERSION, FEATURES } from "../core/constants.js";
 import { discoverEntities } from "../core/entity-discovery.js";
+import { escHtml } from "../utils/html.js";
 
 // Debug mode: expected entities, config dump, debug report. Methods are mixed into EvccCard.prototype.
 export const debugView = {
@@ -125,7 +126,7 @@ export const debugView = {
     const siteSplit    = this._splitCoreOptional(expectedSite, site || {}, coreSite);
 
     const pill = (tone, text) => `<span class="debug-pill ${tone}">${text}</span>`;
-    const escUa = ua.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const escUa = escHtml(ua);
 
     const lpRows = lpNames.length === 0
       ? `<div class="debug-empty">—</div>`
@@ -137,7 +138,7 @@ export const debugView = {
           return `
             <li>
               <div class="debug-list-head">
-                <code>${name}</code>
+                <code>${escHtml(name)}</code>
                 ${pill(coreTone, `${this._t("debugCore")} ${split.foundCore}/${split.core}`)}
                 ${pill("info", `${this._t("debugOptional")} ${split.foundOpt}/${split.opt}`)}
               </div>
@@ -156,7 +157,7 @@ export const debugView = {
           const count = Object.keys(meters[name]).length;
           return `<li>
             <div class="debug-list-head">
-              <code>${name}</code>
+              <code>${escHtml(name)}</code>
               <span class="debug-count">${count} ${this._t("debugEntities")}</span>
               ${pill("warn", this._t("debugOrphan"))}
             </div>
@@ -188,9 +189,9 @@ export const debugView = {
           <div class="debug-section-title">${this._t("debugVersions")}</div>
           <ul class="debug-kv">
             <li><strong>Card:</strong> <code>${EVCC_CARD_VERSION}</code></li>
-            <li><strong>Home Assistant:</strong> <code>${haVer}</code></li>
+            <li><strong>Home Assistant:</strong> <code>${escHtml(haVer)}</code></li>
             <li><strong>Browser:</strong> <code>${escUa}</code></li>
-            <li><strong>Language:</strong> <code>${lang}</code>${cfgLang ? ` (configured: <code>${cfgLang}</code>)` : ""}</li>
+            <li><strong>Language:</strong> <code>${escHtml(lang)}</code>${cfgLang ? ` (configured: <code>${escHtml(cfgLang)}</code>)` : ""}</li>
           </ul>
         </div>
 
@@ -198,8 +199,8 @@ export const debugView = {
           <div class="debug-section-title">${this._t("debugIntegration")}</div>
           <ul class="debug-kv">
             <li><strong>${this._t("debugEvccEntities")}:</strong> ${evccCount} ${evccCount > 0 ? pill("ok", "OK") : pill("err", "0")}</li>
-            <li><strong>${this._t("debugPrefixAuto")}:</strong> <code>${this._detectedPrefix || "—"}</code></li>
-            <li><strong>${this._t("debugPrefixCfg")}:</strong> <code>${this._config.prefix || "—"}</code></li>
+            <li><strong>${this._t("debugPrefixAuto")}:</strong> <code>${escHtml(this._detectedPrefix || "—")}</code></li>
+            <li><strong>${this._t("debugPrefixCfg")}:</strong> <code>${escHtml(this._config.prefix || "—")}</code></li>
           </ul>
           ${evccCount === 0 ? `<div class="debug-warn-box">${this._t("debugNoIntg")}</div>` : ""}
         </div>
@@ -207,27 +208,27 @@ export const debugView = {
         <div class="debug-section">
           <div class="debug-section-title">WebSocket API</div>
           <ul class="debug-kv">
-            <li><strong>Config entry id:</strong> <code>${this._entryId || "—"}</code></li>
+            <li><strong>Config entry id:</strong> <code>${escHtml(this._entryId || "—")}</code></li>
             ${!this._capsLoaded
               ? `<li><em>Probing capabilities…</em></li>`
               : !this._caps || this._caps.commands.length === 0
                 ? `<li>${pill("warn", "not supported")} <em>(older ha-evcc / unknown command)</em></li>`
                 : (() => {
                     const items = [];
-                    items.push(`<li><strong>Integration version:</strong> <code>${this._caps.version ?? "—"}</code></li>`);
-                    items.push(`<li><strong>Commands:</strong> ${this._caps.commands.map(c => `<code>${c}</code>`).join(", ")}</li>`);
+                    items.push(`<li><strong>Integration version:</strong> <code>${escHtml(this._caps.version ?? "—")}</code></li>`);
+                    items.push(`<li><strong>Commands:</strong> ${this._caps.commands.map(c => `<code>${escHtml(c)}</code>`).join(", ")}</li>`);
                     const lpMap = Object.entries(this._lpIndexMap || {});
-                    items.push(`<li><strong>Loadpoint index map:</strong> ${lpMap.length ? lpMap.map(([id, i]) => `<code>${id}=${i}</code>`).join(", ") : `${pill("warn", "fallback")} <em>(heuristic/override; older ha-evcc)</em>`}</li>`);
+                    items.push(`<li><strong>Loadpoint index map:</strong> ${lpMap.length ? lpMap.map(([id, i]) => `<code>${escHtml(id)}=${i}</code>`).join(", ") : `${pill("warn", "fallback")} <em>(heuristic/override; older ha-evcc)</em>`}</li>`);
                     // Show cached probe results (prefetched by _prefetchDebugProbes).
                     const fmtProbe = (label, cacheKey, fmt) => {
                       const c = this._wsCache[cacheKey];
                       if (!c) return `<li><strong>${label}:</strong> <em>loading…</em></li>`;
-                      if (c.result.error) return `<li><strong>${label}:</strong> ${pill("err", "error")} <code>${c.result.error}</code></li>`;
+                      if (c.result.error) return `<li><strong>${label}:</strong> ${pill("err", "error")} <code>${escHtml(c.result.error)}</code></li>`;
                       return `<li><strong>${label}:</strong> ${fmt(c.result.data)}</li>`;
                     };
                     if (this._hasCmd("forecast"))
                       items.push(fmtProbe("forecast (grid)", "forecast:grid",
-                        d => `${Array.isArray(d?.rates) ? d.rates.length : 0} rates${d?.unit ? ` (${d.unit})` : ""}`));
+                        d => `${Array.isArray(d?.rates) ? d.rates.length : 0} rates${d?.unit ? ` (${escHtml(d.unit)})` : ""}`));
                     if (this._hasCmd("sessions"))
                       items.push(fmtProbe("sessions", "sessions::",
                         d => `${Array.isArray(d?.sessions) ? d.sessions.length : 0} sessions`));
@@ -260,13 +261,13 @@ export const debugView = {
         <div class="debug-section">
           <div class="debug-section-title">${this._t("debugCardConfig")}</div>
           ${cfgNote}
-          <pre class="debug-yaml">${cfgYaml.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
+          <pre class="debug-yaml">${escHtml(cfgYaml)}</pre>
         </div>
 
         <div class="debug-section">
           <div class="debug-section-title">${this._t("debugTranslations")}</div>
           <ul class="debug-kv">
-            <li><strong>${this._t("debugLoaded")}:</strong> <code>${loadedLocales.join(", ") || "—"}</code></li>
+            <li><strong>${this._t("debugLoaded")}:</strong> <code>${escHtml(loadedLocales.join(", ")) || "—"}</code></li>
           </ul>
         </div>
       </div>

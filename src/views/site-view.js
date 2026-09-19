@@ -1,5 +1,6 @@
 import { _discoverDeviceSources } from "../core/entity-discovery.js";
 import { stateVal, attr, unitStr } from "../utils/state.js";
+import { escHtml } from "../utils/html.js";
 
 // Site mode. Methods are mixed into EvccCard.prototype.
 export const siteView = {
@@ -199,7 +200,7 @@ export const siteView = {
       const fs = s.w < 80 ? 18 : 24;
       return `<text x="${s.xMid}" y="${BAR_Y + BAR_H / 2 + (fs === 18 ? 6 : 8)}"
                     text-anchor="middle" font-size="${fs}" font-weight="700"
-                    fill="#fff" style="text-shadow:0 1px 3px rgba(0,0,0,0.5)">${s.label}</text>`;
+                    fill="#fff" style="text-shadow:0 1px 3px rgba(0,0,0,0.5)">${escHtml(s.label)}</text>`;
     }).join("");
 
     const MDI = {
@@ -302,8 +303,8 @@ export const siteView = {
       <div class="site-row ${indent ? "site-row-indent" : ""}${entityId ? " site-row-clickable" : ""}"${entityId ? ` data-more-info="${entityId}"` : ""}>
         <span class="site-row-icon">${icon}</span>
         <span class="site-row-label">
-          <span class="site-row-name">${label}</span>
-          ${sub ? `<span class="site-row-sub">${sub}</span>` : ""}
+          <span class="site-row-name">${escHtml(label)}</span>
+          ${sub ? `<span class="site-row-sub">${escHtml(sub)}</span>` : ""}
         </span>
         <span class="site-row-pw ${pwClass}">${fmtPow(pw)}</span>
       </div>`;
@@ -311,7 +312,7 @@ export const siteView = {
     const section = (title, total, rows) => `
       <div class="site-section">
         <div class="site-section-head">
-          <span class="site-section-title">${title}</span>
+          <span class="site-section-title">${escHtml(title)}</span>
           <span class="site-section-total">${fmtPow(total)}</span>
         </div>
         ${rows}
@@ -389,7 +390,7 @@ export const siteView = {
     const energyRow = (mdiPath, label, v, entityId) => v === null ? "" : `
       <div class="site-row${entityId ? " site-row-clickable" : ""}"${entityId ? ` data-more-info="${entityId}"` : ""}>
         <span class="site-row-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="vertical-align:middle"><path d="${mdiPath}"/></svg></span>
-        <span class="site-row-label"><span class="site-row-name">${label}</span></span>
+        <span class="site-row-label"><span class="site-row-name">${escHtml(label)}</span></span>
         <span class="site-row-pw">${fmtKwh(v)}</span>
       </div>`;
     const energyRows = [
@@ -415,7 +416,7 @@ export const siteView = {
     return `
       <div class="site-block">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("overview")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("overview"))}</span>
         </div>
         <div class="flow-wrap-clickable" role="button" tabindex="0"
              onclick="window.__evccCards.get('${this._cardId}')._toggleSite()"

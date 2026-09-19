@@ -1,4 +1,5 @@
 import { displayUnit } from "./utils/state.js";
+import { escHtml } from "./utils/html.js";
 
 // Event delegation for the whole card. Methods are mixed into EvccCard.prototype.
 export const listeners = {
@@ -172,8 +173,8 @@ export const listeners = {
           if (!b || !(b.total > 0)) { tooltip.hidden = true; return; }
           const mf = this._metricFmt(metric, currency);
           const rows = series.filter(s => (b.seg[s.key] || 0) > 0)
-            .map(s => `<div class="ectt-row">${dot(s.color)}<span class="ectt-name">${s.label}</span><span class="ectt-val">${mf.fmt(b.seg[s.key])} ${mf.unit}</span></div>`).join("");
-          tooltip.innerHTML = `<div class="ectt-header">${b.labelFull || b.labelStr}</div>${rows}<div class="ectt-summary">${mf.fmt(b.total)} ${mf.unit} ${this._t("total")}</div>`;
+            .map(s => `<div class="ectt-row">${dot(s.color)}<span class="ectt-name">${escHtml(s.label)}</span><span class="ectt-val">${mf.fmt(b.seg[s.key])} ${mf.unit}</span></div>`).join("");
+          tooltip.innerHTML = `<div class="ectt-header">${escHtml(b.labelFull || b.labelStr)}</div>${rows}<div class="ectt-summary">${mf.fmt(b.total)} ${mf.unit} ${this._t("total")}</div>`;
           positionTooltip(bar);
           tooltip.dataset.activeBar = barKey(bar);
           return;
@@ -186,7 +187,7 @@ export const listeners = {
         const solarColor = getComputedStyle(chartWrap).getPropertyValue("--evcc-green").trim() || "#22c55e";
         const gridColor  = getComputedStyle(chartWrap).getPropertyValue("--primary-color").trim() || "#3b82f6";
         tooltip.innerHTML =
-          `<div class="ectt-header">${bar.dataset.label}</div>` +
+          `<div class="ectt-header">${escHtml(bar.dataset.label)}</div>` +
           (solar != null ? `<div class="ectt-row">${dot(solarColor)}<span class="ectt-name">${this._t("solar")}</span><span class="ectt-val">${bar.dataset.solar} kWh</span></div>` : "") +
           (grid  != null ? `<div class="ectt-row">${dot(gridColor)}<span class="ectt-name">${this._t("grid")}</span><span class="ectt-val">${grid} kWh</span></div>` : "") +
           `<div class="ectt-summary">${total} kWh ${this._t("total")}</div>`;

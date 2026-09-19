@@ -1,6 +1,7 @@
 import { HIDEABLE_SETTINGS } from "../core/constants.js";
 import { stateVal, attr, displayUnit, isOn } from "../utils/state.js";
 import { stepDecimals, fmtNum } from "../utils/format.js";
+import { escHtml, escAttr } from "../utils/html.js";
 
 // Sliders with direct-input panel, step override, write-back and battery boost. Methods are mixed into EvccCard.prototype.
 export const socControl = {
@@ -56,8 +57,8 @@ export const socControl = {
       };
       const buttons = options.map(opt => `
         <button class="phase-btn ${opt === current ? "active" : ""}"
-                data-entity="${entityId}" data-value="${opt}">
-          ${PHASE_LABELS[opt] ?? opt}
+                data-entity="${entityId}" data-value="${escAttr(opt)}">
+          ${PHASE_LABELS[opt] ?? escHtml(opt)}
         </button>`).join("");
       phasesHtml = `
         <div class="select-row">
@@ -74,11 +75,11 @@ export const socControl = {
     const gearIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.68 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"/></svg>`;
 
     return `
-      <div class="current-block" data-lp-current="${lpName}">
+      <div class="current-block" data-lp-current="${escAttr(lpName)}">
         <div class="block-title-row">
           <span class="block-title">${this._t("chargeSettings")}</span>
           <button class="current-toggle-btn ${expanded ? "active" : ""}"
-                  data-lp-current-toggle="${lpName}"
+                  data-lp-current-toggle="${escAttr(lpName)}"
                   title="${expanded ? this._t("hideSettings") : this._t("showSettings")}">
             ${gearIcon}
           </button>
@@ -100,7 +101,7 @@ export const socControl = {
             const active     = !isNaN(scTariff) && scTariff <= parseFloat(stateVal(this._hass, ents.smart_cost_limit) || 0);
             const clearId   = ents.smart_cost_limit.replace(/^number\./, "button.");
             const hasClear  = !!this._hass.states[clearId];
-            return `<div class="smart-cost-section" data-lp-smart-cost-section="${lpName}">` +
+            return `<div class="smart-cost-section" data-lp-smart-cost-section="${escAttr(lpName)}">` +
               this._sliderRow(ents.smart_cost_limit, label) +
               (active ? `<div class="smart-active-hint">⚡ ${this._t("smartCostActive")}</div>` : "") +
               (hasClear ? `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` : "") +
@@ -118,7 +119,7 @@ export const socControl = {
               : false;
             const clearId   = ents.smart_feed_in_priority_limit.replace(/^number\./, "button.");
             const hasClear  = !!this._hass.states[clearId];
-            return `<div class="smart-cost-section" data-lp-feed-in-section="${lpName}">` +
+            return `<div class="smart-cost-section" data-lp-feed-in-section="${escAttr(lpName)}">` +
               this._sliderRow(ents.smart_feed_in_priority_limit, this._t("feedInPriorityLimit")) +
               (active ? `<div class="smart-active-hint">⚡ ${this._t("feedInPriorityActive")}</div>` : "") +
               (hasClear ? `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` : "") +
@@ -182,7 +183,7 @@ export const socControl = {
                  data-entity="${entityId}"
                  data-domain="${domain}" />
           <button type="button" class="slider-val" data-slider-edit
-                  title="${this._t("sliderEditHint")}">${zeroLabel && val === 0 ? zeroLabel : `${val} ${unit}`}</button>
+                  title="${this._t("sliderEditHint")}">${zeroLabel && val === 0 ? zeroLabel : `${val} ${escHtml(unit)}`}</button>
         </div>
       </div>`;
   },
@@ -242,7 +243,7 @@ export const socControl = {
       <button type="button" class="slider-edit-btn" data-edit-dec aria-label="−"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M19,13H5V11H19V13Z"/></svg></button>
       <div class="slider-edit-field">
         <input type="text" inputmode="decimal" class="slider-edit-input" autocomplete="off" spellcheck="false" />
-        <span class="slider-edit-unit">${unit}</span>
+        <span class="slider-edit-unit">${escHtml(unit)}</span>
       </div>
       <button type="button" class="slider-edit-btn" data-edit-inc aria-label="+"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"/></svg></button>
       <button type="button" class="slider-edit-btn slider-edit-ok" data-edit-ok
@@ -376,7 +377,7 @@ export const socControl = {
           <input type="range"
                  min="${min}" max="${max}" step="${step}" value="${curPct}"
                  data-boost-entity="${limitId}"
-                 data-options='${JSON.stringify(options)}' />
+                 data-options='${escAttr(JSON.stringify(options))}' />
           <button type="button" class="slider-val boost-val" data-boost-edit
                   title="${this._t("sliderEditHint")}">${label}</button>
         </div>

@@ -9,17 +9,21 @@ Groups in `run.py` (`--only <group>`, repeatable):
 
 | Group | Checks |
 |---|---|
-| `unit` | Pure functions from `src/utils` in node, no browser: number/step formatting, the dual-format evcc timestamp parser, duration and countdown strings, the SoC gradients, HTML escaping |
+| `unit` | Pure functions from `src/utils` in node, no browser: number/step formatting, the dual-format evcc timestamp parser, duration and countdown strings, the SoC gradients, HTML escaping, the `stats_period` normalisation, entity discovery, and that `package.json` still carries the version from `src/core/constants.js` |
 | `render` | Every card mode in light and dark, screenshot per mode, fails on any console error; stats bar chart from sessions |
 | `stats_fallback` | Stats mode on an ha-evcc without `evcc_intg/sessions`: the recorder is queried for sum buckets, the chart is rebuilt from the deltas, the solar split survives, the `30d` tab switches to day buckets |
+| `stats_period` | Every `stats_period` value steers both stats paths the same way: the current vocabulary (`month`/`year`/`total`/`none`), the legacy one older dashboards carry (`30d`/`365d`/`thisYear`), and the unconfigured default, each with and without the sessions API; plus `none` hiding the footer under `site` |
+| `renderkey` | A hass update only reaches the DOM when the render key changes. Changed select options and number bounds must trigger a render, an update that changes nothing must not, and `RENDER_ATTRS` must list every attribute the card reads: the group proxies the attribute objects during a render of every mode and fails on anything outside the list |
+| `lifecycle` | Detach and re-attach the same card element, the way Lovelace re-mounts on a view switch: the `evcc-plan-reset` listener, the registry entry the inline site handlers resolve through and the countdown interval must all come back, the registry must not leak instances, and a re-mount must cost no backend call |
 | `interaction` | Direct-input panel on number sliders, select-backed sliders (min/max current), battery boost and the plan target; keyboard writes; outside click / tab switch closing the panel; `hide_settings`, `slider_steps`; plan preview request |
 | `editor` | The visual editor emits every field into the config (text, all selects, all checkbox groups), emits the complete config rather than a patch, and drops a key again when a field returns to its default; the mode switch re-renders the form |
+| `escaping` | Names that are free text in an evcc/HA configuration reach the DOM as text: card title, vehicle title, loadpoint title, PV device title, unit of measurement, the session names and the currency from the WebSocket API, the config dump and a vehicle id inside an attribute. Each payload has to appear verbatim and create no element |
 | `contracts` | Every writing control calls the right HA service with the right payload: mode, phases, clear-limit buttons, boost chip, continuous charging, preconditioning, vehicle select, set/delete plan, battery discharge control, battery selects |
 | `tariff` | Loadpoints without solar (`no_pv`): which mode buttons remain, and `pv` relabelled as the smart mode when a tariff is available; the same on a co2 signal, where the card must read `tariff_co2` instead of `tariff_grid`; plan preview in g/kWh with a price counter-check |
 | `traffic` | Plan preview traffic rules promised to ha-evcc: one call per target change, none while idle, cache hit on repeat, one call per slider drag |
 | `priority` | Regression for #170: drag and drop reorders the rows without jitter, apply writes the new priorities |
 | `locales` | All 8 locale files share the same keys, `index.json` is complete, no untranslated key reaches the DOM in any language |
-| `discovery` | Custom entity prefix, `disabled_loadpoints` hide/dim/show, heating loadpoint (temperature label, no plan), disabled limit entities |
+| `discovery` | Custom entity prefix, `disabled_loadpoints` hide/dim/show, heating loadpoint (temperature label, no plan), disabled limit entities; two ha-evcc config entries, where the prefix and the entry id behind the WebSocket commands have to come from the same instance |
 | `widths` | 300 px and 650 px cards: the input panel stays inside the card, no horizontal overflow |
 
 Assertions are made on the service calls the card issues (`hass.callService`)
@@ -218,6 +222,8 @@ matching keyword:
 | `rename=<from>:<to>` | `rename=(from, to)` | Rename the entity prefix everywhere, for multi-instance setups |
 | `ws=0` | `ws=False` | No ha-evcc WebSocket data API, so the entity and recorder fallbacks run |
 | `tariff=co2` | `tariff="co2"` | The data API reports a co2 signal instead of prices: `smartCostType: "co2"`, no currency, and the rate values are replaced by a fixed daily emission curve (180..420 g/kWh, lowest around midday) |
+| `wsname=<text>` | `wsname="…"` | Put this text into every name the data API reports: the `loadpoint` and `vehicle` of each session and the currency. Used by the `escaping` group |
+| `second=<json>` | `second={...}` | Clone the fixture as a second ha-evcc config entry, `{prefix, entryId, first}`. ha-evcc builds the entity prefix from the entry title, so two instances always mean two prefixes and two entry ids; `first` puts the clone ahead of the original in the registry |
 
 `recorder/statistics_during_period` is answered by the mock as well, generated
 over the window the card asks for so the series always ends at "now", and

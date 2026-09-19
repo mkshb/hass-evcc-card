@@ -1,6 +1,7 @@
 import { discoverEntities } from "../core/entity-discovery.js";
 import { stateVal, isOn } from "../utils/state.js";
 import { evccDate } from "../utils/format.js";
+import { escHtml, escAttr } from "../utils/html.js";
 
 // Charge plan block with preview chart, plan mode and repeating plans. Methods are mixed into EvccCard.prototype.
 export const planningView = {
@@ -88,9 +89,9 @@ export const planningView = {
     const vehicleSelectHtml = allOptions.length > 0 ? `
       <div class="plan-row">
         <label>${this._t("vehicle")}</label>
-        <select class="plan-vehicle-select" data-lp="${lpName}" data-entity="${vehicleEntityId ?? ""}">
+        <select class="plan-vehicle-select" data-lp="${escAttr(lpName)}" data-entity="${vehicleEntityId ?? ""}">
           ${allOptions.map(id => `
-            <option value="${id}" ${id === defaultVehicle ? "selected" : ""}>${dbIdToName[id]}</option>
+            <option value="${escAttr(id)}" ${id === defaultVehicle ? "selected" : ""}>${escHtml(dbIdToName[id])}</option>
           `).join("")}
         </select>
       </div>` : "";
@@ -118,7 +119,7 @@ export const planningView = {
                 data-entity="${contEntityId}"
                 data-domain="switch"
                 data-on="${contOn}"
-                data-lp="${lpName}">
+                data-lp="${escAttr(lpName)}">
           ${contOn ? this._t("toggleOn") : this._t("toggleOff")}
         </button>
       </div>` : "";
@@ -137,9 +138,9 @@ export const planningView = {
     const preHtml = (preState && preOptions.length) ? `
       <div class="plan-row">
         <label>${this._t("planStrategyPrecondition")}</label>
-        <select class="plan-precondition-select" data-entity="${preEntityId}" data-lp="${lpName}">
+        <select class="plan-precondition-select" data-entity="${preEntityId}" data-lp="${escAttr(lpName)}">
           ${preOptions.map(opt => `
-            <option value="${opt}" ${opt === preCurrent ? "selected" : ""}>${fmtPre(opt)}</option>
+            <option value="${escAttr(opt)}" ${opt === preCurrent ? "selected" : ""}>${fmtPre(opt)}</option>
           `).join("")}
         </select>
       </div>` : "";
@@ -157,7 +158,7 @@ export const planningView = {
       </div>` : "";
 
     return `
-      <div class="plan-block" data-lp="${lpName}">
+      <div class="plan-block" data-lp="${escAttr(lpName)}">
         <div class="plan-header">
           <span class="session-title">${this._t("chargePlan")}</span>
           ${planBadge}
@@ -168,14 +169,14 @@ export const planningView = {
           <div class="plan-row">
             <label>${this._t("finishBy")}</label>
             <input type="datetime-local" class="plan-time-input"
-                   value="${defaultDt}" data-lp="${lpName}" />
+                   value="${defaultDt}" data-lp="${escAttr(lpName)}" />
           </div>
           <div class="plan-row">
             <label>${this._t("targetSoc")}</label>
             <div class="plan-soc-control">
               <input type="range" class="plan-soc-range"
                      min="20" max="100" step="5" value="${defaultSoc}"
-                     data-lp="${lpName}" />
+                     data-lp="${escAttr(lpName)}" />
               <button type="button" class="slider-val plan-soc-val" data-plan-soc-edit
                       title="${this._t("sliderEditHint")}">${defaultSoc} %</button>
             </div>
@@ -185,9 +186,9 @@ export const planningView = {
         </div>
         ${this._renderPlanPreview(lpName)}
         <div class="plan-actions">
-          <button class="plan-btn save" data-lp="${lpName}">${this._t("setPlan")}</button>
+          <button class="plan-btn save" data-lp="${escAttr(lpName)}">${this._t("setPlan")}</button>
           ${(planActive || (planTime && planTime !== "unknown" && planTime !== "unavailable"))
-            ? `<button class="plan-btn delete" data-lp="${lpName}">${this._t("deletePlan")}</button>`
+            ? `<button class="plan-btn delete" data-lp="${escAttr(lpName)}">${this._t("deletePlan")}</button>`
             : ""}
         </div>
       </div>
@@ -229,7 +230,7 @@ export const planningView = {
         forecastRates = primary.data.rates;
       }
     }
-    const unit = isCo2 ? "g CO₂/kWh" : (preview.currency ? `${preview.currency}/kWh` : "");
+    const unit = isCo2 ? "g CO₂/kWh" : (preview.currency ? `${escHtml(preview.currency)}/kWh` : "");
 
     const chart = this._renderPlanPreviewChart(forecastRates, preview.plan, preview, unit);
     const summary = this._renderPlanPreviewSummary(preview, unit);
@@ -377,7 +378,7 @@ export const planningView = {
     const avgLabel = isCo2 ? "CO₂-Emission Ø" : `${this._t("planPreviewCost")} Ø`;
     const avgStr = isCo2
       ? `${Math.round(avgVal)} g/kWh`
-      : `${avgVal.toFixed(2)} ${currency}/kWh`;
+      : `${avgVal.toFixed(2)} ${escHtml(currency)}/kWh`;
 
     return `<div class="plan-preview-header">
       <div class="plan-preview-left">
@@ -400,7 +401,7 @@ export const planningView = {
       return `
         <div class="loadpoint">
           <div class="lp-header">
-            <span class="lp-name">${this._config.title || lpName}</span>
+            <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
           </div>
           ${planHtml}
           ${sessionHtml}
@@ -518,7 +519,7 @@ export const planningView = {
       return `
         <div class="loadpoint">
           <div class="lp-header">
-            <span class="lp-name">${name}</span>
+            <span class="lp-name">${escHtml(name)}</span>
           </div>
           ${this._renderRepeatPlansBlock(g)}
         </div>`;

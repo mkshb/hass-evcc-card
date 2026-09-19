@@ -5,7 +5,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prebuild": "node scripts/sync-version.mjs",
     "build": "rollup -c",
+    "version:sync": "node scripts/sync-version.mjs",
+    "version:check": "node scripts/sync-version.mjs --check",
     "watch": "rollup -c -w",
     "check": "node --check dist/evcc-card.js",
     "test": "python3 test/run.py"

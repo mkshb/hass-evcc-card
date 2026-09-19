@@ -1,6 +1,7 @@
 import { HIDEABLE_SETTINGS } from "./core/constants.js";
 import { detectPrefix, discoverEntities } from "./core/entity-discovery.js";
 import { loadSharedTranslations, sharedTranslations, sharedTranslationsReady } from "./utils/translations.js";
+import { escHtml } from "./utils/html.js";
 
 export class EvccCardEditor extends HTMLElement {
   constructor() {
@@ -61,7 +62,7 @@ export class EvccCardEditor extends HTMLElement {
   }
 
   _esc(str) {
-    return String(str).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return escHtml(str);
   }
 
   _fire() {

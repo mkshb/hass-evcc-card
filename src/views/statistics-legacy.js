@@ -1,4 +1,5 @@
 import { stateVal, unitStr } from "../utils/state.js";
+import { escHtml, escAttr } from "../utils/html.js";
 
 // Statistics from stat_* entities and the HA recorder (fallback without the ha-evcc sessions command). Methods are mixed into EvccCard.prototype.
 export const statisticsLegacy = {
@@ -286,7 +287,7 @@ export const statisticsLegacy = {
 
       const hitRect = `<rect class="evcc-bar" x="${x0}" y="${MT}" width="${bw}" height="${CH}"
         fill="transparent" style="cursor:pointer"
-        data-label="${d.labelStr.replace(/"/g, "&quot;")}"
+        data-label="${escAttr(d.labelStr)}"
         data-total="${d.delta != null ? d.delta.toFixed(1) : ""}"
         data-solar="${d.solarDelta != null ? d.solarDelta.toFixed(1) : ""}"/>`;
 
@@ -319,7 +320,7 @@ export const statisticsLegacy = {
     const kpis = [
       kpi(kwh,   this._t("statsTotalCharged"), v => `${Math.round(v)} kWh`, null),
       kpi(solar, this._t("statsSolarShare"),   v => `${Math.round(v)} %`,   solar > 0 ? "var(--evcc-green)" : null),
-      kpi(price, this._t("statsAvgPrice"),     v => `${v.toFixed(2)} ${unitStr(this._hass, priceId)}`, null),
+      kpi(price, this._t("statsAvgPrice"),     v => `${v.toFixed(2)} ${escHtml(unitStr(this._hass, priceId))}`, null),
     ].join("");
 
     const { kwhId: chartKwhId } = this._getStatEntityIds("total");
@@ -346,7 +347,7 @@ export const statisticsLegacy = {
     return `
       <div>
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("statistics")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("statistics"))}</span>
         </div>
         ${this._renderStatsPeriodTabs()}
         ${noDataHint}

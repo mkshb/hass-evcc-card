@@ -50,9 +50,11 @@ jobs:
       - name: dist/evcc-card.js is up to date
         # The bundle is committed (HACS ships it). A change under src/ without a
         # rebuild would ship stale code, so the committed file must equal the build.
+        # package.json is in the check because the build syncs its version from
+        # src/core/constants.js, the single source for the card version.
         run: |
-          if ! git diff --exit-code --stat -- dist/evcc-card.js; then
-            echo "::error::dist/evcc-card.js does not match src/. Run 'npm run build' and commit the result."
+          if ! git diff --exit-code --stat -- dist/evcc-card.js package.json; then
+            echo "::error::dist/evcc-card.js or package.json does not match src/. Run 'npm run build' and commit the result."
             exit 1
           fi
       - name: Syntax check (ES module)

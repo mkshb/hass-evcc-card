@@ -1,7 +1,7 @@
 import { SMART_MODE_ICON, CHARGE_MODES } from "../core/constants.js";
 import { stateVal, attr, unitStr, isOn } from "../utils/state.js";
 import { fmtRemainingDuration, fmtCountdownFromISO, fmtCountdownFromTimestamp, socFillGradient, socTrackBg } from "../utils/format.js";
-import { escAttr } from "../utils/html.js";
+import { escHtml, escAttr } from "../utils/html.js";
 
 // Loadpoint and compact modes: header, mode selector, power row, vehicle and session info, toggles. Methods are mixed into EvccCard.prototype.
 export const loadpointView = {
@@ -18,7 +18,7 @@ export const loadpointView = {
     return `
       <div class="loadpoint">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || lpName}</span>
+          <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
           ${remaining ? `<span class="lp-remaining" title="${this._t("remaining")}">${remaining}</span>` : ""}
           <span class="lp-badge ${statusClass}">
             ${statusLabel}
@@ -59,7 +59,7 @@ export const loadpointView = {
       <div class="compact-tabs">
         ${tabs.map((tab, i) => `
           <button class="compact-tab ${activeTab === i ? "active" : ""}"
-                  data-lp="${lpName}" data-tab="${i}">
+                  data-lp="${escAttr(lpName)}" data-tab="${i}">
             <span class="compact-tab-icon">${tab.icon}</span>
             <span class="compact-tab-label">${this._t(tab.key)}</span>
           </button>
@@ -88,9 +88,9 @@ export const loadpointView = {
     const remaining = charging ? fmtRemainingDuration(this._hass, ents.charge_remaining_duration) : "";
 
     return `
-      <div class="loadpoint" data-lp-compact="${lpName}">
+      <div class="loadpoint" data-lp-compact="${escAttr(lpName)}">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || lpName}</span>
+          <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
           ${remaining ? `<span class="lp-remaining" title="${this._t("remaining")}">${remaining}</span>` : ""}
           <span class="lp-badge ${statusClass}">
             ${statusLabel}
@@ -280,8 +280,8 @@ export const loadpointView = {
     };
     const buttons = options.map(opt => `
         <button class="phase-btn ${opt === current ? "active" : ""}"
-                data-entity="${entityId}" data-value="${opt}">
-          ${LABELS[opt] ?? opt}
+                data-entity="${entityId}" data-value="${escAttr(opt)}">
+          ${LABELS[opt] ?? escHtml(opt)}
         </button>`).join("");
 
     // Same subline evcc shows under its Always-charge dropdown, as a tooltip so
@@ -327,8 +327,8 @@ export const loadpointView = {
     const euroIcon   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M15,18.5C12.49,18.5 10.32,17.08 9.24,15H15V13H8.58C8.53,12.67 8.5,12.34 8.5,12C8.5,11.66 8.53,11.33 8.58,11H15V9H9.24C10.32,6.92 12.5,5.5 15,5.5C16.61,5.5 18.09,6.09 19.23,7.07L21,5.3C19.41,3.87 17.3,3 15,3C11.08,3 7.76,5.51 6.52,9H3V11H6.06C6.02,11.33 6,11.66 6,12C6,12.34 6.02,12.67 6.06,13H3V15H6.52C7.76,18.49 11.08,21 15,21C17.31,21 19.41,20.13 21,18.7L19.22,16.93C18.09,17.91 16.61,18.5 15,18.5Z"/></svg>`;
     const smartChip  = smartLimit !== null ? `
       <button class="smart-cost-chip ${smartActive ? "active" : ""}"
-              data-lp-smart-cost-open="${lpName}">
-        ${isCo2Chip ? leafIcon : euroIcon} ≤ ${smartLimit} ${isCo2Chip ? "g" : smartUnit}
+              data-lp-smart-cost-open="${escAttr(lpName)}">
+        ${isCo2Chip ? leafIcon : euroIcon} ≤ ${smartLimit} ${isCo2Chip ? "g" : escHtml(smartUnit)}
       </button>` : "";
 
     const _boostLimitRaw = ents.battery_boost_limit
@@ -348,8 +348,8 @@ export const loadpointView = {
     return `
       <div class="soc-section">
         <div class="soc-label-row">
-          ${validName ? `<span class="vehicle-name"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M5,11L6.5,6.5H17.5L19,11M17.5,16A1.5,1.5 0 0,1 16,14.5A1.5,1.5 0 0,1 17.5,13A1.5,1.5 0 0,1 19,14.5A1.5,1.5 0 0,1 17.5,16M6.5,16A1.5,1.5 0 0,1 5,14.5A1.5,1.5 0 0,1 6.5,13A1.5,1.5 0 0,1 8,14.5A1.5,1.5 0 0,1 6.5,16M18.92,6C18.72,5.42 18.16,5 17.5,5H6.5C5.84,5 5.28,5.42 5.08,6L3,12V20A1,1 0 0,0 4,21H5A1,1 0 0,0 6,20V19H18V20A1,1 0 0,0 19,21H20A1,1 0 0,0 21,20V12L18.92,6Z"/></svg> ${validName}</span>` : ""}
-          ${soc !== null ? `<span data-live-entity="${ents.vehicle_soc}" data-live-type="soc-pct"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${unitStr(this._hass, ents.vehicle_soc)}</span>` : ""}
+          ${validName ? `<span class="vehicle-name"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M5,11L6.5,6.5H17.5L19,11M17.5,16A1.5,1.5 0 0,1 16,14.5A1.5,1.5 0 0,1 17.5,13A1.5,1.5 0 0,1 19,14.5A1.5,1.5 0 0,1 17.5,16M6.5,16A1.5,1.5 0 0,1 5,14.5A1.5,1.5 0 0,1 6.5,13A1.5,1.5 0 0,1 8,14.5A1.5,1.5 0 0,1 6.5,16M18.92,6C18.72,5.42 18.16,5 17.5,5H6.5C5.84,5 5.28,5.42 5.08,6L3,12V20A1,1 0 0,0 4,21H5A1,1 0 0,0 6,20V19H18V20A1,1 0 0,0 19,21H20A1,1 0 0,0 21,20V12L18.92,6Z"/></svg> ${escHtml(validName)}</span>` : ""}
+          ${soc !== null ? `<span data-live-entity="${ents.vehicle_soc}" data-live-type="soc-pct"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${escHtml(unitStr(this._hass, ents.vehicle_soc))}</span>` : ""}
           ${range !== null ? `<span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M11.5 0L9 8H11V16H13V8H15L11.5 0M3 18V20H21V18L11.5 16L3 18Z"/></svg> ${range} km</span>` : ""}
         </div>
         ${soc !== null ? `
@@ -409,7 +409,7 @@ export const loadpointView = {
       <div class="power-row ${charging ? "charging" : ""}">
         <span class="power-value"
               data-live-entity="${ents.charge_power}" data-live-type="power">
-          ${power} ${unit}
+          ${power} ${escHtml(unit)}
         </span>
         ${phaseStr ? `<span class="power-sep">·</span><span class="power-current">${phaseStr}</span>` : ""}
         ${current !== null ? `<span class="power-sep">·</span><span class="power-current">${current} A</span>` : ""}
@@ -427,16 +427,16 @@ export const loadpointView = {
       const v = parseFloat(stateVal(this._hass, entityId));
       if (isNaN(v)) return "—";
       const unit = unitStr(this._hass, entityId);
-      return `${v.toFixed(decimals)}${unit ? " " + unit : ""}`;
+      return `${v.toFixed(decimals)}${unit ? " " + escHtml(unit) : ""}`;
     };
 
     const energy      = ents.session_energy          ? (() => { const v = parseFloat(stateVal(this._hass, ents.session_energy)); return isNaN(v) ? "—" : `${v.toFixed(2)} kWh`; })() : null;
-    const price       = ents.session_price           ? (() => { const v = parseFloat(stateVal(this._hass, ents.session_price)); const u = unitStr(this._hass, ents.session_price) || "€"; return isNaN(v) ? "—" : `${v.toFixed(2)} ${u}`; })() : null;
+    const price       = ents.session_price           ? (() => { const v = parseFloat(stateVal(this._hass, ents.session_price)); const u = unitStr(this._hass, ents.session_price) || "€"; return isNaN(v) ? "—" : `${v.toFixed(2)} ${escHtml(u)}`; })() : null;
     const fmtPerKwh = (entityId, decimals) => {
       const v = parseFloat(stateVal(this._hass, entityId));
       if (isNaN(v)) return "—";
       const unit = (unitStr(this._hass, entityId) || "").replace("/kWh", "").trim();
-      return `${v.toFixed(decimals)}${unit ? " " + unit : ""}`;
+      return `${v.toFixed(decimals)}${unit ? " " + escHtml(unit) : ""}`;
     };
     const pricePerKwh = ents.session_price_per_kwh   ? fmtPerKwh(ents.session_price_per_kwh, 3) : null;
     const co2PerKwh   = ents.session_co2_per_kwh     ? fmtPerKwh(ents.session_co2_per_kwh, 0)   : null;
@@ -495,7 +495,7 @@ export const loadpointView = {
   _renderEmpty(allLoadpoints = {}) {
     const available = Object.keys(allLoadpoints);
     const hint = available.length > 0
-      ? `<p>${this._t("availableLoadpoints", { list: `<code>${available.join(", ")}</code>` })}</p>`
+      ? `<p>${this._t("availableLoadpoints", { list: `<code>${available.map(escHtml).join(", ")}</code>` })}</p>`
       : "";
     return `
       <div class="empty">
@@ -526,7 +526,7 @@ export const loadpointView = {
     return `
       <div class="loadpoint lp-disabled" data-entity="${ents.disabled_in_config || ""}">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || lpName}</span>
+          <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
           <span class="lp-badge disabled">${this._t("loadpointDisabled")}</span>
         </div>
       </div>

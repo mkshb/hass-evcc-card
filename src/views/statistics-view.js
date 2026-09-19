@@ -1,5 +1,7 @@
 import { stateVal, unitStr } from "../utils/state.js";
 import { evccDate } from "../utils/format.js";
+import { normalizeStatsPeriod, legacyStatsPeriod } from "../core/constants.js";
+import { escHtml } from "../utils/html.js";
 
 // Statistics from evcc_intg/sessions (EVCC-style header, stacked chart) plus the stats dispatchers. Methods are mixed into EvccCard.prototype.
 export const statisticsView = {
@@ -55,10 +57,10 @@ export const statisticsView = {
 
   // Footer scope (compact, no stepper): current month / current year / all.
   _footerScope() {
-    const p = this._config.stats_period ?? "total";
+    const p = normalizeStatsPeriod(this._config.stats_period, "total");
     const now = new Date();
-    if (p === "month" || p === "30d") return { kind: "month", year: now.getFullYear(), month: now.getMonth() };
-    if (p === "year" || p === "365d" || p === "thisYear") return { kind: "year", year: now.getFullYear() };
+    if (p === "month") return { kind: "month", year: now.getFullYear(), month: now.getMonth() };
+    if (p === "year")  return { kind: "year",  year: now.getFullYear() };
     return { kind: "total" };
   },
 
@@ -82,7 +84,7 @@ export const statisticsView = {
   },
 
   _metricFmt(metric, currency) {
-    if (metric === "cost") return { unit: currency || "", axis: currency || "", fmt: v => v.toFixed(2) };
+    if (metric === "cost") return { unit: escHtml(currency || ""), axis: escHtml(currency || ""), fmt: v => v.toFixed(2) };
     if (metric === "co2")  return { unit: "kg", axis: "kg", fmt: v => v >= 10 ? String(Math.round(v)) : v.toFixed(2) };
     return { unit: "kWh", axis: "kWh", fmt: v => v >= 100 ? String(Math.round(v)) : v.toFixed(1) };
   },
@@ -312,7 +314,7 @@ export const statisticsView = {
       const hit = `<rect class="evcc-bar" data-idx="${i}" x="${x0}" y="${MT}" width="${bw}" height="${CH}" fill="transparent" style="cursor:pointer"/>`;
       return segs + hit + labelSvg;
     }).join("");
-    const legend = `<div class="stats-legend">${series.map(s => `<span class="sl-item"><span class="sl-dot" style="background:${s.color}"></span>${s.label}</span>`).join("")}</div>`;
+    const legend = `<div class="stats-legend">${series.map(s => `<span class="sl-item"><span class="sl-dot" style="background:${s.color}"></span>${escHtml(s.label)}</span>`).join("")}</div>`;
     return `<div class="evcc-chart-wrap"><svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${grid}${axisLbl}${bars}</svg><div class="evcc-chart-tooltip" hidden></div></div>${legend}`;
   },
 
@@ -331,7 +333,7 @@ export const statisticsView = {
       </div>`;
     const kpis = [ kpi(k.kwh, this._t("statsTotalCharged"), v => `${Math.round(v)} kWh`, null) ];
     if (k.hasSolar) kpis.push(kpi(k.solarPct, this._t("statsSolarShare"), v => `${Math.round(v)} %`, k.solarPct > 0 ? "var(--evcc-green)" : null));
-    if (k.hasPrice) kpis.push(kpi(k.totalCost, this._t("statsTotalCost"), v => `${v.toFixed(2)} ${cur}`, null));
+    if (k.hasPrice) kpis.push(kpi(k.totalCost, this._t("statsTotalCost"), v => `${v.toFixed(2)} ${escHtml(cur)}`, null));
     if (k.hasCo2)   kpis.push(kpi(k.avgCo2, this._t("statsAvgCo2"), v => `${v >= 10 ? Math.round(v) : v.toFixed(1)} g/kWh`, null));
 
     // Stacked chart for the selected metric × grouping.
@@ -346,7 +348,7 @@ export const statisticsView = {
     return `
       <div>
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("statistics")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("statistics"))}</span>
         </div>
         <div class="stats-controls">
           ${this._renderStatsScopeTabs()}
@@ -370,15 +372,14 @@ export const statisticsView = {
     const items = [
       `<span class="sf-item"><span class="sf-val">${Math.round(k.kwh)} kWh</span><span class="sf-lbl">${this._t("statsCharged")}</span></span>`,
       k.hasSolar ? `<span class="sf-item"><span class="sf-val" style="color:var(--evcc-green)">${Math.round(k.solarPct)} %</span><span class="sf-lbl">${this._t("statsSolarShare")}</span></span>` : "",
-      k.hasPrice ? `<span class="sf-item"><span class="sf-val">${k.avgPrice.toFixed(2)} ${cur}/kWh</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
+      k.hasPrice ? `<span class="sf-item"><span class="sf-val">${k.avgPrice.toFixed(2)} ${escHtml(cur)}/kWh</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
     ].filter(Boolean);
     if (k.kwh <= 0) return "";
     return `<div class="stats-footer"><div class="sf-period">${periodLabel}</div><div class="sf-items">${items.join('<span class="sf-sep"></span>')}</div></div>`;
   },
 
   _renderStatsFooter() {
-    const period = this._config.stats_period ?? "total";
-    if (period === "none") return "";
+    if (normalizeStatsPeriod(this._config.stats_period, "total") === "none") return "";
     if (this._hasCmd("sessions")) {
       const res = this._wsSessions();
       if (res && res.data && Array.isArray(res.data.sessions)) {
@@ -386,6 +387,10 @@ export const statisticsView = {
       }
       // pending/error → fall through to the entity path below
     }
+    // The legacy path has periods of its own, so the configured value is mapped
+    // onto them here. Not via this._statsPeriod: that one follows the period
+    // tabs of the stats mode, the footer stays on what the config asked for.
+    const period = legacyStatsPeriod(this._config.stats_period, "total");
     const { kwhId, solarId, priceId } = this._getStatEntityIds(period);
     if (!kwhId && !solarId && !priceId) return "";
 
@@ -400,7 +405,7 @@ export const statisticsView = {
     const items = [
       kwhId   ? `<span class="sf-item"><span class="sf-val">${Math.round(kwh)} kWh</span><span class="sf-lbl">${this._t("statsCharged")}</span></span>` : "",
       solarId ? `<span class="sf-item"><span class="sf-val" style="color:var(--evcc-green)">${Math.round(solar)} %</span><span class="sf-lbl">${this._t("statsSolarShare")}</span></span>` : "",
-      priceId ? `<span class="sf-item"><span class="sf-val">${price.toFixed(2)} ${unitStr(this._hass, priceId)}</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
+      priceId ? `<span class="sf-item"><span class="sf-val">${price.toFixed(2)} ${escHtml(unitStr(this._hass, priceId))}</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
     ].filter(Boolean);
 
     if (items.length === 0) return "";
@@ -420,7 +425,7 @@ export const statisticsView = {
       if (!res) {
         return `
           <div>
-            <div class="lp-header"><span class="lp-name">${this._config.title || this._t("statistics")}</span></div>
+            <div class="lp-header"><span class="lp-name">${escHtml(this._config.title || this._t("statistics"))}</span></div>
             ${this._renderStatsScopeTabs()}
             <div class="stats-chart-loading">…</div>
           </div>`;

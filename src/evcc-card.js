@@ -1,5 +1,7 @@
 import { detectIntegration, discoverEntities, partitionDisabledLoadpoints } from "./core/entity-discovery.js";
+import { RENDER_ATTRS, normalizeStatsPeriod, legacyStatsPeriod } from "./core/constants.js";
 import { stateVal, unitStr } from "./utils/state.js";
+import { escHtml } from "./utils/html.js";
 import { socFillGradient } from "./utils/format.js";
 import { loadSharedTranslations, sharedTranslations } from "./utils/translations.js";
 
@@ -77,10 +79,20 @@ export class EvccCard extends HTMLElement {
         if (this._hass) this._render();
       }, 1500);
     };
-    window.addEventListener("evcc-plan-reset", this._onPlanReset);
   }
 
+  // Lovelace may detach a card and attach the same instance again (view switch,
+  // re-order, edit mode). Everything disconnectedCallback tears down has to be
+  // rebuilt here, or the re-mounted card is only half alive.
   connectedCallback() {
+    window.addEventListener("evcc-plan-reset", this._onPlanReset);
+    // The inline handlers of the site and flow views reach the card through this
+    // map, so its entry has to come back with the element. On the very first
+    // mount there is no id yet; _render creates it.
+    if (this._cardId) {
+      window.__evccCards = window.__evccCards || new Map();
+      window.__evccCards.set(this._cardId, this);
+    }
     if (!this._countdownInterval) {
       this._countdownInterval = setInterval(() => this._tickCountdowns(), 1000);
     }
@@ -88,11 +100,14 @@ export class EvccCard extends HTMLElement {
 
   disconnectedCallback() {
     window.removeEventListener("evcc-plan-reset", this._onPlanReset);
+    if (this._cardId) window.__evccCards?.delete(this._cardId);
     if (this._countdownInterval) {
       clearInterval(this._countdownInterval);
       this._countdownInterval = null;
     }
-    // Drop on-demand WS caches; a re-mount re-probes capabilities/entry_id.
+    // Drop the on-demand WS caches. Capabilities and entry_id are kept on
+    // purpose: they do not change while the page lives, and re-probing them on
+    // every re-mount would be a backend call for nothing.
     this._wsCache    = {};
     this._wsInflight = {};
   }
@@ -112,7 +127,7 @@ export class EvccCard extends HTMLElement {
 
     if (!this._integrationDetected && !this._detectingIntegration) {
       this._detectingIntegration = true;
-      detectIntegration(hass).then(({ prefix, entryId }) => {
+      detectIntegration(hass, this._config.prefix ?? null).then(({ prefix, entryId }) => {
         this._detectingIntegration = false;
         this._integrationDetected = true;
         this._entryId = entryId;
@@ -161,7 +176,22 @@ export class EvccCard extends HTMLElement {
     }
 
     const lang = this._config.language || (hass.language ?? "de");
-    return lang + "|" + this._evccIds.map(id => `${id}=${hass.states[id]?.state}`).join("|");
+    // \u001f (unit separator) keeps attribute values from colliding with the
+    // key's own delimiters; a title or an option may contain anything else.
+    return lang + "|" + this._evccIds.map(id => {
+      const s = hass.states[id];
+      if (!s) return `${id}=`;
+      let part = `${id}=${s.state}`;
+      const a = s.attributes;
+      if (a) {
+        for (const name of RENDER_ATTRS) {
+          const v = a[name];
+          if (v === undefined) continue;
+          part += `\u001f${name}=${typeof v === "object" && v !== null ? JSON.stringify(v) : v}`;
+        }
+      }
+      return part;
+    }).join("|");
   }
 
   static getConfigElement() {
@@ -174,13 +204,17 @@ export class EvccCard extends HTMLElement {
 
   setConfig(config) {
     this._config = config || {};
-    const validPeriods = ["30d", "365d", "thisYear", "total"];
-    if (validPeriods.includes(config?.stats_period)) {
-      this._statsPeriod = config.stats_period;
-    }
-    // Sessions stats path scope (Month/Year/Total); map legacy values too.
-    const scopeMap = { total: "total", "30d": "month", "365d": "year", thisYear: "year" };
-    this._statsScope = scopeMap[config?.stats_period] ?? "month";
+    // Both stats paths are fed from the same normalised value, so the current
+    // vocabulary (month/year/total/none) and the legacy one (30d/365d/thisYear)
+    // steer them the same way. The stats mode opens on the most recent month
+    // when nothing is configured; `none` only hides the footer, so the full view
+    // shows that default too.
+    const rawPeriod  = config?.stats_period;
+    const scope      = normalizeStatsPeriod(rawPeriod, "month");
+    this._statsScope = scope === "none" ? "month" : scope;
+    // The legacy path keeps a configured legacy value exactly as it is, and
+    // defaults to "total" rather than to the stats mode's most recent month.
+    this._statsPeriod = legacyStatsPeriod(rawPeriod, "total");
     if (this._statsMetric == null) this._statsMetric = "energy"; // energy | cost | co2
     if (this._statsGroup  == null) this._statsGroup  = "solar";  // solar | loadpoint | vehicle
     const validSizes = ["small", "medium", "large"];
@@ -368,7 +402,7 @@ export class EvccCard extends HTMLElement {
         el.style.background = socFillGradient(soc, minSoc, limitSoc);
       } else if (type === "soc-pct") {
         const soc = parseFloat(stateVal(this._hass, entityId)) || 0;
-        el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${unitStr(this._hass, entityId)}`;
+        el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${escHtml(unitStr(this._hass, entityId))}`;
       } else if (type === "power") {
         el.textContent = `${parseFloat(stateVal(this._hass, entityId)).toFixed(1)} ${unitStr(this._hass, entityId)}`;
       }

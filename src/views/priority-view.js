@@ -64,7 +64,7 @@ export const priorityView = {
     return `
       <div class="priority-mode" data-priority-root>
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("priority")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("priority"))}</span>
         </div>
         <div class="priority-hint">${this._t("priorityHint")}</div>
         <div class="priority-list">${rowsHtml}</div>
