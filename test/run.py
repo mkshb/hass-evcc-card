@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """Headless render + interaction tests for evcc-card against the mock hass.
 
-Usage:  python3 test/run.py [--headed] [--only NAME]
-Serves the repo root over HTTP, opens test/harness.html in Chromium, renders
+Usage:  python3 test/run.py [--headed] [--only NAME] [--browser chromium|webkit]
+Serves the repo root over HTTP, opens test/harness.html in the browser, renders
 every card mode (light + dark, screenshots in test/out/) and runs interaction
 scenarios that assert on the recorded service calls. Exit code 1 on failure.
+
+Browsers: chromium (default; Android WebView and desktop Chrome/Edge) and webkit
+(Playwright's WebKit build: the engine of Safari and of the WKWebView the iOS
+companion app renders the frontend in). The WebKit run is functional only, its
+screenshots go to test/out/webkit/ and are not compared with images/ (text
+rendering differs between engines).
 """
 import argparse, datetime, http.server, json, os, re, socketserver, sys, threading, time, urllib.parse
 from pathlib import Path
@@ -22,6 +28,15 @@ MODES = ["loadpoint", "compact", "battery", "site", "flow", "grid", "stats", "pl
 # (Debian) when present, else the bundled one.
 _chromium = os.environ.get("EVCC_CHROMIUM") or ("/usr/bin/chromium" if os.path.exists("/usr/bin/chromium") else None)
 BROWSER = {} if _chromium in (None, "bundled") else {"executable_path": _chromium}
+BROWSERS = ("chromium", "webkit")
+
+
+def launch(p, name="chromium", headed=False):
+    """Launch the engine under test. The Chromium flags are Chromium-only (WebKit
+    rejects unknown arguments); locale and timezone come from the context anyway."""
+    if name == "webkit":
+        return p.webkit.launch(headless=not headed)
+    return p.chromium.launch(**BROWSER, headless=not headed, args=["--no-sandbox", "--lang=de-DE"])
 
 # With an explicit offset: a naive time would be read in the host's timezone,
 # i.e. 13:00 UTC on a CI runner instead of 13:00 Berlin.
@@ -48,8 +63,8 @@ def card_version():
 
 class T:
     """Collects check results and writes report.md / report.json / junit.xml."""
-    def __init__(self, suite="evcc-card tests"):
-        self.suite, self.results, self.started, self.section = suite, [], time.time(), ""
+    def __init__(self, suite="evcc-card tests", browser="chromium"):
+        self.suite, self.browser, self.results, self.started, self.section = suite, browser, [], time.time(), ""
     def group(self, title):        self.section = title; print(f"\n[{title}]")
     def ok(self, name, detail=""):   self._add(True, name, detail);  print(f"  PASS {name}" + (f"  ({detail})" if detail else ""))
     def fail(self, name, detail=""): self._add(False, name, detail); print(f"  FAIL {name}  {detail}")
@@ -61,12 +76,12 @@ class T:
     def write_reports(self, out, screenshots=()):
         out = Path(out); out.mkdir(parents=True, exist_ok=True)
         passed, failed = len(self.results) - len(self.failed), len(self.failed)
-        meta = {"suite": self.suite, "card_version": card_version(), "run_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        meta = {"suite": self.suite, "browser": self.browser, "card_version": card_version(), "run_at": datetime.datetime.now().isoformat(timespec="seconds"),
                 "duration_s": round(time.time() - self.started, 1), "fixed_browser_time": FIXED_TIME, "passed": passed, "failed": failed}
         (out / "report.json").write_text(json.dumps({**meta, "results": self.results, "screenshots": [str(s) for s in screenshots]}, indent=1, ensure_ascii=False))
         lines = [f"# {self.suite}", "",
                  f"**{'FAILED' if failed else 'PASSED'}**: {passed} passed, {failed} failed", "",
-                 f"- Card version: {meta['card_version']}", f"- Run at: {meta['run_at']} ({meta['duration_s']} s)",
+                 f"- Card version: {meta['card_version']}", f"- Browser: {self.browser}", f"- Run at: {meta['run_at']} ({meta['duration_s']} s)",
                  f"- Browser clock frozen at: {FIXED_TIME} {TIMEZONE}", ""]
         if failed:
             lines += ["## Failures", ""] + [f"- **{r['section']}** / {r['name']}" + (f": {r['detail']}" if r['detail'] else "") for r in self.failed] + [""]
@@ -511,15 +526,19 @@ GROUPS = {"render": render_smoke, "interaction": interactions, "contracts": cont
 
 
 def main():
+    global OUT
     ap = argparse.ArgumentParser(); ap.add_argument("--headed", action="store_true")
     ap.add_argument("--only", action="append", choices=list(GROUPS), help="run only these groups (repeatable)")
+    ap.add_argument("--browser", choices=BROWSERS, default=os.environ.get("EVCC_BROWSER", "chromium"),
+                    help="engine under test (default: chromium, or $EVCC_BROWSER)")
     a = ap.parse_args()
+    if a.browser != "chromium": OUT = OUT / a.browser     # keep the Chromium reports and shots apart
     OUT.mkdir(parents=True, exist_ok=True)
     from playwright.sync_api import sync_playwright
     srv, port = serve()
-    t = T()
+    t = T(f"evcc-card tests ({a.browser})", browser=a.browser)
     with sync_playwright() as p:
-        browser = p.chromium.launch(**BROWSER, headless=not a.headed, args=["--no-sandbox", "--lang=de-DE"])
+        browser = launch(p, a.browser, a.headed)
         for name, fn in GROUPS.items():
             if not a.only or name in a.only:
                 try: fn(browser, port, t)

@@ -42,12 +42,25 @@ entities added later (e.g. `disabled_in_config`, the energy counters) as missing
 ## Run
 
 ```bash
-python3 test/run.py                 # everything
-python3 test/run.py --only render   # screenshots only
-python3 test/run.py --headed        # watch it in a window
+python3 test/run.py                   # everything, Chromium
+python3 test/run.py --browser webkit  # the same checks in WebKit (reports in test/out/webkit/)
+python3 test/run.py --only render     # screenshots only
+python3 test/run.py --headed          # watch it in a window
 ```
 
 Screenshots land in `test/out/` (git-ignored). Exit code 1 on failure.
+
+### Browsers
+
+Chromium stands for desktop Chrome/Edge and the Android companion app (an
+Android System WebView, Chromium-based). WebKit is Playwright's build of
+Safari's engine and stands for Safari and the iOS companion app, which renders
+the frontend in a WKWebView and therefore uses exactly this engine. Both runs
+execute the same groups; only the README screenshot comparison is Chromium-only,
+because text rendering differs between engines. What neither run covers: the
+apps' native layer (authentication, haptics, notifications) and iOS-specific
+input controls such as the native date picker. `EVCC_BROWSER=webkit` selects
+the engine without the flag (used by the CI matrix).
 
 ## Reports
 
@@ -104,7 +117,7 @@ nightly and on demand, in three jobs:
 
 | Job | What it does |
 |---|---|
-| Test suite | `npm run build` and a check that the committed `dist/evcc-card.js` equals the build (a stale bundle fails), syntax check, `test/run.py` with Playwright's bundled Chromium; `report.md` becomes the job summary, `test/out` is uploaded as an artifact |
+| Test suite (chromium, webkit) | Matrix over both engines: `npm run build` and a check that the committed `dist/evcc-card.js` equals the build (a stale bundle fails), syntax check, `test/run.py --browser <engine>` with Playwright's bundled browser; `report.md` becomes the job summary, `test/out` is uploaded as an artifact per engine |
 | README screenshots up to date | Renders all screenshots in a `debian:bookworm-slim` container with the same Chromium and font packages as the dev container, and compares them with `images/` via `test/compare_images.py` (tolerance 0.5 % differing pixels). Fails when a card change was committed without regenerating the images. Text rendering differs between distributions by a few pixels per line, so an Ubuntu runner cannot be used for this job |
 | Entities exist in ha-evcc | `test/check_ha_evcc.py --clone` against the latest marq24/ha-evcc; the nightly run catches renamed entities in new integration releases |
 
@@ -113,9 +126,13 @@ nightly and on demand, in three jobs:
 `test/setup.sh` installs everything below on Debian/Ubuntu (idempotent, needs sudo).
 
 - Python 3 with `playwright` and `pillow` (`pip install playwright pillow`)
-- Chromium: `/usr/bin/chromium` (Debian: `apt install chromium fonts-dejavu-core fonts-roboto`)
+- Chromium: `/usr/bin/chromium` (Debian: `apt install chromium fonts-dejavu-core fonts-roboto fonts-noto-color-emoji`)
   or Playwright's own (`python3 -m playwright install chromium`). `EVCC_CHROMIUM=<path>` picks
-  a binary, `EVCC_CHROMIUM=bundled` forces the Playwright one (what CI uses)
+  a binary, `EVCC_CHROMIUM=bundled` forces the Playwright one (what CI uses).
+  `fonts-noto-color-emoji` matters for the screenshots: the plan button carries an emoji,
+  without an emoji font it renders as a placeholder box
+- WebKit: `python3 -m playwright install --with-deps webkit` (about 180 system packages on
+  Debian; `test/setup.sh` runs it). Debian 12/13 and Ubuntu 22.04/24.04 are supported
 - Node.js 18+ with npm: `npm ci` installs Rollup, `npm run build` bundles `src/` into
   `dist/evcc-card.js` (what the harness loads), `node --check dist/evcc-card.js` is the
   syntax check (`package.json` declares `"type": "module"`, so the file is parsed as ESM)

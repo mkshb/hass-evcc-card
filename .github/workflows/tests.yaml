@@ -20,8 +20,15 @@ env:
 
 jobs:
   suite:
-    name: Test suite
+    name: Test suite (${{ matrix.browser }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # chromium: Android WebView, desktop Chrome/Edge. webkit: Safari and the
+        # WKWebView of the iOS companion app. Functional checks in both; the
+        # README screenshot comparison stays Chromium-only (job below).
+        browser: [chromium, webkit]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,9 +40,9 @@ jobs:
       - name: Install browser and fonts
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq fonts-dejavu-core fonts-liberation fonts-roboto
+          sudo apt-get install -y -qq fonts-dejavu-core fonts-liberation fonts-roboto fonts-noto-color-emoji
           python3 -m pip install -q "playwright==${PLAYWRIGHT_VERSION}" pillow
-          python3 -m playwright install --with-deps chromium
+          python3 -m playwright install --with-deps ${{ matrix.browser }}
       - name: Build dist from src
         run: |
           npm ci --no-audit --no-fund
@@ -51,16 +58,17 @@ jobs:
       - name: Syntax check (ES module)
         run: node --check dist/evcc-card.js
       - name: Run test suite
-        run: python3 test/run.py
+        run: python3 test/run.py --browser ${{ matrix.browser }}
       - name: Publish report
         if: always()
         run: |
-          if [ -f test/out/report.md ]; then cat test/out/report.md >> "$GITHUB_STEP_SUMMARY"; fi
+          f="$(ls test/out/report.md test/out/${{ matrix.browser }}/report.md 2>/dev/null | tail -1)"
+          if [ -n "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY"; fi
       - name: Upload report and screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-output
+          name: test-output-${{ matrix.browser }}
           path: test/out
           retention-days: 14
 
@@ -77,7 +85,7 @@ jobs:
         run: |
           apt-get update -qq
           DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-            chromium fonts-dejavu-core fonts-liberation fonts-roboto \
+            chromium fonts-dejavu-core fonts-liberation fonts-roboto fonts-noto-color-emoji \
             python3 python3-pip python3-pil ca-certificates git
           python3 -m pip install -q --break-system-packages "playwright==${PLAYWRIGHT_VERSION}"
       - uses: actions/checkout@v4

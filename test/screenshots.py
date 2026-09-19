@@ -13,7 +13,7 @@ element itself (470 px wide) for each mode, plus the slider-input crop.
 import argparse, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from run import serve, open_card, in_card, new_page, OUT, T, BROWSER
+from run import serve, open_card, in_card, new_page, OUT, T, launch
 
 WIDTH = 470
 LP = ["openwb"]   # the EV loadpoint; "wp" is a heating loadpoint and would double the height
@@ -75,7 +75,7 @@ def main():
     t = T("evcc-card screenshots"); shots = []
     srv, port = serve()
     with sync_playwright() as p:
-        browser = p.chromium.launch(**BROWSER, headless=True, args=["--no-sandbox", "--lang=de-DE"])
+        browser = launch(p)   # always Chromium: images/ are Chromium renders
         for dark in (False, True):
             t.group("dark" if dark else "light")
             jobs = [(name, lambda n=name, c=config: shot_mode(browser, port, n, c, dark, out))
