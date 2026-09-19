@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Pre-commit hook for hass-evcc-card.
 #
-# Runs only when files under dist/ are part of the commit:
-#   1. syntax check of dist/evcc-card.js (as an ES module)
-#   2. README screenshots regenerated from the harness (test/screenshots.py);
+# Runs only when files under src/ or dist/ are part of the commit:
+#   1. dist/evcc-card.js rebuilt from src/ (npm run build) and added to the commit,
+#      together with package.json when the build synced its version
+#   2. syntax check of dist/evcc-card.js (as an ES module)
+#   3. README screenshots regenerated from the harness (test/screenshots.py);
 #      every mode is rendered light + dark and must be free of console errors,
 #      so this doubles as the render smoke. Changed images are added to the commit.
 #
@@ -13,14 +15,14 @@
 #
 # Activate once per clone (not done automatically):  git config core.hooksPath .githooks
 # Skip for one commit:  git commit --no-verify   or   EVCC_SKIP_HOOK=1 git commit
-# Tooling (Node, Chromium, Playwright, fonts):  bash test/setup.sh
+# Tooling (Node + npm, Chromium, Playwright, fonts):  bash test/setup.sh && npm ci
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 [ "${EVCC_SKIP_HOOK:-0}" = "1" ] && exit 0
-git diff --cached --name-only --diff-filter=ACMR | grep -q '^dist/' || exit 0
+git diff --cached --name-only --diff-filter=ACMR | grep -qE '^(src|dist)/' || exit 0
 
-for tool in node chromium python3; do
+for tool in node npm chromium python3; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "pre-commit: '$tool' not found. Run 'bash test/setup.sh' or commit with --no-verify." >&2
     exit 1
@@ -37,10 +39,23 @@ fail() {
   exit 1
 }
 
+if [ ! -d node_modules ]; then
+  echo "pre-commit: node_modules missing. Run 'npm ci' once (installs Rollup), or commit with --no-verify." >&2
+  exit 1
+fi
+echo "pre-commit: build dist/evcc-card.js from src/" | tee -a "$log"
+npm run --silent build >>"$log" 2>&1 || fail "build failed (rollup)"
+# The build also syncs package.json's version from src/core/constants.js
+# (prebuild); CI checks both files against src/, so both go into the commit.
+for f in dist/evcc-card.js package.json; do
+  if ! git diff --quiet -- "$f"; then
+    git add -- "$f"
+    echo "pre-commit: rebuilt $f added to the commit" | tee -a "$log"
+  fi
+done
+
 echo "pre-commit: syntax check" | tee -a "$log"
-tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-cp dist/evcc-card.js "$tmp/evcc-card.mjs"
-node --check "$tmp/evcc-card.mjs" >>"$log" 2>&1 || fail "syntax error in dist/evcc-card.js"
+node --check dist/evcc-card.js >>"$log" 2>&1 || fail "syntax error in dist/evcc-card.js"
 
 echo "pre-commit: screenshots (all modes, light + dark)" | tee -a "$log"
 python3 test/screenshots.py --out images >>"$log" 2>&1 || fail "screenshot run failed (render error or console error in a mode)"

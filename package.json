@@ -1,0 +1,24 @@
+{
+  "name": "hass-evcc-card",
+  "version": "0.8.0",
+  "description": "Home Assistant Lovelace card for the ha-evcc integration",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prebuild": "node scripts/sync-version.mjs",
+    "build": "rollup -c",
+    "version:sync": "node scripts/sync-version.mjs",
+    "version:check": "node scripts/sync-version.mjs --check",
+    "watch": "rollup -c -w",
+    "check": "node --check dist/evcc-card.js",
+    "test": "python3 test/run.py"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mkshb/hass-evcc-card.git"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "rollup": "^4.0.0"
+  }
+}

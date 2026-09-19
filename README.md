@@ -190,7 +190,7 @@ Add the card to any Lovelace dashboard and use the **visual editor** to configur
 | `charge_current_settings` | `string` | `collapsed` | `expanded` to show charge settings expanded by default |
 | `hide_settings` | `list` | *(none)* | Remove individual settings from the `loadpoint` / `compact` card: `limit_soc`, `min_soc`, `phases`, `max_current`, `min_current`, `battery_boost`, `priority`, `smart_cost_limit`, `smart_feed_in_priority_limit`. See [Slider settings](#slider-settings) |
 | `slider_steps` | `map` | *(entity)* | **YAML only** — Override the step of a number slider per setting, e.g. `{ smart_cost_limit: 0.01, limit_soc: 5 }`. Also sets the increment of the − / + buttons in the direct-input panel. See [Slider settings](#slider-settings) |
-| `stats_period` | `string` | `total` | Default statistics period for the footer/summary: `month`, `year`, `total`, `none` |
+| `stats_period` | `string` | *(see note)* | Statistics period: `month`, `year`, `total`, `none`. Unconfigured, the `stats` mode opens on the most recent month and the footer under `site`/`grid`/`flow` summarises everything; `none` hides that footer. The older values `30d`, `365d` and `thisYear` still work |
 | `prefix` | `string` | *(auto)* | **YAML only** — Entity prefix, auto-detected from ha-evcc. Only needed for multiple EVCC instances with custom prefixes. |
 
 ---
@@ -507,11 +507,30 @@ The solar share is taken from each charging session's recorded solar percentage.
 
 Pull requests are welcome! Please open an issue first to discuss what you'd like to change.
 
+[CONTRIBUTING.md](CONTRIBUTING.md) has the details: project layout, how the
+mixins fit together, the test groups and the checks a pull request has to pass.
+
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/my-feature`
 3. Commit your changes: `git commit -m 'Add my feature'`
 4. Push to the branch: `git push origin feature/my-feature`
 5. Open a Pull Request
+
+### Development
+
+The card is written as plain ES modules under `src/` and bundled with Rollup into
+`dist/evcc-card.js`, the file HACS installs. The bundle is committed, so every
+change under `src/` needs a rebuild before the commit (CI rejects a stale bundle):
+
+```bash
+npm ci            # once per clone, installs Rollup
+npm run build     # src/ -> dist/evcc-card.js
+npm run watch     # rebuild on every save
+python3 test/run.py   # headless tests against a mock Home Assistant, see test/README.md
+```
+
+`git config core.hooksPath .githooks` activates a pre-commit hook that rebuilds
+the bundle and regenerates the README screenshots for you.
 
 Contributions that are especially appreciated:
 

@@ -1,14 +1,5 @@
-/**
- * evcc-card — Generische Home Assistant Lovelace Card für ha-evcc
- *
- * Datei:   evcc-card.js
- * Ablage:  /config/www/evcc-card/evcc-card.js
- *
- * Übersetzungen: /config/www/evcc-card/locales/de.json
- *                /config/www/evcc-card/locales/en.json
- */
-
-const EVCC_CARD_VERSION = "0.7.9";
+/* hass-evcc-card. Built from src/ with Rollup; edit the sources, not this file. */
+const EVCC_CARD_VERSION = "0.8.0";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -135,6 +126,56 @@ const FEATURES = [
 // versions need when PV is hidden but a dynamic tariff exists (Mode.vue).
 const SMART_MODE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12,6A6,6 0 0,1 18,12C18,14.22 16.79,16.16 15,17.2V19A1,1 0 0,1 14,20H10A1,1 0 0,1 9,19V17.2C7.21,16.16 6,14.22 6,12A6,6 0 0,1 12,6M14,21V22A1,1 0 0,1 13,23H11A1,1 0 0,1 10,22V21H14M20,11H23V13H20V11M1,11H4V13H1V11M13,1V4H11V1H13M4.92,3.5L7.05,5.64L5.63,7.05L3.5,4.93L4.92,3.5M16.95,5.63L19.07,3.5L20.5,4.93L18.37,7.05L16.95,5.63Z"/></svg>`;
 
+// `stats_period` exists in two vocabularies. The current one, which the editor
+// writes and the README documents: month | year | total | none. And the legacy
+// one from before the sessions stats path, still valid in existing YAML:
+// 30d | 365d | thisYear | total.
+//
+// Everything is normalised to the current vocabulary here, in one place, so the
+// two stats paths cannot drift apart again. The fallback is the caller's,
+// because the defaults differ: the stats mode opens on the most recent month,
+// the compact footer under site/grid/flow summarises everything.
+const STATS_PERIOD_ALIASES = {
+  month: "month", "30d": "month",
+  year:  "year",  "365d": "year", thisYear: "year",
+  total: "total",
+  none:  "none",
+};
+
+function normalizeStatsPeriod(value, fallback = "total") {
+  return STATS_PERIOD_ALIASES[value] ?? fallback;
+}
+
+// How a normalised period falls back onto the legacy entity/recorder path,
+// which has periods of its own. A configured legacy value is passed through
+// untouched instead (365d is "the last 365 days", not the calendar year), so
+// existing dashboards keep exactly the view they had.
+const STATS_PERIOD_LEGACY_VALUES = ["30d", "365d", "thisYear", "total"];
+const STATS_PERIOD_TO_LEGACY = { month: "30d", year: "thisYear", total: "total", none: "total" };
+
+// The legacy period a configured value ends up on. Used by the stats mode and
+// by the compact footer, so both reach the same stat_* entities.
+function legacyStatsPeriod(value, fallback = "total") {
+  return STATS_PERIOD_LEGACY_VALUES.includes(value)
+    ? value
+    : STATS_PERIOD_TO_LEGACY[normalizeStatsPeriod(value, fallback)];
+}
+
+// Entity attributes the card reads while rendering. The render key is built from
+// these next to the state, because HA hands out a new state object for a pure
+// attribute change too: a select whose options change, a number whose min/max
+// moves, a vehicle whose metadata arrives. Without them the card would keep
+// showing the previous options or slider bounds.
+//
+// This list is not documentation, it is load bearing: an attribute missing here
+// is an attribute whose change the card ignores. The test group `renderkey`
+// proxies the attribute objects during a render of every mode and fails when
+// something outside this list is read.
+const RENDER_ATTRS = [
+  "options", "min", "max", "step", "unit_of_measurement", "device_class",
+  "title", "loadpoint_title", "vehicle", "soc", "time", "weekdays",
+];
+
 // Settings the user can drop from the loadpoint/compact card via
 // `hide_settings: [...]`. Keys are the ha-evcc feature suffixes (plus the two
 // non-slider controls); the label keys are shared with the card itself.
@@ -161,35 +202,76 @@ const CHARGE_MODES = {
   "now":   { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>`,  tKey: "modeNow"  },
 };
 
+function stateVal(hass, entityId) {
+  return hass.states[entityId]?.state ?? null;
+}
+
+function attr(hass, entityId, key) {
+  return hass.states[entityId]?.attributes?.[key] ?? null;
+}
+
+function unitStr(hass, entityId) {
+  return attr(hass, entityId, "unit_of_measurement") ?? "";
+}
+
+function displayUnit(hass, entityId) {
+  const rawUnit = unitStr(hass, entityId);
+  return rawUnit || (entityId.includes("soc") ? "%" : "");
+}
+
+function isOn(hass, entityId) {
+  const s = stateVal(hass, entityId);
+  return s === "on" || s === "true";
+}
+
 // Detect the entity prefix AND the integration's config_entry_id from a single
 // `config/entity_registry/list` call. The entry_id is required by the ha-evcc
 // WebSocket data API commands (evcc_intg/forecast|sessions|plan_preview); every
 // evcc_intg registry entry carries it in `config_entry_id`.
-async function detectIntegration(hass) {
+//
+// Both values are taken from the SAME config entry. ha-evcc builds the entity
+// prefix from the entry title (system_id = slugify(config_entry.title)), so a
+// second evcc instance means a second prefix and a second entry id. Reading the
+// prefix from one entry and the entry id from another would show the entities of
+// one installation while asking the other one for forecast, sessions and plan
+// previews. `preferredPrefix` is the card's configured prefix, which decides
+// which instance is meant; without it the first entry in the registry wins.
+async function detectIntegration(hass, preferredPrefix = null) {
   try {
     const entities = await hass.callWS({ type: "config/entity_registry/list" });
     const evccEnts = entities.filter(e => e.platform === "evcc_intg");
-    if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null };
-
-    const entryId = evccEnts.find(e => e.config_entry_id)?.config_entry_id ?? null;
+    if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null, instances: [] };
 
     const siteSuffixes = FEATURES.filter(f => !f.lp);
-    for (const ent of evccEnts) {
-      const dotIdx = ent.entity_id.indexOf(".");
-      const domain = ent.entity_id.slice(0, dotIdx);
-      const slug   = ent.entity_id.slice(dotIdx + 1);
-
+    const prefixOf = (entityId) => {
+      const dotIdx = entityId.indexOf(".");
+      const domain = entityId.slice(0, dotIdx);
+      const slug   = entityId.slice(dotIdx + 1);
       for (const feat of siteSuffixes) {
         if (feat.domain === domain && slug.endsWith(feat.suffix)) {
           const detected = slug.slice(0, slug.length - feat.suffix.length);
-          if (detected.length > 0) return { prefix: detected, entryId };
+          if (detected.length > 0) return detected;
         }
       }
+      return null;
+    };
+
+    // One group per config entry, in registry order; the prefix of a group comes
+    // from its own first site entity.
+    const byEntry = new Map();
+    for (const ent of evccEnts) {
+      const key = ent.config_entry_id ?? null;
+      if (!byEntry.has(key)) byEntry.set(key, { entryId: key, prefix: null });
+      const group = byEntry.get(key);
+      if (!group.prefix) group.prefix = prefixOf(ent.entity_id);
     }
-    return { prefix: "evcc_", entryId };
+
+    const instances = [...byEntry.values()].map(g => ({ prefix: g.prefix ?? "evcc_", entryId: g.entryId }));
+    const chosen = (preferredPrefix && instances.find(i => i.prefix === preferredPrefix)) || instances[0];
+    return { prefix: chosen.prefix, entryId: chosen.entryId, instances };
   } catch (e) {
     console.warn("[evcc-card] Could not detect integration from entity registry:", e);
-    return { prefix: "evcc_", entryId: null };
+    return { prefix: "evcc_", entryId: null, instances: [] };
   }
 }
 
@@ -293,21 +375,19 @@ function _discoverDeviceSources(site, prefix, primarySuffix, secondarySuffix) {
   return sources;
 }
 
-function stateVal(hass, entityId) {
-  return hass.states[entityId]?.state ?? null;
+// The card builds its DOM from template literals, so anything that is free text
+// in an evcc or HA configuration has to pass through these before it reaches
+// innerHTML: loadpoint, vehicle and device titles, units, the currency, the
+// card title and the option lists of the ha-evcc select entities. Entity ids
+// are not escaped: HA validates them down to [a-z0-9_] plus one dot.
+
+function escHtml(str) {
+  return String(str).replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-function attr(hass, entityId, key) {
-  return hass.states[entityId]?.attributes?.[key] ?? null;
-}
-
-function unitStr(hass, entityId) {
-  return attr(hass, entityId, "unit_of_measurement") ?? "";
-}
-
-function displayUnit(hass, entityId) {
-  const rawUnit = unitStr(hass, entityId);
-  return rawUnit || (entityId.includes("soc") ? "%" : "");
+function escAttr(str) {
+  return escHtml(str);
 }
 
 // Decimal places implied by a slider step (0.005 → 3, 1 → 0).
@@ -322,11 +402,6 @@ function fmtNum(v, decimals) {
   const n = Number(v);
   if (isNaN(n)) return "";
   return String(Number(n.toFixed(decimals)));
-}
-
-function isOn(hass, entityId) {
-  const s = stateVal(hass, entityId);
-  return s === "on" || s === "true";
 }
 
 // Parse an evcc-sourced timestamp that may be an RFC3339 string OR a unix
@@ -422,7 +497,7 @@ let _sharedTranslations = {};
 let _sharedTranslationsReady = false;
 let _sharedTranslationsLoading = null;   // Promise while loading, null otherwise
 
-async function _loadSharedTranslations() {
+async function loadSharedTranslations() {
   if (_sharedTranslationsReady) return;
   if (_sharedTranslationsLoading) return _sharedTranslationsLoading;
 
@@ -457,95 +532,11 @@ async function _loadSharedTranslations() {
   return _sharedTranslationsLoading;
 }
 
-class EvccCard extends HTMLElement {
+function sharedTranslations() { return _sharedTranslations; }
+function sharedTranslationsReady() { return _sharedTranslationsReady; }
 
-  constructor() {
-    super();
-    this.attachShadow({ mode: "open" });
-    this._hass          = null;
-    this._config        = {};
-    this._isDragging    = false;
-    this._pendingRender = false;
-    this._sliderEditing = false;   // direct-input panel open (defers re-renders like a drag)
-    this._sliderEditPanel = null;
-    this._renderTimer   = null;
-    this._lastRenderKey = null;
-    this._countdownInterval = null;
-    this._planState     = {};
-    this._planPreviewDebounce = {};
-    this._tabState      = {};
-    this._statsPeriod   = "total";
-    this._chartCache     = {};
-    this._chartCacheTime = {};
-    this._translations  = _sharedTranslations;
-    this._translationsReady = false;
-
-    this._siteTableExpanded = undefined; // undefined = use config default
-    this._currentBlockExpanded = {};
-    this._detectedPrefix = null;
-    this._cachedEntities   = null;  // { loadpoints, site } — invalidated when entity IDs change
-    this._cachedEntityIdKey = null; // sorted join of evcc entity IDs + prefix
-
-    // ha-evcc WebSocket data API (evcc_intg/forecast|sessions|plan_preview).
-    this._entryId             = null;   // config_entry_id, needed by the WS commands
-    this._integrationDetected = false;  // entity-registry probe done once
-    this._detectingIntegration = false;
-    this._caps        = null;   // { version, commands[] } from evcc_intg/capabilities
-    this._capsLoaded  = false;
-    this._capsLoading = null;   // in-flight promise guard
-    this._lpIndexMap  = {};     // loadpoint slug -> evcc API index (from capabilities)
-    this._wsCache     = {};     // cacheKey -> { ts, data }
-    this._wsInflight  = {};     // cacheKey -> Promise (de-dup concurrent fetches)
-
-    this._onPlanReset = (e) => {
-      const lpName = e.detail?.lpName;
-      setTimeout(() => {
-        if (lpName) {
-          delete this._planState[lpName];
-          clearTimeout(this._planPreviewDebounce[lpName]);
-          delete this._planPreviewDebounce[lpName];
-        } else {
-          this._planState = {};
-          for (const k of Object.keys(this._planPreviewDebounce)) clearTimeout(this._planPreviewDebounce[k]);
-          this._planPreviewDebounce = {};
-        }
-        // Purge preview cache entries
-        for (const key of Object.keys(this._wsCache)) {
-          if (key.startsWith("plan:")) delete this._wsCache[key];
-        }
-        if (this._hass) this._render();
-      }, 1500);
-    };
-    window.addEventListener("evcc-plan-reset", this._onPlanReset);
-  }
-
-  connectedCallback() {
-    if (!this._countdownInterval) {
-      this._countdownInterval = setInterval(() => this._tickCountdowns(), 1000);
-    }
-  }
-
-  disconnectedCallback() {
-    window.removeEventListener("evcc-plan-reset", this._onPlanReset);
-    if (this._countdownInterval) {
-      clearInterval(this._countdownInterval);
-      this._countdownInterval = null;
-    }
-    // Drop on-demand WS caches; a re-mount re-probes capabilities/entry_id.
-    this._wsCache    = {};
-    this._wsInflight = {};
-  }
-
-  async _loadTranslations() {
-    await _loadSharedTranslations();
-    this._translations = _sharedTranslations;
-    this._translationsReady = true;
-  }
-
-  _getPrefix() {
-    return this._config.prefix || this._detectedPrefix || "evcc_";
-  }
-
+// ha-evcc WebSocket data API (capabilities, forecast, sessions, plan_preview). Methods are mixed into EvccCard.prototype.
+const evccApi = {
   // ── ha-evcc WebSocket data API ──────────────────────────────────────────
   // On-demand request/response commands served by evcc_intg. They return data
   // that does not map to entities (forecast curves, raw session history, plan
@@ -553,15 +544,20 @@ class EvccCard extends HTMLElement {
 
   _hasCmd(name) {
     return Array.isArray(this._caps?.commands) && this._caps.commands.includes(name);
-  }
+  },
 
   // Probe capabilities once. Older ha-evcc versions lack the command and the
   // callWS rejects — we then mark the feature set empty so the UI degrades.
   _loadCapabilities() {
     if (this._capsLoaded || this._capsLoading || !this._hass) return this._capsLoading;
+    // A prefix change swaps the entry while this is in flight; the answer for
+    // the old entry is then dropped and the new one's probe is already running.
+    const entryId = this._entryId;
+    const stale   = () => entryId !== this._entryId;
     this._capsLoading = this._hass
-      .callWS({ type: "evcc_intg/capabilities", entry_id: this._entryId })
+      .callWS({ type: "evcc_intg/capabilities", entry_id: entryId })
       .then(res => {
+        if (stale()) return;
         this._caps = {
           version:  res?.version ?? null,
           commands: Array.isArray(res?.commands) ? res.commands : [],
@@ -574,10 +570,12 @@ class EvccCard extends HTMLElement {
         }
       })
       .catch(e => {
+        if (stale()) return;
         console.warn("[evcc-card] evcc_intg/capabilities not available:", e?.message || e);
         this._caps = { version: null, commands: [] };
       })
-      .finally(() => {
+      .then(() => {
+        if (stale()) return;
         this._capsLoaded  = true;
         this._capsLoading = null;
         // Pre-fetch debug probes so data is cached before the debug block renders.
@@ -585,7 +583,7 @@ class EvccCard extends HTMLElement {
         this._render();
       });
     return this._capsLoading;
-  }
+  },
 
   // Kick off WS probes in the background so they are cached for the debug block.
   // Results arrive asynchronously; _wsFetch.finally() triggers a re-render.
@@ -593,7 +591,7 @@ class EvccCard extends HTMLElement {
     if (this._hasCmd("forecast"))     { this._wsForecast("grid"); this._wsForecast("planner"); }
     if (this._hasCmd("sessions"))     this._wsSessions();
     // plan_preview needs a loadpoint — skip here, probe only in debug report.
-  }
+  },
 
   // Generic cached WS fetch. Returns fresh cached data synchronously; otherwise
   // kicks off the request (de-duplicated per cacheKey) and triggers a re-render
@@ -607,17 +605,22 @@ class EvccCard extends HTMLElement {
     if (cached && (now - cached.ts) < ttlMs) return cached.result;
 
     if (!this._wsInflight[cacheKey]) {
+      const entryId = this._entryId;
+      const stale   = () => entryId !== this._entryId;   // entry swapped meanwhile, see _syncIntegrationInstance
       this._wsInflight[cacheKey] = this._hass
-        .callWS({ type, entry_id: this._entryId, ...params })
+        .callWS({ type, entry_id: entryId, ...params })
         .then(data => {
+          if (stale()) return;
           this._wsCache[cacheKey] = { ts: Date.now(), result: { data } };
         })
         .catch(e => {
+          if (stale()) return;
           const msg = e?.message || (typeof e === "object" ? JSON.stringify(e) : String(e));
           console.warn(`[evcc-card] ${type} failed:`, msg);
           this._wsCache[cacheKey] = { ts: Date.now(), result: { error: msg } };
         })
         .finally(() => {
+          if (stale()) return;
           delete this._wsInflight[cacheKey];
           // Throttle the re-render to avoid rapid DOM replacements.
           if (!this._wsRenderTimer) {
@@ -630,7 +633,7 @@ class EvccCard extends HTMLElement {
     }
     // Serve stale result while a refresh is in flight, else null (pending).
     return cached ? cached.result : null;
-  }
+  },
 
   // kind: grid | feedin | co2 | solar | planner  →  { kind, rates[], smartCostType?, currency? }
   // capabilities + the "planner" kind ship in the same ha-evcc release, so
@@ -638,7 +641,7 @@ class EvccCard extends HTMLElement {
   _wsForecast(kind) {
     if (!this._hasCmd("forecast")) return null;
     return this._wsFetch("evcc_intg/forecast", { kind }, `forecast:${kind}`, 5 * 60 * 1000);
-  }
+  },
 
   // year/month optional  →  { sessions[] }
   _wsSessions(year, month) {
@@ -647,7 +650,7 @@ class EvccCard extends HTMLElement {
     if (year  != null) params.year  = year;
     if (month != null) params.month = month;
     return this._wsFetch("evcc_intg/sessions", params, `sessions:${year ?? ""}:${month ?? ""}`, 5 * 60 * 1000);
-  }
+  },
 
   // Canonical params + cache key for a plan_preview request. Shared by every
   // call site so the cached-read, the fetch and the invalidation all agree.
@@ -658,10 +661,11 @@ class EvccCard extends HTMLElement {
       value:     String(opts.value),
       timestamp: opts.timestamp,
     };
-  }
+  },
+
   _planPreviewKey(opts) {
     return "plan:" + JSON.stringify(this._planPreviewParams(opts));
-  }
+  },
 
   // opts: { loadpoint:int, kind:"soc"|"energy", value, timestamp }  →
   //       { duration, power, rates[], smartCostType, currency }
@@ -672,7 +676,7 @@ class EvccCard extends HTMLElement {
     if (!this._hasCmd("plan_preview")) return null;
     const params = this._planPreviewParams(opts);
     return this._wsFetch("evcc_intg/plan_preview", params, this._planPreviewKey(opts), 60 * 1000);
-  }
+  },
 
   // Render-path read: serve the cached preview regardless of age, and prime
   // exactly one fetch if nothing is cached or in flight. Unlike _wsPlanPreview,
@@ -688,7 +692,7 @@ class EvccCard extends HTMLElement {
     if (cached) return cached.result;
     if (!this._wsInflight[cacheKey]) this._wsPlanPreview(opts);
     return null;
-  }
+  },
 
   // plan_preview expects the integer evcc loadpoint index (1-based), but the card
   // keys loadpoints by name slug. Resolution order:
@@ -710,7 +714,7 @@ class EvccCard extends HTMLElement {
     const names = Object.keys(discoverEntities(this._hass, prefix).loadpoints).sort();
     const idx = names.indexOf(lpName);
     return idx >= 0 ? idx + 1 : null;
-  }
+  },
 
   // Debounced plan preview fetch — called after SOC/time/vehicle changes.
   _requestPlanPreview(lpName) {
@@ -737,297 +741,11 @@ class EvccCard extends HTMLElement {
       if (this._wsCache[cacheKey] || this._wsInflight[cacheKey]) return;
       this._wsPlanPreview(opts);
     }, 500);
-  }
+  },
+};
 
-  set hass(hass) {
-    this._hass = hass;
-
-    if (!this._integrationDetected && !this._detectingIntegration) {
-      this._detectingIntegration = true;
-      detectIntegration(hass).then(({ prefix, entryId }) => {
-        this._detectingIntegration = false;
-        this._integrationDetected = true;
-        this._entryId = entryId;
-        // Probe the ha-evcc WebSocket data API once the entry_id is known.
-        this._loadCapabilities();
-        // Honour an explicitly configured prefix, but still keep the detected one.
-        const changed = (!this._config.prefix && prefix !== this._detectedPrefix);
-        this._detectedPrefix = prefix;
-        if (changed) {
-          this._lastRenderKey = null;
-          if (this._renderTimer) {
-            clearTimeout(this._renderTimer);
-            this._renderTimer = null;
-          }
-          this._render();
-        }
-      });
-    }
-
-    if (this._isDragging || this._sliderEditing) {
-      this._pendingRender = true;
-      this._updateLiveValues();
-      return;
-    }
-    const key = this._buildRenderKey(hass);
-    if (key === this._lastRenderKey) return;
-
-    if (this._renderTimer) return;
-    this._renderTimer = setTimeout(() => {
-      this._renderTimer   = null;
-      this._lastRenderKey = this._buildRenderKey(this._hass);
-      this._render();
-    }, 300);
-  }
-
-  _buildRenderKey(hass) {
-    if (!hass) return "";
-    const prefix     = this._getPrefix();
-    const stateCount = Object.keys(hass.states).length;
-
-    // Re-filter evcc entity IDs only when entity count or prefix changes (not on every value update)
-    if (!this._evccIds || this._evccIdsCount !== stateCount || this._evccIdsPrefix !== prefix) {
-      this._evccIdsCount  = stateCount;
-      this._evccIdsPrefix = prefix;
-      this._evccIds       = Object.keys(hass.states).filter(id => id.split(".")[1]?.startsWith(prefix));
-    }
-
-    const lang = this._config.language || (hass.language ?? "de");
-    return lang + "|" + this._evccIds.map(id => `${id}=${hass.states[id]?.state}`).join("|");
-  }
-
-  static getConfigElement() {
-    return document.createElement("evcc-card-editor");
-  }
-
-  static getStubConfig() {
-    return { mode: "loadpoint" };
-  }
-
-  setConfig(config) {
-    this._config = config || {};
-    const validPeriods = ["30d", "365d", "thisYear", "total"];
-    if (validPeriods.includes(config?.stats_period)) {
-      this._statsPeriod = config.stats_period;
-    }
-    // Sessions stats path scope (Month/Year/Total); map legacy values too.
-    const scopeMap = { total: "total", "30d": "month", "365d": "year", thisYear: "year" };
-    this._statsScope = scopeMap[config?.stats_period] ?? "month";
-    if (this._statsMetric == null) this._statsMetric = "energy"; // energy | cost | co2
-    if (this._statsGroup  == null) this._statsGroup  = "solar";  // solar | loadpoint | vehicle
-    const validSizes = ["small", "medium", "large"];
-    if (this._config.size && !validSizes.includes(this._config.size)) {
-      delete this._config.size;
-    }
-
-    if (!this._translationsReady && !this._loadingTranslations) {
-      this._loadingTranslations = true;
-      this._loadTranslations().then(() => {
-        this._loadingTranslations = false;
-        if (this._hass) this._render();
-      });
-    } else if (this._hass && this._translationsReady) {
-      this._lastRenderKey = null;
-      this._render();
-    }
-  }
-
-  _toggleSite() {
-    const wasExpanded = this._siteTableExpanded !== undefined
-      ? this._siteTableExpanded
-      : (this._config.site_details !== "collapsed");
-    this._siteTableExpanded = !wasExpanded;
-
-    const root = this.shadowRoot;
-    const table = root?.querySelector(".site-table");
-    if (table) table.style.display = wasExpanded ? "none" : "";
-    const wrap = root?.querySelector(".flow-wrap-clickable");
-    if (wrap) {
-      wrap.title = !wasExpanded ? this._t("siteCollapse") : this._t("siteExpand");
-    }
-    const chevronPath = root?.querySelector(".sankey-center-chevron path");
-    if (chevronPath) chevronPath.setAttribute("d", !wasExpanded
-      ? "M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
-      : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z");
-  }
-
-  _t(key, replacements = {}) {
-    // Use pre-resolved strings from current render cycle; fall back to resolving on demand
-    const strings = this._renderStrings ?? (() => {
-      const lang = (this._config.language
-        || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
-      return this._translations[lang] || this._translations["en"] || {};
-    })();
-
-    let val = strings[key] ?? key;
-
-    for (const [k, v] of Object.entries(replacements)) {
-      val = val.replace(`{${k}}`, v);
-    }
-
-    return val;
-  }
-
-  _render() {
-    if (!this._hass) return;
-    // A priority drag holds live DOM references (row, placeholder, captured
-    // handle). Replacing the shadow DOM now would orphan it and leave
-    // _isDragging stuck. Defer; _priorityDragEnd re-renders.
-    if (this._priorityDragging) { this._pendingRender = true; return; }
-    // A full re-render replaces the shadow DOM, so an open direct-input panel is
-    // gone afterwards; clear the flag or hass updates would stay deferred.
-    this._sliderEditing   = false;
-    this._sliderEditPanel = null;
-    this._dropSliderEditOutside();
-    if (!this._cardId) {
-      this._cardId = Math.random().toString(36).slice(2);
-      window.__evccCards = window.__evccCards || new Map();
-      window.__evccCards.set(this._cardId, this);
-    }
-
-    if (!this._translationsReady) {
-      if (!this.shadowRoot.firstChild) {
-        this.shadowRoot.innerHTML = `
-          <style>:host{display:block}
-          .loading{padding:24px;text-align:center;color:var(--secondary-text-color);font-size:.9rem}</style>
-          <ha-card><div class="loading">⏳</div></ha-card>`;
-      }
-      return;
-    }
-
-    // Resolve language strings once per render — reused by all _t() calls
-    const lang = (this._config.language
-      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
-    this._renderStrings = this._translations[lang] || this._translations["en"] || {};
-
-    const prefix = this._getPrefix();
-
-    // Cache discoverEntities() — only re-run when the set of entity IDs changes (not on value updates)
-    const idsForKey = Object.keys(this._hass.states).filter(id => id.split(".")[1]?.startsWith(prefix));
-    const evccIdKey = prefix + "|" + idsForKey.sort().join(",");
-    if (evccIdKey !== this._cachedEntityIdKey) {
-      this._cachedEntityIdKey = evccIdKey;
-      this._cachedEntities    = discoverEntities(this._hass, prefix);
-    }
-    const { loadpoints, site, meters } = this._cachedEntities;
-
-    const filterRaw = this._config.loadpoints;
-    const filter = filterRaw
-      ? (Array.isArray(filterRaw) ? filterRaw : [filterRaw])
-      : null;
-    const visible = filter && filter.length > 0
-      ? Object.fromEntries(
-          Object.entries(loadpoints).filter(([lp]) => filter.includes(lp))
-        )
-      : loadpoints;
-
-    // disabled_loadpoints: hide (default) | dim | show - how to treat
-    // loadpoints that are disabled in the evcc config (ha-evcc 2026.8.8+).
-    const dlpOpt = ["hide", "dim", "show"].includes(this._config.disabled_loadpoints)
-      ? this._config.disabled_loadpoints
-      : "hide";
-    const { enabled: lpEnabled, disabled: lpDisabled } =
-      partitionDisabledLoadpoints(this._hass, visible);
-    // Interactive modes (plan/priority) can never work on a disabled
-    // loadpoint - its entities don't exist - so those always get lpEnabled.
-    const lpVisible = dlpOpt === "show" ? visible : lpEnabled;
-    const dimmed    = dlpOpt === "dim"  ? lpDisabled : {};
-    const allDisabled = Object.keys(visible).length > 0
-      && Object.keys(lpEnabled).length === 0;
-
-    this.shadowRoot.innerHTML = `
-      <style>${this._styles()}</style>
-      <div class="evcc-scale-wrap"${this._config.size ? ` data-size="${this._config.size}"` : ""}><ha-card>
-        <div class="card-content">
-        ${this._config.mode === "debug"
-            ? this._renderDebugBlock(loadpoints, site, meters)
-            : this._config.mode === "battery"
-            ? this._renderBatteryBlock(site)
-            : this._config.mode === "site"
-              ? this._renderSiteBlock(site, loadpoints)
-              : this._config.mode === "flow"
-              ? this._renderFlowBlock(site, loadpoints)
-              : (this._config.mode === "grid" || this._config.mode === "site2")
-              ? this._renderSiteBlock2(site, loadpoints)
-              : this._config.mode === "stats"
-              ? this._renderStatsBlock()
-              : this._config.mode === "plan"
-                ? this._renderPlanMode(lpEnabled)
-                : this._config.mode === "repeatplan"
-                ? this._renderRepeatPlansMode()
-                : this._config.mode === "priority"
-                  ? this._renderPriorityMode(lpEnabled)
-                : this._config.mode === "compact"
-                  ? (Object.keys(lpVisible).length === 0 && Object.keys(dimmed).length === 0
-                      ? (allDisabled
-                          ? this._renderAllDisabled()
-                          : this._renderEmpty(loadpoints))
-                      : Object.entries(lpVisible)
-                          .map(([lp, ents]) => this._renderCompactLoadpoint(lp, ents))
-                          .join("")
-                        + Object.entries(dimmed)
-                          .map(([lp, ents]) => this._renderDisabledLoadpoint(lp, ents))
-                          .join(""))
-                  : Object.keys(lpVisible).length === 0 && Object.keys(dimmed).length === 0
-              ? (allDisabled
-                  ? this._renderAllDisabled()
-                  : this._renderEmpty(loadpoints))
-              : Object.entries(lpVisible)
-                  .map(([lp, ents]) => this._renderLoadpoint(lp, ents))
-                  .join("")
-                + Object.entries(dimmed)
-                  .map(([lp, ents]) => this._renderDisabledLoadpoint(lp, ents))
-                  .join("")
-          }
-        </div>
-      </ha-card></div>
-    `;
-    this._attachListeners();
-  }
-
-  _updateLiveValues() {
-    const root = this.shadowRoot;
-    root.querySelectorAll("[data-live-entity]").forEach(el => {
-      const entityId = el.dataset.liveEntity;
-      const type     = el.dataset.liveType;
-      if (!entityId) return;
-
-      if (type === "soc-fill") {
-        const soc      = parseFloat(stateVal(this._hass, entityId)) || 0;
-        const minSoc   = parseFloat(el.dataset.minSoc)   || 0;
-        const limitSoc = parseFloat(el.dataset.limitSoc) || 100;
-        el.style.width      = `${soc}%`;
-        el.style.background = socFillGradient(soc, minSoc, limitSoc);
-      } else if (type === "soc-pct") {
-        const soc = parseFloat(stateVal(this._hass, entityId)) || 0;
-        el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${unitStr(this._hass, entityId)}`;
-      } else if (type === "power") {
-        el.textContent = `${parseFloat(stateVal(this._hass, entityId)).toFixed(1)} ${unitStr(this._hass, entityId)}`;
-      }
-    });
-  }
-
-  _tickCountdowns() {
-    const root = this.shadowRoot;
-    if (!root) return;
-    root.querySelectorAll("[data-countdown-target]").forEach(el => {
-      const ts = el.dataset.countdownTarget;
-      if (!ts) return;
-      const target = Date.parse(ts);
-      if (isNaN(target)) return;
-      const sec = Math.max(0, Math.round((target - Date.now()) / 1000));
-      const cd = sec <= 0
-        ? ""
-        : sec < 60
-          ? `${sec}s`
-          : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
-      const key = el.dataset.countdownLabel;
-      if (key) {
-        el.textContent = this._t(key, { val: cd || "—" });
-      }
-    });
-  }
-
+// Loadpoint and compact modes: header, mode selector, power row, vehicle and session info, toggles. Methods are mixed into EvccCard.prototype.
+const loadpointView = {
   _renderLoadpoint(lpName, ents) {
     const charging   = ents.charging  ? isOn(this._hass, ents.charging)  : false;
     const connected  = ents.connected ? isOn(this._hass, ents.connected) : false;
@@ -1041,7 +759,7 @@ class EvccCard extends HTMLElement {
     return `
       <div class="loadpoint">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || lpName}</span>
+          <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
           ${remaining ? `<span class="lp-remaining" title="${this._t("remaining")}">${remaining}</span>` : ""}
           <span class="lp-badge ${statusClass}">
             ${statusLabel}
@@ -1058,7 +776,7 @@ class EvccCard extends HTMLElement {
         ${this._renderSessionInfo(ents, charging)}
       </div>
     `;
-  }
+  },
 
   _renderCompactLoadpoint(lpName, ents) {
     const charging    = ents.charging  ? isOn(this._hass, ents.charging)  : false;
@@ -1082,7 +800,7 @@ class EvccCard extends HTMLElement {
       <div class="compact-tabs">
         ${tabs.map((tab, i) => `
           <button class="compact-tab ${activeTab === i ? "active" : ""}"
-                  data-lp="${lpName}" data-tab="${i}">
+                  data-lp="${escAttr(lpName)}" data-tab="${i}">
             <span class="compact-tab-icon">${tab.icon}</span>
             <span class="compact-tab-label">${this._t(tab.key)}</span>
           </button>
@@ -1111,9 +829,9 @@ class EvccCard extends HTMLElement {
     const remaining = charging ? fmtRemainingDuration(this._hass, ents.charge_remaining_duration) : "";
 
     return `
-      <div class="loadpoint" data-lp-compact="${lpName}">
+      <div class="loadpoint" data-lp-compact="${escAttr(lpName)}">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || lpName}</span>
+          <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
           ${remaining ? `<span class="lp-remaining" title="${this._t("remaining")}">${remaining}</span>` : ""}
           <span class="lp-badge ${statusClass}">
             ${statusLabel}
@@ -1124,97 +842,14 @@ class EvccCard extends HTMLElement {
         ${tabContent}
       </div>
     `;
-  }
-
-  _renderPriorityMode(visible) {
-    const lpKeys = Object.keys(visible);
-    if (lpKeys.length === 0) return this._renderEmpty(visible);
-
-    const items = lpKeys.map(lp => {
-      const ents = visible[lp];
-      const pid  = ents.priority;
-      const raw  = pid ? parseFloat(stateVal(this._hass, pid)) : NaN;
-      const cur  = isNaN(raw) ? 0 : raw;
-      const max  = pid ? (attr(this._hass, pid, "max") ?? Infinity) : Infinity;
-      const min  = pid ? (attr(this._hass, pid, "min") ?? 0) : 0;
-      const title = this._loadpointTitle(lp, ents);
-      return { lp, title, priorityEnt: pid, currentValue: cur, hasState: !isNaN(raw), max, min };
-    });
-
-    const signature = [...lpKeys].sort().join("|");
-    if (!this._priorityDraft || this._priorityDraft.signature !== signature) {
-      const sorted = items.slice().sort((a, b) =>
-        b.currentValue - a.currentValue || a.title.localeCompare(b.title));
-      this._priorityDraft = { signature, order: sorted.map(i => i.lp) };
-    }
-
-    const order = this._priorityDraft.order;
-    const N = order.length;
-    const byLp = Object.fromEntries(items.map(i => [i.lp, i]));
-
-    const targetFor = (idx, it) => {
-      if (!it.priorityEnt) return null;
-      const raw = N - 1 - idx;
-      return Math.min(it.max, Math.max(it.min, raw));
-    };
-
-    const lastApplied = this._priorityDraft.lastApplied || {};
-    let dirty = false;
-    const rowsHtml = order.map((lp, idx) => {
-      const it = byLp[lp];
-      const target = targetFor(idx, it);
-      const noEnt = !it.priorityEnt;
-      let changed = !noEnt && target !== it.currentValue;
-      // Optimistic suppress: we just wrote `target` via Apply but HA state hasn't propagated yet
-      if (changed && lastApplied[lp] === target) changed = false;
-      if (changed) dirty = true;
-      const targetDisplay = noEnt
-        ? `<span class="priority-no-ent">${this._t("priorityNoEntity")}</span>`
-        : `${target}${changed ? `<span class="priority-was">(${it.currentValue})</span>` : ""}`;
-      return `
-        <div class="priority-row${noEnt ? " no-entity" : ""}" data-lp="${this._escAttr(lp)}">
-          <span class="priority-handle" aria-hidden="true">⋮⋮</span>
-          <span class="priority-name">${this._escHtml(it.title)}</span>
-          <span class="priority-target${changed ? " changed" : ""}">${targetDisplay}</span>
-        </div>`;
-    }).join("");
-
-    const singleNote = N === 1
-      ? `<div class="priority-empty-note">${this._t("prioritySingleNote")}</div>`
-      : "";
-
-    return `
-      <div class="priority-mode" data-priority-root>
-        <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("priority")}</span>
-        </div>
-        <div class="priority-hint">${this._t("priorityHint")}</div>
-        <div class="priority-list">${rowsHtml}</div>
-        ${singleNote}
-        <div class="priority-actions">
-          <button class="priority-btn reset" ${dirty ? "" : "disabled"}
-                  data-priority-reset>${this._t("priorityReset")}</button>
-          <button class="priority-btn apply" ${dirty ? "" : "disabled"}
-                  data-priority-apply>${this._t("priorityApply")}</button>
-        </div>
-      </div>`;
-  }
-
-  _escHtml(str) {
-    return String(str).replace(/[&<>"']/g, c =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  }
-
-  _escAttr(str) {
-    return this._escHtml(str);
-  }
+  },
 
   _loadpointTitle(lp, ents) {
     const hass = this._hass;
-    // 1) hass-evcc style: loadpoint_title attribute on mode entity
+    // 1) a loadpoint_title attribute on the mode entity, when one is present
     const fromAttr = ents.mode && attr(hass, ents.mode, "loadpoint_title");
     if (fromAttr) return fromAttr;
-    // 2) ha-evcc style: device registry. ha-evcc names the loadpoint device like
+    // 2) the device registry: ha-evcc names the loadpoint device like
     //    "evcc - Ladepunkt openWB [evcc]" — extract the title by locating the lp slug
     //    inside the device name case-insensitively (underscores match space/dash too).
     const probeEntity = ents.mode || ents.charge_power || ents.priority;
@@ -1231,32 +866,7 @@ class EvccCard extends HTMLElement {
       return devName.replace(/^\[evcc\]\s*/i, "").trim() || lp;
     }
     return lp;
-  }
-
-  async _priorityApply(visible) {
-    if (!this._priorityDraft) return;
-    const order = this._priorityDraft.order;
-    const N = order.length;
-    const changes = [];
-    const lastApplied = {};
-    order.forEach((lp, idx) => {
-      const pid = visible[lp]?.priority;
-      if (!pid) return;
-      const raw = parseFloat(stateVal(this._hass, pid));
-      const max = attr(this._hass, pid, "max") ?? Infinity;
-      const min = attr(this._hass, pid, "min") ?? 0;
-      const target = Math.min(max, Math.max(min, N - 1 - idx));
-      lastApplied[lp] = target;
-      if (isNaN(raw) || raw !== target) changes.push({ pid, target });
-    });
-    if (!changes.length) return;
-    this._priorityDraft.lastApplied = lastApplied;
-    this._lastRenderKey = null;
-    this._render();
-    await Promise.all(changes.map(c =>
-      this._hass.callService("number", "set_value",
-        { entity_id: c.pid, value: c.target })));
-  }
+  },
 
   // phase_remaining is delivered as a raw seconds value (unlike pv_remaining,
   // which ha-evcc exposes as an absolute timestamp). Convert it to an absolute
@@ -1275,7 +885,7 @@ class EvccCard extends HTMLElement {
       };
     }
     return this._phaseTargets[entityId].iso;
-  }
+  },
 
   _renderActionIndicator(ents) {
     const flashIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>`;
@@ -1337,7 +947,7 @@ class EvccCard extends HTMLElement {
     }
 
     return chips.length ? `<div class="lp-action-row">${chips.join("")}</div>` : "";
-  }
+  },
 
   _renderModeSelector(ents, hidePv = false) {
     if (!ents.mode) return "";
@@ -1388,7 +998,7 @@ class EvccCard extends HTMLElement {
       }).join("");
     const alwaysCharge = this._renderAlwaysCharge(ents);
     return `<div class="mode-row${alwaysCharge ? " has-sub" : ""}">${buttons}</div>${alwaysCharge}`;
-  }
+  },
 
   // Companion of the 'smart' mode (evcc PR 32490, ha-evcc 2026.8.3+): charge
   // without interruption at least at min current, either permanently ('on') or
@@ -1411,8 +1021,8 @@ class EvccCard extends HTMLElement {
     };
     const buttons = options.map(opt => `
         <button class="phase-btn ${opt === current ? "active" : ""}"
-                data-entity="${entityId}" data-value="${opt}">
-          ${LABELS[opt] ?? opt}
+                data-entity="${entityId}" data-value="${escAttr(opt)}">
+          ${LABELS[opt] ?? escHtml(opt)}
         </button>`).join("");
 
     // Same subline evcc shows under its Always-charge dropdown, as a tooltip so
@@ -1423,10 +1033,10 @@ class EvccCard extends HTMLElement {
 
     return `
       <div class="select-row alwayscharge-row">
-        <span${hint ? ` title="${this._escAttr(hint)}"` : ""}>${this._t("alwaysCharge")}</span>
+        <span${hint ? ` title="${escAttr(hint)}"` : ""}>${this._t("alwaysCharge")}</span>
         <div class="phase-btn-group">${buttons}</div>
       </div>`;
-  }
+  },
 
   _renderVehicleInfo(ents, charging = false, lpName = "") {
     if (!ents.vehicle_soc && !ents.vehicle_name) return "";
@@ -1458,8 +1068,8 @@ class EvccCard extends HTMLElement {
     const euroIcon   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M15,18.5C12.49,18.5 10.32,17.08 9.24,15H15V13H8.58C8.53,12.67 8.5,12.34 8.5,12C8.5,11.66 8.53,11.33 8.58,11H15V9H9.24C10.32,6.92 12.5,5.5 15,5.5C16.61,5.5 18.09,6.09 19.23,7.07L21,5.3C19.41,3.87 17.3,3 15,3C11.08,3 7.76,5.51 6.52,9H3V11H6.06C6.02,11.33 6,11.66 6,12C6,12.34 6.02,12.67 6.06,13H3V15H6.52C7.76,18.49 11.08,21 15,21C17.31,21 19.41,20.13 21,18.7L19.22,16.93C18.09,17.91 16.61,18.5 15,18.5Z"/></svg>`;
     const smartChip  = smartLimit !== null ? `
       <button class="smart-cost-chip ${smartActive ? "active" : ""}"
-              data-lp-smart-cost-open="${lpName}">
-        ${isCo2Chip ? leafIcon : euroIcon} ≤ ${smartLimit} ${isCo2Chip ? "g" : smartUnit}
+              data-lp-smart-cost-open="${escAttr(lpName)}">
+        ${isCo2Chip ? leafIcon : euroIcon} ≤ ${smartLimit} ${isCo2Chip ? "g" : escHtml(smartUnit)}
       </button>` : "";
 
     const _boostLimitRaw = ents.battery_boost_limit
@@ -1479,8 +1089,8 @@ class EvccCard extends HTMLElement {
     return `
       <div class="soc-section">
         <div class="soc-label-row">
-          ${validName ? `<span class="vehicle-name"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M5,11L6.5,6.5H17.5L19,11M17.5,16A1.5,1.5 0 0,1 16,14.5A1.5,1.5 0 0,1 17.5,13A1.5,1.5 0 0,1 19,14.5A1.5,1.5 0 0,1 17.5,16M6.5,16A1.5,1.5 0 0,1 5,14.5A1.5,1.5 0 0,1 6.5,13A1.5,1.5 0 0,1 8,14.5A1.5,1.5 0 0,1 6.5,16M18.92,6C18.72,5.42 18.16,5 17.5,5H6.5C5.84,5 5.28,5.42 5.08,6L3,12V20A1,1 0 0,0 4,21H5A1,1 0 0,0 6,20V19H18V20A1,1 0 0,0 19,21H20A1,1 0 0,0 21,20V12L18.92,6Z"/></svg> ${validName}</span>` : ""}
-          ${soc !== null ? `<span data-live-entity="${ents.vehicle_soc}" data-live-type="soc-pct"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${unitStr(this._hass, ents.vehicle_soc)}</span>` : ""}
+          ${validName ? `<span class="vehicle-name"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M5,11L6.5,6.5H17.5L19,11M17.5,16A1.5,1.5 0 0,1 16,14.5A1.5,1.5 0 0,1 17.5,13A1.5,1.5 0 0,1 19,14.5A1.5,1.5 0 0,1 17.5,16M6.5,16A1.5,1.5 0 0,1 5,14.5A1.5,1.5 0 0,1 6.5,13A1.5,1.5 0 0,1 8,14.5A1.5,1.5 0 0,1 6.5,16M18.92,6C18.72,5.42 18.16,5 17.5,5H6.5C5.84,5 5.28,5.42 5.08,6L3,12V20A1,1 0 0,0 4,21H5A1,1 0 0,0 6,20V19H18V20A1,1 0 0,0 19,21H20A1,1 0 0,0 21,20V12L18.92,6Z"/></svg> ${escHtml(validName)}</span>` : ""}
+          ${soc !== null ? `<span data-live-entity="${ents.vehicle_soc}" data-live-type="soc-pct"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${escHtml(unitStr(this._hass, ents.vehicle_soc))}</span>` : ""}
           ${range !== null ? `<span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M11.5 0L9 8H11V16H13V8H15L11.5 0M3 18V20H21V18L11.5 16L3 18Z"/></svg> ${range} km</span>` : ""}
         </div>
         ${soc !== null ? `
@@ -1496,7 +1106,7 @@ class EvccCard extends HTMLElement {
         ${smartChip ? `<div class="smart-cost-row">${smartChip}</div>` : ""}
       </div>
     `;
-  }
+  },
 
   _renderPowerRow(ents, charging) {
     if (!ents.charge_power) return "";
@@ -1540,7 +1150,7 @@ class EvccCard extends HTMLElement {
       <div class="power-row ${charging ? "charging" : ""}">
         <span class="power-value"
               data-live-entity="${ents.charge_power}" data-live-type="power">
-          ${power} ${unit}
+          ${power} ${escHtml(unit)}
         </span>
         ${phaseStr ? `<span class="power-sep">·</span><span class="power-current">${phaseStr}</span>` : ""}
         ${current !== null ? `<span class="power-sep">·</span><span class="power-current">${current} A</span>` : ""}
@@ -1548,8 +1158,125 @@ class EvccCard extends HTMLElement {
       </div>
       ${hint}
     `;
-  }
+  },
 
+  _renderSessionInfo(ents, charging = false) {
+    const hasAny = ents.session_energy || ents.session_price || ents.session_price_per_kwh || ents.session_co2_per_kwh || ents.session_solar_percentage;
+    if (!hasAny) return "";
+
+    const fmtVal = (entityId, decimals = 2) => {
+      const v = parseFloat(stateVal(this._hass, entityId));
+      if (isNaN(v)) return "—";
+      const unit = unitStr(this._hass, entityId);
+      return `${v.toFixed(decimals)}${unit ? " " + escHtml(unit) : ""}`;
+    };
+
+    const energy      = ents.session_energy          ? (() => { const v = parseFloat(stateVal(this._hass, ents.session_energy)); return isNaN(v) ? "—" : `${v.toFixed(2)} kWh`; })() : null;
+    const price       = ents.session_price           ? (() => { const v = parseFloat(stateVal(this._hass, ents.session_price)); const u = unitStr(this._hass, ents.session_price) || "€"; return isNaN(v) ? "—" : `${v.toFixed(2)} ${escHtml(u)}`; })() : null;
+    const fmtPerKwh = (entityId, decimals) => {
+      const v = parseFloat(stateVal(this._hass, entityId));
+      if (isNaN(v)) return "—";
+      const unit = (unitStr(this._hass, entityId) || "").replace("/kWh", "").trim();
+      return `${v.toFixed(decimals)}${unit ? " " + escHtml(unit) : ""}`;
+    };
+    const pricePerKwh = ents.session_price_per_kwh   ? fmtPerKwh(ents.session_price_per_kwh, 3) : null;
+    const co2PerKwh   = ents.session_co2_per_kwh     ? fmtPerKwh(ents.session_co2_per_kwh, 0)   : null;
+    const solar       = ents.session_solar_percentage? (() => { const v = parseFloat(stateVal(this._hass, ents.session_solar_percentage)); return isNaN(v) ? "—" : `${Math.round(v)} %`; })() : null;
+
+    const items = [
+      energy      ? `<div class="session-item"><span class="si-label">${this._t("energy")}</span><span class="si-value">${energy}</span></div>`          : "",
+      price       ? `<div class="session-item"><span class="si-label">${this._t("cost")}</span><span class="si-value">${price}</span></div>`              : "",
+      pricePerKwh ? `<div class="session-item"><span class="si-label">${this._t("sessionPricePerKwh")}</span><span class="si-value">${pricePerKwh}</span></div>` : "",
+      co2PerKwh   ? `<div class="session-item"><span class="si-label">${this._t("sessionCo2PerKwh")}</span><span class="si-value">${co2PerKwh}</span></div>`     : "",
+      solar       ? `<div class="session-item"><span class="si-label">${this._t("sessionSolar")}</span><span class="si-value">${solar}</span></div>`           : "",
+    ].filter(Boolean);
+
+    return `
+      <div class="session-block">
+        <div class="session-title">${charging ? this._t("chargeSessionCurrent") : this._t("chargeSessionLast")}</div>
+        <div class="session-grid">${items.join("")}</div>
+      </div>
+    `;
+  },
+
+  // ha-evcc marks heating loadpoints (is_heating) by giving their SOC entities a
+  // temperature device_class / °C unit (see force_celsius in the integration). Such
+  // loadpoints are not EV charge points, so the charge-plan block is skipped for them.
+  _isHeatingLoadpoint(ents) {
+    const probe = ents.effective_plan_soc || ents.effective_limit_soc || ents.vehicle_soc;
+    if (!probe) return false;
+    const a = this._hass?.states[probe]?.attributes;
+    if (!a) return false;
+    return a.device_class === "temperature" || a.unit_of_measurement === "°C";
+  },
+
+  _renderToggles(ents) {
+    const TOGGLE_FEATURES = [];
+    const rows = TOGGLE_FEATURES
+      .filter(({ key }) => ents[key])
+      .map(({ key, label }) => {
+        const entityId = ents[key];
+        const on       = isOn(this._hass, entityId);
+        const domain   = entityId.split(".")[0];
+        return `
+          <div class="toggle-row">
+            <span>${label}</span>
+            <button class="toggle ${on ? "on" : ""}"
+                    data-entity="${entityId}"
+                    data-domain="${domain}"
+                    data-on="${on}">
+              ${on ? this._t("toggleOn") : this._t("toggleOff")}
+            </button>
+          </div>
+        `;
+      });
+    return rows.length ? `<div class="toggles">${rows.join("")}</div>` : "";
+  },
+
+  _renderEmpty(allLoadpoints = {}) {
+    const available = Object.keys(allLoadpoints);
+    const hint = available.length > 0
+      ? `<p>${this._t("availableLoadpoints", { list: `<code>${available.map(escHtml).join(", ")}</code>` })}</p>`
+      : "";
+    return `
+      <div class="empty">
+        <p>${this._t("noLoadpoints")}</p>
+        ${hint}
+        <p class="empty-debug-hint">
+          ${this._t("emptyTryDebug")}
+          <button class="debug-link" data-action="open-debug">${this._t("openDebugMode")}</button>
+        </p>
+      </div>
+    `;
+  },
+
+  // Placeholder when every (matching) loadpoint is disabled in the evcc
+  // config and disabled_loadpoints is 'hide' - avoids an empty-looking card.
+  _renderAllDisabled() {
+    return `
+      <div class="empty">
+        <p>${this._t("allLoadpointsDisabled")}</p>
+      </div>
+    `;
+  },
+
+  // Dimmed stub for a loadpoint disabled in the evcc config
+  // (disabled_loadpoints: dim). Only its disabled_in_config entity exists,
+  // so there is nothing interactive to render.
+  _renderDisabledLoadpoint(lpName, ents) {
+    return `
+      <div class="loadpoint lp-disabled" data-entity="${ents.disabled_in_config || ""}">
+        <div class="lp-header">
+          <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
+          <span class="lp-badge disabled">${this._t("loadpointDisabled")}</span>
+        </div>
+      </div>
+    `;
+  },
+};
+
+// Sliders with direct-input panel, step override, write-back and battery boost. Methods are mixed into EvccCard.prototype.
+const socControl = {
   _renderSliders(ents) {
     // Heating loadpoints expose limit/min as a target temperature (°C), not a SoC,
     // so relabel the sliders accordingly (value/unit already come from the entity).
@@ -1564,13 +1291,13 @@ class EvccCard extends HTMLElement {
       .map(({ key, label }) => this._sliderRow(ents[key], label));
 
     return rows.length ? `<div class="sliders">${rows.join("")}</div>` : "";
-  }
+  },
 
   // `hide_settings: [smart_cost_limit, priority, phases, …]` — see HIDEABLE_SETTINGS.
   _isSettingHidden(key) {
     const h = this._config?.hide_settings;
     return Array.isArray(h) && h.includes(key);
-  }
+  },
 
   _renderCurrentBlock(ents, lpName = "") {
     const hide          = k => this._isSettingHidden(k);
@@ -1602,8 +1329,8 @@ class EvccCard extends HTMLElement {
       };
       const buttons = options.map(opt => `
         <button class="phase-btn ${opt === current ? "active" : ""}"
-                data-entity="${entityId}" data-value="${opt}">
-          ${PHASE_LABELS[opt] ?? opt}
+                data-entity="${entityId}" data-value="${escAttr(opt)}">
+          ${PHASE_LABELS[opt] ?? escHtml(opt)}
         </button>`).join("");
       phasesHtml = `
         <div class="select-row">
@@ -1620,11 +1347,11 @@ class EvccCard extends HTMLElement {
     const gearIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.68 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"/></svg>`;
 
     return `
-      <div class="current-block" data-lp-current="${lpName}">
+      <div class="current-block" data-lp-current="${escAttr(lpName)}">
         <div class="block-title-row">
           <span class="block-title">${this._t("chargeSettings")}</span>
           <button class="current-toggle-btn ${expanded ? "active" : ""}"
-                  data-lp-current-toggle="${lpName}"
+                  data-lp-current-toggle="${escAttr(lpName)}"
                   title="${expanded ? this._t("hideSettings") : this._t("showSettings")}">
             ${gearIcon}
           </button>
@@ -1646,7 +1373,7 @@ class EvccCard extends HTMLElement {
             const active     = !isNaN(scTariff) && scTariff <= parseFloat(stateVal(this._hass, ents.smart_cost_limit) || 0);
             const clearId   = ents.smart_cost_limit.replace(/^number\./, "button.");
             const hasClear  = !!this._hass.states[clearId];
-            return `<div class="smart-cost-section" data-lp-smart-cost-section="${lpName}">` +
+            return `<div class="smart-cost-section" data-lp-smart-cost-section="${escAttr(lpName)}">` +
               this._sliderRow(ents.smart_cost_limit, label) +
               (active ? `<div class="smart-active-hint">⚡ ${this._t("smartCostActive")}</div>` : "") +
               (hasClear ? `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` : "") +
@@ -1664,7 +1391,7 @@ class EvccCard extends HTMLElement {
               : false;
             const clearId   = ents.smart_feed_in_priority_limit.replace(/^number\./, "button.");
             const hasClear  = !!this._hass.states[clearId];
-            return `<div class="smart-cost-section" data-lp-feed-in-section="${lpName}">` +
+            return `<div class="smart-cost-section" data-lp-feed-in-section="${escAttr(lpName)}">` +
               this._sliderRow(ents.smart_feed_in_priority_limit, this._t("feedInPriorityLimit")) +
               (active ? `<div class="smart-active-hint">⚡ ${this._t("feedInPriorityActive")}</div>` : "") +
               (hasClear ? `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` : "") +
@@ -1672,12 +1399,12 @@ class EvccCard extends HTMLElement {
           })() : ""}
         </div>
       </div>`;
-  }
+  },
 
   _sliderOptions(entityId) {
     return (attr(this._hass, entityId, "options") ?? [])
       .map(o => parseFloat(o)).filter(o => !isNaN(o)).sort((a, b) => a - b);
-  }
+  },
 
   // The user-facing value behind a range input: select-backed sliders carry an
   // option index, number sliders carry the value itself.
@@ -1687,7 +1414,7 @@ class EvccCard extends HTMLElement {
     if (opts.length === 0) return input.value;
     const idx = Math.min(Math.max(Math.round(parseFloat(input.value)) || 0, 0), opts.length - 1);
     return String(opts[idx]);
-  }
+  },
 
   _sliderRow(entityId, label, zeroLabel = null) {
     const domain  = entityId.split(".")[0];
@@ -1728,10 +1455,10 @@ class EvccCard extends HTMLElement {
                  data-entity="${entityId}"
                  data-domain="${domain}" />
           <button type="button" class="slider-val" data-slider-edit
-                  title="${this._t("sliderEditHint")}">${zeroLabel && val === 0 ? zeroLabel : `${val} ${unit}`}</button>
+                  title="${this._t("sliderEditHint")}">${zeroLabel && val === 0 ? zeroLabel : `${val} ${escHtml(unit)}`}</button>
         </div>
       </div>`;
-  }
+  },
 
   // Optional per-feature step override from the card config, keyed by the
   // ha-evcc feature suffix: `slider_steps: { smart_cost_limit: 0.01, limit_soc: 5 }`.
@@ -1745,7 +1472,7 @@ class EvccCard extends HTMLElement {
       if (entityId.endsWith(`_${suffix}`)) return step;
     }
     return null;
-  }
+  },
 
   _sliderWrite(entityId, domain, value) {
     if (domain === "select") {
@@ -1754,7 +1481,7 @@ class EvccCard extends HTMLElement {
     } else {
       this._hass.callService("number", "set_value", { entity_id: entityId, value });
     }
-  }
+  },
 
   // ── Slider direct input ──────────────────────────────────────────────
   // Tapping the value next to a slider opens a touch-sized row below it:
@@ -1788,7 +1515,7 @@ class EvccCard extends HTMLElement {
       <button type="button" class="slider-edit-btn" data-edit-dec aria-label="−"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M19,13H5V11H19V13Z"/></svg></button>
       <div class="slider-edit-field">
         <input type="text" inputmode="decimal" class="slider-edit-input" autocomplete="off" spellcheck="false" />
-        <span class="slider-edit-unit">${unit}</span>
+        <span class="slider-edit-unit">${escHtml(unit)}</span>
       </div>
       <button type="button" class="slider-edit-btn" data-edit-inc aria-label="+"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"/></svg></button>
       <button type="button" class="slider-edit-btn slider-edit-ok" data-edit-ok
@@ -1800,17 +1527,23 @@ class EvccCard extends HTMLElement {
     this._sliderEditing   = true;
     this._sliderEditPanel = panel;
 
-    // Any click elsewhere in the card dismisses the panel. Without this a tab
+    // Any click elsewhere on the page dismisses the panel. Inside the card a tab
     // switch or the gear toggle (both only flip `hidden`, no re-render) would
-    // leave the panel open in a hidden section and keep hass updates deferred.
-    // Runs in the capture phase so the click still reaches its own target;
-    // a pending re-render is deferred past the click for the same reason.
+    // otherwise leave the panel open in a hidden section; outside the card
+    // nothing else ever closes it, and an open panel keeps hass updates deferred
+    // for as long as it lives. Listening on the document covers both (the
+    // composed path still names the shadow nodes). Runs in the capture phase so
+    // the click still reaches its own target; a pending re-render is deferred
+    // past the click for the same reason. A hidden tab (phone lock, app switch)
+    // closes the panel too, so the card is live again when it comes back.
     this._sliderEditOutside = (e) => {
       const path = e.composedPath();
       if (path.includes(panel) || path.includes(btn)) return;
       this._closeSliderEdit(true);
     };
-    this.shadowRoot.addEventListener("click", this._sliderEditOutside, true);
+    this._sliderEditHidden = () => { if (document.hidden) this._closeSliderEdit(); };
+    document.addEventListener("click", this._sliderEditOutside, true);
+    document.addEventListener("visibilitychange", this._sliderEditHidden);
 
     const field = panel.querySelector(".slider-edit-input");
     const parse = () => parseFloat(String(field.value).trim().replace(",", "."));
@@ -1853,7 +1586,7 @@ class EvccCard extends HTMLElement {
     });
     field.focus();
     field.select();
-  }
+  },
 
   _closeSliderEdit(deferRender = false) {
     const panel = this._sliderEditPanel;
@@ -1866,19 +1599,32 @@ class EvccCard extends HTMLElement {
     if (this._sliderEditing) {
       this._sliderEditing = false;
       if (this._pendingRender) {
-        this._pendingRender = false;
-        if (deferRender) setTimeout(() => { if (!this._sliderEditing) this._render(); }, 0);
-        else this._render();
+        if (deferRender) {
+          // The click that closed this panel may open another one before the
+          // timeout runs; the flag then stays set and closing that panel renders.
+          setTimeout(() => {
+            if (this._sliderEditing || !this._pendingRender) return;
+            this._pendingRender = false;
+            this._render();
+          }, 0);
+        } else {
+          this._pendingRender = false;
+          this._render();
+        }
       }
     }
-  }
+  },
 
   _dropSliderEditOutside() {
     if (this._sliderEditOutside) {
-      this.shadowRoot.removeEventListener("click", this._sliderEditOutside, true);
+      document.removeEventListener("click", this._sliderEditOutside, true);
       this._sliderEditOutside = null;
     }
-  }
+    if (this._sliderEditHidden) {
+      document.removeEventListener("visibilitychange", this._sliderEditHidden);
+      this._sliderEditHidden = null;
+    }
+  },
 
   _boostCommit(input) {
     this._isDragging = false;
@@ -1896,7 +1642,7 @@ class EvccCard extends HTMLElement {
     });
 
     if (this._pendingRender) { this._pendingRender = false; this._render(); }
-  }
+  },
 
   _renderBatteryBoost(ents) {
     if (!ents.battery_boost_limit) return "";
@@ -1922,47 +1668,16 @@ class EvccCard extends HTMLElement {
           <input type="range"
                  min="${min}" max="${max}" step="${step}" value="${curPct}"
                  data-boost-entity="${limitId}"
-                 data-options='${JSON.stringify(options)}' />
+                 data-options='${escAttr(JSON.stringify(options))}' />
           <button type="button" class="slider-val boost-val" data-boost-edit
                   title="${this._t("sliderEditHint")}">${label}</button>
         </div>
       </div>`;
-  }
+  },
+};
 
-  _renderToggles(ents) {
-    const TOGGLE_FEATURES = [];
-    const rows = TOGGLE_FEATURES
-      .filter(({ key }) => ents[key])
-      .map(({ key, label }) => {
-        const entityId = ents[key];
-        const on       = isOn(this._hass, entityId);
-        const domain   = entityId.split(".")[0];
-        return `
-          <div class="toggle-row">
-            <span>${label}</span>
-            <button class="toggle ${on ? "on" : ""}"
-                    data-entity="${entityId}"
-                    data-domain="${domain}"
-                    data-on="${on}">
-              ${on ? this._t("toggleOn") : this._t("toggleOff")}
-            </button>
-          </div>
-        `;
-      });
-    return rows.length ? `<div class="toggles">${rows.join("")}</div>` : "";
-  }
-
-  // ha-evcc marks heating loadpoints (is_heating) by giving their SOC entities a
-  // temperature device_class / °C unit (see force_celsius in the integration). Such
-  // loadpoints are not EV charge points, so the charge-plan block is skipped for them.
-  _isHeatingLoadpoint(ents) {
-    const probe = ents.effective_plan_soc || ents.effective_limit_soc || ents.vehicle_soc;
-    if (!probe) return false;
-    const a = this._hass?.states[probe]?.attributes;
-    if (!a) return false;
-    return a.device_class === "temperature" || a.unit_of_measurement === "°C";
-  }
-
+// Charge plan block with preview chart, plan mode and repeating plans. Methods are mixed into EvccCard.prototype.
+const planningView = {
   _renderPlanBlock(lpName, ents, force = false) {
     const hasVehicle = !!ents.vehicle_soc;
     const planActive = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
@@ -2047,9 +1762,9 @@ class EvccCard extends HTMLElement {
     const vehicleSelectHtml = allOptions.length > 0 ? `
       <div class="plan-row">
         <label>${this._t("vehicle")}</label>
-        <select class="plan-vehicle-select" data-lp="${lpName}" data-entity="${vehicleEntityId ?? ""}">
+        <select class="plan-vehicle-select" data-lp="${escAttr(lpName)}" data-entity="${vehicleEntityId ?? ""}">
           ${allOptions.map(id => `
-            <option value="${id}" ${id === defaultVehicle ? "selected" : ""}>${dbIdToName[id]}</option>
+            <option value="${escAttr(id)}" ${id === defaultVehicle ? "selected" : ""}>${escHtml(dbIdToName[id])}</option>
           `).join("")}
         </select>
       </div>` : "";
@@ -2077,7 +1792,7 @@ class EvccCard extends HTMLElement {
                 data-entity="${contEntityId}"
                 data-domain="switch"
                 data-on="${contOn}"
-                data-lp="${lpName}">
+                data-lp="${escAttr(lpName)}">
           ${contOn ? this._t("toggleOn") : this._t("toggleOff")}
         </button>
       </div>` : "";
@@ -2096,9 +1811,9 @@ class EvccCard extends HTMLElement {
     const preHtml = (preState && preOptions.length) ? `
       <div class="plan-row">
         <label>${this._t("planStrategyPrecondition")}</label>
-        <select class="plan-precondition-select" data-entity="${preEntityId}" data-lp="${lpName}">
+        <select class="plan-precondition-select" data-entity="${preEntityId}" data-lp="${escAttr(lpName)}">
           ${preOptions.map(opt => `
-            <option value="${opt}" ${opt === preCurrent ? "selected" : ""}>${fmtPre(opt)}</option>
+            <option value="${escAttr(opt)}" ${opt === preCurrent ? "selected" : ""}>${fmtPre(opt)}</option>
           `).join("")}
         </select>
       </div>` : "";
@@ -2116,7 +1831,7 @@ class EvccCard extends HTMLElement {
       </div>` : "";
 
     return `
-      <div class="plan-block" data-lp="${lpName}">
+      <div class="plan-block" data-lp="${escAttr(lpName)}">
         <div class="plan-header">
           <span class="session-title">${this._t("chargePlan")}</span>
           ${planBadge}
@@ -2127,14 +1842,14 @@ class EvccCard extends HTMLElement {
           <div class="plan-row">
             <label>${this._t("finishBy")}</label>
             <input type="datetime-local" class="plan-time-input"
-                   value="${defaultDt}" data-lp="${lpName}" />
+                   value="${defaultDt}" data-lp="${escAttr(lpName)}" />
           </div>
           <div class="plan-row">
             <label>${this._t("targetSoc")}</label>
             <div class="plan-soc-control">
               <input type="range" class="plan-soc-range"
                      min="20" max="100" step="5" value="${defaultSoc}"
-                     data-lp="${lpName}" />
+                     data-lp="${escAttr(lpName)}" />
               <button type="button" class="slider-val plan-soc-val" data-plan-soc-edit
                       title="${this._t("sliderEditHint")}">${defaultSoc} %</button>
             </div>
@@ -2144,14 +1859,14 @@ class EvccCard extends HTMLElement {
         </div>
         ${this._renderPlanPreview(lpName)}
         <div class="plan-actions">
-          <button class="plan-btn save" data-lp="${lpName}">${this._t("setPlan")}</button>
+          <button class="plan-btn save" data-lp="${escAttr(lpName)}">${this._t("setPlan")}</button>
           ${(planActive || (planTime && planTime !== "unknown" && planTime !== "unavailable"))
-            ? `<button class="plan-btn delete" data-lp="${lpName}">${this._t("deletePlan")}</button>`
+            ? `<button class="plan-btn delete" data-lp="${escAttr(lpName)}">${this._t("deletePlan")}</button>`
             : ""}
         </div>
       </div>
     `;
-  }
+  },
 
   // Plan preview: shows charging slot chart + summary when SOC and time are set.
   _renderPlanPreview(lpName) {
@@ -2188,12 +1903,12 @@ class EvccCard extends HTMLElement {
         forecastRates = primary.data.rates;
       }
     }
-    const unit = isCo2 ? "g CO₂/kWh" : (preview.currency ? `${preview.currency}/kWh` : "");
+    const unit = isCo2 ? "g CO₂/kWh" : (preview.currency ? `${escHtml(preview.currency)}/kWh` : "");
 
     const chart = this._renderPlanPreviewChart(forecastRates, preview.plan, preview, unit);
     const summary = this._renderPlanPreviewSummary(preview, unit);
     return `<div class="plan-preview">${summary}${chart}</div>`;
-  }
+  },
 
   _renderPlanPreviewChart(forecastRates, planRates, preview, unit) {
     const now = Date.now();
@@ -2316,7 +2031,7 @@ class EvccCard extends HTMLElement {
 
     return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet"
       style="width:100%;height:auto;display:block">${bars}${targetMarker}</svg>`;
-  }
+  },
 
   _renderPlanPreviewSummary(preview, unit) {
     const dur = preview.duration ?? 0;
@@ -2336,7 +2051,7 @@ class EvccCard extends HTMLElement {
     const avgLabel = isCo2 ? "CO₂-Emission Ø" : `${this._t("planPreviewCost")} Ø`;
     const avgStr = isCo2
       ? `${Math.round(avgVal)} g/kWh`
-      : `${avgVal.toFixed(2)} ${currency}/kWh`;
+      : `${avgVal.toFixed(2)} ${escHtml(currency)}/kWh`;
 
     return `<div class="plan-preview-header">
       <div class="plan-preview-left">
@@ -2348,46 +2063,7 @@ class EvccCard extends HTMLElement {
         <div class="plan-preview-value">${avgStr}</div>
       </div>
     </div>`;
-  }
-
-  _renderSessionInfo(ents, charging = false) {
-    const hasAny = ents.session_energy || ents.session_price || ents.session_price_per_kwh || ents.session_co2_per_kwh || ents.session_solar_percentage;
-    if (!hasAny) return "";
-
-    const fmtVal = (entityId, decimals = 2) => {
-      const v = parseFloat(stateVal(this._hass, entityId));
-      if (isNaN(v)) return "—";
-      const unit = unitStr(this._hass, entityId);
-      return `${v.toFixed(decimals)}${unit ? " " + unit : ""}`;
-    };
-
-    const energy      = ents.session_energy          ? (() => { const v = parseFloat(stateVal(this._hass, ents.session_energy)); return isNaN(v) ? "—" : `${v.toFixed(2)} kWh`; })() : null;
-    const price       = ents.session_price           ? (() => { const v = parseFloat(stateVal(this._hass, ents.session_price)); const u = unitStr(this._hass, ents.session_price) || "€"; return isNaN(v) ? "—" : `${v.toFixed(2)} ${u}`; })() : null;
-    const fmtPerKwh = (entityId, decimals) => {
-      const v = parseFloat(stateVal(this._hass, entityId));
-      if (isNaN(v)) return "—";
-      const unit = (unitStr(this._hass, entityId) || "").replace("/kWh", "").trim();
-      return `${v.toFixed(decimals)}${unit ? " " + unit : ""}`;
-    };
-    const pricePerKwh = ents.session_price_per_kwh   ? fmtPerKwh(ents.session_price_per_kwh, 3) : null;
-    const co2PerKwh   = ents.session_co2_per_kwh     ? fmtPerKwh(ents.session_co2_per_kwh, 0)   : null;
-    const solar       = ents.session_solar_percentage? (() => { const v = parseFloat(stateVal(this._hass, ents.session_solar_percentage)); return isNaN(v) ? "—" : `${Math.round(v)} %`; })() : null;
-
-    const items = [
-      energy      ? `<div class="session-item"><span class="si-label">${this._t("energy")}</span><span class="si-value">${energy}</span></div>`          : "",
-      price       ? `<div class="session-item"><span class="si-label">${this._t("cost")}</span><span class="si-value">${price}</span></div>`              : "",
-      pricePerKwh ? `<div class="session-item"><span class="si-label">${this._t("sessionPricePerKwh")}</span><span class="si-value">${pricePerKwh}</span></div>` : "",
-      co2PerKwh   ? `<div class="session-item"><span class="si-label">${this._t("sessionCo2PerKwh")}</span><span class="si-value">${co2PerKwh}</span></div>`     : "",
-      solar       ? `<div class="session-item"><span class="si-label">${this._t("sessionSolar")}</span><span class="si-value">${solar}</span></div>`           : "",
-    ].filter(Boolean);
-
-    return `
-      <div class="session-block">
-        <div class="session-title">${charging ? this._t("chargeSessionCurrent") : this._t("chargeSessionLast")}</div>
-        <div class="session-grid">${items.join("")}</div>
-      </div>
-    `;
-  }
+  },
 
   _renderPlanMode(loadpoints) {
     if (Object.keys(loadpoints).length === 0) return this._renderEmpty(loadpoints);
@@ -2398,13 +2074,13 @@ class EvccCard extends HTMLElement {
       return `
         <div class="loadpoint">
           <div class="lp-header">
-            <span class="lp-name">${this._config.title || lpName}</span>
+            <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
           </div>
           ${planHtml}
           ${sessionHtml}
         </div>`;
     }).join("");
-  }
+  },
 
   // Repeating plans (ha-evcc 2026.6.1+) are vehicle-scoped switches
   // (switch.<prefix><vehicle>_repeating_plan_N) and therefore never land in the
@@ -2454,13 +2130,13 @@ class EvccCard extends HTMLElement {
     }
 
     return result;
-  }
+  },
 
   _vehicleNameForSlug(slug) {
     // ha-evcc does not expose the vehicle title on the repeating-plan switch,
     // so derive a readable label from the entity slug (e.g. "mein_auto" → "Mein Auto").
     return String(slug).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-  }
+  },
 
   _renderWeekdayBadges(weekdays) {
     // evcc/Go weekday convention: 0 = Sunday … 6 = Saturday.
@@ -2470,7 +2146,7 @@ class EvccCard extends HTMLElement {
     return order.map(d =>
       `<span class="rplan-day${set.has(d) ? " on" : ""}">${this._t("weekday" + d)}</span>`
     ).join("");
-  }
+  },
 
   _renderRepeatPlansBlock(group) {
     const clockSuffix = this._t("clockSuffix");
@@ -2504,7 +2180,7 @@ class EvccCard extends HTMLElement {
         </div>
         <div class="rplan-list">${rows}</div>
       </div>`;
-  }
+  },
 
   _renderRepeatPlansMode() {
     const groups = this._discoverRepeatingPlans();
@@ -2516,13 +2192,257 @@ class EvccCard extends HTMLElement {
       return `
         <div class="loadpoint">
           <div class="lp-header">
-            <span class="lp-name">${name}</span>
+            <span class="lp-name">${escHtml(name)}</span>
           </div>
           ${this._renderRepeatPlansBlock(g)}
         </div>`;
     }).join("");
-  }
+  },
+};
 
+// Priority mode with drag & drop ordering. Methods are mixed into EvccCard.prototype.
+const priorityView = {
+  _renderPriorityMode(visible) {
+    const lpKeys = Object.keys(visible);
+    if (lpKeys.length === 0) return this._renderEmpty(visible);
+
+    const items = lpKeys.map(lp => {
+      const ents = visible[lp];
+      const pid  = ents.priority;
+      const raw  = pid ? parseFloat(stateVal(this._hass, pid)) : NaN;
+      const cur  = isNaN(raw) ? 0 : raw;
+      const max  = pid ? (attr(this._hass, pid, "max") ?? Infinity) : Infinity;
+      const min  = pid ? (attr(this._hass, pid, "min") ?? 0) : 0;
+      const title = this._loadpointTitle(lp, ents);
+      return { lp, title, priorityEnt: pid, currentValue: cur, hasState: !isNaN(raw), max, min };
+    });
+
+    const signature = [...lpKeys].sort().join("|");
+    if (!this._priorityDraft || this._priorityDraft.signature !== signature) {
+      const sorted = items.slice().sort((a, b) =>
+        b.currentValue - a.currentValue || a.title.localeCompare(b.title));
+      this._priorityDraft = { signature, order: sorted.map(i => i.lp) };
+    }
+
+    const order = this._priorityDraft.order;
+    const N = order.length;
+    const byLp = Object.fromEntries(items.map(i => [i.lp, i]));
+
+    const targetFor = (idx, it) => {
+      if (!it.priorityEnt) return null;
+      const raw = N - 1 - idx;
+      return Math.min(it.max, Math.max(it.min, raw));
+    };
+
+    const lastApplied = this._priorityDraft.lastApplied || {};
+    let dirty = false;
+    const rowsHtml = order.map((lp, idx) => {
+      const it = byLp[lp];
+      const target = targetFor(idx, it);
+      const noEnt = !it.priorityEnt;
+      let changed = !noEnt && target !== it.currentValue;
+      // Optimistic suppress: we just wrote `target` via Apply but HA state hasn't propagated yet
+      if (changed && lastApplied[lp] === target) changed = false;
+      if (changed) dirty = true;
+      const targetDisplay = noEnt
+        ? `<span class="priority-no-ent">${this._t("priorityNoEntity")}</span>`
+        : `${target}${changed ? `<span class="priority-was">(${it.currentValue})</span>` : ""}`;
+      return `
+        <div class="priority-row${noEnt ? " no-entity" : ""}" data-lp="${escAttr(lp)}">
+          <span class="priority-handle" aria-hidden="true">⋮⋮</span>
+          <span class="priority-name">${escHtml(it.title)}</span>
+          <span class="priority-target${changed ? " changed" : ""}">${targetDisplay}</span>
+        </div>`;
+    }).join("");
+
+    const singleNote = N === 1
+      ? `<div class="priority-empty-note">${this._t("prioritySingleNote")}</div>`
+      : "";
+
+    return `
+      <div class="priority-mode" data-priority-root>
+        <div class="lp-header">
+          <span class="lp-name">${escHtml(this._config.title || this._t("priority"))}</span>
+        </div>
+        <div class="priority-hint">${this._t("priorityHint")}</div>
+        <div class="priority-list">${rowsHtml}</div>
+        ${singleNote}
+        <div class="priority-actions">
+          <button class="priority-btn reset" ${dirty ? "" : "disabled"}
+                  data-priority-reset>${this._t("priorityReset")}</button>
+          <button class="priority-btn apply" ${dirty ? "" : "disabled"}
+                  data-priority-apply>${this._t("priorityApply")}</button>
+        </div>
+      </div>`;
+  },
+
+  async _priorityApply(visible) {
+    if (!this._priorityDraft) return;
+    const order = this._priorityDraft.order;
+    const N = order.length;
+    const changes = [];
+    const lastApplied = {};
+    order.forEach((lp, idx) => {
+      const pid = visible[lp]?.priority;
+      if (!pid) return;
+      const raw = parseFloat(stateVal(this._hass, pid));
+      const max = attr(this._hass, pid, "max") ?? Infinity;
+      const min = attr(this._hass, pid, "min") ?? 0;
+      const target = Math.min(max, Math.max(min, N - 1 - idx));
+      lastApplied[lp] = target;
+      if (isNaN(raw) || raw !== target) changes.push({ pid, target });
+    });
+    if (!changes.length) return;
+    this._priorityDraft.lastApplied = lastApplied;
+    this._lastRenderKey = null;
+    this._render();
+    await Promise.all(changes.map(c =>
+      this._hass.callService("number", "set_value",
+        { entity_id: c.pid, value: c.target })));
+  },
+
+  _attachPriorityListeners() {
+    const root = this.shadowRoot.querySelector("[data-priority-root]");
+    if (!root) return;
+
+    const list = root.querySelector(".priority-list");
+
+    root.querySelectorAll(".priority-row").forEach(row => {
+      const handle = row.querySelector(".priority-handle");
+      if (!handle || row.classList.contains("no-entity")) return;
+
+      handle.addEventListener("pointerdown",        (e) => this._priorityDragStart(e, list, row, handle));
+      handle.addEventListener("pointermove",        (e) => this._priorityDragMove(e));
+      handle.addEventListener("pointerup",          (e) => this._priorityDragEnd(e));
+      handle.addEventListener("pointercancel",      (e) => this._priorityDragEnd(e));
+      // Fallback: if the handle loses capture for any other reason (e.g. the
+      // element is detached), still leave the drag state cleanly.
+      handle.addEventListener("lostpointercapture", (e) => this._priorityDragEnd(e));
+    });
+
+    const applyBtn = root.querySelector("[data-priority-apply]");
+    if (applyBtn) {
+      applyBtn.addEventListener("click", () => {
+        const visible = this._currentVisible();
+        if (visible) this._priorityApply(visible);
+      });
+    }
+
+    const resetBtn = root.querySelector("[data-priority-reset]");
+    if (resetBtn) {
+      resetBtn.addEventListener("click", () => {
+        this._priorityDraft = null;
+        this._lastRenderKey = null;
+        this._render();
+      });
+    }
+  },
+
+  // ---- Priority drag & drop ------------------------------------------------
+  // Model: on pointerdown the slot geometry of the list is frozen once. The
+  // dragged row is taken out of the flow (position: absolute via CSS) and a
+  // placeholder of the same height is put in its slot, so the list keeps
+  // exactly N slots with unchanged boundaries for the whole drag. The target
+  // index is derived from the centre of the dragged row against those frozen
+  // slots; nothing is measured live, so there is no feedback loop.
+  _priorityDragStart(e, list, row, handle) {
+    if (this._priorityDragging) return;
+    if (!e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
+    e.preventDefault();
+
+    // Geometry snapshot before any DOM mutation. offsetTop/offsetHeight are
+    // relative to .priority-list (position: relative), the same frame the
+    // absolutely positioned row uses below.
+    const rows  = [...list.querySelectorAll(".priority-row")];
+    const slots = rows.map(r => ({ top: r.offsetTop, h: r.offsetHeight }));
+    const idx   = rows.indexOf(row);
+    const baseTop = row.offsetTop;
+    const rowH    = row.offsetHeight;
+    // Keep the row inside the list (overflow: hidden would clip it otherwise).
+    const minDy = -baseTop;
+    const maxDy = Math.max(minDy, list.clientHeight - rowH - baseTop);
+
+    const placeholder = document.createElement("div");
+    placeholder.className = "priority-placeholder";
+    placeholder.style.height = rowH + "px";
+    list.insertBefore(placeholder, row);
+
+    row.classList.add("priority-dragging");
+    row.style.top = baseTop + "px";
+
+    this._isDragging    = true;
+    this._pendingRender = false;
+    this._priorityDragging = {
+      list, row, placeholder, handle, pointerId: e.pointerId,
+      startY: e.clientY, slots, idx, baseTop, rowH, minDy, maxDy,
+    };
+    try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+  },
+
+  _priorityDragMove(e) {
+    const d = this._priorityDragging;
+    if (!d || e.pointerId !== d.pointerId) return;
+
+    const dy = Math.min(d.maxDy, Math.max(d.minDy, e.clientY - d.startY));
+    d.row.style.transform = `translateY(${dy}px)`;
+
+    // Target slot: first frozen slot whose midpoint lies below the centre of
+    // the dragged row. No early exit, so the placeholder tracks the pointer
+    // directly instead of advancing one position per event.
+    const center = d.baseTop + dy + d.rowH / 2;
+    let idx = d.slots.findIndex(s => center < s.top + s.h / 2);
+    if (idx === -1) idx = d.slots.length - 1;
+    if (idx === d.idx) return;
+    d.idx = idx;
+
+    const others = [...d.list.querySelectorAll(".priority-row")].filter(r => r !== d.row);
+    d.list.insertBefore(d.placeholder, others[idx] || null);
+  },
+
+  _priorityDragEnd(e) {
+    const d = this._priorityDragging;
+    if (!d || (e && e.pointerId !== d.pointerId)) return;
+    this._priorityDragging = null;
+    try { d.handle.releasePointerCapture(d.pointerId); } catch (_) {}
+
+    if (d.placeholder.parentNode) d.placeholder.parentNode.insertBefore(d.row, d.placeholder);
+    d.placeholder.remove();
+    d.row.classList.remove("priority-dragging");
+    d.row.style.transform = "";
+    d.row.style.top       = "";
+
+    if (this._priorityDraft) {
+      this._priorityDraft.order =
+        [...d.list.querySelectorAll(".priority-row")].map(r => r.dataset.lp);
+    }
+
+    this._isDragging    = false;
+    this._pendingRender = false;
+    this._lastRenderKey = null;
+    this._render();
+  },
+
+  _currentVisible() {
+    if (!this._hass) return null;
+    const prefix = this._getPrefix();
+    const { loadpoints } = discoverEntities(this._hass, prefix);
+    const filterRaw = this._config.loadpoints;
+    const filter = filterRaw
+      ? (Array.isArray(filterRaw) ? filterRaw : [filterRaw])
+      : null;
+    const visible = filter && filter.length > 0
+      ? Object.fromEntries(
+          Object.entries(loadpoints).filter(([lp]) => filter.includes(lp))
+        )
+      : loadpoints;
+    // Config-disabled loadpoints have no interactive entities - callers of
+    // _currentVisible (plan/priority interactions) can never act on them.
+    return partitionDisabledLoadpoints(this._hass, visible).enabled;
+  },
+};
+
+// Site mode. Methods are mixed into EvccCard.prototype.
+const siteView = {
   _renderSiteBlock(site, loadpoints = {}) {
     const kw = id => {
       if (!id) return 0;
@@ -2719,7 +2639,7 @@ class EvccCard extends HTMLElement {
       const fs = s.w < 80 ? 18 : 24;
       return `<text x="${s.xMid}" y="${BAR_Y + BAR_H / 2 + (fs === 18 ? 6 : 8)}"
                     text-anchor="middle" font-size="${fs}" font-weight="700"
-                    fill="#fff" style="text-shadow:0 1px 3px rgba(0,0,0,0.5)">${s.label}</text>`;
+                    fill="#fff" style="text-shadow:0 1px 3px rgba(0,0,0,0.5)">${escHtml(s.label)}</text>`;
     }).join("");
 
     const MDI = {
@@ -2822,8 +2742,8 @@ class EvccCard extends HTMLElement {
       <div class="site-row ${indent ? "site-row-indent" : ""}${entityId ? " site-row-clickable" : ""}"${entityId ? ` data-more-info="${entityId}"` : ""}>
         <span class="site-row-icon">${icon}</span>
         <span class="site-row-label">
-          <span class="site-row-name">${label}</span>
-          ${sub ? `<span class="site-row-sub">${sub}</span>` : ""}
+          <span class="site-row-name">${escHtml(label)}</span>
+          ${sub ? `<span class="site-row-sub">${escHtml(sub)}</span>` : ""}
         </span>
         <span class="site-row-pw ${pwClass}">${fmtPow(pw)}</span>
       </div>`;
@@ -2831,7 +2751,7 @@ class EvccCard extends HTMLElement {
     const section = (title, total, rows) => `
       <div class="site-section">
         <div class="site-section-head">
-          <span class="site-section-title">${title}</span>
+          <span class="site-section-title">${escHtml(title)}</span>
           <span class="site-section-total">${fmtPow(total)}</span>
         </div>
         ${rows}
@@ -2909,7 +2829,7 @@ class EvccCard extends HTMLElement {
     const energyRow = (mdiPath, label, v, entityId) => v === null ? "" : `
       <div class="site-row${entityId ? " site-row-clickable" : ""}"${entityId ? ` data-more-info="${entityId}"` : ""}>
         <span class="site-row-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="vertical-align:middle"><path d="${mdiPath}"/></svg></span>
-        <span class="site-row-label"><span class="site-row-name">${label}</span></span>
+        <span class="site-row-label"><span class="site-row-name">${escHtml(label)}</span></span>
         <span class="site-row-pw">${fmtKwh(v)}</span>
       </div>`;
     const energyRows = [
@@ -2935,7 +2855,7 @@ class EvccCard extends HTMLElement {
     return `
       <div class="site-block">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("overview")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("overview"))}</span>
         </div>
         <div class="flow-wrap-clickable" role="button" tabindex="0"
              onclick="window.__evccCards.get('${this._cardId}')._toggleSite()"
@@ -2950,8 +2870,11 @@ class EvccCard extends HTMLElement {
         </div>
         ${this._renderStatsFooter()}
       </div>`;
-  }
+  },
+};
 
+// Flow mode (Sankey). Methods are mixed into EvccCard.prototype.
+const flowView = {
   _renderFlowBlock(site, loadpoints = {}) {
     const kw = id => {
       if (!id) return 0;
@@ -3171,7 +3094,7 @@ class EvccCard extends HTMLElement {
       const textX = iconX - 4;
       const sub = s.sub ? `
         <text x="${textX}" y="${s.cy + 12}" text-anchor="end" dominant-baseline="central"
-              font-size="9" style="fill:var(--secondary-text-color)">${s.sub}</text>` : "";
+              font-size="9" style="fill:var(--secondary-text-color)">${escHtml(s.sub)}</text>` : "";
       const inner = `
         <rect x="${s.x}" y="${s.y}" width="${NODE_W}" height="${s.h}" rx="3" fill="${s.color}"/>
         ${iconPath ? svgMdi(iconPath, iconX, iconY, s.color) : ""}
@@ -3190,7 +3113,7 @@ class EvccCard extends HTMLElement {
       const textX = iconX + ICON_SIZE + 4;
       const sub = d.sub ? `
         <text x="${textX}" y="${d.cy + 12}" text-anchor="start" dominant-baseline="central"
-              font-size="9" style="fill:var(--secondary-text-color)">${d.sub}</text>` : "";
+              font-size="9" style="fill:var(--secondary-text-color)">${escHtml(d.sub)}</text>` : "";
       const inner = `
         <rect x="${d.x}" y="${d.y}" width="${NODE_W}" height="${d.h}" rx="3" fill="${d.color}"/>
         ${iconPath ? svgMdi(iconPath, iconX, iconY, d.color) : ""}
@@ -3243,8 +3166,8 @@ class EvccCard extends HTMLElement {
       <div class="site-row ${indent ? "site-row-indent" : ""}${entityId ? " site-row-clickable" : ""}"${entityId ? ` data-more-info="${entityId}"` : ""}>
         <span class="site-row-icon">${icon}</span>
         <span class="site-row-label">
-          <span class="site-row-name">${label}</span>
-          ${sub ? `<span class="site-row-sub">${sub}</span>` : ""}
+          <span class="site-row-name">${escHtml(label)}</span>
+          ${sub ? `<span class="site-row-sub">${escHtml(sub)}</span>` : ""}
         </span>
         <span class="site-row-pw ${pwClass}">${fmtPow(pw)}</span>
       </div>`;
@@ -3252,7 +3175,7 @@ class EvccCard extends HTMLElement {
     const section = (title, total, rows) => `
       <div class="site-section">
         <div class="site-section-head">
-          <span class="site-section-title">${title}</span>
+          <span class="site-section-title">${escHtml(title)}</span>
           <span class="site-section-total">${fmtPow(total)}</span>
         </div>
         ${rows}
@@ -3332,7 +3255,7 @@ class EvccCard extends HTMLElement {
     return `
       <div class="site-block">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("energyFlow") || this._t("overview")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("energyFlow") || this._t("overview"))}</span>
         </div>
         ${sankeySvg}
         <div class="site-table" style="${siteExpanded ? '' : 'display:none'}">
@@ -3342,8 +3265,11 @@ class EvccCard extends HTMLElement {
         </div>
         ${this._renderStatsFooter()}
       </div>`;
-  }
+  },
+};
 
+// Grid mode (site2). Methods are mixed into EvccCard.prototype.
+const gridView = {
   _renderSiteBlock2(site, loadpoints = {}) {
     const kw = id => {
       if (!id) return 0;
@@ -3399,8 +3325,8 @@ class EvccCard extends HTMLElement {
     const chip = (dot, label, sub, entityId = null) =>
       `<div class="s2-chip${entityId ? " s2-chip-clickable" : ""}"${entityId ? ` data-more-info="${entityId}"` : ""}>
         <span class="s2-chip-dot" style="background:${dot}"></span>
-        <span class="s2-chip-name">${label}</span>
-        ${sub ? `<span class="s2-chip-sub">${sub}</span>` : ""}
+        <span class="s2-chip-name">${escHtml(label)}</span>
+        ${sub ? `<span class="s2-chip-sub">${escHtml(sub)}</span>` : ""}
       </div>`;
 
     const lpChips = Object.entries(loadpoints)
@@ -3458,7 +3384,7 @@ class EvccCard extends HTMLElement {
     return `
       <div class="s2-block">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("grid")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("grid"))}</span>
         </div>
         <div class="s2-net">
           <div class="s2-net-label">${this._t("gridStatus")}</div>
@@ -3470,8 +3396,11 @@ class EvccCard extends HTMLElement {
         ${section("consumption", dstChips)}
         ${this._renderStatsFooter()}
       </div>`;
-  }
+  },
+};
 
+// Statistics from stat_* entities and the HA recorder (fallback without the ha-evcc sessions command). Methods are mixed into EvccCard.prototype.
+const statisticsLegacy = {
   _getStatEntityIds(period) {
     const per    = period ?? this._statsPeriod ?? "total";
     const base   = `sensor.${this._getPrefix()}`;
@@ -3489,7 +3418,7 @@ class EvccCard extends HTMLElement {
       priceId:    find(`${base}${s.price}`),
       solarKwhId: find(`${base}stat_total_solar_k_wh_template`),
     };
-  }
+  },
 
   _renderStatsPeriodTabs(size = "normal") {
     const cur  = this._statsPeriod ?? "total";
@@ -3503,7 +3432,7 @@ class EvccCard extends HTMLElement {
       `<button class="stats-period-tab${d.key === cur ? " active" : ""}" data-period="${d.key}">${this._t(d.tKey)}</button>`
     ).join("");
     return `<div class="stats-period-tabs${size === "small" ? " stats-period-tabs--small" : ""}">${btns}</div>`;
-  }
+  },
 
   _maybeRefreshStats() {
     const period = this._statsPeriod ?? "total";
@@ -3512,7 +3441,7 @@ class EvccCard extends HTMLElement {
       this._chartCacheTime[period] = Date.now();
       this._fetchChartData(period);
     }
-  }
+  },
 
   async _fetchChartData(period) {
     const { kwhId, solarKwhId } = this._getStatEntityIds("total"); // always use cumulative total entities
@@ -3576,7 +3505,7 @@ class EvccCard extends HTMLElement {
     } catch(e) {
       console.warn("[evcc-card] chart error", e);
     }
-  }
+  },
 
   _computeDailyDeltas(stats, days, solarStats = [], liveKwh = null, liveSolarKwh = null) {
     const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
@@ -3603,7 +3532,7 @@ class EvccCard extends HTMLElement {
       result.push({ delta, solarDelta, label: day, labelStr, isCurrent: i === 0 });
     }
     return result;
-  }
+  },
 
   _computeMonthlyDeltas(stats, count, solarStats = []) {
     const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
@@ -3627,7 +3556,7 @@ class EvccCard extends HTMLElement {
       result.push({ delta, solarDelta, label: month, labelStr, isCurrent: i === 0 });
     }
     return result;
-  }
+  },
 
   _computeThisYearMonthly(stats, solarStats = []) {
     const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
@@ -3652,7 +3581,7 @@ class EvccCard extends HTMLElement {
       result.push({ delta, solarDelta, label: month, labelStr, isCurrent: m === now.getMonth() });
     }
     return result;
-  }
+  },
 
   _computeYearlyTotals(stats, solarStats = []) {
     const now = new Date();
@@ -3679,7 +3608,7 @@ class EvccCard extends HTMLElement {
         label: new Date(year, 0, 1), labelStr: String(year), isCurrent: year === now.getFullYear(),
       };
     });
-  }
+  },
 
   _renderBarChart(data) {
     const ML = 22, MR = 6, MT = 20, MB = 18;
@@ -3756,7 +3685,7 @@ class EvccCard extends HTMLElement {
 
       const hitRect = `<rect class="evcc-bar" x="${x0}" y="${MT}" width="${bw}" height="${CH}"
         fill="transparent" style="cursor:pointer"
-        data-label="${d.labelStr.replace(/"/g, "&quot;")}"
+        data-label="${escAttr(d.labelStr)}"
         data-total="${d.delta != null ? d.delta.toFixed(1) : ""}"
         data-solar="${d.solarDelta != null ? d.solarDelta.toFixed(1) : ""}"/>`;
 
@@ -3769,8 +3698,66 @@ class EvccCard extends HTMLElement {
       </svg>
       <div class="evcc-chart-tooltip" hidden></div>
     </div>`;
-  }
+  },
 
+  _renderStatsBlockEntities() {
+    this._maybeRefreshStats();
+    const { kwhId, solarId, priceId } = this._getStatEntityIds();
+
+    const val = id => id ? (parseFloat(stateVal(this._hass, id)) || 0) : null;
+    const kwh   = val(kwhId);
+    const solar = val(solarId);
+    const price = val(priceId);
+
+    const kpi = (v, label, fmt, color) => `
+      <div class="stats-kpi">
+        <div class="stats-kpi-val"${color ? ` style="color:${color}"` : ""}>${v !== null ? fmt(v) : "–"}</div>
+        <div class="stats-kpi-lbl">${label}</div>
+      </div>`;
+
+    const kpis = [
+      kpi(kwh,   this._t("statsTotalCharged"), v => `${Math.round(v)} kWh`, null),
+      kpi(solar, this._t("statsSolarShare"),   v => `${Math.round(v)} %`,   solar > 0 ? "var(--evcc-green)" : null),
+      kpi(price, this._t("statsAvgPrice"),     v => `${v.toFixed(2)} ${escHtml(unitStr(this._hass, priceId))}`, null),
+    ].join("");
+
+    const { kwhId: chartKwhId } = this._getStatEntityIds("total");
+    const period     = this._statsPeriod ?? "total";
+    const chartData  = this._chartCache[period];
+    const chartTitle = this._t({ "30d": "statsPeriod30d", "365d": "statsPeriod365d", "thisYear": "statsPeriodThisYear", "total": "statsPeriodTotal" }[period]);
+    const chart = chartKwhId ? `
+      <div class="stats-chart-section">
+        <div class="stats-chart-title">${chartTitle}</div>
+        ${chartData
+          ? this._renderBarChart(chartData)
+          : '<div class="stats-chart-loading">…</div>'}
+      </div>` : "";
+
+    const noDataHint = (!kwhId && !solarId && !priceId && this._statsPeriod !== "total")
+      ? `<div class="stats-no-data">${this._t("statsNoData")} <a class="stats-no-data-link" href="https://github.com/mkshb/hass-evcc-card#enabling-stat-periods" target="_blank" rel="noopener">📖 ${this._t("statsNoDataLink")}</a></div>`
+      : "";
+
+    const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
+    const solarHint = (this._solarDataPoints != null && this._solarDataPoints < 3)
+      ? `<div class="stats-solar-hint">${this._t("solarHint", { n: this._solarDataPoints })}</div>`
+      : "";
+
+    return `
+      <div>
+        <div class="lp-header">
+          <span class="lp-name">${escHtml(this._config.title || this._t("statistics"))}</span>
+        </div>
+        ${this._renderStatsPeriodTabs()}
+        ${noDataHint}
+        <div class="stats-kpi-row">${kpis}</div>
+        ${chart}
+        ${solarHint}
+      </div>`;
+  },
+};
+
+// Statistics from evcc_intg/sessions (EVCC-style header, stacked chart) plus the stats dispatchers. Methods are mixed into EvccCard.prototype.
+const statisticsView = {
   // ---- Sessions-based statistics (ha-evcc evcc_intg/sessions) -------------
   // The raw session list lets the card compute every period + KPI itself, so
   // the stats mode no longer depends on user-configured stat_* template sensors
@@ -3781,9 +3768,9 @@ class EvccCard extends HTMLElement {
     const raw = s?.created || s?.finished;
     if (!raw) return null;
     return evccDate(raw);
-  }
+  },
 
-  _statsLang() { return (this._config?.language || this._hass?.language || "de").split("-")[0]; }
+  _statsLang() { return (this._config?.language || this._hass?.language || "de").split("-")[0]; },
 
   // Earliest/latest session date — bounds the month/year stepper.
   _sessionRange(sessions) {
@@ -3795,18 +3782,19 @@ class EvccCard extends HTMLElement {
       if (!max || d > max) max = d;
     }
     return { min, max };
-  }
+  },
 
   // Scope = the active stats window: month / year / total.
   _sessionInScope(d, scope) {
     if (scope.kind === "month") return d.getFullYear() === scope.year && d.getMonth() === scope.month;
     if (scope.kind === "year")  return d.getFullYear() === scope.year;
     return true; // total
-  }
+  },
+
   _scopeKey(scope) {
     return scope.kind === "month" ? `m${scope.year}-${scope.month}`
          : scope.kind === "year"  ? `y${scope.year}` : "total";
-  }
+  },
 
   // Active scope for the stats block, from the scope tab + stepper selection
   // (lazily defaulting to the most recent month/year present in the data).
@@ -3818,16 +3806,16 @@ class EvccCard extends HTMLElement {
     if (this._statsMonthSel == null) this._statsMonthSel = ref.getMonth();   // 0-based month index
     if (tab === "year") return { kind: "year", year: this._statsYearSel };
     return { kind: "month", year: this._statsYearSel, month: this._statsMonthSel };
-  }
+  },
 
   // Footer scope (compact, no stepper): current month / current year / all.
   _footerScope() {
-    const p = this._config.stats_period ?? "total";
+    const p = normalizeStatsPeriod(this._config.stats_period, "total");
     const now = new Date();
-    if (p === "month" || p === "30d") return { kind: "month", year: now.getFullYear(), month: now.getMonth() };
-    if (p === "year" || p === "365d" || p === "thisYear") return { kind: "year", year: now.getFullYear() };
+    if (p === "month") return { kind: "month", year: now.getFullYear(), month: now.getMonth() };
+    if (p === "year")  return { kind: "year",  year: now.getFullYear() };
     return { kind: "total" };
-  }
+  },
 
   // Currency symbol for session price values (the sessions response carries none).
   _statsCurrency() {
@@ -3837,7 +3825,7 @@ class EvccCard extends HTMLElement {
     const { priceId } = this._getStatEntityIds("total");
     const u = priceId ? unitStr(this._hass, priceId) : "";
     return u ? u.replace(/\s*\/\s*kwh$/i, "") : "";
-  }
+  },
 
   // --- metric + grouping for the EVCC-style stacked chart ------------------
   // Per-session value for the selected metric: energy (kWh) | cost (currency) | co2 (kg).
@@ -3846,12 +3834,13 @@ class EvccCard extends HTMLElement {
     if (metric === "cost") { const p = Number(s.price); return isFinite(p) ? p : null; }
     if (metric === "co2")  { const c = Number(s.co2PerKWh); return (isFinite(e) && isFinite(c)) ? e * c / 1000 : null; }
     return isFinite(e) ? e : null;
-  }
+  },
+
   _metricFmt(metric, currency) {
-    if (metric === "cost") return { unit: currency || "", axis: currency || "", fmt: v => v.toFixed(2) };
+    if (metric === "cost") return { unit: escHtml(currency || ""), axis: escHtml(currency || ""), fmt: v => v.toFixed(2) };
     if (metric === "co2")  return { unit: "kg", axis: "kg", fmt: v => v >= 10 ? String(Math.round(v)) : v.toFixed(2) };
     return { unit: "kWh", axis: "kWh", fmt: v => v >= 100 ? String(Math.round(v)) : v.toFixed(1) };
-  }
+  },
 
   // X-axis skeleton for the scope: bucket key per date + ordered bucket descriptors.
   _scopeAxis(scope, sessions) {
@@ -3885,7 +3874,7 @@ class EvccCard extends HTMLElement {
     if (years.length <= 1) return this._scopeAxis({ kind: "year", year: years.length ? years[0] : now.getFullYear() }, sessions);
     const buckets = years.map(y => ({ key: y, labelStr: String(y), labelFull: String(y), isCurrent: y === now.getFullYear() }));
     return { keyOf: d => d.getFullYear(), buckets };
-  }
+  },
 
   // Ordered series for the grouping. solar → [solar, grid]; loadpoint/vehicle → distinct (energy desc).
   _groupSeries(scope, sessions, grouping) {
@@ -3902,7 +3891,7 @@ class EvccCard extends HTMLElement {
       totals[n] = (totals[n] || 0) + (Number(s.chargedEnergy) || 0);
     }
     return Object.entries(totals).sort((a, b) => b[1] - a[1]).map(([n], i) => ({ key: n, label: n, color: pal[i % pal.length] }));
-  }
+  },
 
   // Stacked buckets: each bucket gets seg{seriesKey:value} + total for the chosen metric.
   _sessionStacks(sessions, scope, metric, grouping, series) {
@@ -3933,7 +3922,7 @@ class EvccCard extends HTMLElement {
       b.total += v;
     }
     return axis.buckets;
-  }
+  },
 
   _computeSessionStats(sessions, scope) {
     let kwh = 0, solarKwh = 0, cost = 0, co2wSum = 0, co2w = 0;
@@ -3959,7 +3948,7 @@ class EvccCard extends HTMLElement {
       avgCo2:    (hasCo2 && co2w > 0) ? co2wSum / co2w : null,
       count, hasSolar, hasPrice, hasCo2,
     };
-  }
+  },
 
   // KPI memo per (sessions cache timestamp, scope); the footer reuses this.
   _sessionStats(sessions, scope) {
@@ -3968,7 +3957,7 @@ class EvccCard extends HTMLElement {
     if (!this._sessionStatsMemo || this._sessionStatsMemo.ts !== ts) this._sessionStatsMemo = { ts, byKey: {} };
     if (!this._sessionStatsMemo.byKey[key]) this._sessionStatsMemo.byKey[key] = this._computeSessionStats(sessions, scope);
     return this._sessionStatsMemo.byKey[key];
-  }
+  },
 
   // Metric toggle (Energie / Kosten / CO₂) — selects what the bars represent.
   _renderStatsMetricTabs() {
@@ -3980,7 +3969,7 @@ class EvccCard extends HTMLElement {
     ];
     const btns = defs.map(d => `<button class="stats-period-tab${d.key === cur ? " active" : ""}" data-metric="${d.key}">${this._t(d.tKey)}</button>`).join("");
     return `<div class="stats-period-tabs stats-period-tabs--small">${btns}</div>`;
-  }
+  },
 
   // Grouping toggle (Sonne / Ladepunkt / Fahrzeug) — selects how bars are stacked.
   _renderStatsGroupTabs() {
@@ -3992,7 +3981,7 @@ class EvccCard extends HTMLElement {
     ];
     const btns = defs.map(d => `<button class="stats-period-tab${d.key === cur ? " active" : ""}" data-group="${d.key}">${this._t(d.tKey)}</button>`).join("");
     return `<div class="stats-period-tabs stats-period-tabs--small">${btns}</div>`;
-  }
+  },
 
   // Scope tabs (Month / Year / Total) for the sessions stats path. Reuses the
   // .stats-period-tab styling but carries data-scope (handled separately from the
@@ -4008,7 +3997,7 @@ class EvccCard extends HTMLElement {
       `<button class="stats-period-tab${d.key === cur ? " active" : ""}" data-scope="${d.key}">${this._t(d.tKey)}</button>`
     ).join("");
     return `<div class="stats-period-tabs">${btns}</div>`;
-  }
+  },
 
   // Two independent steppers like EVCC: a month stepper (month scope only, wraps
   // freely) and a year stepper (month + year scope, bounded to the data range).
@@ -4036,7 +4025,7 @@ class EvccCard extends HTMLElement {
       inner = month + one("year", String(y), y <= minY, y >= maxY);
     }
     return `<div class="stats-steppers">${inner}</div>`;
-  }
+  },
 
   // EVCC-style stacked multi-series bar chart for the sessions stats. `series` is
   // an ordered [{key,label,color}]; each bucket carries seg{key:value} + total.
@@ -4078,9 +4067,9 @@ class EvccCard extends HTMLElement {
       const hit = `<rect class="evcc-bar" data-idx="${i}" x="${x0}" y="${MT}" width="${bw}" height="${CH}" fill="transparent" style="cursor:pointer"/>`;
       return segs + hit + labelSvg;
     }).join("");
-    const legend = `<div class="stats-legend">${series.map(s => `<span class="sl-item"><span class="sl-dot" style="background:${s.color}"></span>${s.label}</span>`).join("")}</div>`;
+    const legend = `<div class="stats-legend">${series.map(s => `<span class="sl-item"><span class="sl-dot" style="background:${s.color}"></span>${escHtml(s.label)}</span>`).join("")}</div>`;
     return `<div class="evcc-chart-wrap"><svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${grid}${axisLbl}${bars}</svg><div class="evcc-chart-tooltip" hidden></div></div>${legend}`;
-  }
+  },
 
   _renderStatsBlockSessions(sessions) {
     const scope   = this._statsScopeObj(sessions);
@@ -4097,7 +4086,7 @@ class EvccCard extends HTMLElement {
       </div>`;
     const kpis = [ kpi(k.kwh, this._t("statsTotalCharged"), v => `${Math.round(v)} kWh`, null) ];
     if (k.hasSolar) kpis.push(kpi(k.solarPct, this._t("statsSolarShare"), v => `${Math.round(v)} %`, k.solarPct > 0 ? "var(--evcc-green)" : null));
-    if (k.hasPrice) kpis.push(kpi(k.totalCost, this._t("statsTotalCost"), v => `${v.toFixed(2)} ${cur}`, null));
+    if (k.hasPrice) kpis.push(kpi(k.totalCost, this._t("statsTotalCost"), v => `${v.toFixed(2)} ${escHtml(cur)}`, null));
     if (k.hasCo2)   kpis.push(kpi(k.avgCo2, this._t("statsAvgCo2"), v => `${v >= 10 ? Math.round(v) : v.toFixed(1)} g/kWh`, null));
 
     // Stacked chart for the selected metric × grouping.
@@ -4112,7 +4101,7 @@ class EvccCard extends HTMLElement {
     return `
       <div>
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("statistics")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("statistics"))}</span>
         </div>
         <div class="stats-controls">
           ${this._renderStatsScopeTabs()}
@@ -4125,7 +4114,7 @@ class EvccCard extends HTMLElement {
         <div class="stats-kpi-row">${kpis.join("")}</div>
         ${chartHtml}
       </div>`;
-  }
+  },
 
   _renderStatsFooterSessions(sessions) {
     const scope = this._footerScope();
@@ -4136,15 +4125,14 @@ class EvccCard extends HTMLElement {
     const items = [
       `<span class="sf-item"><span class="sf-val">${Math.round(k.kwh)} kWh</span><span class="sf-lbl">${this._t("statsCharged")}</span></span>`,
       k.hasSolar ? `<span class="sf-item"><span class="sf-val" style="color:var(--evcc-green)">${Math.round(k.solarPct)} %</span><span class="sf-lbl">${this._t("statsSolarShare")}</span></span>` : "",
-      k.hasPrice ? `<span class="sf-item"><span class="sf-val">${k.avgPrice.toFixed(2)} ${cur}/kWh</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
+      k.hasPrice ? `<span class="sf-item"><span class="sf-val">${k.avgPrice.toFixed(2)} ${escHtml(cur)}/kWh</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
     ].filter(Boolean);
     if (k.kwh <= 0) return "";
     return `<div class="stats-footer"><div class="sf-period">${periodLabel}</div><div class="sf-items">${items.join('<span class="sf-sep"></span>')}</div></div>`;
-  }
+  },
 
   _renderStatsFooter() {
-    const period = this._config.stats_period ?? "total";
-    if (period === "none") return "";
+    if (normalizeStatsPeriod(this._config.stats_period, "total") === "none") return "";
     if (this._hasCmd("sessions")) {
       const res = this._wsSessions();
       if (res && res.data && Array.isArray(res.data.sessions)) {
@@ -4152,6 +4140,10 @@ class EvccCard extends HTMLElement {
       }
       // pending/error → fall through to the entity path below
     }
+    // The legacy path has periods of its own, so the configured value is mapped
+    // onto them here. Not via this._statsPeriod: that one follows the period
+    // tabs of the stats mode, the footer stays on what the config asked for.
+    const period = legacyStatsPeriod(this._config.stats_period, "total");
     const { kwhId, solarId, priceId } = this._getStatEntityIds(period);
     if (!kwhId && !solarId && !priceId) return "";
 
@@ -4166,12 +4158,12 @@ class EvccCard extends HTMLElement {
     const items = [
       kwhId   ? `<span class="sf-item"><span class="sf-val">${Math.round(kwh)} kWh</span><span class="sf-lbl">${this._t("statsCharged")}</span></span>` : "",
       solarId ? `<span class="sf-item"><span class="sf-val" style="color:var(--evcc-green)">${Math.round(solar)} %</span><span class="sf-lbl">${this._t("statsSolarShare")}</span></span>` : "",
-      priceId ? `<span class="sf-item"><span class="sf-val">${price.toFixed(2)} ${unitStr(this._hass, priceId)}</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
+      priceId ? `<span class="sf-item"><span class="sf-val">${price.toFixed(2)} ${escHtml(unitStr(this._hass, priceId))}</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
     ].filter(Boolean);
 
     if (items.length === 0) return "";
     return `<div class="stats-footer"><div class="sf-period">${periodLabel}</div><div class="sf-items">${items.join('<span class="sf-sep"></span>')}</div></div>`;
-  }
+  },
 
   _renderStatsBlock() {
     // Sessions-first: when ha-evcc exposes the sessions command, compute the
@@ -4186,7 +4178,7 @@ class EvccCard extends HTMLElement {
       if (!res) {
         return `
           <div>
-            <div class="lp-header"><span class="lp-name">${this._config.title || this._t("statistics")}</span></div>
+            <div class="lp-header"><span class="lp-name">${escHtml(this._config.title || this._t("statistics"))}</span></div>
             ${this._renderStatsScopeTabs()}
             <div class="stats-chart-loading">…</div>
           </div>`;
@@ -4194,63 +4186,11 @@ class EvccCard extends HTMLElement {
       // res.error → fall through to the entity path
     }
     return this._renderStatsBlockEntities();
-  }
+  },
+};
 
-  _renderStatsBlockEntities() {
-    this._maybeRefreshStats();
-    const { kwhId, solarId, priceId } = this._getStatEntityIds();
-
-    const val = id => id ? (parseFloat(stateVal(this._hass, id)) || 0) : null;
-    const kwh   = val(kwhId);
-    const solar = val(solarId);
-    const price = val(priceId);
-
-    const kpi = (v, label, fmt, color) => `
-      <div class="stats-kpi">
-        <div class="stats-kpi-val"${color ? ` style="color:${color}"` : ""}>${v !== null ? fmt(v) : "–"}</div>
-        <div class="stats-kpi-lbl">${label}</div>
-      </div>`;
-
-    const kpis = [
-      kpi(kwh,   this._t("statsTotalCharged"), v => `${Math.round(v)} kWh`, null),
-      kpi(solar, this._t("statsSolarShare"),   v => `${Math.round(v)} %`,   solar > 0 ? "var(--evcc-green)" : null),
-      kpi(price, this._t("statsAvgPrice"),     v => `${v.toFixed(2)} ${unitStr(this._hass, priceId)}`, null),
-    ].join("");
-
-    const { kwhId: chartKwhId } = this._getStatEntityIds("total");
-    const period     = this._statsPeriod ?? "total";
-    const chartData  = this._chartCache[period];
-    const chartTitle = this._t({ "30d": "statsPeriod30d", "365d": "statsPeriod365d", "thisYear": "statsPeriodThisYear", "total": "statsPeriodTotal" }[period]);
-    const chart = chartKwhId ? `
-      <div class="stats-chart-section">
-        <div class="stats-chart-title">${chartTitle}</div>
-        ${chartData
-          ? this._renderBarChart(chartData)
-          : '<div class="stats-chart-loading">…</div>'}
-      </div>` : "";
-
-    const noDataHint = (!kwhId && !solarId && !priceId && this._statsPeriod !== "total")
-      ? `<div class="stats-no-data">${this._t("statsNoData")} <a class="stats-no-data-link" href="https://github.com/mkshb/hass-evcc-card#enabling-stat-periods" target="_blank" rel="noopener">📖 ${this._t("statsNoDataLink")}</a></div>`
-      : "";
-
-    const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
-    const solarHint = (this._solarDataPoints != null && this._solarDataPoints < 3)
-      ? `<div class="stats-solar-hint">${this._t("solarHint", { n: this._solarDataPoints })}</div>`
-      : "";
-
-    return `
-      <div>
-        <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("statistics")}</span>
-        </div>
-        ${this._renderStatsPeriodTabs()}
-        ${noDataHint}
-        <div class="stats-kpi-row">${kpis}</div>
-        ${chart}
-        ${solarHint}
-      </div>`;
-  }
-
+// Battery mode. Methods are mixed into EvccCard.prototype.
+const batteryView = {
   _renderBatteryBlock(site) {
     const socId         = site.battery_soc;
     const powerId       = site.battery_power;
@@ -4375,80 +4315,42 @@ class EvccCard extends HTMLElement {
     return `
       <div class="battery-block">
         <div class="lp-header">
-          <span class="lp-name">${this._config.title || this._t("homeBattery")}</span>
+          <span class="lp-name">${escHtml(this._config.title || this._t("homeBattery"))}</span>
         </div>
         ${tabUsage}
       </div>`;
-  }
+  },
+};
 
-  _renderEmpty(allLoadpoints = {}) {
-    const available = Object.keys(allLoadpoints);
-    const hint = available.length > 0
-      ? `<p>${this._t("availableLoadpoints", { list: `<code>${available.join(", ")}</code>` })}</p>`
-      : "";
-    return `
-      <div class="empty">
-        <p>${this._t("noLoadpoints")}</p>
-        ${hint}
-        <p class="empty-debug-hint">
-          ${this._t("emptyTryDebug")}
-          <button class="debug-link" data-action="open-debug">${this._t("openDebugMode")}</button>
-        </p>
-      </div>
-    `;
-  }
-
-  // Placeholder when every (matching) loadpoint is disabled in the evcc
-  // config and disabled_loadpoints is 'hide' - avoids an empty-looking card.
-  _renderAllDisabled() {
-    return `
-      <div class="empty">
-        <p>${this._t("allLoadpointsDisabled")}</p>
-      </div>
-    `;
-  }
-
-  // Dimmed stub for a loadpoint disabled in the evcc config
-  // (disabled_loadpoints: dim). Only its disabled_in_config entity exists,
-  // so there is nothing interactive to render.
-  _renderDisabledLoadpoint(lpName, ents) {
-    return `
-      <div class="loadpoint lp-disabled" data-entity="${ents.disabled_in_config || ""}">
-        <div class="lp-header">
-          <span class="lp-name">${this._config.title || lpName}</span>
-          <span class="lp-badge disabled">${this._t("loadpointDisabled")}</span>
-        </div>
-      </div>
-    `;
-  }
-
+// Debug mode: expected entities, config dump, debug report. Methods are mixed into EvccCard.prototype.
+const debugView = {
   _expectedLpSuffixes() {
     if (!this._cachedLpSuffixes) {
       this._cachedLpSuffixes = Array.from(new Set(FEATURES.filter(f => f.lp).map(f => f.suffix)));
     }
     return this._cachedLpSuffixes;
-  }
+  },
 
   _expectedSiteSuffixes() {
     if (!this._cachedSiteSuffixes) {
       this._cachedSiteSuffixes = Array.from(new Set(FEATURES.filter(f => !f.lp).map(f => f.suffix)));
     }
     return this._cachedSiteSuffixes;
-  }
+  },
 
   _coreLpSuffixes() {
     if (!this._cachedCoreLp) {
       this._cachedCoreLp = new Set(FEATURES.filter(f => f.lp && f.core).map(f => f.suffix));
     }
     return this._cachedCoreLp;
-  }
+  },
 
   _coreSiteSuffixes() {
     if (!this._cachedCoreSite) {
       this._cachedCoreSite = new Set(FEATURES.filter(f => !f.lp && f.core).map(f => f.suffix));
     }
     return this._cachedCoreSite;
-  }
+  },
 
   // Drops indexed features (pv_N_*, battery_N_*, charge_currents_N) from `suffixes`
   // when the previous index is also missing in `found`. So `pv_2_power` only
@@ -4470,7 +4372,7 @@ class EvccCard extends HTMLElement {
       }
       return true;
     });
-  }
+  },
 
   // Splits a set of expected suffixes into { core, optional, missingCore, missingOpt }
   // relative to `found` (an object whose keys are the entity suffixes that exist).
@@ -4491,7 +4393,7 @@ class EvccCard extends HTMLElement {
       core: core.length, foundCore: foundCore.length, missingCore,
       opt:  opt.length,  foundOpt:  foundOpt.length,  missingOpt,
     };
-  }
+  },
 
   _formatConfigYaml(cfg, maskNames = false) {
     if (!cfg || typeof cfg !== "object") return String(cfg ?? "—");
@@ -4519,7 +4421,7 @@ class EvccCard extends HTMLElement {
       }
     }
     return out.join("\n");
-  }
+  },
 
   _renderDebugBlock(loadpoints, site, meters) {
     const prefix    = this._getPrefix();
@@ -4544,7 +4446,7 @@ class EvccCard extends HTMLElement {
     const siteSplit    = this._splitCoreOptional(expectedSite, site || {}, coreSite);
 
     const pill = (tone, text) => `<span class="debug-pill ${tone}">${text}</span>`;
-    const escUa = ua.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const escUa = escHtml(ua);
 
     const lpRows = lpNames.length === 0
       ? `<div class="debug-empty">—</div>`
@@ -4556,7 +4458,7 @@ class EvccCard extends HTMLElement {
           return `
             <li>
               <div class="debug-list-head">
-                <code>${name}</code>
+                <code>${escHtml(name)}</code>
                 ${pill(coreTone, `${this._t("debugCore")} ${split.foundCore}/${split.core}`)}
                 ${pill("info", `${this._t("debugOptional")} ${split.foundOpt}/${split.opt}`)}
               </div>
@@ -4575,7 +4477,7 @@ class EvccCard extends HTMLElement {
           const count = Object.keys(meters[name]).length;
           return `<li>
             <div class="debug-list-head">
-              <code>${name}</code>
+              <code>${escHtml(name)}</code>
               <span class="debug-count">${count} ${this._t("debugEntities")}</span>
               ${pill("warn", this._t("debugOrphan"))}
             </div>
@@ -4607,9 +4509,9 @@ class EvccCard extends HTMLElement {
           <div class="debug-section-title">${this._t("debugVersions")}</div>
           <ul class="debug-kv">
             <li><strong>Card:</strong> <code>${EVCC_CARD_VERSION}</code></li>
-            <li><strong>Home Assistant:</strong> <code>${haVer}</code></li>
+            <li><strong>Home Assistant:</strong> <code>${escHtml(haVer)}</code></li>
             <li><strong>Browser:</strong> <code>${escUa}</code></li>
-            <li><strong>Language:</strong> <code>${lang}</code>${cfgLang ? ` (configured: <code>${cfgLang}</code>)` : ""}</li>
+            <li><strong>Language:</strong> <code>${escHtml(lang)}</code>${cfgLang ? ` (configured: <code>${escHtml(cfgLang)}</code>)` : ""}</li>
           </ul>
         </div>
 
@@ -4617,8 +4519,8 @@ class EvccCard extends HTMLElement {
           <div class="debug-section-title">${this._t("debugIntegration")}</div>
           <ul class="debug-kv">
             <li><strong>${this._t("debugEvccEntities")}:</strong> ${evccCount} ${evccCount > 0 ? pill("ok", "OK") : pill("err", "0")}</li>
-            <li><strong>${this._t("debugPrefixAuto")}:</strong> <code>${this._detectedPrefix || "—"}</code></li>
-            <li><strong>${this._t("debugPrefixCfg")}:</strong> <code>${this._config.prefix || "—"}</code></li>
+            <li><strong>${this._t("debugPrefixAuto")}:</strong> <code>${escHtml(this._detectedPrefix || "—")}</code></li>
+            <li><strong>${this._t("debugPrefixCfg")}:</strong> <code>${escHtml(this._config.prefix || "—")}</code></li>
           </ul>
           ${evccCount === 0 ? `<div class="debug-warn-box">${this._t("debugNoIntg")}</div>` : ""}
         </div>
@@ -4626,27 +4528,27 @@ class EvccCard extends HTMLElement {
         <div class="debug-section">
           <div class="debug-section-title">WebSocket API</div>
           <ul class="debug-kv">
-            <li><strong>Config entry id:</strong> <code>${this._entryId || "—"}</code></li>
+            <li><strong>Config entry id:</strong> <code>${escHtml(this._entryId || "—")}</code></li>
             ${!this._capsLoaded
               ? `<li><em>Probing capabilities…</em></li>`
               : !this._caps || this._caps.commands.length === 0
                 ? `<li>${pill("warn", "not supported")} <em>(older ha-evcc / unknown command)</em></li>`
                 : (() => {
                     const items = [];
-                    items.push(`<li><strong>Integration version:</strong> <code>${this._caps.version ?? "—"}</code></li>`);
-                    items.push(`<li><strong>Commands:</strong> ${this._caps.commands.map(c => `<code>${c}</code>`).join(", ")}</li>`);
+                    items.push(`<li><strong>Integration version:</strong> <code>${escHtml(this._caps.version ?? "—")}</code></li>`);
+                    items.push(`<li><strong>Commands:</strong> ${this._caps.commands.map(c => `<code>${escHtml(c)}</code>`).join(", ")}</li>`);
                     const lpMap = Object.entries(this._lpIndexMap || {});
-                    items.push(`<li><strong>Loadpoint index map:</strong> ${lpMap.length ? lpMap.map(([id, i]) => `<code>${id}=${i}</code>`).join(", ") : `${pill("warn", "fallback")} <em>(heuristic/override; older ha-evcc)</em>`}</li>`);
+                    items.push(`<li><strong>Loadpoint index map:</strong> ${lpMap.length ? lpMap.map(([id, i]) => `<code>${escHtml(id)}=${i}</code>`).join(", ") : `${pill("warn", "fallback")} <em>(heuristic/override; older ha-evcc)</em>`}</li>`);
                     // Show cached probe results (prefetched by _prefetchDebugProbes).
                     const fmtProbe = (label, cacheKey, fmt) => {
                       const c = this._wsCache[cacheKey];
                       if (!c) return `<li><strong>${label}:</strong> <em>loading…</em></li>`;
-                      if (c.result.error) return `<li><strong>${label}:</strong> ${pill("err", "error")} <code>${c.result.error}</code></li>`;
+                      if (c.result.error) return `<li><strong>${label}:</strong> ${pill("err", "error")} <code>${escHtml(c.result.error)}</code></li>`;
                       return `<li><strong>${label}:</strong> ${fmt(c.result.data)}</li>`;
                     };
                     if (this._hasCmd("forecast"))
                       items.push(fmtProbe("forecast (grid)", "forecast:grid",
-                        d => `${Array.isArray(d?.rates) ? d.rates.length : 0} rates${d?.unit ? ` (${d.unit})` : ""}`));
+                        d => `${Array.isArray(d?.rates) ? d.rates.length : 0} rates${d?.unit ? ` (${escHtml(d.unit)})` : ""}`));
                     if (this._hasCmd("sessions"))
                       items.push(fmtProbe("sessions", "sessions::",
                         d => `${Array.isArray(d?.sessions) ? d.sessions.length : 0} sessions`));
@@ -4679,18 +4581,18 @@ class EvccCard extends HTMLElement {
         <div class="debug-section">
           <div class="debug-section-title">${this._t("debugCardConfig")}</div>
           ${cfgNote}
-          <pre class="debug-yaml">${cfgYaml.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
+          <pre class="debug-yaml">${escHtml(cfgYaml)}</pre>
         </div>
 
         <div class="debug-section">
           <div class="debug-section-title">${this._t("debugTranslations")}</div>
           <ul class="debug-kv">
-            <li><strong>${this._t("debugLoaded")}:</strong> <code>${loadedLocales.join(", ") || "—"}</code></li>
+            <li><strong>${this._t("debugLoaded")}:</strong> <code>${escHtml(loadedLocales.join(", ")) || "—"}</code></li>
           </ul>
         </div>
       </div>
     `;
-  }
+  },
 
   _buildDebugReport(maskNames = false) {
     const prefix    = this._getPrefix();
@@ -4806,8 +4708,11 @@ class EvccCard extends HTMLElement {
     out.push(``);
     out.push(`</details>`);
     return out.join("\n");
-  }
+  },
+};
 
+// Event delegation for the whole card. Methods are mixed into EvccCard.prototype.
+const listeners = {
   _attachListeners() {
     this.shadowRoot.querySelectorAll("[data-more-info]").forEach(el => {
       el.addEventListener("click", (e) => {
@@ -4978,8 +4883,8 @@ class EvccCard extends HTMLElement {
           if (!b || !(b.total > 0)) { tooltip.hidden = true; return; }
           const mf = this._metricFmt(metric, currency);
           const rows = series.filter(s => (b.seg[s.key] || 0) > 0)
-            .map(s => `<div class="ectt-row">${dot(s.color)}<span class="ectt-name">${s.label}</span><span class="ectt-val">${mf.fmt(b.seg[s.key])} ${mf.unit}</span></div>`).join("");
-          tooltip.innerHTML = `<div class="ectt-header">${b.labelFull || b.labelStr}</div>${rows}<div class="ectt-summary">${mf.fmt(b.total)} ${mf.unit} ${this._t("total")}</div>`;
+            .map(s => `<div class="ectt-row">${dot(s.color)}<span class="ectt-name">${escHtml(s.label)}</span><span class="ectt-val">${mf.fmt(b.seg[s.key])} ${mf.unit}</span></div>`).join("");
+          tooltip.innerHTML = `<div class="ectt-header">${escHtml(b.labelFull || b.labelStr)}</div>${rows}<div class="ectt-summary">${mf.fmt(b.total)} ${mf.unit} ${this._t("total")}</div>`;
           positionTooltip(bar);
           tooltip.dataset.activeBar = barKey(bar);
           return;
@@ -4992,7 +4897,7 @@ class EvccCard extends HTMLElement {
         const solarColor = getComputedStyle(chartWrap).getPropertyValue("--evcc-green").trim() || "#22c55e";
         const gridColor  = getComputedStyle(chartWrap).getPropertyValue("--primary-color").trim() || "#3b82f6";
         tooltip.innerHTML =
-          `<div class="ectt-header">${bar.dataset.label}</div>` +
+          `<div class="ectt-header">${escHtml(bar.dataset.label)}</div>` +
           (solar != null ? `<div class="ectt-row">${dot(solarColor)}<span class="ectt-name">${this._t("solar")}</span><span class="ectt-val">${bar.dataset.solar} kWh</span></div>` : "") +
           (grid  != null ? `<div class="ectt-row">${dot(gridColor)}<span class="ectt-name">${this._t("grid")}</span><span class="ectt-val">${grid} kWh</span></div>` : "") +
           `<div class="ectt-summary">${total} kWh ${this._t("total")}</div>`;
@@ -5020,15 +4925,6 @@ class EvccCard extends HTMLElement {
         }
       });
     }
-
-    this.shadowRoot.querySelectorAll("button.batt-tab").forEach(btn => {
-      btn.addEventListener("click", () => {
-        block.querySelectorAll("button.batt-tab").forEach((b, i) =>
-          b.classList.toggle("active", i === tabIdx));
-        block.querySelectorAll(".batt-tab-content").forEach((c, i) =>
-          i === tabIdx ? c.removeAttribute("hidden") : c.setAttribute("hidden", ""));
-      });
-    });
 
     this.shadowRoot.querySelectorAll("button.batt-discharge-toggle").forEach(btn => {
       btn.addEventListener("click", () => {
@@ -5328,8 +5224,19 @@ class EvccCard extends HTMLElement {
       });
       // Keyboard changes (arrows, Home/End, PageUp/Down) never went through
       // pointerup, so they updated the label but were never written to HA.
+      // The value at the first keydown is the reference (key repeat fires
+      // keydown again, keyup once): a key that moved nothing, e.g. at a bound
+      // of the range, causes no write.
+      const NAV_KEYS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"];
+      let keyStart = null;
+      input.addEventListener("keydown", (e) => {
+        if (NAV_KEYS.includes(e.key) && keyStart === null) keyStart = input.value;
+      });
       input.addEventListener("keyup", (e) => {
-        if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(e.key)) return;
+        if (!NAV_KEYS.includes(e.key)) return;
+        const unchanged = keyStart !== null && keyStart === input.value;
+        keyStart = null;
+        if (unchanged) return;
         const domain   = input.dataset.domain;
         const entityId = input.dataset.entity;
         this._sliderWrite(entityId, domain, domain === "select" ? this._sliderValueFor(input) : parseFloat(input.value));
@@ -5345,147 +5252,11 @@ class EvccCard extends HTMLElement {
     });
 
     this._attachPriorityListeners();
-  }
+  },
+};
 
-  _attachPriorityListeners() {
-    const root = this.shadowRoot.querySelector("[data-priority-root]");
-    if (!root) return;
-
-    const list = root.querySelector(".priority-list");
-
-    root.querySelectorAll(".priority-row").forEach(row => {
-      const handle = row.querySelector(".priority-handle");
-      if (!handle || row.classList.contains("no-entity")) return;
-
-      handle.addEventListener("pointerdown",        (e) => this._priorityDragStart(e, list, row, handle));
-      handle.addEventListener("pointermove",        (e) => this._priorityDragMove(e));
-      handle.addEventListener("pointerup",          (e) => this._priorityDragEnd(e));
-      handle.addEventListener("pointercancel",      (e) => this._priorityDragEnd(e));
-      // Fallback: if the handle loses capture for any other reason (e.g. the
-      // element is detached), still leave the drag state cleanly.
-      handle.addEventListener("lostpointercapture", (e) => this._priorityDragEnd(e));
-    });
-
-    const applyBtn = root.querySelector("[data-priority-apply]");
-    if (applyBtn) {
-      applyBtn.addEventListener("click", () => {
-        const visible = this._currentVisible();
-        if (visible) this._priorityApply(visible);
-      });
-    }
-
-    const resetBtn = root.querySelector("[data-priority-reset]");
-    if (resetBtn) {
-      resetBtn.addEventListener("click", () => {
-        this._priorityDraft = null;
-        this._lastRenderKey = null;
-        this._render();
-      });
-    }
-  }
-
-  // ---- Priority drag & drop ------------------------------------------------
-  // Model: on pointerdown the slot geometry of the list is frozen once. The
-  // dragged row is taken out of the flow (position: absolute via CSS) and a
-  // placeholder of the same height is put in its slot, so the list keeps
-  // exactly N slots with unchanged boundaries for the whole drag. The target
-  // index is derived from the centre of the dragged row against those frozen
-  // slots; nothing is measured live, so there is no feedback loop.
-  _priorityDragStart(e, list, row, handle) {
-    if (this._priorityDragging) return;
-    if (!e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
-    e.preventDefault();
-
-    // Geometry snapshot before any DOM mutation. offsetTop/offsetHeight are
-    // relative to .priority-list (position: relative), the same frame the
-    // absolutely positioned row uses below.
-    const rows  = [...list.querySelectorAll(".priority-row")];
-    const slots = rows.map(r => ({ top: r.offsetTop, h: r.offsetHeight }));
-    const idx   = rows.indexOf(row);
-    const baseTop = row.offsetTop;
-    const rowH    = row.offsetHeight;
-    // Keep the row inside the list (overflow: hidden would clip it otherwise).
-    const minDy = -baseTop;
-    const maxDy = Math.max(minDy, list.clientHeight - rowH - baseTop);
-
-    const placeholder = document.createElement("div");
-    placeholder.className = "priority-placeholder";
-    placeholder.style.height = rowH + "px";
-    list.insertBefore(placeholder, row);
-
-    row.classList.add("priority-dragging");
-    row.style.top = baseTop + "px";
-
-    this._isDragging    = true;
-    this._pendingRender = false;
-    this._priorityDragging = {
-      list, row, placeholder, handle, pointerId: e.pointerId,
-      startY: e.clientY, slots, idx, baseTop, rowH, minDy, maxDy,
-    };
-    try { handle.setPointerCapture(e.pointerId); } catch (_) {}
-  }
-
-  _priorityDragMove(e) {
-    const d = this._priorityDragging;
-    if (!d || e.pointerId !== d.pointerId) return;
-
-    const dy = Math.min(d.maxDy, Math.max(d.minDy, e.clientY - d.startY));
-    d.row.style.transform = `translateY(${dy}px)`;
-
-    // Target slot: first frozen slot whose midpoint lies below the centre of
-    // the dragged row. No early exit, so the placeholder tracks the pointer
-    // directly instead of advancing one position per event.
-    const center = d.baseTop + dy + d.rowH / 2;
-    let idx = d.slots.findIndex(s => center < s.top + s.h / 2);
-    if (idx === -1) idx = d.slots.length - 1;
-    if (idx === d.idx) return;
-    d.idx = idx;
-
-    const others = [...d.list.querySelectorAll(".priority-row")].filter(r => r !== d.row);
-    d.list.insertBefore(d.placeholder, others[idx] || null);
-  }
-
-  _priorityDragEnd(e) {
-    const d = this._priorityDragging;
-    if (!d || (e && e.pointerId !== d.pointerId)) return;
-    this._priorityDragging = null;
-    try { d.handle.releasePointerCapture(d.pointerId); } catch (_) {}
-
-    if (d.placeholder.parentNode) d.placeholder.parentNode.insertBefore(d.row, d.placeholder);
-    d.placeholder.remove();
-    d.row.classList.remove("priority-dragging");
-    d.row.style.transform = "";
-    d.row.style.top       = "";
-
-    if (this._priorityDraft) {
-      this._priorityDraft.order =
-        [...d.list.querySelectorAll(".priority-row")].map(r => r.dataset.lp);
-    }
-
-    this._isDragging    = false;
-    this._pendingRender = false;
-    this._lastRenderKey = null;
-    this._render();
-  }
-
-  _currentVisible() {
-    if (!this._hass) return null;
-    const prefix = this._getPrefix();
-    const { loadpoints } = discoverEntities(this._hass, prefix);
-    const filterRaw = this._config.loadpoints;
-    const filter = filterRaw
-      ? (Array.isArray(filterRaw) ? filterRaw : [filterRaw])
-      : null;
-    const visible = filter && filter.length > 0
-      ? Object.fromEntries(
-          Object.entries(loadpoints).filter(([lp]) => filter.includes(lp))
-        )
-      : loadpoints;
-    // Config-disabled loadpoints have no interactive entities - callers of
-    // _currentVisible (plan/priority interactions) can never act on them.
-    return partitionDisabledLoadpoints(this._hass, visible).enabled;
-  }
-
+// Card stylesheet, attached to EvccCard.prototype.
+const styles = {
   _styles() {
     return `
       :host {
@@ -5896,12 +5667,6 @@ class EvccCard extends HTMLElement {
       }
 
       .battery-block { padding: 0; }
-      .batt-tabs { display: flex; border-bottom: 1px solid var(--divider-color, #333); margin-bottom: 14px; }
-      button.batt-tab {
-        background: transparent; border: none; border-bottom: 2px solid transparent;
-        color: var(--secondary-text-color); padding: 7px 16px; font-size: .84rem; cursor: pointer; margin-bottom: -1px;
-      }
-      button.batt-tab.active { color: var(--primary-text-color); border-bottom-color: var(--primary-text-color); font-weight: 600; }
       .batt-main-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
       .batt-text-col { flex: 1; min-width: 0; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 12px; }
       .batt-text-item { display: flex; gap: 8px; align-items: flex-start; }
@@ -6172,7 +5937,473 @@ class EvccCard extends HTMLElement {
       }
     `;
   }
+};
+
+class EvccCard extends HTMLElement {
+
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._hass          = null;
+    this._config        = {};
+    this._isDragging    = false;
+    this._pendingRender = false;
+    this._sliderEditing = false;   // direct-input panel open (defers re-renders like a drag)
+    this._sliderEditPanel = null;
+    this._renderTimer   = null;
+    this._lastRenderKey = null;
+    this._countdownInterval = null;
+    this._planState     = {};
+    this._planPreviewDebounce = {};
+    this._tabState      = {};
+    this._statsPeriod   = "total";
+    this._chartCache     = {};
+    this._chartCacheTime = {};
+    this._translations  = sharedTranslations();
+    this._translationsReady = false;
+
+    this._siteTableExpanded = undefined; // undefined = use config default
+    this._currentBlockExpanded = {};
+    this._detectedPrefix = null;
+    this._cachedEntities   = null;  // { loadpoints, site } — invalidated when entity IDs change
+    this._cachedEntityIdKey = null; // sorted join of evcc entity IDs + prefix
+
+    // ha-evcc WebSocket data API (evcc_intg/forecast|sessions|plan_preview).
+    this._entryId             = null;   // config_entry_id, needed by the WS commands
+    this._integrationDetected = false;  // entity-registry probe done once
+    this._detectingIntegration = false;
+    this._evccInstances = null;         // [{ prefix, entryId }] from that probe, registry order
+    this._instancePrefix = undefined;   // config.prefix the current entry_id was chosen for
+    this._caps        = null;   // { version, commands[] } from evcc_intg/capabilities
+    this._capsLoaded  = false;
+    this._capsLoading = null;   // in-flight promise guard
+    this._lpIndexMap  = {};     // loadpoint slug -> evcc API index (from capabilities)
+    this._wsCache     = {};     // cacheKey -> { ts, data }
+    this._wsInflight  = {};     // cacheKey -> Promise (de-dup concurrent fetches)
+
+    this._onPlanReset = (e) => {
+      const lpName = e.detail?.lpName;
+      setTimeout(() => {
+        if (lpName) {
+          delete this._planState[lpName];
+          clearTimeout(this._planPreviewDebounce[lpName]);
+          delete this._planPreviewDebounce[lpName];
+        } else {
+          this._planState = {};
+          for (const k of Object.keys(this._planPreviewDebounce)) clearTimeout(this._planPreviewDebounce[k]);
+          this._planPreviewDebounce = {};
+        }
+        // Purge preview cache entries
+        for (const key of Object.keys(this._wsCache)) {
+          if (key.startsWith("plan:")) delete this._wsCache[key];
+        }
+        if (this._hass) this._render();
+      }, 1500);
+    };
+  }
+
+  // Lovelace may detach a card and attach the same instance again (view switch,
+  // re-order, edit mode). Everything disconnectedCallback tears down has to be
+  // rebuilt here, or the re-mounted card is only half alive.
+  connectedCallback() {
+    window.addEventListener("evcc-plan-reset", this._onPlanReset);
+    // The inline handlers of the site and flow views reach the card through this
+    // map, so its entry has to come back with the element. On the very first
+    // mount there is no id yet; _render creates it.
+    if (this._cardId) {
+      window.__evccCards = window.__evccCards || new Map();
+      window.__evccCards.set(this._cardId, this);
+    }
+    if (!this._countdownInterval) {
+      this._countdownInterval = setInterval(() => this._tickCountdowns(), 1000);
+    }
+    // A render that was cancelled on detach is scheduled again from the state
+    // we already hold; the setter renders only when something changed.
+    if (this._hass) this.hass = this._hass;
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener("evcc-plan-reset", this._onPlanReset);
+    if (this._cardId) window.__evccCards?.delete(this._cardId);
+    if (this._countdownInterval) {
+      clearInterval(this._countdownInterval);
+      this._countdownInterval = null;
+    }
+    // Nothing may render on a detached element: a first render would register
+    // the card in window.__evccCards after the delete above, and the deferred
+    // work would run against a DOM nobody sees.
+    if (this._renderTimer)   { clearTimeout(this._renderTimer);   this._renderTimer   = null; }
+    if (this._wsRenderTimer) { clearTimeout(this._wsRenderTimer); this._wsRenderTimer = null; }
+    for (const k of Object.keys(this._planPreviewDebounce)) clearTimeout(this._planPreviewDebounce[k]);
+    this._planPreviewDebounce = {};
+    // An open direct-input panel would keep hass updates deferred after re-mount.
+    this._pendingRender = false;
+    this._closeSliderEdit();
+    // Drop the on-demand WS caches. Capabilities and entry_id are kept on
+    // purpose: they do not change while the page lives, and re-probing them on
+    // every re-mount would be a backend call for nothing.
+    this._wsCache    = {};
+    this._wsInflight = {};
+  }
+
+  async _loadTranslations() {
+    await loadSharedTranslations();
+    this._translations = sharedTranslations();
+    this._translationsReady = true;
+  }
+
+  _getPrefix() {
+    return this._config.prefix || this._detectedPrefix || "evcc_";
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+
+    if (!this._integrationDetected && !this._detectingIntegration) {
+      this._detectingIntegration = true;
+      const probePrefix = this._config.prefix || null;
+      detectIntegration(hass, probePrefix).then(({ prefix, entryId, instances }) => {
+        this._detectingIntegration = false;
+        this._integrationDetected = true;
+        this._evccInstances = instances;
+        this._instancePrefix = probePrefix;
+        this._entryId = entryId;
+        // Probe the ha-evcc WebSocket data API once the entry_id is known.
+        this._loadCapabilities();
+        // The config may have changed while the registry call was in flight.
+        this._syncIntegrationInstance();
+        // Honour an explicitly configured prefix, but still keep the detected one.
+        const changed = (!this._config.prefix && prefix !== this._detectedPrefix);
+        this._detectedPrefix = prefix;
+        if (changed) {
+          this._lastRenderKey = null;
+          if (this._renderTimer) {
+            clearTimeout(this._renderTimer);
+            this._renderTimer = null;
+          }
+          this._render();
+        }
+      });
+    }
+
+    this._syncIntegrationInstance();
+
+    if (this._isDragging || this._sliderEditing) {
+      this._pendingRender = true;
+      this._updateLiveValues();
+      return;
+    }
+    const key = this._buildRenderKey(hass);
+    if (key === this._lastRenderKey) return;
+
+    if (this._renderTimer) return;
+    this._renderTimer = setTimeout(() => {
+      this._renderTimer   = null;
+      this._lastRenderKey = this._buildRenderKey(this._hass);
+      this._render();
+    }, 300);
+  }
+
+  // The registry probe runs once, but `prefix` can change afterwards (editor,
+  // YAML reload). Re-pick the instance from the probe result so entry_id and
+  // prefix always name the same installation; everything derived from the
+  // entry (capabilities, loadpoint index map, WS caches) starts over.
+  _syncIntegrationInstance() {
+    if (!this._evccInstances) return;
+    const wanted = this._config.prefix || null;
+    if (wanted === this._instancePrefix) return;
+    this._instancePrefix = wanted;
+    const chosen  = (wanted && this._evccInstances.find(i => i.prefix === wanted)) || this._evccInstances[0] || null;
+    const entryId = chosen?.entryId ?? null;
+    if (entryId === this._entryId) return;
+    this._entryId     = entryId;
+    this._caps        = null;
+    this._capsLoaded  = false;
+    this._capsLoading = null;
+    this._lpIndexMap  = {};
+    this._wsCache     = {};
+    this._wsInflight  = {};
+    this._loadCapabilities();
+  }
+
+  _buildRenderKey(hass) {
+    if (!hass) return "";
+    const prefix     = this._getPrefix();
+    const stateCount = Object.keys(hass.states).length;
+
+    // Re-filter evcc entity IDs only when entity count or prefix changes (not on every value update)
+    if (!this._evccIds || this._evccIdsCount !== stateCount || this._evccIdsPrefix !== prefix) {
+      this._evccIdsCount  = stateCount;
+      this._evccIdsPrefix = prefix;
+      this._evccIds       = Object.keys(hass.states).filter(id => id.split(".")[1]?.startsWith(prefix));
+    }
+
+    const lang = this._config.language || (hass.language ?? "de");
+    // \u001f (unit separator) keeps attribute values from colliding with the
+    // key's own delimiters; a title or an option may contain anything else.
+    return lang + "|" + this._evccIds.map(id => {
+      const s = hass.states[id];
+      if (!s) return `${id}=`;
+      let part = `${id}=${s.state}`;
+      const a = s.attributes;
+      if (a) {
+        for (const name of RENDER_ATTRS) {
+          const v = a[name];
+          if (v === undefined) continue;
+          part += `\u001f${name}=${typeof v === "object" && v !== null ? JSON.stringify(v) : v}`;
+        }
+      }
+      return part;
+    }).join("|");
+  }
+
+  static getConfigElement() {
+    return document.createElement("evcc-card-editor");
+  }
+
+  static getStubConfig() {
+    return { mode: "loadpoint" };
+  }
+
+  setConfig(config) {
+    this._config = config || {};
+    this._syncIntegrationInstance();
+    // Both stats paths are fed from the same normalised value, so the current
+    // vocabulary (month/year/total/none) and the legacy one (30d/365d/thisYear)
+    // steer them the same way. The stats mode opens on the most recent month
+    // when nothing is configured; `none` only hides the footer, so the full view
+    // shows that default too.
+    const rawPeriod  = config?.stats_period;
+    const scope      = normalizeStatsPeriod(rawPeriod, "month");
+    this._statsScope = scope === "none" ? "month" : scope;
+    // The legacy path keeps a configured legacy value exactly as it is, and
+    // defaults to "total" rather than to the stats mode's most recent month.
+    this._statsPeriod = legacyStatsPeriod(rawPeriod, "total");
+    if (this._statsMetric == null) this._statsMetric = "energy"; // energy | cost | co2
+    if (this._statsGroup  == null) this._statsGroup  = "solar";  // solar | loadpoint | vehicle
+    const validSizes = ["small", "medium", "large"];
+    if (this._config.size && !validSizes.includes(this._config.size)) {
+      delete this._config.size;
+    }
+
+    if (!this._translationsReady && !this._loadingTranslations) {
+      this._loadingTranslations = true;
+      this._loadTranslations().then(() => {
+        this._loadingTranslations = false;
+        if (this._hass) this._render();
+      });
+    } else if (this._hass && this._translationsReady) {
+      this._lastRenderKey = null;
+      this._render();
+    }
+  }
+
+  _toggleSite() {
+    const wasExpanded = this._siteTableExpanded !== undefined
+      ? this._siteTableExpanded
+      : (this._config.site_details !== "collapsed");
+    this._siteTableExpanded = !wasExpanded;
+
+    const root = this.shadowRoot;
+    const table = root?.querySelector(".site-table");
+    if (table) table.style.display = wasExpanded ? "none" : "";
+    const wrap = root?.querySelector(".flow-wrap-clickable");
+    if (wrap) {
+      wrap.title = !wasExpanded ? this._t("siteCollapse") : this._t("siteExpand");
+    }
+    const chevronPath = root?.querySelector(".sankey-center-chevron path");
+    if (chevronPath) chevronPath.setAttribute("d", !wasExpanded
+      ? "M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
+      : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z");
+  }
+
+  _t(key, replacements = {}) {
+    // Use pre-resolved strings from current render cycle; fall back to resolving on demand
+    const strings = this._renderStrings ?? (() => {
+      const lang = (this._config.language
+        || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+      return this._translations[lang] || this._translations["en"] || {};
+    })();
+
+    let val = strings[key] ?? key;
+
+    for (const [k, v] of Object.entries(replacements)) {
+      val = val.replace(`{${k}}`, v);
+    }
+
+    return val;
+  }
+
+  _render() {
+    if (!this._hass) return;
+    // A priority drag holds live DOM references (row, placeholder, captured
+    // handle). Replacing the shadow DOM now would orphan it and leave
+    // _isDragging stuck. Defer; _priorityDragEnd re-renders.
+    if (this._priorityDragging) { this._pendingRender = true; return; }
+    // A full re-render replaces the shadow DOM, so an open direct-input panel is
+    // gone afterwards; clear the flag or hass updates would stay deferred.
+    this._sliderEditing   = false;
+    this._sliderEditPanel = null;
+    this._dropSliderEditOutside();
+    if (!this._cardId) {
+      this._cardId = Math.random().toString(36).slice(2);
+      window.__evccCards = window.__evccCards || new Map();
+      window.__evccCards.set(this._cardId, this);
+    }
+
+    if (!this._translationsReady) {
+      if (!this.shadowRoot.firstChild) {
+        this.shadowRoot.innerHTML = `
+          <style>:host{display:block}
+          .loading{padding:24px;text-align:center;color:var(--secondary-text-color);font-size:.9rem}</style>
+          <ha-card><div class="loading">⏳</div></ha-card>`;
+      }
+      return;
+    }
+
+    // Resolve language strings once per render — reused by all _t() calls
+    const lang = (this._config.language
+      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+    this._renderStrings = this._translations[lang] || this._translations["en"] || {};
+
+    const prefix = this._getPrefix();
+
+    // Cache discoverEntities() — only re-run when the set of entity IDs changes (not on value updates)
+    const idsForKey = Object.keys(this._hass.states).filter(id => id.split(".")[1]?.startsWith(prefix));
+    const evccIdKey = prefix + "|" + idsForKey.sort().join(",");
+    if (evccIdKey !== this._cachedEntityIdKey) {
+      this._cachedEntityIdKey = evccIdKey;
+      this._cachedEntities    = discoverEntities(this._hass, prefix);
+    }
+    const { loadpoints, site, meters } = this._cachedEntities;
+
+    const filterRaw = this._config.loadpoints;
+    const filter = filterRaw
+      ? (Array.isArray(filterRaw) ? filterRaw : [filterRaw])
+      : null;
+    const visible = filter && filter.length > 0
+      ? Object.fromEntries(
+          Object.entries(loadpoints).filter(([lp]) => filter.includes(lp))
+        )
+      : loadpoints;
+
+    // disabled_loadpoints: hide (default) | dim | show - how to treat
+    // loadpoints that are disabled in the evcc config (ha-evcc 2026.8.8+).
+    const dlpOpt = ["hide", "dim", "show"].includes(this._config.disabled_loadpoints)
+      ? this._config.disabled_loadpoints
+      : "hide";
+    const { enabled: lpEnabled, disabled: lpDisabled } =
+      partitionDisabledLoadpoints(this._hass, visible);
+    // Interactive modes (plan/priority) can never work on a disabled
+    // loadpoint - its entities don't exist - so those always get lpEnabled.
+    const lpVisible = dlpOpt === "show" ? visible : lpEnabled;
+    const dimmed    = dlpOpt === "dim"  ? lpDisabled : {};
+    const allDisabled = Object.keys(visible).length > 0
+      && Object.keys(lpEnabled).length === 0;
+
+    this.shadowRoot.innerHTML = `
+      <style>${this._styles()}</style>
+      <div class="evcc-scale-wrap"${this._config.size ? ` data-size="${this._config.size}"` : ""}><ha-card>
+        <div class="card-content">
+        ${this._config.mode === "debug"
+            ? this._renderDebugBlock(loadpoints, site, meters)
+            : this._config.mode === "battery"
+            ? this._renderBatteryBlock(site)
+            : this._config.mode === "site"
+              ? this._renderSiteBlock(site, loadpoints)
+              : this._config.mode === "flow"
+              ? this._renderFlowBlock(site, loadpoints)
+              : (this._config.mode === "grid" || this._config.mode === "site2")
+              ? this._renderSiteBlock2(site, loadpoints)
+              : this._config.mode === "stats"
+              ? this._renderStatsBlock()
+              : this._config.mode === "plan"
+                ? this._renderPlanMode(lpEnabled)
+                : this._config.mode === "repeatplan"
+                ? this._renderRepeatPlansMode()
+                : this._config.mode === "priority"
+                  ? this._renderPriorityMode(lpEnabled)
+                : this._config.mode === "compact"
+                  ? (Object.keys(lpVisible).length === 0 && Object.keys(dimmed).length === 0
+                      ? (allDisabled
+                          ? this._renderAllDisabled()
+                          : this._renderEmpty(loadpoints))
+                      : Object.entries(lpVisible)
+                          .map(([lp, ents]) => this._renderCompactLoadpoint(lp, ents))
+                          .join("")
+                        + Object.entries(dimmed)
+                          .map(([lp, ents]) => this._renderDisabledLoadpoint(lp, ents))
+                          .join(""))
+                  : Object.keys(lpVisible).length === 0 && Object.keys(dimmed).length === 0
+              ? (allDisabled
+                  ? this._renderAllDisabled()
+                  : this._renderEmpty(loadpoints))
+              : Object.entries(lpVisible)
+                  .map(([lp, ents]) => this._renderLoadpoint(lp, ents))
+                  .join("")
+                + Object.entries(dimmed)
+                  .map(([lp, ents]) => this._renderDisabledLoadpoint(lp, ents))
+                  .join("")
+          }
+        </div>
+      </ha-card></div>
+    `;
+    this._attachListeners();
+  }
+
+  _updateLiveValues() {
+    const root = this.shadowRoot;
+    root.querySelectorAll("[data-live-entity]").forEach(el => {
+      const entityId = el.dataset.liveEntity;
+      const type     = el.dataset.liveType;
+      if (!entityId) return;
+
+      if (type === "soc-fill") {
+        const soc      = parseFloat(stateVal(this._hass, entityId)) || 0;
+        const minSoc   = parseFloat(el.dataset.minSoc)   || 0;
+        const limitSoc = parseFloat(el.dataset.limitSoc) || 100;
+        el.style.width      = `${soc}%`;
+        el.style.background = socFillGradient(soc, minSoc, limitSoc);
+      } else if (type === "soc-pct") {
+        const soc = parseFloat(stateVal(this._hass, entityId)) || 0;
+        el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${escHtml(unitStr(this._hass, entityId))}`;
+      } else if (type === "power") {
+        el.textContent = `${parseFloat(stateVal(this._hass, entityId)).toFixed(1)} ${unitStr(this._hass, entityId)}`;
+      }
+    });
+  }
+
+  _tickCountdowns() {
+    const root = this.shadowRoot;
+    if (!root) return;
+    root.querySelectorAll("[data-countdown-target]").forEach(el => {
+      const ts = el.dataset.countdownTarget;
+      if (!ts) return;
+      const target = Date.parse(ts);
+      if (isNaN(target)) return;
+      const sec = Math.max(0, Math.round((target - Date.now()) / 1000));
+      const cd = sec <= 0
+        ? ""
+        : sec < 60
+          ? `${sec}s`
+          : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+      const key = el.dataset.countdownLabel;
+      if (key) {
+        el.textContent = this._t(key, { val: cd || "—" });
+      }
+    });
+  }
 }
+
+// Mode views, components and shared behaviour are plain objects of methods
+// (no framework): mix them into the prototype, refusing silent overrides.
+const mixins = [evccApi, loadpointView, socControl, planningView, priorityView, siteView, flowView, gridView, statisticsLegacy, statisticsView, batteryView, debugView, listeners, styles];
+for (const m of mixins) {
+  for (const key of Object.keys(m)) {
+    if (key in EvccCard.prototype) throw new Error(`evcc-card: duplicate method ${key}`);
+  }
+}
+Object.assign(EvccCard.prototype, ...mixins);
 
 class EvccCardEditor extends HTMLElement {
   constructor() {
@@ -6188,14 +6419,15 @@ class EvccCardEditor extends HTMLElement {
   _t(key) {
     const lang = (this._config?.language
       || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
-    const strings = _sharedTranslations[lang] || _sharedTranslations["en"] || {};
+    const t = sharedTranslations();
+    const strings = t[lang] || t["en"] || {};
     return strings[key] ?? key;
   }
 
   set hass(hass) {
     this._hass = hass;
-    if (!_sharedTranslationsReady) {
-      _loadSharedTranslations().then(() => this._render());
+    if (!sharedTranslationsReady()) {
+      loadSharedTranslations().then(() => this._render());
     }
     if (!this._detectedPrefix && !this._detectingPrefix) {
       this._detectingPrefix = true;
@@ -6232,7 +6464,7 @@ class EvccCardEditor extends HTMLElement {
   }
 
   _esc(str) {
-    return String(str).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return escHtml(str);
   }
 
   _fire() {
@@ -6516,6 +6748,25 @@ class EvccCardEditor extends HTMLElement {
   }
 }
 
+/**
+ * evcc-card - Home Assistant Lovelace card for the ha-evcc integration.
+ *
+ * Entry point of the Rollup build (`npm run build` -> dist/evcc-card.js).
+ * Layout of src/:
+ *   evcc-card.js         class EvccCard: lifecycle, config, render dispatch
+ *   evcc-card-editor.js  class EvccCardEditor: the visual editor
+ *   core/                constants (FEATURES, version), entity discovery, ha-evcc WebSocket API
+ *   views/               one file per card mode (loadpoint, site, flow, grid, stats, plan, ...)
+ *   components/          controls shared by views (sliders with direct input)
+ *   utils/               state access, formatting, HTML escaping, translations
+ *   listeners.js         event delegation for the whole card
+ *   styles.js            the card stylesheet
+ * Views, components, listeners and styles are objects of methods mixed into
+ * EvccCard.prototype (see the end of evcc-card.js). Locales stay separate files
+ * next to the bundle (dist/locales/) and are fetched at runtime.
+ */
+
+
 customElements.define("evcc-card-editor", EvccCardEditor);
 customElements.define("evcc-card", EvccCard);
 window.__evccCards = window.__evccCards || new Map();
@@ -6534,4 +6785,4 @@ window.customCards.push({
   description: "Dashboard card for ha-evcc integration.",
   preview:     false,
   version:     EVCC_CARD_VERSION,
-}); 
+});
