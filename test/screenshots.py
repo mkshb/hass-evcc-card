@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """README screenshots from the test harness (mock hass, frozen clock, no HA needed).
 
+Screenshots are taken with animations disabled: CSS animations run on real time
+(the frozen clock only covers Date), so the SoC bar's charging pulse would be
+captured at a random opacity. Playwright rewinds infinite animations to their
+first frame and fast-forwards finite ones, which makes the images reproducible.
+
 Usage: python3 test/screenshots.py [--out images] [--only NAME]
 Writes <name>-light.png / <name>-dark.png for every entry in SHOTS: the card
 element itself (470 px wide) for each mode, plus the slider-input crop.
@@ -38,7 +43,7 @@ def shot_mode(browser, port, name, config, dark, out):
     page = new_page(browser, WIDTH + 50, 1600)
     errors = open_card(page, port, dark=dark, width=WIDTH, config=config)
     path = out / f"{name}-{'dark' if dark else 'light'}.png"
-    page.locator(in_card("ha-card")).screenshot(path=str(path))
+    page.locator(in_card("ha-card")).screenshot(path=str(path), animations="disabled")
     page.close()
     return path, errors
 
@@ -54,7 +59,8 @@ def shot_slider_input(browser, port, dark, out):
     x0, y0, x1, y1 = union(page.locator(in_card(".sliders")).bounding_box(),
                            page.locator(in_card(".current-block")).bounding_box())
     path = out / f"slider-input-{'dark' if dark else 'light'}.png"
-    page.screenshot(path=str(path), clip={"x": card["x"], "y": y0 - 10, "width": card["width"], "height": (y1 - y0) + 20})
+    page.screenshot(path=str(path), animations="disabled",
+                    clip={"x": card["x"], "y": y0 - 10, "width": card["width"], "height": (y1 - y0) + 20})
     page.close()
     return path, errors
 

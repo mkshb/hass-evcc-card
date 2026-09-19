@@ -67,7 +67,10 @@ share the files, so the report always describes the most recent of the two.
 
 `run.py` freezes the browser clock at the capture time of the fixtures
 (`FIXED_TIME`, 2026-09-18 13:00 Europe/Berlin, locale de-DE). Hour labels,
-plan times and the "current month" therefore never drift, and two runs produce
+plan times and the "current month" therefore never drift. CSS animations are not
+covered by the frozen clock, so `screenshots.py` captures with Playwright's
+`animations="disabled"`: the charging pulse of the SoC bar is rewound to its
+first frame instead of landing on a random opacity. Two runs therefore produce
 byte-identical screenshots. A changed PNG means the rendering changed.
 `FIXED_TIME` carries an explicit UTC offset on purpose: a naive time is read in
 the host's timezone, which shifted the plan chart by two hours on a UTC runner.
