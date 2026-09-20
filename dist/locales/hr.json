@@ -241,6 +241,7 @@
   "editorExpanded": "Prošireno",
   "editorSiteDetailsLabel": "Detalji lokacije",
   "editorStatsPeriodLabel": "Razdoblje statistike",
+  "editorStatsPeriodDefault": "Zadano ({val})",
   "editorStatsPeriodTotal": "Ukupno",
   "editorStatsPeriod30d": "30 dana",
   "editorStatsPeriod365d": "365 dana",

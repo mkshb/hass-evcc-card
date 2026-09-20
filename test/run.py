@@ -753,6 +753,36 @@ def editor(browser, port, t):
     t.check(last().get("site_details") == "collapsed", "site_details writes config.site_details", json.dumps(last()))
     fld("#stats_period").select_option("month")
     t.check(last().get("stats_period") == "month", "stats_period writes config.stats_period", json.dumps(last()))
+    fld("#stats_period").select_option("")
+    t.check("stats_period" not in last(), "stats_period back to its default drops the key", json.dumps(last()))
+    page.close()
+
+    # --- stats_period: what the editor shows must be what the card does ----------
+    # Unconfigured, the card follows the default of its mode; the editor says so
+    # instead of preselecting an option. A legacy value keeps its own meaning and
+    # is offered as such, rather than silently displaying a neighbouring one.
+    t.group("editor - stats_period reflects the card")
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "stats"})
+    sel_val = lambda: page.evaluate("document.querySelector('evcc-card-editor').shadowRoot.getElementById('stats_period').value")
+    opts    = lambda: page.evaluate("[...document.querySelector('evcc-card-editor').shadowRoot.getElementById('stats_period').options].map(o => o.value)")
+    loc_ed  = json.loads((ROOT / "dist/locales/en.json").read_text(encoding="utf-8"))
+    for mode, default_key in (("stats", "statsPeriodMonth"), ("site", "editorStatsPeriodTotal")):
+        mount({"mode": mode, "language": "en"})
+        want = loc_ed["editorStatsPeriodDefault"].replace("{val}", loc_ed[default_key])
+        got  = page.evaluate("""() => { const s = document.querySelector('evcc-card-editor').shadowRoot.getElementById('stats_period');
+                                        return { value: s.value, label: s.options[s.selectedIndex].textContent.trim() }; }""")
+        t.check(got["value"] == "" and got["label"] == want,
+                f"{mode}: unconfigured shows \"{want}\", not a preselected period", json.dumps(got))
+        t.check(count() == 0, f"{mode}: showing the default emits nothing", f"{count()} events")
+    for value in ("30d", "365d", "thisYear"):
+        mount({"mode": "stats", "language": "en", "stats_period": value})
+        t.check(sel_val() == value and value in opts(), f"legacy value {value} stays selected in the editor",
+                f"value {sel_val()} in {opts()}")
+        t.check(count() == 0, f"legacy value {value} is not rewritten on open", json.dumps(page.evaluate("window.__cfg")))
+    mount({"mode": "stats", "language": "en", "stats_period": "month"})
+    t.check(opts() == ["", "month", "year", "total", "none"],
+            "without a legacy value the list stays on the current vocabulary", json.dumps(opts()))
 
     fld("#mode").select_option("repeatplan")
     page.wait_for_timeout(400)

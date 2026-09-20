@@ -14,12 +14,14 @@ export class EvccCardEditor extends HTMLElement {
     this._detectingPrefix = false;
   }
 
-  _t(key) {
+  _t(key, replacements = {}) {
     const lang = (this._config?.language
       || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
     const t = sharedTranslations();
     const strings = t[lang] || t["en"] || {};
-    return strings[key] ?? key;
+    let val = strings[key] ?? key;
+    for (const [k, v] of Object.entries(replacements)) val = val.replace(`{${k}}`, v);
+    return val;
   }
 
   set hass(hass) {
@@ -133,6 +135,32 @@ export class EvccCardEditor extends HTMLElement {
     const showStatsPeriod   = ["stats", "site", "flow", "grid"].includes(mode);
     const showVehicleFilter = mode === "repeatplan";
     const rplanVehicles     = Array.isArray(c.repeating_plan_vehicles) ? c.repeating_plan_vehicles : [];
+
+    // `stats_period` has no implicit value: unconfigured, every mode follows its
+    // own default (the stats mode opens on the most recent month, the compact
+    // footer under site/flow/grid sums everything up). The editor names that
+    // default instead of preselecting an option the card does not use.
+    const statsPeriodOptions = [
+      ["",      this._t("editorStatsPeriodDefault", {
+                  val: mode === "stats" ? this._t("statsPeriodMonth") : this._t("editorStatsPeriodTotal") })],
+      ["month", this._t("statsPeriodMonth")],
+      ["year",  this._t("statsPeriodYear")],
+      ["total", this._t("editorStatsPeriodTotal")],
+      ["none",  this._t("editorStatsPeriodNone")],
+    ];
+    // The legacy vocabulary stays valid in existing YAML and keeps its own
+    // meaning (365d is a rolling window, not the calendar year). So the select
+    // offers the configured legacy value as an option of its own rather than
+    // showing a neighbouring one, and rewrites it only when the user picks
+    // something else.
+    const legacyPeriodLabels = {
+      "30d":      "editorStatsPeriod30d",
+      "365d":     "editorStatsPeriod365d",
+      "thisYear": "editorStatsPeriodThisYear",
+    };
+    if (legacyPeriodLabels[c.stats_period]) {
+      statsPeriodOptions.push([c.stats_period, this._t(legacyPeriodLabels[c.stats_period])]);
+    }
 
     const titlePlaceholder = {
       loadpoint: this._t("editorTitlePlaceholderLoadpoint"),
@@ -294,12 +322,7 @@ export class EvccCardEditor extends HTMLElement {
         ${showStatsPeriod ? `
         <div class="field">
           <label class="field-label" for="stats_period">${this._t("editorStatsPeriodLabel")}</label>
-          ${this._sel("stats_period", [
-            ["month",    this._t("statsPeriodMonth")],
-            ["year",     this._t("statsPeriodYear")],
-            ["total",    this._t("editorStatsPeriodTotal")],
-            ["none",     this._t("editorStatsPeriodNone")],
-          ], c.stats_period || "total")}
+          ${this._sel("stats_period", statsPeriodOptions, c.stats_period || "")}
         </div>
         ` : ""}
       </div>

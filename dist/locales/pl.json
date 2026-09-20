@@ -241,6 +241,7 @@
   "editorExpanded": "Rozwinięty",
   "editorSiteDetailsLabel": "Szczegóły lokalizacji",
   "editorStatsPeriodLabel": "Okres statystyk",
+  "editorStatsPeriodDefault": "Domyślnie ({val})",
   "editorStatsPeriodTotal": "Łącznie",
   "editorStatsPeriod30d": "30 dni",
   "editorStatsPeriod365d": "365 dni",

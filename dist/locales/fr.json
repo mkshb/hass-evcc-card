@@ -241,6 +241,7 @@
   "editorExpanded": "Développé",
   "editorSiteDetailsLabel": "Détails du site",
   "editorStatsPeriodLabel": "Période de statistiques",
+  "editorStatsPeriodDefault": "Par défaut ({val})",
   "editorStatsPeriodTotal": "Total",
   "editorStatsPeriod30d": "30 jours",
   "editorStatsPeriod365d": "365 jours",
