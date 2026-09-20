@@ -823,6 +823,20 @@ def contracts(browser, port, t):
     last = lambda: svc(page)[-1]
     exp  = lambda domain, service, data: {"domain": domain, "service": service, "data": data}
 
+    # releasing a slider writes through the same path as the arrow keys
+    def drag_to_end(sel):
+        el  = page.locator(in_card(sel))
+        box = el.bounding_box()
+        el.click(position={"x": box["width"] - 1, "y": box["height"] / 2})
+        page.wait_for_timeout(400)
+
+    drag_to_end('input[data-entity="number.evcc_openwb_limit_soc"]')
+    t.check(last() == exp("number", "set_value", {"entity_id": "number.evcc_openwb_limit_soc", "value": 100}),
+            "slider released at the max → number.set_value 100", json.dumps(last()))
+    drag_to_end('input[data-entity="select.evcc_openwb_min_current"]')
+    t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_openwb_min_current", "option": "16"}),
+            "select slider released at the max → select.select_option 16", json.dumps(last()))
+
     page.locator(in_card('button.mode-btn[data-value="now"]')).click(); page.wait_for_timeout(400)
     t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_openwb_mode", "option": "now"}),
             "mode button → select.select_option mode=now", json.dumps(last()))
@@ -861,6 +875,26 @@ def contracts(browser, port, t):
     t.check(page.locator(in_card("button.plan-btn.delete")).count() == 1, "delete button shown while a plan is active")
     page.locator(in_card("button.plan-btn.delete")).click(); page.wait_for_timeout(300)
     t.check(last() == exp("evcc_intg", "del_vehicle_plan", {"vehicle": "db:18"}), "delete plan → evcc_intg.del_vehicle_plan", json.dumps(last()))
+    page.close()
+
+    # a guest vehicle (vehicle select on "null") carries no plan of its own: it goes to the loadpoint
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]}, set={"select.evcc_openwb_vehicle_name": "null"})
+    page.locator(in_card("button.plan-soc-val")).click()
+    page.locator(in_card(".slider-edit-input")).fill("80"); page.locator(in_card("[data-edit-ok]")).click()
+    page.locator(in_card("input.plan-time-input")).fill("2026-09-19T07:00"); page.wait_for_timeout(300)
+    page.locator(in_card("button.plan-btn.save")).click(); page.wait_for_timeout(400)
+    t.check(last() == exp("evcc_intg", "set_loadpoint_plan", {"loadpoint": "openwb", "soc": 80, "startdate": "2026-09-19 07:00:00"}),
+            "guest vehicle: set plan → evcc_intg.set_loadpoint_plan", json.dumps(last()))
+    page.close()
+
+    # and ha-evcc has no del_loadpoint_plan, so deleting it writes an empty plan
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]},
+              set={"select.evcc_openwb_vehicle_name": "null", "binary_sensor.evcc_openwb_plan_active": "on"})
+    page.locator(in_card("button.plan-btn.delete")).click(); page.wait_for_timeout(300)
+    t.check(last() == exp("evcc_intg", "set_loadpoint_plan", {"loadpoint": "openwb", "soc": 0, "startdate": ""}),
+            "guest vehicle: delete plan → empty evcc_intg.set_loadpoint_plan", json.dumps(last()))
     page.close()
 
     # battery boost chip is only offered while the boost limit is below 100 %

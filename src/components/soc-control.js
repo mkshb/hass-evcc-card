@@ -231,9 +231,9 @@ export const socControl = {
   _sliderWrite(entityId, domain, value) {
     if (domain === "select") {
       if (this._sliderOptions(entityId).length === 0) return;
-      this._hass.callService("select", "select_option", { entity_id: entityId, option: String(value) });
+      this._setSelectOption(entityId, String(value));
     } else {
-      this._hass.callService("number", "set_value", { entity_id: entityId, value });
+      this._setNumberValue(entityId, value);
     }
   },
 
@@ -390,10 +390,7 @@ export const socControl = {
     const numOpts = options.map(o => parseInt(o)).filter(o => !isNaN(o));
     const nearest = numOpts.reduce((p, c) =>
       Math.abs(c - val) < Math.abs(p - val) ? c : p, numOpts[0] ?? val);
-    this._hass.callService("select", "select_option", {
-      entity_id: entityId,
-      option:    String(nearest),
-    });
+    this._setSelectOption(entityId, String(nearest));
 
     if (this._pendingRender) { this._pendingRender = false; this._render(); }
   },
