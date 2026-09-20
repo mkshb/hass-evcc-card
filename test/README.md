@@ -23,7 +23,7 @@ Groups in `run.py` (`--only <group>`, repeatable):
 | `traffic` | Plan preview traffic rules promised to ha-evcc: one call per target change, none while idle, cache hit on repeat, one call per slider drag |
 | `priority` | Regression for #170: drag and drop reorders the rows without jitter, apply writes the new priorities |
 | `locales` | All 8 locale files share the same keys, `index.json` is complete, no untranslated key reaches the DOM in any language |
-| `discovery` | Custom entity prefix, `disabled_loadpoints` hide/dim/show, heating loadpoint (temperature label, no plan), disabled limit entities; two ha-evcc config entries, where the prefix and the entry id behind the WebSocket commands have to come from the same instance, also when the prefix is configured after the registry probe |
+| `discovery` | Custom entity prefix, `disabled_loadpoints` hide/dim/show, heating loadpoint (temperature label, and no charge plan block, also with a plan running and in the plan mode, where no `plan_preview` may go out); disabled limit entities; two ha-evcc config entries, where the prefix and the entry id behind the WebSocket commands have to come from the same instance, also when the prefix is configured after the registry probe |
 | `flow` | Sankey labels keep their distance on both sides, with the default fixture and with every value below a tenth of a kW, where the bands hit their minimum height and the node centres move closer together than the labels are tall |
 | `widths` | 300 px and 650 px cards: the input panel stays inside the card, no horizontal overflow |
 

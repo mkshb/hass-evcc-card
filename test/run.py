@@ -1107,6 +1107,33 @@ def discovery(browser, port, t):
     t.check("Ziel-Temperatur" in labels and page.locator(in_card(".plan-block")).count() == 0,
             "heating loadpoint: temperature label, no charge plan block", str(labels))
     page.close()
+
+    # The fixture carries the whole plan entity set for the heating loadpoint, but
+    # idle: plan_active off, every plan timestamp unknown. A card that simply has no
+    # data to show would pass the check above, so run it again with a plan that is
+    # running. ha-evcc reports the target as a temperature, the EV plan UI does not
+    # apply to it and must stay away, in the loadpoint mode and in the plan mode,
+    # where the block is rendered with force=true.
+    heating_plan = {"binary_sensor.evcc_wp_plan_active":      "on",
+                    "sensor.evcc_wp_effective_plan_soc":      "55",
+                    "sensor.evcc_wp_effective_plan_time":     "2026-09-19T07:00:00+00:00",
+                    "sensor.evcc_wp_plan_projected_start":    "2026-09-19T03:30:00+00:00",
+                    "sensor.evcc_wp_plan_projected_end":      "2026-09-19T07:00:00+00:00"}
+    page = new_page(browser, 480, 1400)
+    errors = open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["wp"]}, set=heating_plan)
+    t.check(page.locator(in_card(".plan-block")).count() == 0 and not errors,
+            "heating loadpoint with an active plan: still no charge plan block", "; ".join(errors)[:200])
+    page.close()
+
+    page = new_page(browser, 480, 1400)
+    errors = open_card(page, port, config={"mode": "plan", "loadpoints": ["wp"]}, set=heating_plan)
+    previews = [c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/plan_preview"]
+    t.check(page.locator(in_card(".plan-block")).count() == 0 and page.locator(in_card(".loadpoint")).count() == 0
+            and not previews and not errors,
+            "plan mode on a heating loadpoint: no block, no plan_preview call",
+            f"previews={len(previews)}; " + "; ".join(errors)[:200])
+    page.close()
+
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"},
               disable=["number.evcc_openwb_smart_cost_limit", "number.evcc_openwb_smart_feed_in_priority_limit"])
