@@ -37,6 +37,7 @@
   "finishBy": "Završiti do",
   "setPlan": "💾 Postavi plan",
   "deletePlan": "🗑 Obriši plan",
+  "planNeedsVehicle": "Plan punjenja treba vozilo sa SoC-om. Planiranje prema energiji (kWh) još nije podržano.",
   "planStrategyContinuous": "Kontinuirano punjenje",
   "planStrategyPrecondition": "Predkondicioniranje",
   "preconditionOff": "Isključeno",

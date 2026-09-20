@@ -37,6 +37,7 @@
   "finishBy": "Terminar antes de",
   "setPlan": "💾 Establecer plan",
   "deletePlan": "🗑 Eliminar plan",
+  "planNeedsVehicle": "Un plan de carga necesita un vehículo con SoC. La planificación por energía (kWh) aún no es compatible.",
   "planStrategyContinuous": "Carga continua",
   "planStrategyPrecondition": "Preacondicionamiento",
   "preconditionOff": "Desactivado",

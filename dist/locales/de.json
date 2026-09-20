@@ -37,6 +37,7 @@
   "finishBy": "Fertig bis",
   "setPlan": "💾 Plan setzen",
   "deletePlan": "🗑 Plan löschen",
+  "planNeedsVehicle": "Ein Ladeplan braucht ein Fahrzeug mit SoC. Planung nach Energie (kWh) wird noch nicht unterstützt.",
   "planStrategyContinuous": "Kontinuierlich laden",
   "planStrategyPrecondition": "Vorkonditionierung",
   "preconditionOff": "Aus",

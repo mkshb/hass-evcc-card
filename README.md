@@ -422,6 +422,8 @@ Minimalist charge plan view:
 
 > **Heating loadpoints:** loadpoints that evcc marks as heating (for example a heat pump) do not get an EV charge plan; the plan block is skipped for them and their target/limit is shown as a temperature instead of a state of charge.
 
+> **Vehicles without a state of charge:** the plan is set on the vehicle evcc has selected, with the target as a percentage. A guest vehicle, or a vehicle that reports no SoC, would have to be planned on the loadpoint with an energy target in kWh, which the card does not offer yet; it says so instead of setting a plan. Deleting an existing loadpoint plan does work.
+
 <img src="images/plan-dark.png" width="400"> <img src="images/plan-light.png" width="400">
 
 ---

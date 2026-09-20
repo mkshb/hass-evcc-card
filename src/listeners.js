@@ -421,25 +421,22 @@ export const listeners = {
         const startdate = `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())} ` +
                           `${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`;
 
-        const tryServices = async () => {
-          let lastErr = null;
-          if (vehicleDbId) {
-            try {
-              await this._setVehiclePlan(vehicleDbId, soc, startdate);
-              window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } }));
-              showSuccess();
-              return;
-            } catch(e) { lastErr = e; }
-          }
+        // Only a vehicle evcc knows can be planned from here: its plan is the SoC
+        // this block collects. A loadpoint plan is an energy target in kWh, which
+        // the card does not ask for yet, and ha-evcc would accept a call without
+        // one and do nothing, leaving a plan badge behind for a plan that does
+        // not exist. So say it instead of pretending.
+        const savePlan = async () => {
+          if (!vehicleDbId) { showError(`❌ ${this._t("planNeedsVehicle")}`); return; }
           try {
-            await this._setLoadpointPlan(lpName, soc, startdate);
+            await this._setVehiclePlan(vehicleDbId, soc, startdate);
             window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } }));
             showSuccess();
-            return;
-          } catch(e) { lastErr = e; }
-          showError(`❌ ${lastErr?.message || JSON.stringify(lastErr) || "Unknown error"}`);
+          } catch(e) {
+            showError(`❌ ${e?.message || JSON.stringify(e) || "Unknown error"}`);
+          }
         };
-        tryServices();
+        savePlan();
       });
     });
 
@@ -458,7 +455,11 @@ export const listeners = {
             .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } })); })
             .catch(e => console.warn("[evcc-card] delete plan:", e));
         } else {
-          this._clearLoadpointPlan(lpName)
+          // Deleting works without a kWh target, it only needs the evcc index.
+          const lpIdx = this._lpIndex(lpName);
+          if (lpIdx == null) { console.warn("[evcc-card] delete plan: no loadpoint index for", lpName); return; }
+          this._deleteLoadpointPlan(lpIdx)
+            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } })); })
             .catch(e => console.warn("[evcc-card] delete plan:", e));
         }
       });

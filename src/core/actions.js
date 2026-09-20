@@ -26,23 +26,32 @@ export const actions = {
   },
 
   // ── ha-evcc plan services ───────────────────────────────────────────────
-  // A vehicle known to evcc carries its plan itself, everything else (guest
-  // vehicle, vehicle without SoC) is planned on the loadpoint.
+  // A vehicle known to evcc carries its plan itself and is planned in percent.
+  // A loadpoint is planned in kWh and is addressed by its 1-based evcc index,
+  // never by its name. ha-evcc registers these services without a schema and
+  // drops a call whose `loadpoint`/`energy` is not an integer inside set_plan(),
+  // without an error and with an empty response, so a caller that cannot supply
+  // both must not call at all instead of reporting a plan that evcc never got.
 
   _setVehiclePlan(vehicle, soc, startdate) {
     return this._hass.callService("evcc_intg", "set_vehicle_plan", { vehicle, soc, startdate });
   },
 
-  _setLoadpointPlan(loadpoint, soc, startdate) {
-    return this._hass.callService("evcc_intg", "set_loadpoint_plan", { loadpoint, soc, startdate });
+  _setLoadpointPlan(loadpointIndex, energy, startdate) {
+    return this._hass.callService("evcc_intg", "set_loadpoint_plan", {
+      loadpoint: Math.round(loadpointIndex),
+      energy:    Math.round(energy),
+      startdate,
+    });
   },
 
   _deleteVehiclePlan(vehicle) {
     return this._hass.callService("evcc_intg", "del_vehicle_plan", { vehicle });
   },
 
-  // ha-evcc has no del_loadpoint_plan, an empty plan is the delete.
-  _clearLoadpointPlan(loadpoint) {
-    return this._setLoadpointPlan(loadpoint, 0, "");
+  _deleteLoadpointPlan(loadpointIndex) {
+    return this._hass.callService("evcc_intg", "del_loadpoint_plan", {
+      loadpoint: Math.round(loadpointIndex),
+    });
   },
 };

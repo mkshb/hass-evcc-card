@@ -37,6 +37,7 @@
   "finishBy": "Gereed om",
   "setPlan": "💾 Planning opslaan",
   "deletePlan": "🗑 Planning verwijderen",
+  "planNeedsVehicle": "Een laadplan heeft een voertuig met SoC nodig. Plannen op energie (kWh) wordt nog niet ondersteund.",
   "planStrategyContinuous": "Continu laden",
   "planStrategyPrecondition": "Preconditionering",
   "preconditionOff": "Uit",

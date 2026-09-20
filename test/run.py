@@ -877,24 +877,33 @@ def contracts(browser, port, t):
     t.check(last() == exp("evcc_intg", "del_vehicle_plan", {"vehicle": "db:18"}), "delete plan → evcc_intg.del_vehicle_plan", json.dumps(last()))
     page.close()
 
-    # a guest vehicle (vehicle select on "null") carries no plan of its own: it goes to the loadpoint
+    # A guest vehicle (vehicle select on "null") has no plan of its own, and a
+    # loadpoint plan is an energy target in kWh, which this block does not collect.
+    # ha-evcc takes such a call and does nothing with it (set_plan() drops a
+    # loadpoint or energy that is not an integer, without an error), so the card
+    # must refuse it rather than report a plan that evcc never received.
     page = new_page(browser, 480, 1800)
     open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]}, set={"select.evcc_openwb_vehicle_name": "null"})
     page.locator(in_card("button.plan-soc-val")).click()
     page.locator(in_card(".slider-edit-input")).fill("80"); page.locator(in_card("[data-edit-ok]")).click()
     page.locator(in_card("input.plan-time-input")).fill("2026-09-19T07:00"); page.wait_for_timeout(300)
+    before = len(svc(page))
     page.locator(in_card("button.plan-btn.save")).click(); page.wait_for_timeout(400)
-    t.check(last() == exp("evcc_intg", "set_loadpoint_plan", {"loadpoint": "openwb", "soc": 80, "startdate": "2026-09-19 07:00:00"}),
-            "guest vehicle: set plan → evcc_intg.set_loadpoint_plan", json.dumps(last()))
+    err   = page.locator(in_card(".plan-error")).inner_text() if page.locator(in_card(".plan-error")).count() else ""
+    badge = page.locator(in_card(".plan-badge.planned")).count()
+    t.check(len(svc(page)) == before and "SoC" in err and badge == 0,
+            "guest vehicle: set plan → no service call, error instead of a plan badge",
+            f"calls+{len(svc(page)) - before} err={err!r} badge={badge}")
     page.close()
 
-    # and ha-evcc has no del_loadpoint_plan, so deleting it writes an empty plan
+    # Deleting needs no kWh target, only the 1-based evcc loadpoint index, which the
+    # card resolves through the capabilities command (here: the sorted-name fallback).
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]},
               set={"select.evcc_openwb_vehicle_name": "null", "binary_sensor.evcc_openwb_plan_active": "on"})
     page.locator(in_card("button.plan-btn.delete")).click(); page.wait_for_timeout(300)
-    t.check(last() == exp("evcc_intg", "set_loadpoint_plan", {"loadpoint": "openwb", "soc": 0, "startdate": ""}),
-            "guest vehicle: delete plan → empty evcc_intg.set_loadpoint_plan", json.dumps(last()))
+    t.check(last() == exp("evcc_intg", "del_loadpoint_plan", {"loadpoint": 1}),
+            "guest vehicle: delete plan → evcc_intg.del_loadpoint_plan with the loadpoint index", json.dumps(last()))
     page.close()
 
     # battery boost chip is only offered while the boost limit is below 100 %

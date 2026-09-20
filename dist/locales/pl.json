@@ -37,6 +37,7 @@
   "finishBy": "Zakończ do",
   "setPlan": "💾 Ustaw plan",
   "deletePlan": "🗑 Usuń plan",
+  "planNeedsVehicle": "Plan ładowania wymaga pojazdu z SoC. Planowanie według energii (kWh) nie jest jeszcze obsługiwane.",
   "planStrategyContinuous": "Ładowanie ciągłe",
   "planStrategyPrecondition": "Wstępne kondycjonowanie",
   "preconditionOff": "Wył.",
