@@ -1,4 +1,5 @@
 import { HIDEABLE_SETTINGS } from "../core/constants.js";
+import { featureKeyOf } from "../core/entity-discovery.js";
 import { stateVal, attr, displayUnit, isOn } from "../utils/state.js";
 import { stepDecimals, fmtNum } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
@@ -160,6 +161,11 @@ export const socControl = {
       min  = 0;
       max  = Math.max(opts.length - 1, 0);
       step = 1;
+      // For the same reason `slider_steps` cannot apply here. Where ha-evcc
+      // exposes a feature as a select, a configured step would have to mean
+      // "every n-th option", which is not what the config asks for. Say so
+      // once instead of ignoring the entry without a word.
+      this._warnSliderStepIgnored(entityId);
       sliderVal = opts.length
         ? opts.reduce((best, o, i) => Math.abs(o - val) < Math.abs(opts[best] - val) ? i : best, 0)
         : 0;
@@ -189,25 +195,45 @@ export const socControl = {
   },
 
   // Optional per-feature step override from the card config, keyed by the
-  // ha-evcc feature suffix: `slider_steps: { smart_cost_limit: 0.01, limit_soc: 5 }`.
-  // Only meaningful for number-backed sliders; select-backed ones walk options.
+  // ha-evcc feature key: `slider_steps: { smart_cost_limit: 0.01, limit_soc: 5 }`.
+  // The key is matched against the feature the entity was discovered under, not
+  // against the tail of its id, so `soc` cannot steer `min_soc` and `limit_soc`
+  // at once. Only meaningful for number-backed sliders; select-backed ones walk
+  // options (see _warnSliderStepIgnored).
   _sliderStepOverride(entityId) {
+    const key = this._sliderStepKey(entityId);
+    if (!key) return null;
+    const step = parseFloat(this._config.slider_steps[key]);
+    return step > 0 ? step : null;
+  },
+
+  // The `slider_steps` key that applies to this entity, or null.
+  _sliderStepKey(entityId) {
     const steps = this._config?.slider_steps;
     if (!steps || typeof steps !== "object") return null;
-    for (const [suffix, raw] of Object.entries(steps)) {
-      const step = parseFloat(raw);
-      if (!(step > 0)) continue;
-      if (entityId.endsWith(`_${suffix}`)) return step;
-    }
-    return null;
+    const key = featureKeyOf(entityId, this._getPrefix());
+    return key && Object.prototype.hasOwnProperty.call(steps, key) ? key : null;
+  },
+
+  // A step configured for a select-backed slider never takes effect. Warn once
+  // per key and value, so the config change is visible in the console too.
+  _warnSliderStepIgnored(entityId) {
+    const key = this._sliderStepKey(entityId);
+    if (!key) return;
+    const seen = this._warnedSliderSteps ??= new Set();
+    const mark = `${key}=${this._config.slider_steps[key]}`;
+    if (seen.has(mark)) return;
+    seen.add(mark);
+    console.warn(`[evcc-card] slider_steps.${key} is ignored: ha-evcc provides ${entityId} as a select, `
+      + "and that slider walks the option list. slider_steps only applies to number entities.");
   },
 
   _sliderWrite(entityId, domain, value) {
     if (domain === "select") {
       if (this._sliderOptions(entityId).length === 0) return;
-      this._hass.callService("select", "select_option", { entity_id: entityId, option: String(value) });
+      this._setSelectOption(entityId, String(value));
     } else {
-      this._hass.callService("number", "set_value", { entity_id: entityId, value });
+      this._setNumberValue(entityId, value);
     }
   },
 
@@ -364,10 +390,7 @@ export const socControl = {
     const numOpts = options.map(o => parseInt(o)).filter(o => !isNaN(o));
     const nearest = numOpts.reduce((p, c) =>
       Math.abs(c - val) < Math.abs(p - val) ? c : p, numOpts[0] ?? val);
-    this._hass.callService("select", "select_option", {
-      entity_id: entityId,
-      option:    String(nearest),
-    });
+    this._setSelectOption(entityId, String(nearest));
 
     if (this._pendingRender) { this._pendingRender = false; this._render(); }
   },

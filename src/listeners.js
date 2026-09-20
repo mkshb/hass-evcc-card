@@ -220,7 +220,7 @@ export const listeners = {
       btn.addEventListener("click", () => {
         const on     = btn.dataset.on === "true";
         const domain = btn.dataset.domain;
-        this._hass.callService(domain, on ? "turn_off" : "turn_on", { entity_id: btn.dataset.entity });
+        this._toggleEntity(domain, btn.dataset.entity, on);
         btn.classList.toggle("on", !on);
         btn.dataset.on = String(!on);
       });
@@ -229,7 +229,7 @@ export const listeners = {
     this.shadowRoot.querySelectorAll("button.boost-activate-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         const on = btn.dataset.on === "true";
-        this._hass.callService("switch", on ? "turn_off" : "turn_on", { entity_id: btn.dataset.entity });
+        this._toggleEntity("switch", btn.dataset.entity, on);
         btn.classList.toggle("on", !on);
         btn.dataset.on = String(!on);
       });
@@ -237,20 +237,14 @@ export const listeners = {
 
     this.shadowRoot.querySelectorAll(".batt-inline-select").forEach(sel => {
       sel.addEventListener("change", () => {
-        this._hass.callService("select", "select_option", {
-          entity_id: sel.dataset.entity,
-          option:    sel.value,
-        });
+        this._setSelectOption(sel.dataset.entity, sel.value);
       });
       sel.addEventListener("click", e => e.stopPropagation());
     });
 
     this.shadowRoot.querySelectorAll("button.mode-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        this._hass.callService("select", "select_option", {
-          entity_id: btn.dataset.entity,
-          option:    btn.dataset.value,
-        });
+        this._setSelectOption(btn.dataset.entity, btn.dataset.value);
       });
     });
 
@@ -258,9 +252,7 @@ export const listeners = {
       btn.addEventListener("click", () => {
         const on     = btn.dataset.on === "true";
         const domain = btn.dataset.domain;
-        this._hass.callService(domain, on ? "turn_off" : "turn_on", {
-          entity_id: btn.dataset.entity,
-        });
+        this._toggleEntity(domain, btn.dataset.entity, on);
         btn.classList.toggle("on", !on);
         btn.dataset.on = String(!on);
         if (btn.dataset.lp) this._requestPlanPreview(btn.dataset.lp);
@@ -269,20 +261,14 @@ export const listeners = {
 
     this.shadowRoot.querySelectorAll("select.plan-precondition-select").forEach(sel => {
       sel.addEventListener("change", () => {
-        this._hass.callService("select", "select_option", {
-          entity_id: sel.dataset.entity,
-          option:    sel.value,
-        });
+        this._setSelectOption(sel.dataset.entity, sel.value);
         if (sel.dataset.lp) this._requestPlanPreview(sel.dataset.lp);
       });
     });
 
     this.shadowRoot.querySelectorAll("button.phase-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        this._hass.callService("select", "select_option", {
-          entity_id: btn.dataset.entity,
-          option:    btn.dataset.value,
-        });
+        this._setSelectOption(btn.dataset.entity, btn.dataset.value);
         const group = btn.closest(".phase-btn-group");
         if (group) {
           group.querySelectorAll(".phase-btn").forEach(b => b.classList.remove("active"));
@@ -394,7 +380,7 @@ export const listeners = {
           this._planState[lpName].time    = null;
         }
         if (eid && this._hass) {
-          this._hass.callService("select", "select_option", { entity_id: eid, option: val });
+          this._setSelectOption(eid, val);
         }
         this._requestPlanPreview(lpName);
       });
@@ -435,25 +421,22 @@ export const listeners = {
         const startdate = `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())} ` +
                           `${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`;
 
-        const tryServices = async () => {
-          let lastErr = null;
-          if (vehicleDbId) {
-            try {
-              await this._hass.callService("evcc_intg", "set_vehicle_plan", { vehicle: vehicleDbId, soc, startdate });
-              window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } }));
-              showSuccess();
-              return;
-            } catch(e) { lastErr = e; }
-          }
+        // Only a vehicle evcc knows can be planned from here: its plan is the SoC
+        // this block collects. A loadpoint plan is an energy target in kWh, which
+        // the card does not ask for yet, and ha-evcc would accept a call without
+        // one and do nothing, leaving a plan badge behind for a plan that does
+        // not exist. So say it instead of pretending.
+        const savePlan = async () => {
+          if (!vehicleDbId) { showError(`❌ ${this._t("planNeedsVehicle")}`); return; }
           try {
-            await this._hass.callService("evcc_intg", "set_loadpoint_plan", { loadpoint: lpName, soc, startdate });
+            await this._setVehiclePlan(vehicleDbId, soc, startdate);
             window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } }));
             showSuccess();
-            return;
-          } catch(e) { lastErr = e; }
-          showError(`❌ ${lastErr?.message || JSON.stringify(lastErr) || "Unknown error"}`);
+          } catch(e) {
+            showError(`❌ ${e?.message || JSON.stringify(e) || "Unknown error"}`);
+          }
         };
-        tryServices();
+        savePlan();
       });
     });
 
@@ -468,11 +451,15 @@ export const listeners = {
           if (badge) { badge.textContent = this._t("noPlan"); badge.classList.remove("active", "planned"); }
         };
         if (vehicleDbId) {
-          this._hass.callService("evcc_intg", "del_vehicle_plan", { vehicle: vehicleDbId })
+          this._deleteVehiclePlan(vehicleDbId)
             .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } })); })
             .catch(e => console.warn("[evcc-card] delete plan:", e));
         } else {
-          this._hass.callService("evcc_intg", "set_loadpoint_plan", { loadpoint: lpName, soc: 0, startdate: "" })
+          // Deleting works without a kWh target, it only needs the evcc index.
+          const lpIdx = this._lpIndex(lpName);
+          if (lpIdx == null) { console.warn("[evcc-card] delete plan: no loadpoint index for", lpName); return; }
+          this._deleteLoadpointPlan(lpIdx)
+            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } })); })
             .catch(e => console.warn("[evcc-card] delete plan:", e));
         }
       });
@@ -480,7 +467,7 @@ export const listeners = {
 
     this.shadowRoot.querySelectorAll("button.smart-cost-clear-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        this._hass.callService("button", "press", { entity_id: btn.dataset.entity });
+        this._pressButton(btn.dataset.entity);
       });
     });
 
@@ -497,13 +484,7 @@ export const listeners = {
         this._isDragging = false;
         const domain   = input.dataset.domain;
         const entityId = input.dataset.entity;
-        if (domain === "select") {
-          if (this._sliderOptions(entityId).length > 0) {
-            this._hass.callService("select", "select_option", { entity_id: entityId, option: this._sliderValueFor(input) });
-          }
-        } else {
-          this._hass.callService("number", "set_value", { entity_id: entityId, value: parseFloat(input.value) });
-        }
+        this._sliderWrite(entityId, domain, domain === "select" ? this._sliderValueFor(input) : parseFloat(input.value));
         if (this._pendingRender) { this._pendingRender = false; this._render(); }
       });
       input.addEventListener("blur", () => {

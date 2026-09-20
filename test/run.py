@@ -668,6 +668,27 @@ def interactions(browser, port, t):
     page.locator("#host").screenshot(path=str(OUT / "panel-open.png"))
     page.close()
 
+    # The key is the ha-evcc feature the entity was discovered under, matched
+    # exactly: a short key must not steer every feature ending in it. And a step
+    # on a select-backed slider cannot apply, which the card has to say out loud.
+    page = new_page(browser, 480, 1200)
+    warnings = []
+    page.on("console", lambda m: warnings.append(m.text) if m.type == "warning" else None)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"],
+                                  "charge_current_settings": "expanded",
+                                  "slider_steps": {"soc": 3, "max_current": 2}})
+    own = page.evaluate("window.__hass.states['number.evcc_openwb_limit_soc'].attributes.step")
+    got = page.locator(in_card('input[data-entity="number.evcc_openwb_limit_soc"]')).get_attribute("step")
+    t.check(got == str(own), "a short key does not reach a longer feature (soc leaves limit_soc alone)",
+            f"step {got}, entity says {own}")
+    t.check(page.locator(in_card('input[data-entity="select.evcc_openwb_max_current"]')).get_attribute("step") == "1",
+            "a select-backed slider keeps walking option indexes")
+    t.check(any("slider_steps.max_current" in w for w in warnings),
+            "a step on a select-backed slider is reported in the console", "; ".join(warnings)[:200])
+    t.check(not any("slider_steps.soc" in w for w in warnings),
+            "a key that matches nothing stays quiet", "; ".join(warnings)[:200])
+    page.close()
+
 
 
 def editor(browser, port, t):
@@ -753,6 +774,36 @@ def editor(browser, port, t):
     t.check(last().get("site_details") == "collapsed", "site_details writes config.site_details", json.dumps(last()))
     fld("#stats_period").select_option("month")
     t.check(last().get("stats_period") == "month", "stats_period writes config.stats_period", json.dumps(last()))
+    fld("#stats_period").select_option("")
+    t.check("stats_period" not in last(), "stats_period back to its default drops the key", json.dumps(last()))
+    page.close()
+
+    # --- stats_period: what the editor shows must be what the card does ----------
+    # Unconfigured, the card follows the default of its mode; the editor says so
+    # instead of preselecting an option. A legacy value keeps its own meaning and
+    # is offered as such, rather than silently displaying a neighbouring one.
+    t.group("editor - stats_period reflects the card")
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "stats"})
+    sel_val = lambda: page.evaluate("document.querySelector('evcc-card-editor').shadowRoot.getElementById('stats_period').value")
+    opts    = lambda: page.evaluate("[...document.querySelector('evcc-card-editor').shadowRoot.getElementById('stats_period').options].map(o => o.value)")
+    loc_ed  = json.loads((ROOT / "dist/locales/en.json").read_text(encoding="utf-8"))
+    for mode, default_key in (("stats", "statsPeriodMonth"), ("site", "editorStatsPeriodTotal")):
+        mount({"mode": mode, "language": "en"})
+        want = loc_ed["editorStatsPeriodDefault"].replace("{val}", loc_ed[default_key])
+        got  = page.evaluate("""() => { const s = document.querySelector('evcc-card-editor').shadowRoot.getElementById('stats_period');
+                                        return { value: s.value, label: s.options[s.selectedIndex].textContent.trim() }; }""")
+        t.check(got["value"] == "" and got["label"] == want,
+                f"{mode}: unconfigured shows \"{want}\", not a preselected period", json.dumps(got))
+        t.check(count() == 0, f"{mode}: showing the default emits nothing", f"{count()} events")
+    for value in ("30d", "365d", "thisYear"):
+        mount({"mode": "stats", "language": "en", "stats_period": value})
+        t.check(sel_val() == value and value in opts(), f"legacy value {value} stays selected in the editor",
+                f"value {sel_val()} in {opts()}")
+        t.check(count() == 0, f"legacy value {value} is not rewritten on open", json.dumps(page.evaluate("window.__cfg")))
+    mount({"mode": "stats", "language": "en", "stats_period": "month"})
+    t.check(opts() == ["", "month", "year", "total", "none"],
+            "without a legacy value the list stays on the current vocabulary", json.dumps(opts()))
 
     fld("#mode").select_option("repeatplan")
     page.wait_for_timeout(400)
@@ -771,6 +822,20 @@ def contracts(browser, port, t):
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"})
     last = lambda: svc(page)[-1]
     exp  = lambda domain, service, data: {"domain": domain, "service": service, "data": data}
+
+    # releasing a slider writes through the same path as the arrow keys
+    def drag_to_end(sel):
+        el  = page.locator(in_card(sel))
+        box = el.bounding_box()
+        el.click(position={"x": box["width"] - 1, "y": box["height"] / 2})
+        page.wait_for_timeout(400)
+
+    drag_to_end('input[data-entity="number.evcc_openwb_limit_soc"]')
+    t.check(last() == exp("number", "set_value", {"entity_id": "number.evcc_openwb_limit_soc", "value": 100}),
+            "slider released at the max → number.set_value 100", json.dumps(last()))
+    drag_to_end('input[data-entity="select.evcc_openwb_min_current"]')
+    t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_openwb_min_current", "option": "16"}),
+            "select slider released at the max → select.select_option 16", json.dumps(last()))
 
     page.locator(in_card('button.mode-btn[data-value="now"]')).click(); page.wait_for_timeout(400)
     t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_openwb_mode", "option": "now"}),
@@ -810,6 +875,35 @@ def contracts(browser, port, t):
     t.check(page.locator(in_card("button.plan-btn.delete")).count() == 1, "delete button shown while a plan is active")
     page.locator(in_card("button.plan-btn.delete")).click(); page.wait_for_timeout(300)
     t.check(last() == exp("evcc_intg", "del_vehicle_plan", {"vehicle": "db:18"}), "delete plan → evcc_intg.del_vehicle_plan", json.dumps(last()))
+    page.close()
+
+    # A guest vehicle (vehicle select on "null") has no plan of its own, and a
+    # loadpoint plan is an energy target in kWh, which this block does not collect.
+    # ha-evcc takes such a call and does nothing with it (set_plan() drops a
+    # loadpoint or energy that is not an integer, without an error), so the card
+    # must refuse it rather than report a plan that evcc never received.
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]}, set={"select.evcc_openwb_vehicle_name": "null"})
+    page.locator(in_card("button.plan-soc-val")).click()
+    page.locator(in_card(".slider-edit-input")).fill("80"); page.locator(in_card("[data-edit-ok]")).click()
+    page.locator(in_card("input.plan-time-input")).fill("2026-09-19T07:00"); page.wait_for_timeout(300)
+    before = len(svc(page))
+    page.locator(in_card("button.plan-btn.save")).click(); page.wait_for_timeout(400)
+    err   = page.locator(in_card(".plan-error")).inner_text() if page.locator(in_card(".plan-error")).count() else ""
+    badge = page.locator(in_card(".plan-badge.planned")).count()
+    t.check(len(svc(page)) == before and "SoC" in err and badge == 0,
+            "guest vehicle: set plan → no service call, error instead of a plan badge",
+            f"calls+{len(svc(page)) - before} err={err!r} badge={badge}")
+    page.close()
+
+    # Deleting needs no kWh target, only the 1-based evcc loadpoint index, which the
+    # card resolves through the capabilities command (here: the sorted-name fallback).
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]},
+              set={"select.evcc_openwb_vehicle_name": "null", "binary_sensor.evcc_openwb_plan_active": "on"})
+    page.locator(in_card("button.plan-btn.delete")).click(); page.wait_for_timeout(300)
+    t.check(last() == exp("evcc_intg", "del_loadpoint_plan", {"loadpoint": 1}),
+            "guest vehicle: delete plan → evcc_intg.del_loadpoint_plan with the loadpoint index", json.dumps(last()))
     page.close()
 
     # battery boost chip is only offered while the boost limit is below 100 %
@@ -1022,6 +1116,33 @@ def discovery(browser, port, t):
     t.check("Ziel-Temperatur" in labels and page.locator(in_card(".plan-block")).count() == 0,
             "heating loadpoint: temperature label, no charge plan block", str(labels))
     page.close()
+
+    # The fixture carries the whole plan entity set for the heating loadpoint, but
+    # idle: plan_active off, every plan timestamp unknown. A card that simply has no
+    # data to show would pass the check above, so run it again with a plan that is
+    # running. ha-evcc reports the target as a temperature, the EV plan UI does not
+    # apply to it and must stay away, in the loadpoint mode and in the plan mode,
+    # where the block is rendered with force=true.
+    heating_plan = {"binary_sensor.evcc_wp_plan_active":      "on",
+                    "sensor.evcc_wp_effective_plan_soc":      "55",
+                    "sensor.evcc_wp_effective_plan_time":     "2026-09-19T07:00:00+00:00",
+                    "sensor.evcc_wp_plan_projected_start":    "2026-09-19T03:30:00+00:00",
+                    "sensor.evcc_wp_plan_projected_end":      "2026-09-19T07:00:00+00:00"}
+    page = new_page(browser, 480, 1400)
+    errors = open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["wp"]}, set=heating_plan)
+    t.check(page.locator(in_card(".plan-block")).count() == 0 and not errors,
+            "heating loadpoint with an active plan: still no charge plan block", "; ".join(errors)[:200])
+    page.close()
+
+    page = new_page(browser, 480, 1400)
+    errors = open_card(page, port, config={"mode": "plan", "loadpoints": ["wp"]}, set=heating_plan)
+    previews = [c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/plan_preview"]
+    t.check(page.locator(in_card(".plan-block")).count() == 0 and page.locator(in_card(".loadpoint")).count() == 0
+            and not previews and not errors,
+            "plan mode on a heating loadpoint: no block, no plan_preview call",
+            f"previews={len(previews)}; " + "; ".join(errors)[:200])
+    page.close()
+
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"},
               disable=["number.evcc_openwb_smart_cost_limit", "number.evcc_openwb_smart_feed_in_priority_limit"])
@@ -1095,6 +1216,50 @@ def discovery(browser, port, t):
     t.check(not errors, "no console errors across the prefix change", "; ".join(errors)[:200])
     page.close()
 
+
+def flow_labels(browser, port, t):
+    """Flow labels must stay readable when the bands get thin.
+
+    Sankey nodes have a minimum height, so with small values the node centres
+    move closer together than the labels are tall and the texts print on top of
+    each other. The check is geometric: on each side, no label box may reach
+    into the one below it.
+    """
+    # Everything below a tenth of a kW, on both sides: PV and grid feeding a
+    # house, a car, a heating loadpoint (which carries a temperature sub-label)
+    # and the home battery (which carries a SoC). pv_power and battery_power
+    # have per-device counterparts in the fixture, which the flow block sums up
+    # in their place, so those carry the small values as well.
+    SMALL = {"sensor.evcc_pv_power": "120", "sensor.evcc_pv_0_power": "50", "sensor.evcc_pv_1_power": "70",
+             "sensor.evcc_grid_power": "90", "sensor.evcc_home_power": "70",
+             "sensor.evcc_battery_power": "-60", "sensor.evcc_battery_0_power": "-60",
+             "sensor.evcc_openwb_charge_power": "0.08", "sensor.evcc_wp_charge_power": "0.03"}
+    # Label boxes in SVG user units, per side: producers are the right-aligned
+    # texts, consumers the left-aligned ones.
+    boxes = """(() => {
+      const svg = window.__card.shadowRoot.querySelector('.sankey-wrap svg');
+      const by = { end: [], start: [] };
+      for (const el of svg.querySelectorAll('text')) {
+        const b = el.getBBox();
+        (by[el.getAttribute('text-anchor')] ?? []).push({ text: el.textContent.trim(), top: b.y, bottom: b.y + b.height });
+      }
+      for (const k of Object.keys(by)) by[k].sort((a, b) => a.top - b.top);
+      return by; })()"""
+
+    for label, overrides in (("default fixture", None), ("small values", SMALL)):
+        t.group(f"flow - label spacing, {label}")
+        page = new_page(browser, 480, 1200)
+        errors = open_card(page, port, config={"mode": "flow"}, set=overrides)
+        got = page.evaluate(boxes)
+        for side, name in (("end", "producers"), ("start", "consumers")):
+            rows = got[side]
+            overlaps = [f'{rows[i]["text"]} / {rows[i + 1]["text"]}'
+                        for i in range(len(rows) - 1) if rows[i + 1]["top"] < rows[i]["bottom"]]
+            t.check(len(rows) >= 2 and not overlaps and not errors,
+                    f"{label}: {name} labels keep their distance",
+                    f"{len(rows)} labels, overlapping: {overlaps}; {'; '.join(errors)[:120]}")
+        page.locator("#host").screenshot(path=str(OUT / f"flow-{'small' if overrides else 'default'}.png"))
+        page.close()
 
 
 def widths(browser, port, t):
@@ -1201,7 +1366,7 @@ def unit(browser, port, t):
 
 GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
-          "widths": widths}
+          "flow": flow_labels, "widths": widths}
 
 
 def main():

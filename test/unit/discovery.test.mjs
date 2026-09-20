@@ -3,7 +3,7 @@
 // one, so this exercises the grouping directly, with a hand-built registry.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { detectIntegration, detectPrefix } from "../../src/core/entity-discovery.js";
+import { detectIntegration, detectPrefix, featureKeyOf } from "../../src/core/entity-discovery.js";
 
 // A site entity carries the prefix (pv_power is a site feature, no loadpoint).
 const entry = (prefix, entryId) => [
@@ -84,4 +84,32 @@ test("an entry whose entities carry no config_entry_id still yields a prefix", a
 test("detectPrefix stays a thin wrapper returning only the prefix", async () => {
   assert.equal(await detectPrefix(hassWith(entry("myevcc_", "A"))), "myevcc_");
   assert.equal(await detectPrefix(hassWith([])), "evcc_");
+});
+
+// --- featureKeyOf ------------------------------------------------------------
+// Config keyed by feature (`slider_steps`) is matched through this, so a key
+// must reach exactly the feature it names.
+
+test("an entity resolves to the feature it was discovered under", () => {
+  assert.equal(featureKeyOf("number.evcc_openwb_limit_soc"), "limit_soc");
+  assert.equal(featureKeyOf("select.evcc_openwb_min_soc"), "min_soc");
+  assert.equal(featureKeyOf("select.evcc_openwb_max_current"), "max_current");
+  assert.equal(featureKeyOf("sensor.evcc_pv_power"), "pv_power", "a site entity has no loadpoint part");
+});
+
+test("the longest feature wins, so a shorter one cannot swallow it", () => {
+  assert.notEqual(featureKeyOf("number.evcc_openwb_limit_soc"), "soc");
+  assert.notEqual(featureKeyOf("select.evcc_openwb_min_soc"), "soc");
+});
+
+test("the domain is part of the match", () => {
+  assert.equal(featureKeyOf("number.evcc_openwb_limit_soc"), "limit_soc");
+  assert.equal(featureKeyOf("sensor.evcc_openwb_limit_soc"), null, "no sensor feature with that suffix");
+});
+
+test("a custom prefix is honoured and a foreign entity yields null", () => {
+  assert.equal(featureKeyOf("number.myevcc_openwb_limit_soc", "myevcc_"), "limit_soc");
+  assert.equal(featureKeyOf("number.myevcc_openwb_limit_soc"), null, "wrong prefix must not match");
+  assert.equal(featureKeyOf("number.other_integration_limit_soc"), null);
+  assert.equal(featureKeyOf("evcc_openwb_limit_soc"), null, "not an entity id");
 });

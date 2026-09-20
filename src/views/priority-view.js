@@ -98,9 +98,7 @@ export const priorityView = {
     this._priorityDraft.lastApplied = lastApplied;
     this._lastRenderKey = null;
     this._render();
-    await Promise.all(changes.map(c =>
-      this._hass.callService("number", "set_value",
-        { entity_id: c.pid, value: c.target })));
+    await Promise.all(changes.map(c => this._setNumberValue(c.pid, c.target)));
   },
 
   _attachPriorityListeners() {

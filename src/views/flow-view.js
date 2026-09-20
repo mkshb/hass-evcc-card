@@ -169,6 +169,9 @@ export const flowView = {
       return { ...c, x: dstX, y, h, cy: y + h / 2 };
     });
 
+    this._spreadSankeyLabels(srcNodes);
+    this._spreadSankeyLabels(dstNodes);
+
     const sankeyId = `sankey-${this._cardId}`;
 
     // --- Flow paths ---
@@ -219,15 +222,15 @@ export const flowView = {
     const srcGroups = srcNodes.map(s => {
       const iconPath = srcIconMap[s.id] || "";
       const iconX = s.x - LABEL_PAD - ICON_SIZE;
-      const iconY = s.cy - ICON_SIZE / 2;
+      const iconY = s.labelY - ICON_SIZE / 2;
       const textX = iconX - 4;
       const sub = s.sub ? `
-        <text x="${textX}" y="${s.cy + 12}" text-anchor="end" dominant-baseline="central"
+        <text x="${textX}" y="${s.labelY + 12}" text-anchor="end" dominant-baseline="central"
               font-size="9" style="fill:var(--secondary-text-color)">${escHtml(s.sub)}</text>` : "";
       const inner = `
         <rect x="${s.x}" y="${s.y}" width="${NODE_W}" height="${s.h}" rx="3" fill="${s.color}"/>
         ${iconPath ? svgMdi(iconPath, iconX, iconY, s.color) : ""}
-        <text x="${textX}" y="${s.cy - (s.sub ? 2 : 0)}" text-anchor="end" dominant-baseline="central"
+        <text x="${textX}" y="${s.labelY - (s.sub ? 2 : 0)}" text-anchor="end" dominant-baseline="central"
               font-size="11" font-weight="700" style="fill:var(--primary-text-color)">${fmtPow(s.pow)}</text>
         ${sub}`;
       return s.entity
@@ -238,15 +241,15 @@ export const flowView = {
     const dstGroups = dstNodes.map(d => {
       const iconPath = dstIconMap[d.id] || "";
       const iconX = d.x + NODE_W + LABEL_PAD;
-      const iconY = d.cy - ICON_SIZE / 2;
+      const iconY = d.labelY - ICON_SIZE / 2;
       const textX = iconX + ICON_SIZE + 4;
       const sub = d.sub ? `
-        <text x="${textX}" y="${d.cy + 12}" text-anchor="start" dominant-baseline="central"
+        <text x="${textX}" y="${d.labelY + 12}" text-anchor="start" dominant-baseline="central"
               font-size="9" style="fill:var(--secondary-text-color)">${escHtml(d.sub)}</text>` : "";
       const inner = `
         <rect x="${d.x}" y="${d.y}" width="${NODE_W}" height="${d.h}" rx="3" fill="${d.color}"/>
         ${iconPath ? svgMdi(iconPath, iconX, iconY, d.color) : ""}
-        <text x="${textX}" y="${d.cy - (d.sub ? 2 : 0)}" text-anchor="start" dominant-baseline="central"
+        <text x="${textX}" y="${d.labelY - (d.sub ? 2 : 0)}" text-anchor="start" dominant-baseline="central"
               font-size="11" font-weight="700" style="fill:var(--primary-text-color)">${fmtPow(d.pow)}</text>
         ${sub}`;
       return d.entity
@@ -394,5 +397,38 @@ export const flowView = {
         </div>
         ${this._renderStatsFooter()}
       </div>`;
+  },
+
+  // A Sankey label sits at the centre of its node, which works as long as the
+  // bands are thick. They are not when the values are small: a node is at least
+  // 10 units high with a 6 unit gap, so two centres can be 16 apart while a
+  // label with its sub-line (42 °C under 0.0 kW) needs about 26. The labels
+  // then print on top of each other, most visibly on the consumer side where a
+  // heating loadpoint and the feed-in meet.
+  //
+  // So the anchors are pushed apart to the distance the text actually needs,
+  // while the nodes and the bands stay exactly where the power says. Labels
+  // that already have room keep their centre, which leaves every diagram with
+  // thick bands exactly as it was.
+  _spreadSankeyLabels(nodes) {
+    // Extent of a label around its anchor: the value line is 11 units and
+    // centred, the sub-line sits 12 below it at 9 units.
+    const up   = n => n.sub ? 7.5 : 5.5;
+    const down = n => n.sub ? 16.5 : 5.5;
+    const GAP  = 2;
+
+    for (const n of nodes) n.labelY = n.cy;
+    if (nodes.length < 2) return;
+
+    for (let i = 1; i < nodes.length; i++) {
+      const min = nodes[i - 1].labelY + down(nodes[i - 1]) + GAP + up(nodes[i]);
+      if (nodes[i].labelY < min) nodes[i].labelY = min;
+    }
+
+    // Everything was pushed downwards, so the stack now hangs below the nodes
+    // by as much as the last label moved. Half of that goes back up, which
+    // spreads the offset evenly over both ends.
+    const shift = (nodes[nodes.length - 1].labelY - nodes[nodes.length - 1].cy) / 2;
+    if (shift > 0) for (const n of nodes) n.labelY -= shift;
   },
 };

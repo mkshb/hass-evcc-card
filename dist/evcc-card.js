@@ -1,5 +1,5 @@
 /* hass-evcc-card. Built from src/ with Rollup; edit the sources, not this file. */
-const EVCC_CARD_VERSION = "0.8.0";
+const EVCC_CARD_VERSION = "0.8.1";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -224,6 +224,9 @@ function isOn(hass, entityId) {
   return s === "on" || s === "true";
 }
 
+// Longest suffix first: `limit_soc` has to win over `soc` for the same entity.
+const SORTED_FEATURES = [...FEATURES].sort((a, b) => b.suffix.length - a.suffix.length);
+
 // Detect the entity prefix AND the integration's config_entry_id from a single
 // `config/entity_registry/list` call. The entry_id is required by the ha-evcc
 // WebSocket data API commands (evcc_intg/forecast|sessions|plan_preview); every
@@ -280,8 +283,28 @@ async function detectPrefix(hass) {
   return (await detectIntegration(hass)).prefix;
 }
 
+// Resolve an entity id back to the ha-evcc feature key it was discovered under,
+// i.e. its FEATURES suffix. Config that is keyed by feature (`slider_steps`)
+// has to match against this instead of against the tail of the entity id: a
+// short key like `soc` is the tail of `min_soc` and of `limit_soc` alike, and
+// would silently steer both. Returns null for anything outside FEATURES.
+function featureKeyOf(entityId, prefix = "evcc_") {
+  const dotIdx = entityId.indexOf(".");
+  if (dotIdx < 0) return null;
+  const domain = entityId.slice(0, dotIdx);
+  const slug   = entityId.slice(dotIdx + 1);
+  if (!slug.startsWith(prefix)) return null;
+  const rest = slug.slice(prefix.length);
+
+  for (const feat of SORTED_FEATURES) {
+    if (feat.domain !== domain) continue;
+    if (rest === feat.suffix || rest.endsWith("_" + feat.suffix)) return feat.suffix;
+  }
+  return null;
+}
+
 function discoverEntities(hass, prefix = "evcc_") {
-  const sortedFeatures = [...FEATURES].sort((a, b) => b.suffix.length - a.suffix.length);
+  const sortedFeatures = SORTED_FEATURES;
   const prefixLen = prefix.length;
 
   const loadpoints = {};
@@ -534,6 +557,64 @@ async function loadSharedTranslations() {
 
 function sharedTranslations() { return _sharedTranslations; }
 function sharedTranslationsReady() { return _sharedTranslationsReady; }
+
+// Every write the card sends to Home Assistant. Methods are mixed into EvccCard.prototype.
+const actions = {
+  // ── Service calls ───────────────────────────────────────────────────────
+  // The card writes only through these methods, so domain, service and payload
+  // of every operable control sit in one file instead of next to the listener
+  // that happens to trigger them. The `contracts` group of the test suite pins
+  // each of them down. They all return what hass returns, callers that report
+  // failures await the promise or chain on it.
+
+  _setSelectOption(entityId, option) {
+    return this._hass.callService("select", "select_option", { entity_id: entityId, option });
+  },
+
+  _setNumberValue(entityId, value) {
+    return this._hass.callService("number", "set_value", { entity_id: entityId, value });
+  },
+
+  // Toggles pass the state they currently show, not the one they want: a
+  // control rendered "on" turns off.
+  _toggleEntity(domain, entityId, isOn) {
+    return this._hass.callService(domain, isOn ? "turn_off" : "turn_on", { entity_id: entityId });
+  },
+
+  _pressButton(entityId) {
+    return this._hass.callService("button", "press", { entity_id: entityId });
+  },
+
+  // ── ha-evcc plan services ───────────────────────────────────────────────
+  // A vehicle known to evcc carries its plan itself and is planned in percent.
+  // A loadpoint is planned in kWh and is addressed by its 1-based evcc index,
+  // never by its name. ha-evcc registers these services without a schema and
+  // drops a call whose `loadpoint`/`energy` is not an integer inside set_plan(),
+  // without an error and with an empty response, so a caller that cannot supply
+  // both must not call at all instead of reporting a plan that evcc never got.
+
+  _setVehiclePlan(vehicle, soc, startdate) {
+    return this._hass.callService("evcc_intg", "set_vehicle_plan", { vehicle, soc, startdate });
+  },
+
+  _setLoadpointPlan(loadpointIndex, energy, startdate) {
+    return this._hass.callService("evcc_intg", "set_loadpoint_plan", {
+      loadpoint: Math.round(loadpointIndex),
+      energy:    Math.round(energy),
+      startdate,
+    });
+  },
+
+  _deleteVehiclePlan(vehicle) {
+    return this._hass.callService("evcc_intg", "del_vehicle_plan", { vehicle });
+  },
+
+  _deleteLoadpointPlan(loadpointIndex) {
+    return this._hass.callService("evcc_intg", "del_loadpoint_plan", {
+      loadpoint: Math.round(loadpointIndex),
+    });
+  },
+};
 
 // ha-evcc WebSocket data API (capabilities, forecast, sessions, plan_preview). Methods are mixed into EvccCard.prototype.
 const evccApi = {
@@ -1432,6 +1513,11 @@ const socControl = {
       min  = 0;
       max  = Math.max(opts.length - 1, 0);
       step = 1;
+      // For the same reason `slider_steps` cannot apply here. Where ha-evcc
+      // exposes a feature as a select, a configured step would have to mean
+      // "every n-th option", which is not what the config asks for. Say so
+      // once instead of ignoring the entry without a word.
+      this._warnSliderStepIgnored(entityId);
       sliderVal = opts.length
         ? opts.reduce((best, o, i) => Math.abs(o - val) < Math.abs(opts[best] - val) ? i : best, 0)
         : 0;
@@ -1461,25 +1547,45 @@ const socControl = {
   },
 
   // Optional per-feature step override from the card config, keyed by the
-  // ha-evcc feature suffix: `slider_steps: { smart_cost_limit: 0.01, limit_soc: 5 }`.
-  // Only meaningful for number-backed sliders; select-backed ones walk options.
+  // ha-evcc feature key: `slider_steps: { smart_cost_limit: 0.01, limit_soc: 5 }`.
+  // The key is matched against the feature the entity was discovered under, not
+  // against the tail of its id, so `soc` cannot steer `min_soc` and `limit_soc`
+  // at once. Only meaningful for number-backed sliders; select-backed ones walk
+  // options (see _warnSliderStepIgnored).
   _sliderStepOverride(entityId) {
+    const key = this._sliderStepKey(entityId);
+    if (!key) return null;
+    const step = parseFloat(this._config.slider_steps[key]);
+    return step > 0 ? step : null;
+  },
+
+  // The `slider_steps` key that applies to this entity, or null.
+  _sliderStepKey(entityId) {
     const steps = this._config?.slider_steps;
     if (!steps || typeof steps !== "object") return null;
-    for (const [suffix, raw] of Object.entries(steps)) {
-      const step = parseFloat(raw);
-      if (!(step > 0)) continue;
-      if (entityId.endsWith(`_${suffix}`)) return step;
-    }
-    return null;
+    const key = featureKeyOf(entityId, this._getPrefix());
+    return key && Object.prototype.hasOwnProperty.call(steps, key) ? key : null;
+  },
+
+  // A step configured for a select-backed slider never takes effect. Warn once
+  // per key and value, so the config change is visible in the console too.
+  _warnSliderStepIgnored(entityId) {
+    const key = this._sliderStepKey(entityId);
+    if (!key) return;
+    const seen = this._warnedSliderSteps ??= new Set();
+    const mark = `${key}=${this._config.slider_steps[key]}`;
+    if (seen.has(mark)) return;
+    seen.add(mark);
+    console.warn(`[evcc-card] slider_steps.${key} is ignored: ha-evcc provides ${entityId} as a select, `
+      + "and that slider walks the option list. slider_steps only applies to number entities.");
   },
 
   _sliderWrite(entityId, domain, value) {
     if (domain === "select") {
       if (this._sliderOptions(entityId).length === 0) return;
-      this._hass.callService("select", "select_option", { entity_id: entityId, option: String(value) });
+      this._setSelectOption(entityId, String(value));
     } else {
-      this._hass.callService("number", "set_value", { entity_id: entityId, value });
+      this._setNumberValue(entityId, value);
     }
   },
 
@@ -1636,10 +1742,7 @@ const socControl = {
     const numOpts = options.map(o => parseInt(o)).filter(o => !isNaN(o));
     const nearest = numOpts.reduce((p, c) =>
       Math.abs(c - val) < Math.abs(p - val) ? c : p, numOpts[0] ?? val);
-    this._hass.callService("select", "select_option", {
-      entity_id: entityId,
-      option:    String(nearest),
-    });
+    this._setSelectOption(entityId, String(nearest));
 
     if (this._pendingRender) { this._pendingRender = false; this._render(); }
   },
@@ -2296,9 +2399,7 @@ const priorityView = {
     this._priorityDraft.lastApplied = lastApplied;
     this._lastRenderKey = null;
     this._render();
-    await Promise.all(changes.map(c =>
-      this._hass.callService("number", "set_value",
-        { entity_id: c.pid, value: c.target })));
+    await Promise.all(changes.map(c => this._setNumberValue(c.pid, c.target)));
   },
 
   _attachPriorityListeners() {
@@ -3040,6 +3141,9 @@ const flowView = {
       return { ...c, x: dstX, y, h, cy: y + h / 2 };
     });
 
+    this._spreadSankeyLabels(srcNodes);
+    this._spreadSankeyLabels(dstNodes);
+
     const sankeyId = `sankey-${this._cardId}`;
 
     // --- Flow paths ---
@@ -3090,15 +3194,15 @@ const flowView = {
     const srcGroups = srcNodes.map(s => {
       const iconPath = srcIconMap[s.id] || "";
       const iconX = s.x - LABEL_PAD - ICON_SIZE;
-      const iconY = s.cy - ICON_SIZE / 2;
+      const iconY = s.labelY - ICON_SIZE / 2;
       const textX = iconX - 4;
       const sub = s.sub ? `
-        <text x="${textX}" y="${s.cy + 12}" text-anchor="end" dominant-baseline="central"
+        <text x="${textX}" y="${s.labelY + 12}" text-anchor="end" dominant-baseline="central"
               font-size="9" style="fill:var(--secondary-text-color)">${escHtml(s.sub)}</text>` : "";
       const inner = `
         <rect x="${s.x}" y="${s.y}" width="${NODE_W}" height="${s.h}" rx="3" fill="${s.color}"/>
         ${iconPath ? svgMdi(iconPath, iconX, iconY, s.color) : ""}
-        <text x="${textX}" y="${s.cy - (s.sub ? 2 : 0)}" text-anchor="end" dominant-baseline="central"
+        <text x="${textX}" y="${s.labelY - (s.sub ? 2 : 0)}" text-anchor="end" dominant-baseline="central"
               font-size="11" font-weight="700" style="fill:var(--primary-text-color)">${fmtPow(s.pow)}</text>
         ${sub}`;
       return s.entity
@@ -3109,15 +3213,15 @@ const flowView = {
     const dstGroups = dstNodes.map(d => {
       const iconPath = dstIconMap[d.id] || "";
       const iconX = d.x + NODE_W + LABEL_PAD;
-      const iconY = d.cy - ICON_SIZE / 2;
+      const iconY = d.labelY - ICON_SIZE / 2;
       const textX = iconX + ICON_SIZE + 4;
       const sub = d.sub ? `
-        <text x="${textX}" y="${d.cy + 12}" text-anchor="start" dominant-baseline="central"
+        <text x="${textX}" y="${d.labelY + 12}" text-anchor="start" dominant-baseline="central"
               font-size="9" style="fill:var(--secondary-text-color)">${escHtml(d.sub)}</text>` : "";
       const inner = `
         <rect x="${d.x}" y="${d.y}" width="${NODE_W}" height="${d.h}" rx="3" fill="${d.color}"/>
         ${iconPath ? svgMdi(iconPath, iconX, iconY, d.color) : ""}
-        <text x="${textX}" y="${d.cy - (d.sub ? 2 : 0)}" text-anchor="start" dominant-baseline="central"
+        <text x="${textX}" y="${d.labelY - (d.sub ? 2 : 0)}" text-anchor="start" dominant-baseline="central"
               font-size="11" font-weight="700" style="fill:var(--primary-text-color)">${fmtPow(d.pow)}</text>
         ${sub}`;
       return d.entity
@@ -3265,6 +3369,39 @@ const flowView = {
         </div>
         ${this._renderStatsFooter()}
       </div>`;
+  },
+
+  // A Sankey label sits at the centre of its node, which works as long as the
+  // bands are thick. They are not when the values are small: a node is at least
+  // 10 units high with a 6 unit gap, so two centres can be 16 apart while a
+  // label with its sub-line (42 °C under 0.0 kW) needs about 26. The labels
+  // then print on top of each other, most visibly on the consumer side where a
+  // heating loadpoint and the feed-in meet.
+  //
+  // So the anchors are pushed apart to the distance the text actually needs,
+  // while the nodes and the bands stay exactly where the power says. Labels
+  // that already have room keep their centre, which leaves every diagram with
+  // thick bands exactly as it was.
+  _spreadSankeyLabels(nodes) {
+    // Extent of a label around its anchor: the value line is 11 units and
+    // centred, the sub-line sits 12 below it at 9 units.
+    const up   = n => n.sub ? 7.5 : 5.5;
+    const down = n => n.sub ? 16.5 : 5.5;
+    const GAP  = 2;
+
+    for (const n of nodes) n.labelY = n.cy;
+    if (nodes.length < 2) return;
+
+    for (let i = 1; i < nodes.length; i++) {
+      const min = nodes[i - 1].labelY + down(nodes[i - 1]) + GAP + up(nodes[i]);
+      if (nodes[i].labelY < min) nodes[i].labelY = min;
+    }
+
+    // Everything was pushed downwards, so the stack now hangs below the nodes
+    // by as much as the last label moved. Half of that goes back up, which
+    // spreads the offset evenly over both ends.
+    const shift = (nodes[nodes.length - 1].labelY - nodes[nodes.length - 1].cy) / 2;
+    if (shift > 0) for (const n of nodes) n.labelY -= shift;
   },
 };
 
@@ -4930,7 +5067,7 @@ const listeners = {
       btn.addEventListener("click", () => {
         const on     = btn.dataset.on === "true";
         const domain = btn.dataset.domain;
-        this._hass.callService(domain, on ? "turn_off" : "turn_on", { entity_id: btn.dataset.entity });
+        this._toggleEntity(domain, btn.dataset.entity, on);
         btn.classList.toggle("on", !on);
         btn.dataset.on = String(!on);
       });
@@ -4939,7 +5076,7 @@ const listeners = {
     this.shadowRoot.querySelectorAll("button.boost-activate-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         const on = btn.dataset.on === "true";
-        this._hass.callService("switch", on ? "turn_off" : "turn_on", { entity_id: btn.dataset.entity });
+        this._toggleEntity("switch", btn.dataset.entity, on);
         btn.classList.toggle("on", !on);
         btn.dataset.on = String(!on);
       });
@@ -4947,20 +5084,14 @@ const listeners = {
 
     this.shadowRoot.querySelectorAll(".batt-inline-select").forEach(sel => {
       sel.addEventListener("change", () => {
-        this._hass.callService("select", "select_option", {
-          entity_id: sel.dataset.entity,
-          option:    sel.value,
-        });
+        this._setSelectOption(sel.dataset.entity, sel.value);
       });
       sel.addEventListener("click", e => e.stopPropagation());
     });
 
     this.shadowRoot.querySelectorAll("button.mode-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        this._hass.callService("select", "select_option", {
-          entity_id: btn.dataset.entity,
-          option:    btn.dataset.value,
-        });
+        this._setSelectOption(btn.dataset.entity, btn.dataset.value);
       });
     });
 
@@ -4968,9 +5099,7 @@ const listeners = {
       btn.addEventListener("click", () => {
         const on     = btn.dataset.on === "true";
         const domain = btn.dataset.domain;
-        this._hass.callService(domain, on ? "turn_off" : "turn_on", {
-          entity_id: btn.dataset.entity,
-        });
+        this._toggleEntity(domain, btn.dataset.entity, on);
         btn.classList.toggle("on", !on);
         btn.dataset.on = String(!on);
         if (btn.dataset.lp) this._requestPlanPreview(btn.dataset.lp);
@@ -4979,20 +5108,14 @@ const listeners = {
 
     this.shadowRoot.querySelectorAll("select.plan-precondition-select").forEach(sel => {
       sel.addEventListener("change", () => {
-        this._hass.callService("select", "select_option", {
-          entity_id: sel.dataset.entity,
-          option:    sel.value,
-        });
+        this._setSelectOption(sel.dataset.entity, sel.value);
         if (sel.dataset.lp) this._requestPlanPreview(sel.dataset.lp);
       });
     });
 
     this.shadowRoot.querySelectorAll("button.phase-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        this._hass.callService("select", "select_option", {
-          entity_id: btn.dataset.entity,
-          option:    btn.dataset.value,
-        });
+        this._setSelectOption(btn.dataset.entity, btn.dataset.value);
         const group = btn.closest(".phase-btn-group");
         if (group) {
           group.querySelectorAll(".phase-btn").forEach(b => b.classList.remove("active"));
@@ -5104,7 +5227,7 @@ const listeners = {
           this._planState[lpName].time    = null;
         }
         if (eid && this._hass) {
-          this._hass.callService("select", "select_option", { entity_id: eid, option: val });
+          this._setSelectOption(eid, val);
         }
         this._requestPlanPreview(lpName);
       });
@@ -5145,25 +5268,22 @@ const listeners = {
         const startdate = `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())} ` +
                           `${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`;
 
-        const tryServices = async () => {
-          let lastErr = null;
-          if (vehicleDbId) {
-            try {
-              await this._hass.callService("evcc_intg", "set_vehicle_plan", { vehicle: vehicleDbId, soc, startdate });
-              window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } }));
-              showSuccess();
-              return;
-            } catch(e) { lastErr = e; }
-          }
+        // Only a vehicle evcc knows can be planned from here: its plan is the SoC
+        // this block collects. A loadpoint plan is an energy target in kWh, which
+        // the card does not ask for yet, and ha-evcc would accept a call without
+        // one and do nothing, leaving a plan badge behind for a plan that does
+        // not exist. So say it instead of pretending.
+        const savePlan = async () => {
+          if (!vehicleDbId) { showError(`❌ ${this._t("planNeedsVehicle")}`); return; }
           try {
-            await this._hass.callService("evcc_intg", "set_loadpoint_plan", { loadpoint: lpName, soc, startdate });
+            await this._setVehiclePlan(vehicleDbId, soc, startdate);
             window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } }));
             showSuccess();
-            return;
-          } catch(e) { lastErr = e; }
-          showError(`❌ ${lastErr?.message || JSON.stringify(lastErr) || "Unknown error"}`);
+          } catch(e) {
+            showError(`❌ ${e?.message || JSON.stringify(e) || "Unknown error"}`);
+          }
         };
-        tryServices();
+        savePlan();
       });
     });
 
@@ -5178,11 +5298,15 @@ const listeners = {
           if (badge) { badge.textContent = this._t("noPlan"); badge.classList.remove("active", "planned"); }
         };
         if (vehicleDbId) {
-          this._hass.callService("evcc_intg", "del_vehicle_plan", { vehicle: vehicleDbId })
+          this._deleteVehiclePlan(vehicleDbId)
             .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } })); })
             .catch(e => console.warn("[evcc-card] delete plan:", e));
         } else {
-          this._hass.callService("evcc_intg", "set_loadpoint_plan", { loadpoint: lpName, soc: 0, startdate: "" })
+          // Deleting works without a kWh target, it only needs the evcc index.
+          const lpIdx = this._lpIndex(lpName);
+          if (lpIdx == null) { console.warn("[evcc-card] delete plan: no loadpoint index for", lpName); return; }
+          this._deleteLoadpointPlan(lpIdx)
+            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } })); })
             .catch(e => console.warn("[evcc-card] delete plan:", e));
         }
       });
@@ -5190,7 +5314,7 @@ const listeners = {
 
     this.shadowRoot.querySelectorAll("button.smart-cost-clear-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        this._hass.callService("button", "press", { entity_id: btn.dataset.entity });
+        this._pressButton(btn.dataset.entity);
       });
     });
 
@@ -5207,13 +5331,7 @@ const listeners = {
         this._isDragging = false;
         const domain   = input.dataset.domain;
         const entityId = input.dataset.entity;
-        if (domain === "select") {
-          if (this._sliderOptions(entityId).length > 0) {
-            this._hass.callService("select", "select_option", { entity_id: entityId, option: this._sliderValueFor(input) });
-          }
-        } else {
-          this._hass.callService("number", "set_value", { entity_id: entityId, value: parseFloat(input.value) });
-        }
+        this._sliderWrite(entityId, domain, domain === "select" ? this._sliderValueFor(input) : parseFloat(input.value));
         if (this._pendingRender) { this._pendingRender = false; this._render(); }
       });
       input.addEventListener("blur", () => {
@@ -6397,7 +6515,7 @@ class EvccCard extends HTMLElement {
 
 // Mode views, components and shared behaviour are plain objects of methods
 // (no framework): mix them into the prototype, refusing silent overrides.
-const mixins = [evccApi, loadpointView, socControl, planningView, priorityView, siteView, flowView, gridView, statisticsLegacy, statisticsView, batteryView, debugView, listeners, styles];
+const mixins = [actions, evccApi, loadpointView, socControl, planningView, priorityView, siteView, flowView, gridView, statisticsLegacy, statisticsView, batteryView, debugView, listeners, styles];
 for (const m of mixins) {
   for (const key of Object.keys(m)) {
     if (key in EvccCard.prototype) throw new Error(`evcc-card: duplicate method ${key}`);
@@ -6416,12 +6534,14 @@ class EvccCardEditor extends HTMLElement {
     this._detectingPrefix = false;
   }
 
-  _t(key) {
+  _t(key, replacements = {}) {
     const lang = (this._config?.language
       || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
     const t = sharedTranslations();
     const strings = t[lang] || t["en"] || {};
-    return strings[key] ?? key;
+    let val = strings[key] ?? key;
+    for (const [k, v] of Object.entries(replacements)) val = val.replace(`{${k}}`, v);
+    return val;
   }
 
   set hass(hass) {
@@ -6535,6 +6655,32 @@ class EvccCardEditor extends HTMLElement {
     const showStatsPeriod   = ["stats", "site", "flow", "grid"].includes(mode);
     const showVehicleFilter = mode === "repeatplan";
     const rplanVehicles     = Array.isArray(c.repeating_plan_vehicles) ? c.repeating_plan_vehicles : [];
+
+    // `stats_period` has no implicit value: unconfigured, every mode follows its
+    // own default (the stats mode opens on the most recent month, the compact
+    // footer under site/flow/grid sums everything up). The editor names that
+    // default instead of preselecting an option the card does not use.
+    const statsPeriodOptions = [
+      ["",      this._t("editorStatsPeriodDefault", {
+                  val: mode === "stats" ? this._t("statsPeriodMonth") : this._t("editorStatsPeriodTotal") })],
+      ["month", this._t("statsPeriodMonth")],
+      ["year",  this._t("statsPeriodYear")],
+      ["total", this._t("editorStatsPeriodTotal")],
+      ["none",  this._t("editorStatsPeriodNone")],
+    ];
+    // The legacy vocabulary stays valid in existing YAML and keeps its own
+    // meaning (365d is a rolling window, not the calendar year). So the select
+    // offers the configured legacy value as an option of its own rather than
+    // showing a neighbouring one, and rewrites it only when the user picks
+    // something else.
+    const legacyPeriodLabels = {
+      "30d":      "editorStatsPeriod30d",
+      "365d":     "editorStatsPeriod365d",
+      "thisYear": "editorStatsPeriodThisYear",
+    };
+    if (legacyPeriodLabels[c.stats_period]) {
+      statsPeriodOptions.push([c.stats_period, this._t(legacyPeriodLabels[c.stats_period])]);
+    }
 
     const titlePlaceholder = {
       loadpoint: this._t("editorTitlePlaceholderLoadpoint"),
@@ -6696,12 +6842,7 @@ class EvccCardEditor extends HTMLElement {
         ${showStatsPeriod ? `
         <div class="field">
           <label class="field-label" for="stats_period">${this._t("editorStatsPeriodLabel")}</label>
-          ${this._sel("stats_period", [
-            ["month",    this._t("statsPeriodMonth")],
-            ["year",     this._t("statsPeriodYear")],
-            ["total",    this._t("editorStatsPeriodTotal")],
-            ["none",     this._t("editorStatsPeriodNone")],
-          ], c.stats_period || "total")}
+          ${this._sel("stats_period", statsPeriodOptions, c.stats_period || "")}
         </div>
         ` : ""}
       </div>
