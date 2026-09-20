@@ -668,6 +668,27 @@ def interactions(browser, port, t):
     page.locator("#host").screenshot(path=str(OUT / "panel-open.png"))
     page.close()
 
+    # The key is the ha-evcc feature the entity was discovered under, matched
+    # exactly: a short key must not steer every feature ending in it. And a step
+    # on a select-backed slider cannot apply, which the card has to say out loud.
+    page = new_page(browser, 480, 1200)
+    warnings = []
+    page.on("console", lambda m: warnings.append(m.text) if m.type == "warning" else None)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"],
+                                  "charge_current_settings": "expanded",
+                                  "slider_steps": {"soc": 3, "max_current": 2}})
+    own = page.evaluate("window.__hass.states['number.evcc_openwb_limit_soc'].attributes.step")
+    got = page.locator(in_card('input[data-entity="number.evcc_openwb_limit_soc"]')).get_attribute("step")
+    t.check(got == str(own), "a short key does not reach a longer feature (soc leaves limit_soc alone)",
+            f"step {got}, entity says {own}")
+    t.check(page.locator(in_card('input[data-entity="select.evcc_openwb_max_current"]')).get_attribute("step") == "1",
+            "a select-backed slider keeps walking option indexes")
+    t.check(any("slider_steps.max_current" in w for w in warnings),
+            "a step on a select-backed slider is reported in the console", "; ".join(warnings)[:200])
+    t.check(not any("slider_steps.soc" in w for w in warnings),
+            "a key that matches nothing stays quiet", "; ".join(warnings)[:200])
+    page.close()
+
 
 
 def editor(browser, port, t):

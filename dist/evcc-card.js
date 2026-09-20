@@ -224,6 +224,9 @@ function isOn(hass, entityId) {
   return s === "on" || s === "true";
 }
 
+// Longest suffix first: `limit_soc` has to win over `soc` for the same entity.
+const SORTED_FEATURES = [...FEATURES].sort((a, b) => b.suffix.length - a.suffix.length);
+
 // Detect the entity prefix AND the integration's config_entry_id from a single
 // `config/entity_registry/list` call. The entry_id is required by the ha-evcc
 // WebSocket data API commands (evcc_intg/forecast|sessions|plan_preview); every
@@ -280,8 +283,28 @@ async function detectPrefix(hass) {
   return (await detectIntegration(hass)).prefix;
 }
 
+// Resolve an entity id back to the ha-evcc feature key it was discovered under,
+// i.e. its FEATURES suffix. Config that is keyed by feature (`slider_steps`)
+// has to match against this instead of against the tail of the entity id: a
+// short key like `soc` is the tail of `min_soc` and of `limit_soc` alike, and
+// would silently steer both. Returns null for anything outside FEATURES.
+function featureKeyOf(entityId, prefix = "evcc_") {
+  const dotIdx = entityId.indexOf(".");
+  if (dotIdx < 0) return null;
+  const domain = entityId.slice(0, dotIdx);
+  const slug   = entityId.slice(dotIdx + 1);
+  if (!slug.startsWith(prefix)) return null;
+  const rest = slug.slice(prefix.length);
+
+  for (const feat of SORTED_FEATURES) {
+    if (feat.domain !== domain) continue;
+    if (rest === feat.suffix || rest.endsWith("_" + feat.suffix)) return feat.suffix;
+  }
+  return null;
+}
+
 function discoverEntities(hass, prefix = "evcc_") {
-  const sortedFeatures = [...FEATURES].sort((a, b) => b.suffix.length - a.suffix.length);
+  const sortedFeatures = SORTED_FEATURES;
   const prefixLen = prefix.length;
 
   const loadpoints = {};
@@ -1432,6 +1455,11 @@ const socControl = {
       min  = 0;
       max  = Math.max(opts.length - 1, 0);
       step = 1;
+      // For the same reason `slider_steps` cannot apply here. Where ha-evcc
+      // exposes a feature as a select, a configured step would have to mean
+      // "every n-th option", which is not what the config asks for. Say so
+      // once instead of ignoring the entry without a word.
+      this._warnSliderStepIgnored(entityId);
       sliderVal = opts.length
         ? opts.reduce((best, o, i) => Math.abs(o - val) < Math.abs(opts[best] - val) ? i : best, 0)
         : 0;
@@ -1461,17 +1489,37 @@ const socControl = {
   },
 
   // Optional per-feature step override from the card config, keyed by the
-  // ha-evcc feature suffix: `slider_steps: { smart_cost_limit: 0.01, limit_soc: 5 }`.
-  // Only meaningful for number-backed sliders; select-backed ones walk options.
+  // ha-evcc feature key: `slider_steps: { smart_cost_limit: 0.01, limit_soc: 5 }`.
+  // The key is matched against the feature the entity was discovered under, not
+  // against the tail of its id, so `soc` cannot steer `min_soc` and `limit_soc`
+  // at once. Only meaningful for number-backed sliders; select-backed ones walk
+  // options (see _warnSliderStepIgnored).
   _sliderStepOverride(entityId) {
+    const key = this._sliderStepKey(entityId);
+    if (!key) return null;
+    const step = parseFloat(this._config.slider_steps[key]);
+    return step > 0 ? step : null;
+  },
+
+  // The `slider_steps` key that applies to this entity, or null.
+  _sliderStepKey(entityId) {
     const steps = this._config?.slider_steps;
     if (!steps || typeof steps !== "object") return null;
-    for (const [suffix, raw] of Object.entries(steps)) {
-      const step = parseFloat(raw);
-      if (!(step > 0)) continue;
-      if (entityId.endsWith(`_${suffix}`)) return step;
-    }
-    return null;
+    const key = featureKeyOf(entityId, this._getPrefix());
+    return key && Object.prototype.hasOwnProperty.call(steps, key) ? key : null;
+  },
+
+  // A step configured for a select-backed slider never takes effect. Warn once
+  // per key and value, so the config change is visible in the console too.
+  _warnSliderStepIgnored(entityId) {
+    const key = this._sliderStepKey(entityId);
+    if (!key) return;
+    const seen = this._warnedSliderSteps ??= new Set();
+    const mark = `${key}=${this._config.slider_steps[key]}`;
+    if (seen.has(mark)) return;
+    seen.add(mark);
+    console.warn(`[evcc-card] slider_steps.${key} is ignored: ha-evcc provides ${entityId} as a select, `
+      + "and that slider walks the option list. slider_steps only applies to number entities.");
   },
 
   _sliderWrite(entityId, domain, value) {

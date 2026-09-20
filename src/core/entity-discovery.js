@@ -1,6 +1,9 @@
 import { FEATURES } from "./constants.js";
 import { isOn } from "../utils/state.js";
 
+// Longest suffix first: `limit_soc` has to win over `soc` for the same entity.
+const SORTED_FEATURES = [...FEATURES].sort((a, b) => b.suffix.length - a.suffix.length);
+
 // Detect the entity prefix AND the integration's config_entry_id from a single
 // `config/entity_registry/list` call. The entry_id is required by the ha-evcc
 // WebSocket data API commands (evcc_intg/forecast|sessions|plan_preview); every
@@ -57,8 +60,28 @@ export async function detectPrefix(hass) {
   return (await detectIntegration(hass)).prefix;
 }
 
+// Resolve an entity id back to the ha-evcc feature key it was discovered under,
+// i.e. its FEATURES suffix. Config that is keyed by feature (`slider_steps`)
+// has to match against this instead of against the tail of the entity id: a
+// short key like `soc` is the tail of `min_soc` and of `limit_soc` alike, and
+// would silently steer both. Returns null for anything outside FEATURES.
+export function featureKeyOf(entityId, prefix = "evcc_") {
+  const dotIdx = entityId.indexOf(".");
+  if (dotIdx < 0) return null;
+  const domain = entityId.slice(0, dotIdx);
+  const slug   = entityId.slice(dotIdx + 1);
+  if (!slug.startsWith(prefix)) return null;
+  const rest = slug.slice(prefix.length);
+
+  for (const feat of SORTED_FEATURES) {
+    if (feat.domain !== domain) continue;
+    if (rest === feat.suffix || rest.endsWith("_" + feat.suffix)) return feat.suffix;
+  }
+  return null;
+}
+
 export function discoverEntities(hass, prefix = "evcc_") {
-  const sortedFeatures = [...FEATURES].sort((a, b) => b.suffix.length - a.suffix.length);
+  const sortedFeatures = SORTED_FEATURES;
   const prefixLen = prefix.length;
 
   const loadpoints = {};
