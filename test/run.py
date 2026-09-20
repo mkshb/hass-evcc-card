@@ -1147,6 +1147,50 @@ def discovery(browser, port, t):
     page.close()
 
 
+def flow_labels(browser, port, t):
+    """Flow labels must stay readable when the bands get thin.
+
+    Sankey nodes have a minimum height, so with small values the node centres
+    move closer together than the labels are tall and the texts print on top of
+    each other. The check is geometric: on each side, no label box may reach
+    into the one below it.
+    """
+    # Everything below a tenth of a kW, on both sides: PV and grid feeding a
+    # house, a car, a heating loadpoint (which carries a temperature sub-label)
+    # and the home battery (which carries a SoC). pv_power and battery_power
+    # have per-device counterparts in the fixture, which the flow block sums up
+    # in their place, so those carry the small values as well.
+    SMALL = {"sensor.evcc_pv_power": "120", "sensor.evcc_pv_0_power": "50", "sensor.evcc_pv_1_power": "70",
+             "sensor.evcc_grid_power": "90", "sensor.evcc_home_power": "70",
+             "sensor.evcc_battery_power": "-60", "sensor.evcc_battery_0_power": "-60",
+             "sensor.evcc_openwb_charge_power": "0.08", "sensor.evcc_wp_charge_power": "0.03"}
+    # Label boxes in SVG user units, per side: producers are the right-aligned
+    # texts, consumers the left-aligned ones.
+    boxes = """(() => {
+      const svg = window.__card.shadowRoot.querySelector('.sankey-wrap svg');
+      const by = { end: [], start: [] };
+      for (const el of svg.querySelectorAll('text')) {
+        const b = el.getBBox();
+        (by[el.getAttribute('text-anchor')] ?? []).push({ text: el.textContent.trim(), top: b.y, bottom: b.y + b.height });
+      }
+      for (const k of Object.keys(by)) by[k].sort((a, b) => a.top - b.top);
+      return by; })()"""
+
+    for label, overrides in (("default fixture", None), ("small values", SMALL)):
+        t.group(f"flow - label spacing, {label}")
+        page = new_page(browser, 480, 1200)
+        errors = open_card(page, port, config={"mode": "flow"}, set=overrides)
+        got = page.evaluate(boxes)
+        for side, name in (("end", "producers"), ("start", "consumers")):
+            rows = got[side]
+            overlaps = [f'{rows[i]["text"]} / {rows[i + 1]["text"]}'
+                        for i in range(len(rows) - 1) if rows[i + 1]["top"] < rows[i]["bottom"]]
+            t.check(len(rows) >= 2 and not overlaps and not errors,
+                    f"{label}: {name} labels keep their distance",
+                    f"{len(rows)} labels, overlapping: {overlaps}; {'; '.join(errors)[:120]}")
+        page.locator("#host").screenshot(path=str(OUT / f"flow-{'small' if overrides else 'default'}.png"))
+        page.close()
+
 
 def widths(browser, port, t):
     """Narrow and wide cards: the input panel stays inside the card, no console errors."""
@@ -1252,7 +1296,7 @@ def unit(browser, port, t):
 
 GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
-          "widths": widths}
+          "flow": flow_labels, "widths": widths}
 
 
 def main():
