@@ -1547,6 +1547,51 @@ def widths(browser, port, t):
         page.close()
 
 
+def editor_instances(browser, port, t):
+    """With two ha-evcc entries the editor offers the instance; with one it does not."""
+    t.group("editor - instance selection")
+
+    def mount(page, config):
+        page.evaluate("""async (config) => {
+          document.querySelectorAll("evcc-card-editor").forEach(e => e.remove());
+          const ed = document.createElement("evcc-card-editor");
+          window.__cfg = [];
+          ed.addEventListener("config-changed", e => window.__cfg.push(JSON.parse(JSON.stringify(e.detail.config))));
+          ed.setConfig(config);
+          ed.hass = window.__hass;
+          document.body.appendChild(ed);
+          await new Promise(r => setTimeout(r, 900));
+        }""", config)
+    last = lambda page: page.evaluate("window.__cfg.length ? window.__cfg[window.__cfg.length - 1] : {}")
+    opts = lambda page: page.evaluate("""() => { const s = document.querySelector('evcc-card-editor').shadowRoot.getElementById('prefix');
+      return s ? [...s.options].map(o => o.value) : null; }""")
+
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint"})
+    mount(page, {"mode": "loadpoint"})
+    t.check(opts(page) is None, "one ha-evcc entry: no instance field", json.dumps(opts(page)))
+    page.close()
+
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint"}, second={"prefix": "evcc_demo_"})
+    mount(page, {"mode": "loadpoint", "loadpoints": ["openwb"]})
+    t.check(opts(page) == ["evcc_", "evcc_demo_"], "two entries: the instance field lists both prefixes", json.dumps(opts(page)))
+    sel = page.locator("evcc-card-editor #prefix")
+    sel.select_option("evcc_demo_"); page.wait_for_timeout(200)
+    got = last(page)
+    t.check(got.get("prefix") == "evcc_demo_" and "loadpoints" not in got,
+            "picking the second instance writes its prefix and clears the loadpoint filter", json.dumps(got))
+    t.check(page.evaluate("document.querySelector('evcc-card-editor').shadowRoot.getElementById('prefix').value") == "evcc_demo_",
+            "the field keeps the selection after the re-render")
+    page.locator("evcc-card-editor #prefix").select_option("evcc_"); page.wait_for_timeout(200)
+    got = last(page)
+    t.check("prefix" not in got, "picking the first instance drops the prefix again (auto-detection)", json.dumps(got))
+    mount(page, {"mode": "loadpoint", "prefix": "evcc_demo_"})
+    t.check(page.evaluate("document.querySelector('evcc-card-editor').shadowRoot.getElementById('prefix').value") == "evcc_demo_",
+            "a configured prefix is preselected")
+    page.close()
+
+
 def escaping(browser, port, t):
     """Names from HA and from evcc reach the DOM as text, never as markup.
 
@@ -1634,7 +1679,7 @@ def unit(browser, port, t):
             t.fail(f"{f.name} contains tests", f"no testcase in the report; stderr={p.stderr[:200]}")
 
 
-GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "escaping": escaping, "contracts": contracts,
+GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "editor_instances": editor_instances, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
           "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths}
 

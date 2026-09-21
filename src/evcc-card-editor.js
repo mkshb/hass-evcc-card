@@ -1,5 +1,5 @@
 import { HIDEABLE_SETTINGS } from "./core/constants.js";
-import { detectPrefix, discoverEntities } from "./core/entity-discovery.js";
+import { detectIntegration, discoverEntities } from "./core/entity-discovery.js";
 import { loadSharedTranslations, sharedTranslations, sharedTranslationsReady } from "./utils/translations.js";
 import { escHtml } from "./utils/html.js";
 
@@ -12,6 +12,7 @@ export class EvccCardEditor extends HTMLElement {
     this._availableLoadpoints = [];
     this._detectedPrefix = null;
     this._detectingPrefix = false;
+    this._instances = [];   // every ha-evcc entry in the registry, first one is the default
   }
 
   _t(key, replacements = {}) {
@@ -31,9 +32,10 @@ export class EvccCardEditor extends HTMLElement {
     }
     if (!this._detectedPrefix && !this._detectingPrefix) {
       this._detectingPrefix = true;
-      detectPrefix(hass).then(prefix => {
+      detectIntegration(hass).then(({ prefix, instances }) => {
         this._detectingPrefix = false;
         this._detectedPrefix = prefix;
+        this._instances = instances;
         this._discoverLoadpoints();
         this._render();
       });
@@ -73,6 +75,20 @@ export class EvccCardEditor extends HTMLElement {
       bubbles: true,
       composed: true,
     }));
+  }
+
+  // The ha-evcc entries the registry reports, as select options. Only shown
+  // with more than one entry, or when the config names a prefix the registry
+  // does not know, so it can be cleared. The registry carries no entry title,
+  // so the prefix stands in for it, underscores read as spaces.
+  _instanceOptions() {
+    const cfg = this._config.prefix;
+    const opts = this._instances.map((inst, i) => {
+      const name = inst.prefix.replace(/_$/, "").replace(/_/g, " ");
+      return [inst.prefix, i === 0 ? `${name} (${this._t("editorInstanceDefault")})` : name];
+    });
+    if (cfg && !this._instances.some(inst => inst.prefix === cfg)) opts.push([cfg, cfg]);
+    return opts.length > 1 || (cfg && !this._instances.some(inst => inst.prefix === cfg)) ? opts : null;
   }
 
   _sel(id, options, current) {
@@ -135,6 +151,7 @@ export class EvccCardEditor extends HTMLElement {
     const showStatsPeriod   = ["stats", "site", "flow", "grid"].includes(mode);
     const showVehicleFilter = mode === "repeatplan";
     const rplanVehicles     = Array.isArray(c.repeating_plan_vehicles) ? c.repeating_plan_vehicles : [];
+    const instanceOptions   = this._instanceOptions();
 
     // `stats_period` has no implicit value: unconfigured, every mode follows its
     // own default (the stats mode opens on the most recent month, the compact
@@ -226,6 +243,13 @@ export class EvccCardEditor extends HTMLElement {
           ], mode)}
           ${modeDesc ? `<div class="hint">${modeDesc}</div>` : ""}
         </div>
+        ${instanceOptions ? `
+        <div class="field">
+          <label class="field-label" for="prefix">${this._t("editorInstanceLabel")}</label>
+          ${this._sel("prefix", instanceOptions, this._getPrefix())}
+          <div class="hint">${this._t("editorInstanceHint")}</div>
+        </div>
+        ` : ""}
         <div class="field">
           <label class="field-label" for="title">${this._t("editorTitleLabel")} <span class="hint" style="display:inline">(${this._t("editorOptional")})</span></label>
           <input id="title" class="ha-input" type="text" value="${this._esc(c.title || "")}" placeholder="${titlePlaceholder}">
@@ -341,6 +365,25 @@ export class EvccCardEditor extends HTMLElement {
         if (id === "mode") this._render();
       });
     });
+
+    // Instance: the first entry is what the card detects on its own, so picking
+    // it drops `prefix` from the config. Loadpoint and vehicle selections belong
+    // to the instance they were made for and are cleared along with the switch.
+    const prefixEl = this.shadowRoot.getElementById("prefix");
+    if (prefixEl) {
+      prefixEl.addEventListener("change", () => {
+        const chosen = prefixEl.value;
+        const isDefault = this._instances.length > 0 && chosen === this._instances[0].prefix;
+        this._config = {
+          ...this._config,
+          prefix: isDefault ? undefined : chosen,
+          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined,
+        };
+        this._discoverLoadpoints();
+        this._fire();
+        this._render();
+      });
+    }
 
     const titleEl = this.shadowRoot.getElementById("title");
     if (titleEl) {
