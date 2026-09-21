@@ -161,25 +161,30 @@ function legacyStatsPeriod(value, fallback = "total") {
     : STATS_PERIOD_TO_LEGACY[normalizeStatsPeriod(value, fallback)];
 }
 
-// Rendered height per mode in Home Assistant's masonry units (one unit is 50 px),
-// taken from the generated README screenshots at 470 px and rounded up. The card
-// reports this through getCardSize(); `loadpoint` and `compact` count per
-// loadpoint, every other mode is the whole card. `debug` is a YAML dump of
-// unbounded length, so its value is a floor, not a measurement.
+// Fallback height per mode in Home Assistant's units (one unit is 50 px), used
+// only before the card has rendered once; a rendered card measures itself. The
+// numbers are the bare card: the detail table and the statistics footer are
+// added below, because a configuration can switch both off and that moves a
+// site card by a factor of five.
 const CARD_SIZES = {
   loadpoint:  16,
   compact:     6,
   plan:       10,
   repeatplan:  5,
   priority:    5,
-  site:       12,
-  flow:       14,
-  grid:        8,
-  site2:       8,   // legacy alias of grid
+  site:        3,
+  flow:        6,
+  grid:        7,
+  site2:       7,   // legacy alias of grid
   stats:      10,
   battery:     7,
   debug:      20,
 };
+
+// The expandable detail table under the flow bar (`site_details`), and the
+// statistics footer (`stats_period: none` removes it). Both measured at 420 px.
+const CARD_SIZE_DETAILS = { site: 8, flow: 6 };
+const CARD_SIZE_FOOTER  = { site: 1, flow: 1, grid: 1, site2: 1 };
 
 // Every mode the card renders, and the values the other enumerated options take.
 // setConfig() rejects anything outside these lists. The modes are spelled out
@@ -6404,16 +6409,37 @@ class EvccCard extends HTMLElement {
     }).join("|");
   }
 
-  // Home Assistant sizes the masonry columns from this, one unit being 50 px.
-  // Without it the card counts as a single 50 px row, which is wrong for every
-  // mode here. It must answer before the first render too, so it may not depend
-  // on hass or on discovered entities.
+  // Home Assistant sizes the layout from this, one unit being 50 px, in the
+  // masonry view and as the row span in a section. A rendered card measures
+  // itself, because no per-mode estimate survives the configuration: a collapsed
+  // detail table, a hidden footer, the number of loadpoints and the `size` scale
+  // each move the height, and a site card runs from 2 to 12 units across them.
+  // HA asks again whenever it relayouts, so this is the value it sees in
+  // practice; the estimate covers the moment before the first render and the
+  // time the translations are still loading, when the shadow root holds the
+  // loading placeholder, an ha-card of its own that says nothing about the
+  // card's height.
   getCardSize() {
+    if (this._translationsReady) {
+      const rendered = this.shadowRoot?.querySelector("ha-card")?.getBoundingClientRect().height;
+      if (rendered > 0) return Math.max(1, Math.ceil(rendered / 50));
+    }
+    return this._estimatedCardSize();
+  }
+
+  // The pre-render fallback: the bare card per mode, plus the two blocks a
+  // configuration can remove. It must answer without hass and without a single
+  // discovered entity, so it never returns 0. The `size` scale is not in here:
+  // it only stretches the card once it renders, and then the measurement wins.
+  _estimatedCardSize() {
     const mode = this._config?.mode || "loadpoint";
-    const rows = CARD_SIZES[mode] ?? CARD_SIZES.loadpoint;
-    return mode === "loadpoint" || mode === "compact"
-      ? rows * this._sizedLoadpointCount()
-      : rows;
+    let rows = CARD_SIZES[mode] ?? CARD_SIZES.loadpoint;
+    if (mode === "loadpoint" || mode === "compact") rows *= this._sizedLoadpointCount();
+    if (this._config?.site_details !== "collapsed") rows += CARD_SIZE_DETAILS[mode] ?? 0;
+    if (normalizeStatsPeriod(this._config?.stats_period, "total") !== "none") {
+      rows += CARD_SIZE_FOOTER[mode] ?? 0;
+    }
+    return Math.max(1, rows);
   }
 
   // How many loadpoints the card would draw: the discovered ones narrowed by the

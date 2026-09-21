@@ -1,5 +1,5 @@
 import { detectIntegration, discoverEntities, partitionDisabledLoadpoints } from "./core/entity-discovery.js";
-import { CARD_SIZES, RENDER_ATTRS, normalizeStatsPeriod, legacyStatsPeriod, validateCardConfig } from "./core/constants.js";
+import { CARD_SIZES, CARD_SIZE_DETAILS, CARD_SIZE_FOOTER, RENDER_ATTRS, normalizeStatsPeriod, legacyStatsPeriod, validateCardConfig } from "./core/constants.js";
 import { stateVal, unitStr } from "./utils/state.js";
 import { escHtml } from "./utils/html.js";
 import { socFillGradient } from "./utils/format.js";
@@ -239,16 +239,37 @@ export class EvccCard extends HTMLElement {
     }).join("|");
   }
 
-  // Home Assistant sizes the masonry columns from this, one unit being 50 px.
-  // Without it the card counts as a single 50 px row, which is wrong for every
-  // mode here. It must answer before the first render too, so it may not depend
-  // on hass or on discovered entities.
+  // Home Assistant sizes the layout from this, one unit being 50 px, in the
+  // masonry view and as the row span in a section. A rendered card measures
+  // itself, because no per-mode estimate survives the configuration: a collapsed
+  // detail table, a hidden footer, the number of loadpoints and the `size` scale
+  // each move the height, and a site card runs from 2 to 12 units across them.
+  // HA asks again whenever it relayouts, so this is the value it sees in
+  // practice; the estimate covers the moment before the first render and the
+  // time the translations are still loading, when the shadow root holds the
+  // loading placeholder, an ha-card of its own that says nothing about the
+  // card's height.
   getCardSize() {
+    if (this._translationsReady) {
+      const rendered = this.shadowRoot?.querySelector("ha-card")?.getBoundingClientRect().height;
+      if (rendered > 0) return Math.max(1, Math.ceil(rendered / 50));
+    }
+    return this._estimatedCardSize();
+  }
+
+  // The pre-render fallback: the bare card per mode, plus the two blocks a
+  // configuration can remove. It must answer without hass and without a single
+  // discovered entity, so it never returns 0. The `size` scale is not in here:
+  // it only stretches the card once it renders, and then the measurement wins.
+  _estimatedCardSize() {
     const mode = this._config?.mode || "loadpoint";
-    const rows = CARD_SIZES[mode] ?? CARD_SIZES.loadpoint;
-    return mode === "loadpoint" || mode === "compact"
-      ? rows * this._sizedLoadpointCount()
-      : rows;
+    let rows = CARD_SIZES[mode] ?? CARD_SIZES.loadpoint;
+    if (mode === "loadpoint" || mode === "compact") rows *= this._sizedLoadpointCount();
+    if (this._config?.site_details !== "collapsed") rows += CARD_SIZE_DETAILS[mode] ?? 0;
+    if (normalizeStatsPeriod(this._config?.stats_period, "total") !== "none") {
+      rows += CARD_SIZE_FOOTER[mode] ?? 0;
+    }
+    return Math.max(1, rows);
   }
 
   // How many loadpoints the card would draw: the discovered ones narrowed by the

@@ -160,25 +160,30 @@ export function legacyStatsPeriod(value, fallback = "total") {
     : STATS_PERIOD_TO_LEGACY[normalizeStatsPeriod(value, fallback)];
 }
 
-// Rendered height per mode in Home Assistant's masonry units (one unit is 50 px),
-// taken from the generated README screenshots at 470 px and rounded up. The card
-// reports this through getCardSize(); `loadpoint` and `compact` count per
-// loadpoint, every other mode is the whole card. `debug` is a YAML dump of
-// unbounded length, so its value is a floor, not a measurement.
+// Fallback height per mode in Home Assistant's units (one unit is 50 px), used
+// only before the card has rendered once; a rendered card measures itself. The
+// numbers are the bare card: the detail table and the statistics footer are
+// added below, because a configuration can switch both off and that moves a
+// site card by a factor of five.
 export const CARD_SIZES = {
   loadpoint:  16,
   compact:     6,
   plan:       10,
   repeatplan:  5,
   priority:    5,
-  site:       12,
-  flow:       14,
-  grid:        8,
-  site2:       8,   // legacy alias of grid
+  site:        3,
+  flow:        6,
+  grid:        7,
+  site2:       7,   // legacy alias of grid
   stats:      10,
   battery:     7,
   debug:      20,
 };
+
+// The expandable detail table under the flow bar (`site_details`), and the
+// statistics footer (`stats_period: none` removes it). Both measured at 420 px.
+export const CARD_SIZE_DETAILS = { site: 8, flow: 6 };
+export const CARD_SIZE_FOOTER  = { site: 1, flow: 1, grid: 1, site2: 1 };
 
 // Every mode the card renders, and the values the other enumerated options take.
 // setConfig() rejects anything outside these lists. The modes are spelled out

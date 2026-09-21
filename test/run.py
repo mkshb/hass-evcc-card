@@ -1272,41 +1272,77 @@ def card_api(browser, port, t):
     number of loadpoints where the card repeats a block per loadpoint.
     """
     t.group("cardapi - getCardSize")
-    page = new_page(browser, 480, 900)
+    page = new_page(browser, 480, 2400)
     errors = open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
-    sizes = page.evaluate("""(() => {
+
+    # A rendered card reports its own height. Anything else is an estimate that a
+    # configuration can invalidate: `site_details: collapsed` and
+    # `stats_period: none` together take a site card from 12 units down to 3, and
+    # a card that reports 12 while being 3 tall leaves a gap in the sections grid.
+    MEASURED = [
+        ({"mode": "site"}, "site, everything shown"),
+        ({"mode": "site", "site_details": "collapsed", "stats_period": "none"}, "site, table and footer off"),
+        ({"mode": "flow", "site_details": "collapsed", "stats_period": "none"}, "flow, table and footer off"),
+        ({"mode": "grid", "stats_period": "none", "size": "medium"}, "grid, scaled up"),
+        ({"mode": "loadpoint", "loadpoints": ["openwb"], "size": "medium"}, "a scaled loadpoint"),
+        ({"mode": "debug"}, "debug"),
+    ]
+    sizes = {}
+    for cfg, label in MEASURED:
+        p2 = new_page(browser, 480, 2400)
+        open_card(p2, port, config=cfg)
+        real = p2.locator(in_card("ha-card")).bounding_box()["height"] / 50
+        size = p2.evaluate("window.__card.getCardSize()")
+        sizes[label] = size
+        t.check(size >= real - 0.01 and size - real < 1.5,
+                f"the reported size matches the rendered height: {label}",
+                f"gemeldet={size} real={real:.1f}")
+        p2.close()
+
+    # While the translations load, the shadow root holds the loading placeholder,
+    # an ha-card of about 70 px. A relayout in that moment must get the estimate,
+    # not a measurement of the placeholder.
+    ph = page.evaluate("""(() => {
+      const c = window.__card;
+      c._translationsReady = false; c.shadowRoot.innerHTML = ""; c._render();
+      const placeholder = c.shadowRoot.querySelector("ha-card .loading") !== null;
+      const during = c.getCardSize();
+      const estimate = c._estimatedCardSize();
+      c._translationsReady = true; c._lastRenderKey = null; c._render();
+      return { placeholder, during, estimate, after: c.getCardSize() };
+    })()""")
+    t.check(ph["placeholder"] and ph["during"] == ph["estimate"] and ph["estimate"] > 2,
+            "the loading placeholder is not measured, the estimate answers instead", json.dumps(ph))
+    t.check(sizes["site, table and footer off"] * 2 < sizes["site, everything shown"],
+            "a collapsed site card reports a fraction of the full one", json.dumps(sizes))
+
+    # The estimate only has to carry the moment before the first render, but it
+    # must not be wildly off either, and it must answer without hass.
+    est = page.evaluate("""(() => {
       const out = {};
-      for (const mode of ["loadpoint","compact","plan","repeatplan","priority","site","flow","grid","stats","battery","debug"]) {
-        window.__card.setConfig({ mode, loadpoints: ["openwb"] });
-        out[mode] = window.__card.getCardSize();
+      for (const [name, cfg] of [
+        ["site",           { mode: "site" }],
+        ["site collapsed", { mode: "site", site_details: "collapsed", stats_period: "none" }],
+        ["flow",           { mode: "flow" }],
+        ["loadpoint",      { mode: "loadpoint", loadpoints: ["openwb"] }],
+        ["two loadpoints", { mode: "loadpoint", loadpoints: ["openwb", "wp"] }],
+        ["debug",          { mode: "debug" }],
+      ]) {
+        const c = document.createElement("evcc-card");
+        c.setConfig(cfg);
+        out[name] = c.getCardSize();
       }
       return out;
     })()""")
-    bad = {m: v for m, v in sizes.items() if not isinstance(v, (int, float)) or v < 1}
-    t.check(not bad, "every mode reports a usable size", f"unbrauchbar: {bad}" if bad else json.dumps(sizes))
-    t.check(sizes["loadpoint"] > sizes["compact"], "the full loadpoint is taller than the compact one",
-            f'loadpoint={sizes["loadpoint"]} compact={sizes["compact"]}')
-    t.check(sizes["debug"] > sizes["priority"], "a debug dump is taller than the priority list",
-            f'debug={sizes["debug"]} priority={sizes["priority"]}')
-
-    scaled = page.evaluate("""(() => {
-      const one = (lps) => { window.__card.setConfig({ mode: "loadpoint", loadpoints: lps }); return window.__card.getCardSize(); };
-      return { one: one(["openwb"]), two: one(["openwb", "wp"]), all: (window.__card.setConfig({ mode: "loadpoint" }), window.__card.getCardSize()) };
-    })()""")
-    t.check(scaled["two"] == 2 * scaled["one"], "two loadpoints report twice the size of one", json.dumps(scaled))
-    t.check(scaled["all"] >= scaled["two"], "without a filter every discovered loadpoint counts", json.dumps(scaled))
+    bad = {m: v for m, v in est.items() if not isinstance(v, (int, float)) or v < 1}
+    t.check(not bad, "an unrendered card estimates a usable size for every config",
+            f"unbrauchbar: {bad}" if bad else json.dumps(est))
+    t.check(est["site collapsed"] < est["site"], "the estimate drops the table and the footer when they are off",
+            json.dumps(est))
+    t.check(est["two loadpoints"] == 2 * est["loadpoint"], "the estimate scales with the loadpoint count",
+            json.dumps(est))
     t.check(not errors, "no console errors while sizing", "; ".join(errors)[:200])
 
-    # HA may ask before the card ever saw hass; a 0 or undefined there breaks the layout.
-    fresh = page.evaluate("""(() => {
-      const c = document.createElement("evcc-card");
-      c.setConfig({ mode: "flow" });
-      return { size: c.getCardSize(), grid: c.getGridOptions() };
-    })()""")
-    t.check(isinstance(fresh["size"], (int, float)) and fresh["size"] >= 1,
-            "a card without hass already reports a size", json.dumps(fresh["size"]))
-    t.check("rows" not in fresh["grid"] and fresh["grid"].get("min_columns", 1) >= 1,
-            "and grid options that leave its height alone", json.dumps(fresh["grid"]))
     t.group("cardapi - card picker registration")
     entry = page.evaluate("""(() => (window.customCards || []).find(c => c.type === "evcc-card") || null)()""")
     t.check(entry is not None, "the card registers itself in window.customCards", json.dumps(entry))
