@@ -394,6 +394,12 @@ function discoverEntities(hass, prefix = "evcc_") {
   const site = {};
   const meters = {};
 
+  // A second installation whose prefix extends this one ("evcc_" next to
+  // "evcc_demo_") shares the start of every entity id. Read under the shorter
+  // prefix, its loadpoints would turn up here as "demo_carport" and its
+  // vehicles as meters, so anything under a longer installed prefix is skipped.
+  const foreign = installedPrefixes(hass).filter(p => p.length > prefixLen && p.startsWith(prefix));
+
   for (const entityId of Object.keys(hass.states)) {
     const dotIdx = entityId.indexOf(".");
     if (dotIdx < 0) continue;
@@ -401,6 +407,7 @@ function discoverEntities(hass, prefix = "evcc_") {
     const slug   = entityId.slice(dotIdx + 1);
 
     if (!slug.startsWith(prefix)) continue;
+    if (foreign.some(p => slug.startsWith(p))) continue;
 
     const rest = slug.slice(prefixLen);
 

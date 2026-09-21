@@ -1104,6 +1104,21 @@ def discovery(browser, port, t):
     t.check(page.locator(in_card('button.mode-btn[data-entity="select.myevcc_openwb_mode"]')).count() > 0 and not errors,
             "custom prefix myevcc_ detected from the registry", "; ".join(errors)[:200])
     page.close()
+
+    # A second installation whose prefix extends the first one: "evcc demo" next
+    # to "evcc". Every demo entity id starts with evcc_ too, and the production
+    # card would read the demo loadpoints as "demo_openwb" and "demo_wp".
+    for cfg, want, label in (({"mode": "loadpoint"}, 2, "the production card shows only its own two loadpoints"),
+                             ({"mode": "loadpoint", "prefix": "evcc_demo_"}, 2, "the demo card shows the two demo loadpoints")):
+        page = new_page(browser, 480, 1800)
+        errors = open_card(page, port, config=cfg, second={"prefix": "evcc_demo_"})
+        rows = page.locator(in_card(".loadpoint")).count()
+        modes = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('button.mode-btn')].map(b => b.dataset.entity)")
+        own = cfg.get("prefix", "evcc_")
+        clean = all(m.startswith(f"select.{own}") and (own != "evcc_" or not m.startswith("select.evcc_demo_")) for m in modes)
+        t.check(rows == want and clean and not errors, f"prefix evcc_ next to evcc_demo_: {label}",
+                f"rows={rows} modes={sorted(set(modes))[:4]}; {'; '.join(errors)[:120]}")
+        page.close()
     for opt, want_rows, want_badge in (("hide", 1, 0), ("dim", 2, 1), ("show", 2, 0)):
         page = new_page(browser, 480, 1800)
         open_card(page, port, config={"mode": "loadpoint", "disabled_loadpoints": opt}, set={"binary_sensor.evcc_wp_disabled_in_config": "on"})

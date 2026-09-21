@@ -3,7 +3,7 @@
 // one, so this exercises the grouping directly, with a hand-built registry.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { detectIntegration, detectPrefix, featureKeyOf, locateEntity, installedPrefixes, selectLoadpoints } from "../../src/core/entity-discovery.js";
+import { detectIntegration, detectPrefix, featureKeyOf, locateEntity, installedPrefixes, selectLoadpoints, discoverEntities } from "../../src/core/entity-discovery.js";
 import { loadpointFilter } from "../../src/core/constants.js";
 
 // A site entity carries the prefix (pv_power is a site feature, no loadpoint).
@@ -199,4 +199,32 @@ test("selectLoadpoints narrows to the configured names and keeps their entities"
   assert.deepEqual(selectLoadpoints(found, { loadpoints: "wp" }), { wp: { charge_power: "b" } });
   assert.deepEqual(selectLoadpoints(found, { loadpoints: ["openwb", "nope"] }), { openwb: { charge_power: "a" } });
   assert.equal(selectLoadpoints(found, {}), found, "without the option every loadpoint stays");
+});
+
+// --- discoverEntities with a prefix that extends another ----------------------
+// "evcc_" and "evcc_demo_" side by side: every demo entity id also starts with
+// "evcc_", and read under that prefix "evcc_demo_openwb_charge_power" would be a
+// loadpoint called "demo_openwb" of the first installation.
+
+test("a longer installed prefix keeps its entities out of the shorter one", () => {
+  const hass = hassOf("evcc_", "evcc_demo_");
+  const prod = discoverEntities(hass, "evcc_");
+  assert.deepEqual(Object.keys(prod.loadpoints), ["openwb"]);
+  assert.ok(!Object.keys(prod.meters).some(m => m.startsWith("demo")), `meters: ${Object.keys(prod.meters)}`);
+  assert.equal(prod.site.pv_power, "sensor.evcc_pv_power");
+  const demo = discoverEntities(hass, "evcc_demo_");
+  assert.deepEqual(Object.keys(demo.loadpoints), ["openwb"]);
+  assert.equal(demo.site.pv_power, "sensor.evcc_demo_pv_power");
+});
+
+test("without a registry mirror the shorter prefix still reads everything, as before", () => {
+  const hass = hassOf("evcc_", "evcc_demo_");
+  const prod = discoverEntities({ states: hass.states }, "evcc_");
+  assert.ok("demo_openwb" in prod.loadpoints, "no hass.entities, no way to tell the installations apart");
+});
+
+test("locateEntity files a demo entity under the demo installation", () => {
+  const hass = hassOf("evcc_", "evcc_demo_");
+  assert.deepEqual(locateEntity(hass, "select.evcc_demo_openwb_mode"), { prefix: "evcc_demo_", loadpoint: "openwb" });
+  assert.deepEqual(locateEntity(hass, "select.evcc_openwb_mode"),      { prefix: "evcc_",      loadpoint: "openwb" });
 });
