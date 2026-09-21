@@ -49,6 +49,39 @@ The suite runs each file through node's junit reporter and feeds the individual
 cases into the same `report.md` / `junit.xml` as the browser checks, so a broken
 helper shows up in one place with everything else.
 
+## End-to-end against HA-Dev and the evcc demo
+
+`test/e2e.py` is the one suite that does not use the mock. It logs into the
+development Home Assistant with a browser, writes its own dashboard
+`evcc-demo-e2e` (one view per card mode, every card pinned to
+`prefix: evcc_demo_`), renders each mode against the real ha-evcc entities and
+pushes a mode change through the whole stack: card, HA service, ha-evcc, evcc
+API, and back into the card. The evcc behind it is the demo instance
+(`evcc --demo`), so writes are harmless; the production entry in HA-Dev is
+never touched.
+
+It needs the running stack and an admin user in HA-Dev for the test, so it is
+run by hand before a release, not in CI:
+
+```bash
+# once: credentials in test/.e2e.env (gitignored), or exported
+E2E_HA_USER=e2e
+E2E_HA_PASSWORD=...
+
+python3 test/e2e.py                 # smoke + roundtrip, report in test/out/e2e/
+python3 test/e2e.py --only smoke    # one group; --headed shows the browser
+```
+
+| Group | What it covers |
+|---|---|
+| `smoke` | Every mode renders on the real dashboard without card errors; the loadpoint modes show every demo loadpoint by name, the debug mode the prefix. One screenshot per mode in `test/out/e2e/` |
+| `roundtrip` | Garage starts off; a click on "now" in the card arrives at evcc (card → HA service → ha-evcc → evcc API), the state comes back into the card, and a change made in evcc itself reaches the card. The demo is reset to its shipped modes before and after |
+
+Defaults: `E2E_HA_URL=http://localhost:8123` (the sidecar shares the HA-Dev pod),
+`E2E_EVCC_URL=http://evcc.evcc-demo.svc.cluster.local:7070`, `E2E_PREFIX=evcc_demo_`.
+The demo values change every few seconds, so the checks are structural; nothing
+compares numbers.
+
 ## ha-evcc contract check
 
 `test/check_ha_evcc.py` verifies that every entity in the card's `FEATURES`

@@ -1,3 +1,4 @@
 issue*
 RELEASE_NOTES.md
 node_modules/
+test/.e2e.env

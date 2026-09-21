@@ -64,8 +64,9 @@ def card_version():
 
 class T:
     """Collects check results and writes report.md / report.json / junit.xml."""
-    def __init__(self, suite="evcc-card tests", browser="chromium"):
+    def __init__(self, suite="evcc-card tests", browser="chromium", frozen_time=FIXED_TIME):
         self.suite, self.browser, self.results, self.started, self.section = suite, browser, [], time.time(), ""
+        self.frozen_time = frozen_time   # None for a run on the live clock (test/e2e.py)
     def group(self, title):        self.section = title; print(f"\n[{title}]")
     def ok(self, name, detail=""):   self._add(True, name, detail);  print(f"  PASS {name}" + (f"  ({detail})" if detail else ""))
     def fail(self, name, detail=""): self._add(False, name, detail); print(f"  FAIL {name}  {detail}")
@@ -78,12 +79,13 @@ class T:
         out = Path(out); out.mkdir(parents=True, exist_ok=True)
         passed, failed = len(self.results) - len(self.failed), len(self.failed)
         meta = {"suite": self.suite, "browser": self.browser, "card_version": card_version(), "run_at": datetime.datetime.now().isoformat(timespec="seconds"),
-                "duration_s": round(time.time() - self.started, 1), "fixed_browser_time": FIXED_TIME, "passed": passed, "failed": failed}
+                "duration_s": round(time.time() - self.started, 1), "fixed_browser_time": self.frozen_time, "passed": passed, "failed": failed}
         (out / "report.json").write_text(json.dumps({**meta, "results": self.results, "screenshots": [str(s) for s in screenshots]}, indent=1, ensure_ascii=False))
         lines = [f"# {self.suite}", "",
                  f"**{'FAILED' if failed else 'PASSED'}**: {passed} passed, {failed} failed", "",
-                 f"- Card version: {meta['card_version']}", f"- Browser: {self.browser}", f"- Run at: {meta['run_at']} ({meta['duration_s']} s)",
-                 f"- Browser clock frozen at: {FIXED_TIME} {TIMEZONE}", ""]
+                 f"- Card version: {meta['card_version']}", f"- Browser: {self.browser}", f"- Run at: {meta['run_at']} ({meta['duration_s']} s)"]
+        lines += [f"- Browser clock frozen at: {self.frozen_time} {TIMEZONE}"] if self.frozen_time else ["- Browser clock: live"]
+        lines += [""]
         if failed:
             lines += ["## Failures", ""] + [f"- **{r['section']}** / {r['name']}" + (f": {r['detail']}" if r['detail'] else "") for r in self.failed] + [""]
         lines += ["## All checks", "", "| Result | Section | Check | Detail |", "|---|---|---|---|"]
