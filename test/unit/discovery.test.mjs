@@ -3,7 +3,8 @@
 // one, so this exercises the grouping directly, with a hand-built registry.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { detectIntegration, detectPrefix, featureKeyOf, locateEntity, installedPrefixes } from "../../src/core/entity-discovery.js";
+import { detectIntegration, detectPrefix, featureKeyOf, locateEntity, installedPrefixes, selectLoadpoints } from "../../src/core/entity-discovery.js";
+import { loadpointFilter } from "../../src/core/constants.js";
 
 // A site entity carries the prefix (pv_power is a site feature, no loadpoint).
 const entry = (prefix, entryId) => [
@@ -178,4 +179,24 @@ test("a foreign entity and an unknown id yield null", () => {
   assert.equal(locateEntity(hass, "sensor.evcc_openwb_charge_power_foreign"), null, "platform is not evcc_intg");
   assert.equal(locateEntity(hass, "sensor.evcc_openwb_not_a_feature"), null, "not in the registry");
   assert.equal(locateEntity({ states: hass.states }, "select.evcc_openwb_mode"), null, "no registry mirror");
+});
+
+// --- loadpointFilter / selectLoadpoints --------------------------------------
+// The `loadpoints` option is read in one place, so a single name and a list
+// mean the same thing to the validator, the render, the size estimate and the
+// priority view alike.
+
+test("loadpointFilter turns the option into a list, or null when unset", () => {
+  assert.equal(loadpointFilter({}), null);
+  assert.equal(loadpointFilter({ loadpoints: null }), null);
+  assert.equal(loadpointFilter(undefined), null);
+  assert.deepEqual(loadpointFilter({ loadpoints: "openwb" }), ["openwb"]);
+  assert.deepEqual(loadpointFilter({ loadpoints: ["openwb", "wp"] }), ["openwb", "wp"]);
+});
+
+test("selectLoadpoints narrows to the configured names and keeps their entities", () => {
+  const found = { openwb: { charge_power: "a" }, wp: { charge_power: "b" } };
+  assert.deepEqual(selectLoadpoints(found, { loadpoints: "wp" }), { wp: { charge_power: "b" } });
+  assert.deepEqual(selectLoadpoints(found, { loadpoints: ["openwb", "nope"] }), { openwb: { charge_power: "a" } });
+  assert.equal(selectLoadpoints(found, {}), found, "without the option every loadpoint stays");
 });

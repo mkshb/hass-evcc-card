@@ -1,5 +1,5 @@
-import { detectIntegration, discoverEntities, partitionDisabledLoadpoints } from "./core/entity-discovery.js";
-import { CARD_SIZES, CARD_SIZE_DETAILS, CARD_SIZE_FOOTER, RENDER_ATTRS, normalizeStatsPeriod, legacyStatsPeriod, validateCardConfig } from "./core/constants.js";
+import { detectIntegration, discoverEntities, selectLoadpoints, partitionDisabledLoadpoints } from "./core/entity-discovery.js";
+import { CARD_SIZES, CARD_SIZE_DETAILS, CARD_SIZE_FOOTER, RENDER_ATTRS, normalizeStatsPeriod, legacyStatsPeriod, validateCardConfig, loadpointFilter } from "./core/constants.js";
 import { stateVal, unitStr } from "./utils/state.js";
 import { escHtml } from "./utils/html.js";
 import { socFillGradient } from "./utils/format.js";
@@ -277,11 +277,10 @@ export class EvccCard extends HTMLElement {
   // configured filter still yields a count there and everything else falls back
   // to one loadpoint rather than to zero.
   _sizedLoadpointCount() {
-    const raw    = this._config?.loadpoints;
-    const filter = raw ? (Array.isArray(raw) ? raw : [raw]) : null;
-    const found  = Object.keys(this._cachedEntities?.loadpoints || {});
-    const n = found.length
-      ? (filter ? found.filter(lp => filter.includes(lp)).length : found.length)
+    const filter = loadpointFilter(this._config);
+    const found  = this._cachedEntities?.loadpoints || {};
+    const n = Object.keys(found).length
+      ? Object.keys(selectLoadpoints(found, this._config)).length
       : (filter ? filter.length : 0);
     return Math.max(1, n);
   }
@@ -421,21 +420,12 @@ export class EvccCard extends HTMLElement {
     }
     const { loadpoints, site, meters } = this._cachedEntities;
 
-    const filterRaw = this._config.loadpoints;
-    const filter = filterRaw
-      ? (Array.isArray(filterRaw) ? filterRaw : [filterRaw])
-      : null;
-    const visible = filter && filter.length > 0
-      ? Object.fromEntries(
-          Object.entries(loadpoints).filter(([lp]) => filter.includes(lp))
-        )
-      : loadpoints;
+    const visible = selectLoadpoints(loadpoints, this._config);
 
     // disabled_loadpoints: hide (default) | dim | show - how to treat
     // loadpoints that are disabled in the evcc config (ha-evcc 2026.8.8+).
-    const dlpOpt = ["hide", "dim", "show"].includes(this._config.disabled_loadpoints)
-      ? this._config.disabled_loadpoints
-      : "hide";
+    // setConfig() has already rejected anything outside DISABLED_LOADPOINT_MODES.
+    const dlpOpt = this._config.disabled_loadpoints || "hide";
     const { enabled: lpEnabled, disabled: lpDisabled } =
       partitionDisabledLoadpoints(this._hass, visible);
     // Interactive modes (plan/priority) can never work on a disabled

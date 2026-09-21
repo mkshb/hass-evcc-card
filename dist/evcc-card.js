@@ -199,6 +199,16 @@ const CARD_SIZE_OPTIONS        = ["small", "medium", "large"];
 const DISABLED_LOADPOINT_MODES = ["hide", "dim", "show"];
 const STATS_PERIOD_OPTIONS     = Object.keys(STATS_PERIOD_ALIASES);
 
+// The `loadpoints` option as a list, or null when it is not set. A single name
+// is shorthand for a list of one. Every reader of the option goes through here,
+// so the shorthand and "not set" mean the same thing everywhere; a value that
+// is set but empty never gets past validateCardConfig().
+function loadpointFilter(config) {
+  const raw = config?.loadpoints;
+  if (raw === undefined || raw === null) return null;
+  return Array.isArray(raw) ? raw : [raw];
+}
+
 // Home Assistant expects setConfig() to throw on a configuration the card cannot
 // render: it catches the error and shows its own error card with the message, so
 // a typo in the YAML is visible instead of quietly rendering something else. The
@@ -224,12 +234,9 @@ function validateCardConfig(config) {
     }
   }
 
-  const lps = c.loadpoints;
-  if (lps !== undefined && lps !== null) {
-    const list = Array.isArray(lps) ? lps : [lps];
-    if (!list.length || list.some(lp => typeof lp !== "string" || !lp.trim())) {
-      throw new Error("evcc-card: loadpoints has to be a loadpoint name or a list of names");
-    }
+  const list = loadpointFilter(c);
+  if (list && (!list.length || list.some(lp => typeof lp !== "string" || !lp.trim()))) {
+    throw new Error("evcc-card: loadpoints has to be a loadpoint name or a list of names");
   }
 }
 
@@ -503,6 +510,14 @@ function locateEntity(hass, entityId) {
 // Older integration versions never create the sensor, so this stays false.
 function isLoadpointDisabled(hass, ents) {
   return !!ents.disabled_in_config && isOn(hass, ents.disabled_in_config);
+}
+
+// The discovered loadpoints narrowed by the card's `loadpoints` option; without
+// the option every discovered loadpoint is in.
+function selectLoadpoints(loadpoints, config) {
+  const filter = loadpointFilter(config);
+  if (!filter) return loadpoints;
+  return Object.fromEntries(Object.entries(loadpoints).filter(([lp]) => filter.includes(lp)));
 }
 
 // Split a loadpoints map into enabled/disabled buckets (config-disabled ones).
@@ -2661,15 +2676,7 @@ const priorityView = {
     if (!this._hass) return null;
     const prefix = this._getPrefix();
     const { loadpoints } = discoverEntities(this._hass, prefix);
-    const filterRaw = this._config.loadpoints;
-    const filter = filterRaw
-      ? (Array.isArray(filterRaw) ? filterRaw : [filterRaw])
-      : null;
-    const visible = filter && filter.length > 0
-      ? Object.fromEntries(
-          Object.entries(loadpoints).filter(([lp]) => filter.includes(lp))
-        )
-      : loadpoints;
+    const visible = selectLoadpoints(loadpoints, this._config);
     // Config-disabled loadpoints have no interactive entities - callers of
     // _currentVisible (plan/priority interactions) can never act on them.
     return partitionDisabledLoadpoints(this._hass, visible).enabled;
@@ -6447,11 +6454,10 @@ class EvccCard extends HTMLElement {
   // configured filter still yields a count there and everything else falls back
   // to one loadpoint rather than to zero.
   _sizedLoadpointCount() {
-    const raw    = this._config?.loadpoints;
-    const filter = raw ? (Array.isArray(raw) ? raw : [raw]) : null;
-    const found  = Object.keys(this._cachedEntities?.loadpoints || {});
-    const n = found.length
-      ? (filter ? found.filter(lp => filter.includes(lp)).length : found.length)
+    const filter = loadpointFilter(this._config);
+    const found  = this._cachedEntities?.loadpoints || {};
+    const n = Object.keys(found).length
+      ? Object.keys(selectLoadpoints(found, this._config)).length
       : (filter ? filter.length : 0);
     return Math.max(1, n);
   }
@@ -6591,21 +6597,12 @@ class EvccCard extends HTMLElement {
     }
     const { loadpoints, site, meters } = this._cachedEntities;
 
-    const filterRaw = this._config.loadpoints;
-    const filter = filterRaw
-      ? (Array.isArray(filterRaw) ? filterRaw : [filterRaw])
-      : null;
-    const visible = filter && filter.length > 0
-      ? Object.fromEntries(
-          Object.entries(loadpoints).filter(([lp]) => filter.includes(lp))
-        )
-      : loadpoints;
+    const visible = selectLoadpoints(loadpoints, this._config);
 
     // disabled_loadpoints: hide (default) | dim | show - how to treat
     // loadpoints that are disabled in the evcc config (ha-evcc 2026.8.8+).
-    const dlpOpt = ["hide", "dim", "show"].includes(this._config.disabled_loadpoints)
-      ? this._config.disabled_loadpoints
-      : "hide";
+    // setConfig() has already rejected anything outside DISABLED_LOADPOINT_MODES.
+    const dlpOpt = this._config.disabled_loadpoints || "hide";
     const { enabled: lpEnabled, disabled: lpDisabled } =
       partitionDisabledLoadpoints(this._hass, visible);
     // Interactive modes (plan/priority) can never work on a disabled

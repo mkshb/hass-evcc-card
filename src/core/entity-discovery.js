@@ -1,4 +1,4 @@
-import { FEATURES } from "./constants.js";
+import { FEATURES, loadpointFilter } from "./constants.js";
 import { isOn } from "../utils/state.js";
 
 // Longest suffix first: `limit_soc` has to win over `soc` for the same entity.
@@ -208,6 +208,14 @@ export function locateEntity(hass, entityId) {
 // Older integration versions never create the sensor, so this stays false.
 export function isLoadpointDisabled(hass, ents) {
   return !!ents.disabled_in_config && isOn(hass, ents.disabled_in_config);
+}
+
+// The discovered loadpoints narrowed by the card's `loadpoints` option; without
+// the option every discovered loadpoint is in.
+export function selectLoadpoints(loadpoints, config) {
+  const filter = loadpointFilter(config);
+  if (!filter) return loadpoints;
+  return Object.fromEntries(Object.entries(loadpoints).filter(([lp]) => filter.includes(lp)));
 }
 
 // Split a loadpoints map into enabled/disabled buckets (config-disabled ones).

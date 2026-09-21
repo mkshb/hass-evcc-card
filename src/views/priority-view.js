@@ -1,4 +1,4 @@
-import { discoverEntities, partitionDisabledLoadpoints } from "../core/entity-discovery.js";
+import { discoverEntities, selectLoadpoints, partitionDisabledLoadpoints } from "../core/entity-discovery.js";
 import { stateVal, attr } from "../utils/state.js";
 import { escHtml, escAttr } from "../utils/html.js";
 
@@ -226,15 +226,7 @@ export const priorityView = {
     if (!this._hass) return null;
     const prefix = this._getPrefix();
     const { loadpoints } = discoverEntities(this._hass, prefix);
-    const filterRaw = this._config.loadpoints;
-    const filter = filterRaw
-      ? (Array.isArray(filterRaw) ? filterRaw : [filterRaw])
-      : null;
-    const visible = filter && filter.length > 0
-      ? Object.fromEntries(
-          Object.entries(loadpoints).filter(([lp]) => filter.includes(lp))
-        )
-      : loadpoints;
+    const visible = selectLoadpoints(loadpoints, this._config);
     // Config-disabled loadpoints have no interactive entities - callers of
     // _currentVisible (plan/priority interactions) can never act on them.
     return partitionDisabledLoadpoints(this._hass, visible).enabled;

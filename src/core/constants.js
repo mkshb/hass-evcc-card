@@ -198,6 +198,16 @@ export const CARD_SIZE_OPTIONS        = ["small", "medium", "large"];
 export const DISABLED_LOADPOINT_MODES = ["hide", "dim", "show"];
 export const STATS_PERIOD_OPTIONS     = Object.keys(STATS_PERIOD_ALIASES);
 
+// The `loadpoints` option as a list, or null when it is not set. A single name
+// is shorthand for a list of one. Every reader of the option goes through here,
+// so the shorthand and "not set" mean the same thing everywhere; a value that
+// is set but empty never gets past validateCardConfig().
+export function loadpointFilter(config) {
+  const raw = config?.loadpoints;
+  if (raw === undefined || raw === null) return null;
+  return Array.isArray(raw) ? raw : [raw];
+}
+
 // Home Assistant expects setConfig() to throw on a configuration the card cannot
 // render: it catches the error and shows its own error card with the message, so
 // a typo in the YAML is visible instead of quietly rendering something else. The
@@ -223,12 +233,9 @@ export function validateCardConfig(config) {
     }
   }
 
-  const lps = c.loadpoints;
-  if (lps !== undefined && lps !== null) {
-    const list = Array.isArray(lps) ? lps : [lps];
-    if (!list.length || list.some(lp => typeof lp !== "string" || !lp.trim())) {
-      throw new Error("evcc-card: loadpoints has to be a loadpoint name or a list of names");
-    }
+  const list = loadpointFilter(c);
+  if (list && (!list.length || list.some(lp => typeof lp !== "string" || !lp.trim()))) {
+    throw new Error("evcc-card: loadpoints has to be a loadpoint name or a list of names");
   }
 }
 
