@@ -1,5 +1,5 @@
 import { detectIntegration, discoverEntities, partitionDisabledLoadpoints } from "./core/entity-discovery.js";
-import { RENDER_ATTRS, normalizeStatsPeriod, legacyStatsPeriod } from "./core/constants.js";
+import { CARD_SIZES, RENDER_ATTRS, normalizeStatsPeriod, legacyStatsPeriod } from "./core/constants.js";
 import { stateVal, unitStr } from "./utils/state.js";
 import { escHtml } from "./utils/html.js";
 import { socFillGradient } from "./utils/format.js";
@@ -237,6 +237,32 @@ export class EvccCard extends HTMLElement {
       }
       return part;
     }).join("|");
+  }
+
+  // Home Assistant sizes the masonry columns from this, one unit being 50 px.
+  // Without it the card counts as a single 50 px row, which is wrong for every
+  // mode here. It must answer before the first render too, so it may not depend
+  // on hass or on discovered entities.
+  getCardSize() {
+    const mode = this._config?.mode || "loadpoint";
+    const rows = CARD_SIZES[mode] ?? CARD_SIZES.loadpoint;
+    return mode === "loadpoint" || mode === "compact"
+      ? rows * this._sizedLoadpointCount()
+      : rows;
+  }
+
+  // How many loadpoints the card would draw: the discovered ones narrowed by the
+  // `loadpoints` filter. Nothing is discovered before the first render, so a
+  // configured filter still yields a count there and everything else falls back
+  // to one loadpoint rather than to zero.
+  _sizedLoadpointCount() {
+    const raw    = this._config?.loadpoints;
+    const filter = raw ? (Array.isArray(raw) ? raw : [raw]) : null;
+    const found  = Object.keys(this._cachedEntities?.loadpoints || {});
+    const n = found.length
+      ? (filter ? found.filter(lp => filter.includes(lp)).length : found.length)
+      : (filter ? filter.length : 0);
+    return Math.max(1, n);
   }
 
   static getConfigElement() {

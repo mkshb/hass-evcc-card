@@ -160,6 +160,26 @@ export function legacyStatsPeriod(value, fallback = "total") {
     : STATS_PERIOD_TO_LEGACY[normalizeStatsPeriod(value, fallback)];
 }
 
+// Rendered height per mode in Home Assistant's masonry units (one unit is 50 px),
+// taken from the generated README screenshots at 470 px and rounded up. The card
+// reports this through getCardSize(); `loadpoint` and `compact` count per
+// loadpoint, every other mode is the whole card. `debug` is a YAML dump of
+// unbounded length, so its value is a floor, not a measurement.
+export const CARD_SIZES = {
+  loadpoint:  16,
+  compact:     6,
+  plan:       10,
+  repeatplan:  5,
+  priority:    5,
+  site:       12,
+  flow:       14,
+  grid:        8,
+  site2:       8,   // legacy alias of grid
+  stats:      10,
+  battery:     7,
+  debug:      20,
+};
+
 // Entity attributes the card reads while rendering. The render key is built from
 // these next to the state, because HA hands out a new state object for a pure
 // attribute change too: a select whose options change, a number whose min/max

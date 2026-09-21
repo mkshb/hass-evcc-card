@@ -1262,6 +1262,51 @@ def flow_labels(browser, port, t):
         page.close()
 
 
+def card_api(browser, port, t):
+    """The methods Home Assistant expects on a custom card.
+
+    getCardSize() feeds the masonry layout (one unit is 50 px). Without it HA
+    assumes a single row for everything from the compact line to a debug dump.
+    The numbers live in CARD_SIZES; the checks pin the contract, not the values:
+    never 0, never undefined, larger for a taller mode, and scaling with the
+    number of loadpoints where the card repeats a block per loadpoint.
+    """
+    t.group("cardapi - getCardSize")
+    page = new_page(browser, 480, 900)
+    errors = open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+    sizes = page.evaluate("""(() => {
+      const out = {};
+      for (const mode of ["loadpoint","compact","plan","repeatplan","priority","site","flow","grid","stats","battery","debug"]) {
+        window.__card.setConfig({ mode, loadpoints: ["openwb"] });
+        out[mode] = window.__card.getCardSize();
+      }
+      return out;
+    })()""")
+    bad = {m: v for m, v in sizes.items() if not isinstance(v, (int, float)) or v < 1}
+    t.check(not bad, "every mode reports a usable size", f"unbrauchbar: {bad}" if bad else json.dumps(sizes))
+    t.check(sizes["loadpoint"] > sizes["compact"], "the full loadpoint is taller than the compact one",
+            f'loadpoint={sizes["loadpoint"]} compact={sizes["compact"]}')
+    t.check(sizes["debug"] > sizes["priority"], "a debug dump is taller than the priority list",
+            f'debug={sizes["debug"]} priority={sizes["priority"]}')
+
+    scaled = page.evaluate("""(() => {
+      const one = (lps) => { window.__card.setConfig({ mode: "loadpoint", loadpoints: lps }); return window.__card.getCardSize(); };
+      return { one: one(["openwb"]), two: one(["openwb", "wp"]), all: (window.__card.setConfig({ mode: "loadpoint" }), window.__card.getCardSize()) };
+    })()""")
+    t.check(scaled["two"] == 2 * scaled["one"], "two loadpoints report twice the size of one", json.dumps(scaled))
+    t.check(scaled["all"] >= scaled["two"], "without a filter every discovered loadpoint counts", json.dumps(scaled))
+    t.check(not errors, "no console errors while sizing", "; ".join(errors)[:200])
+
+    # HA may ask before the card ever saw hass; a 0 or undefined there breaks the layout.
+    fresh = page.evaluate("""(() => {
+      const c = document.createElement("evcc-card");
+      c.setConfig({ mode: "flow" });
+      return c.getCardSize();
+    })()""")
+    t.check(isinstance(fresh, (int, float)) and fresh >= 1, "a card without hass already reports a size", f"{fresh!r}")
+    page.close()
+
+
 def widths(browser, port, t):
     """Narrow and wide cards: the input panel stays inside the card, no console errors."""
     t.group("widths - responsive layout")
@@ -1366,7 +1411,7 @@ def unit(browser, port, t):
 
 GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
-          "flow": flow_labels, "widths": widths}
+          "flow": flow_labels, "cardapi": card_api, "widths": widths}
 
 
 def main():
