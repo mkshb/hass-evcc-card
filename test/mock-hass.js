@@ -115,6 +115,12 @@ export async function createMockHass({ language = "de", ws = true, set = {}, att
     locale: { language },
     config: { version: "2026.9.2-mock", time_zone: "Europe/Berlin" },
     states,
+    // The registry as the HA frontend mirrors it into hass.entities: one entry
+    // per entity with its platform, disabled entries left out. The card picker
+    // reads the ha-evcc prefixes from here, synchronously.
+    entities: Object.fromEntries(registry.filter(e => !e.disabled_by).map(e => [e.entity_id, {
+      entity_id: e.entity_id, platform: e.platform, name: e.original_name,
+    }])),
     wsCalls: [],
     serviceCalls: [],
     // HA frontend translation lookup; the card only uses it for optional

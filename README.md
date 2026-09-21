@@ -172,6 +172,8 @@ Then restart Home Assistant or reload the Lovelace resources.
 
 Add the card to any Lovelace dashboard and use the **visual editor** to configure it - all options are available interactively, and the editor shows only the options relevant to the selected mode.
 
+Adding an evcc entity to a dashboard offers the card straight away: the picker suggests the **Loadpoint** and **Compact** views for a charge point entity and the **Site** and **Flow** views for a site, meter or vehicle entity, with the charge point already filled in.
+
 ### Configuration options
 
 | Option | Type | Default | Description |

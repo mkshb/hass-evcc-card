@@ -17,6 +17,7 @@
  */
 
 import { EVCC_CARD_VERSION } from "./core/constants.js";
+import { locateEntity } from "./core/entity-discovery.js";
 import { EvccCard } from "./evcc-card.js";
 import { EvccCardEditor } from "./evcc-card-editor.js";
 
@@ -31,6 +32,29 @@ console.info(
   "background:transparent"
 );
 
+// The picker offers matching cards when an entity is added to a dashboard. A
+// loadpoint entity gets the two loadpoint views, a site, meter or vehicle
+// entity the two site views, anything else is not ours and returns null. The
+// labels stay English: the translations are fetched at runtime and the picker
+// asks synchronously.
+function entitySuggestion(hass, entityId) {
+  const hit = locateEntity(hass, entityId);
+  if (!hit) return null;
+  // Only a second installation needs its prefix written into the config, the
+  // default one is what the card detects by itself.
+  const base = hit.prefix === "evcc_" ? {} : { prefix: hit.prefix };
+  const card = (mode, extra) => ({ type: "custom:evcc-card", mode, ...extra, ...base });
+  return hit.loadpoint
+    ? [
+        { label: "Loadpoint", config: card("loadpoint", { loadpoints: [hit.loadpoint] }) },
+        { label: "Compact",   config: card("compact",   { loadpoints: [hit.loadpoint] }) },
+      ]
+    : [
+        { label: "Site", config: card("site") },
+        { label: "Flow", config: card("flow") },
+      ];
+}
+
 // What the Lovelace card picker shows. `preview: true` makes it render a live
 // card from getStubConfig() instead of listing the name only; that render also
 // happens on an instance without ha-evcc, where the card finds no entity and
@@ -39,10 +63,11 @@ console.info(
 // nothing and makes the installed version visible to anything reading the entry.
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type:             "evcc-card",
-  name:             "EVCC Card",
-  description:      "Dashboard card for ha-evcc integration.",
-  preview:          true,
-  documentationURL: "https://github.com/mkshb/hass-evcc-card",
-  version:          EVCC_CARD_VERSION,
+  type:                "evcc-card",
+  name:                "EVCC Card",
+  description:         "Dashboard card for ha-evcc integration.",
+  preview:             true,
+  documentationURL:    "https://github.com/mkshb/hass-evcc-card",
+  version:             EVCC_CARD_VERSION,
+  getEntitySuggestion: entitySuggestion,
 }); 

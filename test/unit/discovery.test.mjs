@@ -3,7 +3,7 @@
 // one, so this exercises the grouping directly, with a hand-built registry.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { detectIntegration, detectPrefix, featureKeyOf } from "../../src/core/entity-discovery.js";
+import { detectIntegration, detectPrefix, featureKeyOf, locateEntity, installedPrefixes } from "../../src/core/entity-discovery.js";
 
 // A site entity carries the prefix (pv_power is a site feature, no loadpoint).
 const entry = (prefix, entryId) => [
@@ -112,4 +112,70 @@ test("a custom prefix is honoured and a foreign entity yields null", () => {
   assert.equal(featureKeyOf("number.myevcc_openwb_limit_soc"), null, "wrong prefix must not match");
   assert.equal(featureKeyOf("number.other_integration_limit_soc"), null);
   assert.equal(featureKeyOf("evcc_openwb_limit_soc"), null, "not an entity id");
+});
+
+// --- locateEntity ------------------------------------------------------------
+// The card picker asks which installation and loadpoint an entity belongs to,
+// synchronously, so the prefixes come from the hass.entities registry mirror.
+
+// states + entities for one installation: a site entity, a loadpoint and an
+// entity discovery files under meters (a name in front of a site suffix, no
+// charge_power next to it), plus a foreign entity with an evcc-looking id.
+const installation = (prefix) => [
+  `sensor.${prefix}pv_power`,
+  `sensor.${prefix}openwb_charge_power`,
+  `select.${prefix}openwb_mode`,
+  `sensor.${prefix}garage_battery_soc`,
+];
+const hassOf = (...prefixes) => {
+  const hass = { states: {}, entities: {} };
+  for (const prefix of prefixes) {
+    for (const id of installation(prefix)) {
+      hass.states[id]   = { entity_id: id, state: "1" };
+      hass.entities[id] = { entity_id: id, platform: "evcc_intg" };
+    }
+  }
+  hass.states["sensor.evcc_openwb_charge_power_foreign"]   = { entity_id: "x", state: "1" };
+  hass.entities["sensor.evcc_openwb_charge_power_foreign"] = { entity_id: "x", platform: "other" };
+  return hass;
+};
+
+test("installedPrefixes reads every installation off the registry mirror", () => {
+  assert.deepEqual(installedPrefixes(hassOf("evcc_", "my_evcc_")).sort(), ["evcc_", "my_evcc_"]);
+  assert.deepEqual(installedPrefixes({ states: {} }), [], "no registry mirror, no prefixes");
+});
+
+test("a named meter ending in a site suffix does not pass as an installation", () => {
+  // sensor.evcc_garage_battery_soc reads as prefix "evcc_garage_" plus battery_soc,
+  // but no core site sensor sits under that prefix.
+  assert.deepEqual(installedPrefixes(hassOf("evcc_")), ["evcc_"]);
+});
+
+test("a loadpoint entity yields its prefix and loadpoint, a site entity no loadpoint", () => {
+  const hass = hassOf("evcc_");
+  assert.deepEqual(locateEntity(hass, "select.evcc_openwb_mode"), { prefix: "evcc_", loadpoint: "openwb" });
+  assert.deepEqual(locateEntity(hass, "sensor.evcc_pv_power"),    { prefix: "evcc_", loadpoint: "" });
+});
+
+test("a prefix with an underscore of its own is not cut short", () => {
+  const hass = hassOf("my_evcc_");
+  assert.deepEqual(locateEntity(hass, "sensor.my_evcc_openwb_charge_power"), { prefix: "my_evcc_", loadpoint: "openwb" });
+  assert.deepEqual(locateEntity(hass, "sensor.my_evcc_pv_power"),            { prefix: "my_evcc_", loadpoint: "" });
+});
+
+test("with two installations each entity lands in its own", () => {
+  const hass = hassOf("evcc_", "my_evcc_");
+  assert.equal(locateEntity(hass, "select.evcc_openwb_mode").prefix,    "evcc_");
+  assert.equal(locateEntity(hass, "select.my_evcc_openwb_mode").prefix, "my_evcc_");
+});
+
+test("an entity filed under meters is site data without a loadpoint", () => {
+  assert.deepEqual(locateEntity(hassOf("evcc_"), "sensor.evcc_garage_battery_soc"), { prefix: "evcc_", loadpoint: "" });
+});
+
+test("a foreign entity and an unknown id yield null", () => {
+  const hass = hassOf("evcc_");
+  assert.equal(locateEntity(hass, "sensor.evcc_openwb_charge_power_foreign"), null, "platform is not evcc_intg");
+  assert.equal(locateEntity(hass, "sensor.evcc_openwb_not_a_feature"), null, "not in the registry");
+  assert.equal(locateEntity({ states: hass.states }, "select.evcc_openwb_mode"), null, "no registry mirror");
 });

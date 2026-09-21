@@ -1326,6 +1326,71 @@ def card_api(browser, port, t):
             "; ".join(stub_errors)[:200] or f"ha-card={drawn}")
     stub.close()
 
+    t.group("cardapi - getEntitySuggestion")
+    sug = page.evaluate("""(() => {
+      const fn = (window.customCards || []).find(c => c.type === "evcc-card")?.getEntitySuggestion;
+      if (!fn) return { missing: true };
+      const hass = window.__hass;
+      return {
+        loadpoint: fn(hass, "sensor.evcc_openwb_charge_power"),
+        site:      fn(hass, "sensor.evcc_grid_power"),
+        foreign:   fn(hass, "sensor.some_other_integration_power"),
+        unknown:   fn(hass, "sensor.evcc_openwb_not_a_feature"),
+        meter:     fn(hass, "switch.evcc_ex30_repeating_plan_2"),
+      };
+    })()""")
+    t.check(not sug.get("missing"), "the picker entry carries getEntitySuggestion")
+    if not sug.get("missing"):
+        lp = sug["loadpoint"] or []
+        ok_lp = (isinstance(lp, list) and len(lp) >= 1
+                 and all(s["config"]["type"] == "custom:evcc-card" and s.get("label") for s in lp)
+                 and lp[0]["config"]["mode"] == "loadpoint"
+                 and lp[0]["config"]["loadpoints"] == ["openwb"])
+        t.check(ok_lp, "a loadpoint entity suggests the card with that loadpoint filled in", json.dumps(lp)[:250])
+        site = sug["site"] or []
+        ok_site = (isinstance(site, list) and len(site) >= 1
+                   and {s["config"]["mode"] for s in site} == {"site", "flow"}
+                   and all("loadpoints" not in s["config"] for s in site))
+        t.check(ok_site, "a site entity suggests the site and flow views", json.dumps(site)[:250])
+        t.check(sug["foreign"] is None, "an entity of another integration is not ours", json.dumps(sug["foreign"]))
+        t.check(sug["unknown"] is None, "an evcc-looking entity that is no known feature is refused",
+                json.dumps(sug["unknown"]))
+        # Vehicle entities and named meters have no loadpoint; discovery files
+        # them under meters, and they are site data for the picker.
+        meter = sug["meter"] or []
+        ok_meter = (isinstance(meter, list) and {s["config"]["mode"] for s in meter} == {"site", "flow"}
+                    and all("loadpoints" not in s["config"] for s in meter))
+        t.check(ok_meter, "a vehicle entity, filed under meters, suggests the site views", json.dumps(meter)[:250])
+
+    # A second installation with its own prefix has to end up in the config.
+    second = new_page(browser, 480, 900)
+    open_card(second, port, config={"mode": "loadpoint"}, second={"prefix": "evcc2_"})
+    pref = second.evaluate("""(() => {
+      const fn = (window.customCards || []).find(c => c.type === "evcc-card")?.getEntitySuggestion;
+      const hit = fn(window.__hass, "sensor.evcc2_openwb_charge_power");
+      return hit ? hit[0].config : null;
+    })()""")
+    t.check(pref and pref.get("prefix") == "evcc2_", "a second installation carries its prefix into the config",
+            json.dumps(pref))
+    second.close()
+
+    # ha-evcc slugifies the config entry title into the prefix, so a two-word
+    # title gives a prefix with an underscore of its own. Cut from the id alone,
+    # "my_evcc_openwb_charge_power" would read as prefix "my_" plus loadpoint
+    # "evcc_openwb"; the installed prefixes from hass.entities settle it.
+    second = new_page(browser, 480, 900)
+    open_card(second, port, config={"mode": "loadpoint"}, second={"prefix": "my_evcc_"})
+    multi = second.evaluate("""(() => {
+      const fn = (window.customCards || []).find(c => c.type === "evcc-card")?.getEntitySuggestion;
+      const lp   = fn(window.__hass, "sensor.my_evcc_openwb_charge_power");
+      const site = fn(window.__hass, "sensor.my_evcc_grid_power");
+      return { lp: lp ? lp[0].config : null, site: site ? site[0].config : null };
+    })()""")
+    ok_multi = (multi["lp"] and multi["lp"].get("prefix") == "my_evcc_" and multi["lp"].get("loadpoints") == ["openwb"]
+                and multi["site"] and multi["site"].get("prefix") == "my_evcc_" and "loadpoints" not in multi["site"])
+    t.check(ok_multi, "a prefix with an underscore of its own is not cut short", json.dumps(multi))
+    second.close()
+
     t.group("cardapi - getGridOptions")
     grid = page.evaluate("""(() => {
       const out = {};
