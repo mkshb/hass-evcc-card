@@ -13,6 +13,17 @@ export const listeners = {
       });
     });
 
+    // The site and flow views fold their detail table on a click on the flow
+    // graphic. A click on a node inside it opens more-info instead: that handler
+    // above stops propagation, and the check here keeps the two apart even when
+    // the click lands on a node that has no more-info listener attached.
+    this.shadowRoot.querySelectorAll('[data-action="toggle-site"]').forEach(el => {
+      el.addEventListener("click", (e) => {
+        if (e.target.closest("[data-more-info]")) return;
+        this._toggleSite();
+      });
+    });
+
     this.shadowRoot.querySelectorAll('[data-action="open-debug"]').forEach(btn => {
       btn.addEventListener("click", () => {
         this._origConfig = { ...this._config };

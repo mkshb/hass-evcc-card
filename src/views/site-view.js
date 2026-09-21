@@ -418,8 +418,7 @@ export const siteView = {
         <div class="lp-header">
           <span class="lp-name">${escHtml(this._config.title || this._t("overview"))}</span>
         </div>
-        <div class="flow-wrap-clickable" role="button" tabindex="0"
-             onclick="window.__evccCards.get('${this._cardId}')._toggleSite()"
+        <div class="flow-wrap-clickable" role="button" tabindex="0" data-action="toggle-site"
              title="${siteExpanded ? this._t("siteCollapse") : this._t("siteExpand")}">
           ${flowBar}
         </div>

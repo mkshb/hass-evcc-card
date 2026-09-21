@@ -418,22 +418,18 @@ def lifecycle(browser, port, t):
         page.evaluate("""() => {
           const c = window.__card, host = c.parentNode;
           host.removeChild(c);
-          window.__whileDetached = { cards: window.__evccCards.size, interval: !!c._countdownInterval };
+          window.__whileDetached = { interval: !!c._countdownInterval };
           host.appendChild(c);
         }""")
         page.wait_for_timeout(300)
         return page.evaluate("window.__whileDetached")
 
-    card_id = page.evaluate("window.__card._cardId")
     t.check(plan_reset_works(), "mounted: evcc-plan-reset clears the local plan state")
-    t.check(page.evaluate(f"window.__evccCards.has('{card_id}')"), "mounted: the card is in the registry")
 
     detached = remount()
-    t.check(detached["cards"] == 0, "detached: the registry entry is released, no instance leaks", json.dumps(detached))
     t.check(detached["interval"] is False, "detached: the countdown interval is stopped", json.dumps(detached))
 
     t.check(plan_reset_works(), "re-mounted: evcc-plan-reset is handled again")
-    t.check(page.evaluate(f"window.__evccCards.get('{card_id}') === window.__card"), "re-mounted: the registry entry is restored")
     t.check(page.evaluate("!!window.__card._countdownInterval"), "re-mounted: the countdown interval runs again")
 
     # capabilities and entry_id survive on purpose: re-probing them on every
@@ -445,46 +441,63 @@ def lifecycle(browser, port, t):
             "re-mounting costs no extra backend call", f"{n_before} capabilities call(s) before and after")
 
     for _ in range(3): remount()
-    t.check(page.evaluate("window.__evccCards.size") == 1, "repeated re-mounts keep exactly one registry entry",
-            str(page.evaluate("window.__evccCards.size")))
+    t.check(page.evaluate("!!window.__card._countdownInterval") and not errors, "repeated re-mounts leave one live card behind",
+            "; ".join(errors)[:200])
 
     # A hass update arms the 300 ms render timer; detaching inside that window
-    # must cancel it (a render on a detached element would re-register the card
-    # after the delete hook ran), and the re-mount must pick the update up again.
+    # must cancel it (a render on a detached element would work against a DOM
+    # nobody sees), and the re-mount must pick the update up again.
     page.evaluate("""() => {
       const c = window.__card, host = c.parentNode, id = 'sensor.evcc_openwb_charge_power';
       const st = { ...window.__hass.states, [id]: { ...window.__hass.states[id], state: '5151' } };
       window.__hass.states = st; c.hass = { ...window.__hass, states: st };
       window.__armed = !!c._renderTimer;
       host.removeChild(c);
-      window.__afterDetach = { timer: !!c._renderTimer, cards: window.__evccCards.size };
+      window.__afterDetach = { timer: !!c._renderTimer };
     }""")
     page.wait_for_timeout(500)
     t.check(page.evaluate("window.__armed") and page.evaluate("window.__afterDetach.timer") is False,
             "detach cancels a pending render", json.dumps(page.evaluate("window.__afterDetach")))
-    t.check(page.evaluate("window.__evccCards.size") == 0, "no render ran on the detached element (registry stays empty)",
-            str(page.evaluate("window.__evccCards.size")))
+    t.check("5151" not in (page.evaluate("window.__card._lastRenderKey") or ""), "no render ran on the detached element",
+            str(page.evaluate("window.__card._lastRenderKey"))[:80])
     page.evaluate("() => document.getElementById('host').appendChild(window.__card)")
     page.wait_for_timeout(500)
     t.check("5151" in (page.evaluate("window.__card._lastRenderKey") or ""), "re-mount renders the update that was pending at detach")
     t.check(not errors, "no console errors across the re-mounts", "; ".join(errors)[:200])
     page.close()
 
-    # The site view wires its expand toggle through the registry with an inline
-    # onclick, so a lost entry breaks it in a way no other check would notice.
-    page = new_page(browser, 480, 1400)
-    errors = open_card(page, port, mode="site")
+    # The site and flow views fold their detail table on a click on the flow
+    # graphic. That used to be an inline onclick through a global registry, which
+    # a strict Content-Security-Policy blocks; now it is a data-action in the
+    # delegation, and the markup must carry no inline handler at all.
     shown = lambda: page.evaluate("""(() => { const el = window.__card.shadowRoot.querySelector('.site-table');
                                              return el ? getComputedStyle(el).display !== 'none' : null; })()""")
+    for mode, target in (("site", ".flow-wrap-clickable"), ("flow", ".sankey-wrap")):
+        page = new_page(browser, 480, 1400)
+        errors = open_card(page, port, mode=mode)
+        inline = page.evaluate("window.__card.shadowRoot.querySelectorAll('[onclick]').length")
+        t.check(inline == 0, f"{mode}: no inline handler in the markup", f"{inline} element(s) with onclick")
+        before = shown()
+        page.locator(in_card(target)).click(); page.wait_for_timeout(300)
+        t.check(before is not None and shown() != before, f"{mode}: the toggle folds the table while mounted", f"{before} -> {shown()}")
+        page.evaluate("""() => { const c = window.__card, host = c.parentNode; host.removeChild(c); host.appendChild(c); }""")
+        page.wait_for_timeout(300)
+        before = shown()
+        page.locator(in_card(target)).click(); page.wait_for_timeout(300)
+        t.check(shown() != before, f"{mode}: the toggle still works after a re-mount", f"{before} -> {shown()}")
+        t.check(not errors, f"{mode}: no console errors around the toggle", "; ".join(errors)[:200])
+        page.close()
+
+    # In the flow view a click on a node opens more-info and must not fold the
+    # table; the delegation keeps the two apart.
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, mode="flow")
+    page.evaluate("() => { window.__moreInfo = []; window.__card.addEventListener('hass-more-info', e => window.__moreInfo.push(e.detail.entityId)); }")
     before = shown()
-    page.locator(in_card(".flow-wrap-clickable")).click(); page.wait_for_timeout(300)
-    t.check(shown() != before, "site toggle works while mounted", f"{before} -> {shown()}")
-    page.evaluate("""() => { const c = window.__card, host = c.parentNode; host.removeChild(c); host.appendChild(c); }""")
-    page.wait_for_timeout(300)
-    before = shown()
-    page.locator(in_card(".flow-wrap-clickable")).click(); page.wait_for_timeout(300)
-    t.check(shown() != before, "site toggle still works after a re-mount", f"{before} -> {shown()}")
-    t.check(not errors, "no console errors from the inline handler after a re-mount", "; ".join(errors)[:200])
+    page.locator(in_card(".sankey-wrap [data-more-info]")).first.click(); page.wait_for_timeout(300)
+    t.check(shown() == before and len(page.evaluate("window.__moreInfo")) == 1,
+            "flow: a click on a node opens more-info and leaves the table alone",
+            f"table {before} -> {shown()}, more-info={page.evaluate('window.__moreInfo')}")
     page.close()
 
 

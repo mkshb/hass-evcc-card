@@ -3106,8 +3106,7 @@ const siteView = {
         <div class="lp-header">
           <span class="lp-name">${escHtml(this._config.title || this._t("overview"))}</span>
         </div>
-        <div class="flow-wrap-clickable" role="button" tabindex="0"
-             onclick="window.__evccCards.get('${this._cardId}')._toggleSite()"
+        <div class="flow-wrap-clickable" role="button" tabindex="0" data-action="toggle-site"
              title="${siteExpanded ? this._t("siteCollapse") : this._t("siteExpand")}">
           ${flowBar}
         </div>
@@ -3292,8 +3291,6 @@ const flowView = {
     this._spreadSankeyLabels(srcNodes);
     this._spreadSankeyLabels(dstNodes);
 
-    const sankeyId = `sankey-${this._cardId}`;
-
     // --- Flow paths ---
     const srcRightOffsets = srcNodes.map(() => 0);
     const dstLeftOffsets  = dstNodes.map(() => 0);
@@ -3388,8 +3385,7 @@ const flowView = {
       : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z";
 
     const sankeySvg = `
-      <div class="sankey-wrap" role="button" tabindex="0" style="cursor:pointer"
-           onclick="if(!event.target.closest('[data-more-info]'))window.__evccCards.get('${this._cardId}')._toggleSite()">
+      <div class="sankey-wrap" role="button" tabindex="0" style="cursor:pointer" data-action="toggle-site">
         <svg viewBox="0 0 ${SVG_W} ${SVG_H}" width="100%" preserveAspectRatio="xMidYMid meet"
              style="display:block;overflow:visible;font-family:inherit">
           ${flowPaths.join("")}
@@ -5008,6 +5004,17 @@ const listeners = {
       });
     });
 
+    // The site and flow views fold their detail table on a click on the flow
+    // graphic. A click on a node inside it opens more-info instead: that handler
+    // above stops propagation, and the check here keeps the two apart even when
+    // the click lands on a node that has no more-info listener attached.
+    this.shadowRoot.querySelectorAll('[data-action="toggle-site"]').forEach(el => {
+      el.addEventListener("click", (e) => {
+        if (e.target.closest("[data-more-info]")) return;
+        this._toggleSite();
+      });
+    });
+
     this.shadowRoot.querySelectorAll('[data-action="open-debug"]').forEach(btn => {
       btn.addEventListener("click", () => {
         this._origConfig = { ...this._config };
@@ -6273,13 +6280,6 @@ class EvccCard extends HTMLElement {
   // rebuilt here, or the re-mounted card is only half alive.
   connectedCallback() {
     window.addEventListener("evcc-plan-reset", this._onPlanReset);
-    // The inline handlers of the site and flow views reach the card through this
-    // map, so its entry has to come back with the element. On the very first
-    // mount there is no id yet; _render creates it.
-    if (this._cardId) {
-      window.__evccCards = window.__evccCards || new Map();
-      window.__evccCards.set(this._cardId, this);
-    }
     if (!this._countdownInterval) {
       this._countdownInterval = setInterval(() => this._tickCountdowns(), 1000);
     }
@@ -6290,14 +6290,12 @@ class EvccCard extends HTMLElement {
 
   disconnectedCallback() {
     window.removeEventListener("evcc-plan-reset", this._onPlanReset);
-    if (this._cardId) window.__evccCards?.delete(this._cardId);
     if (this._countdownInterval) {
       clearInterval(this._countdownInterval);
       this._countdownInterval = null;
     }
-    // Nothing may render on a detached element: a first render would register
-    // the card in window.__evccCards after the delete above, and the deferred
-    // work would run against a DOM nobody sees.
+    // Nothing may render on a detached element: the deferred work would run
+    // against a DOM nobody sees, and the re-mount renders from the state held.
     if (this._renderTimer)   { clearTimeout(this._renderTimer);   this._renderTimer   = null; }
     if (this._wsRenderTimer) { clearTimeout(this._wsRenderTimer); this._wsRenderTimer = null; }
     for (const k of Object.keys(this._planPreviewDebounce)) clearTimeout(this._planPreviewDebounce[k]);
@@ -6572,12 +6570,6 @@ class EvccCard extends HTMLElement {
     this._sliderEditing   = false;
     this._sliderEditPanel = null;
     this._dropSliderEditOutside();
-    if (!this._cardId) {
-      this._cardId = Math.random().toString(36).slice(2);
-      window.__evccCards = window.__evccCards || new Map();
-      window.__evccCards.set(this._cardId, this);
-    }
-
     if (!this._translationsReady) {
       if (!this.shadowRoot.firstChild) {
         this.shadowRoot.innerHTML = `
@@ -7153,7 +7145,6 @@ class EvccCardEditor extends HTMLElement {
 
 customElements.define("evcc-card-editor", EvccCardEditor);
 customElements.define("evcc-card", EvccCard);
-window.__evccCards = window.__evccCards || new Map();
 
 console.info(
   `%c evcc-card %c ${EVCC_CARD_VERSION} %c`,

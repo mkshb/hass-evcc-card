@@ -23,7 +23,6 @@ import { EvccCardEditor } from "./evcc-card-editor.js";
 
 customElements.define("evcc-card-editor", EvccCardEditor);
 customElements.define("evcc-card", EvccCard);
-window.__evccCards = window.__evccCards || new Map();
 
 console.info(
   `%c evcc-card %c ${EVCC_CARD_VERSION} %c`,

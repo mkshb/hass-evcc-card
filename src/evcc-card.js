@@ -89,13 +89,6 @@ export class EvccCard extends HTMLElement {
   // rebuilt here, or the re-mounted card is only half alive.
   connectedCallback() {
     window.addEventListener("evcc-plan-reset", this._onPlanReset);
-    // The inline handlers of the site and flow views reach the card through this
-    // map, so its entry has to come back with the element. On the very first
-    // mount there is no id yet; _render creates it.
-    if (this._cardId) {
-      window.__evccCards = window.__evccCards || new Map();
-      window.__evccCards.set(this._cardId, this);
-    }
     if (!this._countdownInterval) {
       this._countdownInterval = setInterval(() => this._tickCountdowns(), 1000);
     }
@@ -106,14 +99,12 @@ export class EvccCard extends HTMLElement {
 
   disconnectedCallback() {
     window.removeEventListener("evcc-plan-reset", this._onPlanReset);
-    if (this._cardId) window.__evccCards?.delete(this._cardId);
     if (this._countdownInterval) {
       clearInterval(this._countdownInterval);
       this._countdownInterval = null;
     }
-    // Nothing may render on a detached element: a first render would register
-    // the card in window.__evccCards after the delete above, and the deferred
-    // work would run against a DOM nobody sees.
+    // Nothing may render on a detached element: the deferred work would run
+    // against a DOM nobody sees, and the re-mount renders from the state held.
     if (this._renderTimer)   { clearTimeout(this._renderTimer);   this._renderTimer   = null; }
     if (this._wsRenderTimer) { clearTimeout(this._wsRenderTimer); this._wsRenderTimer = null; }
     for (const k of Object.keys(this._planPreviewDebounce)) clearTimeout(this._planPreviewDebounce[k]);
@@ -388,12 +379,6 @@ export class EvccCard extends HTMLElement {
     this._sliderEditing   = false;
     this._sliderEditPanel = null;
     this._dropSliderEditOutside();
-    if (!this._cardId) {
-      this._cardId = Math.random().toString(36).slice(2);
-      window.__evccCards = window.__evccCards || new Map();
-      window.__evccCards.set(this._cardId, this);
-    }
-
     if (!this._translationsReady) {
       if (!this.shadowRoot.firstChild) {
         this.shadowRoot.innerHTML = `
