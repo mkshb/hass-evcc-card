@@ -31,11 +31,18 @@ console.info(
   "background:transparent"
 );
 
+// What the Lovelace card picker shows. `preview: true` makes it render a live
+// card from getStubConfig() instead of listing the name only; that render also
+// happens on an instance without ha-evcc, where the card finds no entity and
+// draws its empty state, which the `cardapi` test group holds to.
+// `version` is not part of the documented shape. It stays because it costs
+// nothing and makes the installed version visible to anything reading the entry.
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type:        "evcc-card",
-  name:        "EVCC Card",
-  description: "Dashboard card for ha-evcc integration.",
-  preview:     false,
-  version:     EVCC_CARD_VERSION,
+  type:             "evcc-card",
+  name:             "EVCC Card",
+  description:      "Dashboard card for ha-evcc integration.",
+  preview:          true,
+  documentationURL: "https://github.com/mkshb/hass-evcc-card",
+  version:          EVCC_CARD_VERSION,
 }); 

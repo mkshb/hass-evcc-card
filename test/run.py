@@ -1307,6 +1307,25 @@ def card_api(browser, port, t):
             "a card without hass already reports a size", json.dumps(fresh["size"]))
     t.check(fresh["grid"]["rows"] == fresh["size"] and fresh["grid"]["columns"] >= 1,
             "and usable grid options", json.dumps(fresh["grid"]))
+    t.group("cardapi - card picker registration")
+    entry = page.evaluate("""(() => (window.customCards || []).find(c => c.type === "evcc-card") || null)()""")
+    t.check(entry is not None, "the card registers itself in window.customCards", json.dumps(entry))
+    if entry:
+        missing = [k for k in ("type", "name", "description", "documentationURL") if not entry.get(k)]
+        t.check(not missing, "the picker entry carries name, description and a documentation link",
+                f"fehlt: {missing}" if missing else entry.get("documentationURL"))
+        t.check(entry.get("preview") is True, "the picker renders a live preview", json.dumps(entry.get("preview")))
+
+    # The preview runs on any instance, including one without ha-evcc at all.
+    # It must draw the empty state rather than throw, or the picker breaks.
+    stub = new_page(browser, 480, 900)
+    stub_errors = open_card(stub, port, config={**page.evaluate("window.__card.constructor.getStubConfig()"),
+                                                "prefix": "no_evcc_here_"})
+    drawn = stub.locator(in_card("ha-card")).count() > 0
+    t.check(drawn and not stub_errors, "the stub config renders without any evcc entity present",
+            "; ".join(stub_errors)[:200] or f"ha-card={drawn}")
+    stub.close()
+
     t.group("cardapi - getGridOptions")
     grid = page.evaluate("""(() => {
       const out = {};
