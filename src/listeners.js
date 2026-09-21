@@ -1,9 +1,36 @@
 import { displayUnit } from "./utils/state.js";
 import { escHtml } from "./utils/html.js";
 
+// Non-native click targets: everything the card wires a click handler to that
+// is not a <button>, <input>, <select> or <a> and so gets no keyboard support
+// from the browser. They are made focusable and get the button role here,
+// once per render, instead of every view remembering to do it.
+const NON_NATIVE_CLICKABLES = "[data-more-info], [data-action], [data-lp-current-toggle], [data-lp-smart-cost-open]";
+const NATIVE = "button, input, select, textarea, a[href]";
+
 // Event delegation for the whole card. Methods are mixed into EvccCard.prototype.
 export const listeners = {
   _attachListeners() {
+    // Keyboard activation for the button-role elements: Enter and Space click
+    // them, as a native button would. Bound to the shadow root once; the root
+    // survives every innerHTML replacement, the elements inside do not.
+    if (!this._keyboardBound) {
+      this._keyboardBound = true;
+      this.shadowRoot.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        const el = e.target?.closest?.('[role="button"]');
+        if (!el || el.matches(NATIVE)) return;
+        e.preventDefault();
+        // dispatched rather than el.click(): SVG elements (the flow nodes) have no click()
+        el.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true }));
+      });
+    }
+    this.shadowRoot.querySelectorAll(NON_NATIVE_CLICKABLES).forEach(el => {
+      if (el.matches(NATIVE)) return;
+      if (!el.hasAttribute("role"))     el.setAttribute("role", "button");
+      if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "0");
+    });
+
     this.shadowRoot.querySelectorAll("[data-more-info]").forEach(el => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();

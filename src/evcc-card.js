@@ -211,7 +211,7 @@ export class EvccCard extends HTMLElement {
       this._evccIds       = Object.keys(hass.states).filter(id => id.split(".")[1]?.startsWith(prefix));
     }
 
-    const lang = this._config.language || (hass.language ?? "de");
+    const lang = this._config.language || (hass.language ?? "en");
     // \u001f (unit separator) keeps attribute values from colliding with the
     // key's own delimiters; a title or an option may contain anything else.
     return lang + "|" + this._evccIds.map(id => {
@@ -355,7 +355,7 @@ export class EvccCard extends HTMLElement {
     // Use pre-resolved strings from current render cycle; fall back to resolving on demand
     const strings = this._renderStrings ?? (() => {
       const lang = (this._config.language
-        || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+        || (this._hass?.language ?? "en")).split("-")[0].toLowerCase();
       return this._translations[lang] || this._translations["en"] || {};
     })();
 
@@ -391,7 +391,7 @@ export class EvccCard extends HTMLElement {
 
     // Resolve language strings once per render — reused by all _t() calls
     const lang = (this._config.language
-      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+      || (this._hass?.language ?? "en")).split("-")[0].toLowerCase();
     this._renderStrings = this._translations[lang] || this._translations["en"] || {};
 
     const prefix = this._getPrefix();

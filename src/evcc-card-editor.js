@@ -17,7 +17,7 @@ export class EvccCardEditor extends HTMLElement {
 
   _t(key, replacements = {}) {
     const lang = (this._config?.language
-      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+      || (this._hass?.language ?? "en")).split("-")[0].toLowerCase();
     const t = sharedTranslations();
     const strings = t[lang] || t["en"] || {};
     let val = strings[key] ?? key;

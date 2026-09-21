@@ -1607,6 +1607,65 @@ def editor_instances(browser, port, t):
     page.close()
 
 
+def keyboard(browser, port, t):
+    """Every clickable element is reachable with Tab and fires on Enter or Space;
+    without a language from HA the card and the editor fall back to English."""
+    t.group("keyboard - focus and activation")
+    NON_NATIVE = "[data-more-info], [data-action], [data-lp-current-toggle], [data-lp-smart-cost-open]"
+    unreachable = lambda page: page.evaluate("""(sel) => [...window.__card.shadowRoot.querySelectorAll(sel)]
+        .filter(el => !el.matches('button, input, select, textarea, a[href]'))
+        .filter(el => el.getAttribute('tabindex') !== '0' || el.getAttribute('role') !== 'button')
+        .map(el => el.tagName + (el.className.baseVal ?? el.className ? '.' + (el.className.baseVal ?? el.className) : '')).slice(0, 5)""", NON_NATIVE)
+    hook = "() => { window.__moreInfo = []; window.__card.addEventListener('hass-more-info', e => window.__moreInfo.push(e.detail.entityId)); }"
+
+    for mode in ("loadpoint", "site", "flow", "battery", "grid"):
+        page = new_page(browser, 480, 1600)
+        errors = open_card(page, port, mode=mode)
+        left = unreachable(page)
+        t.check(not left and not errors, f"{mode}: every non-native click target is focusable with the button role", f"unreachable: {left}; {'; '.join(errors)[:100]}")
+        page.close()
+
+    # Enter and Space on a focused more-info row fire the event a click would
+    # (the site view has them as plain divs; the loadpoint view uses buttons).
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="site")
+    page.evaluate(hook)
+    row = page.locator(in_card("div[data-more-info]")).first
+    row.focus(); page.keyboard.press("Enter"); page.keyboard.press(" ")
+    fired = page.evaluate("window.__moreInfo")
+    t.check(len(fired) == 2 and all(fired), "site: Enter and Space on a focused row open more-info", json.dumps(fired))
+    page.close()
+
+    # The SVG nodes of the flow view are focusable too, and the site toggle folds on Space.
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="flow")
+    page.evaluate(hook)
+    page.locator(in_card("g[data-more-info]")).first.focus(); page.keyboard.press("Enter")
+    t.check(len(page.evaluate("window.__moreInfo")) == 1, "flow: Enter on a focused SVG node opens more-info", json.dumps(page.evaluate("window.__moreInfo")))
+    shown = lambda: page.evaluate("(() => { const el = window.__card.shadowRoot.querySelector('.site-table'); return el ? getComputedStyle(el).display !== 'none' : null; })()")
+    before = shown()
+    page.locator(in_card(".sankey-wrap")).focus(); page.keyboard.press(" "); page.wait_for_timeout(200)
+    t.check(before is not None and shown() != before, "flow: Space on the focused graphic folds the table", f"{before} -> {shown()}")
+    page.close()
+
+    t.group("keyboard - language fallback")
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="loadpoint")
+    label = lambda: page.locator(in_card('button.mode-btn[data-value="off"] .mode-label')).first.inner_text().strip()
+    t.check(label() == "Aus", "with hass.language de the card is German", label())
+    page.evaluate("() => { const c = window.__card; c.hass = { ...window.__hass, language: undefined, locale: {} }; c._lastRenderKey = null; c._render(); }")
+    page.wait_for_timeout(200)
+    t.check(label() == "Off", "without a language from HA the card falls back to English", label())
+    ed = page.evaluate("""async () => {
+      const ed = document.createElement('evcc-card-editor'); ed.setConfig({ mode: 'loadpoint' });
+      ed.hass = { ...window.__hass, language: undefined, locale: {} }; document.body.appendChild(ed);
+      await new Promise(r => setTimeout(r, 700));
+      return ed.shadowRoot.querySelector('label[for=mode]')?.textContent.trim();
+    }""")
+    t.check(ed == "Mode", "without a language from HA the editor falls back to English", str(ed))
+    page.close()
+
+
 def escaping(browser, port, t):
     """Names from HA and from evcc reach the DOM as text, never as markup.
 
@@ -1694,7 +1753,7 @@ def unit(browser, port, t):
             t.fail(f"{f.name} contains tests", f"no testcase in the report; stderr={p.stderr[:200]}")
 
 
-GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "editor_instances": editor_instances, "escaping": escaping, "contracts": contracts,
+GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "editor_instances": editor_instances, "keyboard": keyboard, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
           "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths}
 

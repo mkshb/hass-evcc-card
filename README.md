@@ -240,7 +240,7 @@ The **CHARGE SETTINGS** section is collapsed by default and can be toggled using
 Every slider in the card (target SoC, min SoC, current limits, battery boost, priority, smart charging limit, feed-in priority limit, and the target SoC of the charge plan) can also be set without dragging:
 
 - **Direct input** - tap the value next to the slider. A touch-sized row opens below it with **−** and **+** buttons, a number field with the unit, and apply / cancel. The buttons walk the slider step (for the current sliders: the next available option), the field accepts an exact value with either a comma or a dot and is clamped to the slider range. **Enter** or **✓** writes the value, **Escape** or **✕** discards it. Only one panel is open at a time.
-- **Keyboard** - with the slider focused, the arrow keys, Home / End and PageUp / PageDown change the value and write it as well.
+- **Keyboard** - with the slider focused, the arrow keys, Home / End and PageUp / PageDown change the value and write it as well. Everything else that reacts to a tap (the more-info rows, the flow graphic that folds the detail table, the buttons and chips) is reachable with Tab and fires on Enter or Space.
 - **Step size** - the step comes from the ha-evcc entity (for example 0.005 for the smart charging limit). Use `slider_steps` to make a slider coarser or finer per setting; the − / + buttons follow the same step:
 
   ```yaml
