@@ -180,6 +180,53 @@ export const CARD_SIZES = {
   debug:      20,
 };
 
+// Every mode the card renders, and the values the other enumerated options take.
+// setConfig() rejects anything outside these lists. The modes are spelled out
+// rather than read off CARD_SIZES: a mode is a view and a _render branch, the
+// height table is an estimate that may or may not know it. `site2` is the
+// former name of `grid` and stays valid so dashboards carrying it keep working.
+export const CARD_MODES = [
+  "loadpoint", "compact", "plan", "repeatplan", "priority",
+  "site", "flow", "grid", "site2", "stats", "battery", "debug",
+];
+export const CARD_SIZE_OPTIONS        = ["small", "medium", "large"];
+export const DISABLED_LOADPOINT_MODES = ["hide", "dim", "show"];
+export const STATS_PERIOD_OPTIONS     = Object.keys(STATS_PERIOD_ALIASES);
+
+// Home Assistant expects setConfig() to throw on a configuration the card cannot
+// render: it catches the error and shows its own error card with the message, so
+// a typo in the YAML is visible instead of quietly rendering something else. The
+// messages are English because that is where they end up, in the HA error card.
+export function validateCardConfig(config) {
+  const c = config || {};
+  const oneOf = (key, valid) => {
+    if (c[key] === undefined || c[key] === null) return;
+    if (!valid.includes(c[key])) {
+      throw new Error(`evcc-card: ${key} "${c[key]}" is not valid. Use one of: ${valid.join(", ")}`);
+    }
+  };
+  oneOf("mode",                CARD_MODES);
+  oneOf("size",                CARD_SIZE_OPTIONS);
+  oneOf("disabled_loadpoints", DISABLED_LOADPOINT_MODES);
+  oneOf("stats_period",        STATS_PERIOD_OPTIONS);
+
+  for (const key of ["prefix", "language"]) {
+    const v = c[key];
+    if (v === undefined || v === null) continue;
+    if (typeof v !== "string" || !v.trim()) {
+      throw new Error(`evcc-card: ${key} has to be a non-empty string`);
+    }
+  }
+
+  const lps = c.loadpoints;
+  if (lps !== undefined && lps !== null) {
+    const list = Array.isArray(lps) ? lps : [lps];
+    if (!list.length || list.some(lp => typeof lp !== "string" || !lp.trim())) {
+      throw new Error("evcc-card: loadpoints has to be a loadpoint name or a list of names");
+    }
+  }
+}
+
 // Entity attributes the card reads while rendering. The render key is built from
 // these next to the state, because HA hands out a new state object for a pure
 // attribute change too: a select whose options change, a number whose min/max

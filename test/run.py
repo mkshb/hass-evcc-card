@@ -1332,6 +1332,65 @@ def card_api(browser, port, t):
     page.close()
 
 
+def setconfig(browser, port, t):
+    """setConfig() rejects a configuration the card cannot render.
+
+    Home Assistant catches the exception and shows its error card with the
+    message, which is the only way a typo in the YAML becomes visible: before
+    this, an unknown mode fell through to the loadpoint view and an invalid size
+    was silently deleted.
+    """
+    VALID = [
+        ({}, "an empty config"),
+        ({"mode": "loadpoint", "loadpoints": ["openwb"]}, "a normal config"),
+        ({"mode": "site2"}, "the legacy mode name site2"),
+        ({"mode": "flow", "size": "large"}, "a known size"),
+        ({"stats_period": "month"}, "a current stats_period"),
+        ({"stats_period": "365d"}, "a legacy stats_period"),
+        ({"disabled_loadpoints": "dim"}, "a known disabled_loadpoints"),
+        ({"loadpoints": "openwb"}, "a single loadpoint as a string"),
+        ({"prefix": "evcc2_", "language": "en"}, "prefix and language"),
+    ]
+    INVALID = [
+        ({"mode": "quatsch"}, "mode", "an unknown mode"),
+        ({"size": "huge"}, "size", "an unknown size"),
+        ({"disabled_loadpoints": "maybe"}, "disabled_loadpoints", "an unknown disabled_loadpoints"),
+        ({"stats_period": "weekly"}, "stats_period", "an unknown stats_period"),
+        ({"prefix": ""}, "prefix", "an empty prefix"),
+        ({"prefix": 5}, "prefix", "a numeric prefix"),
+        ({"language": ""}, "language", "an empty language"),
+        ({"loadpoints": []}, "loadpoints", "an empty loadpoint list"),
+        ({"loadpoints": [""]}, "loadpoints", "a blank loadpoint name"),
+        ({"loadpoints": 5}, "loadpoints", "a numeric loadpoints"),
+    ]
+
+    t.group("setconfig - invalid configuration is rejected")
+    page = new_page(browser, 480, 900)
+    errors = open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+    probe = """((cfg) => {
+      const c = document.createElement("evcc-card");
+      try { c.setConfig(cfg); return { threw: false }; }
+      catch (e) { return { threw: true, message: String(e && e.message || e) }; }
+    })"""
+    for cfg, label in VALID:
+        r = page.evaluate(probe, cfg)
+        t.check(not r["threw"], f"accepted: {label}", r.get("message", "")[:150])
+    for cfg, key, label in INVALID:
+        r = page.evaluate(probe, cfg)
+        ok = r["threw"] and key in r.get("message", "")
+        t.check(ok, f"rejected: {label}", r.get("message", "(kein Fehler)")[:150])
+
+    # The rejected config must not have been applied on the way out.
+    kept = page.evaluate("""(() => {
+      const before = window.__card._config.mode;
+      try { window.__card.setConfig({ mode: "quatsch" }); } catch (e) {}
+      return { before, after: window.__card._config.mode };
+    })()""")
+    t.check(kept["before"] == kept["after"], "a rejected config leaves the card on the previous one", json.dumps(kept))
+    t.check(not errors, "no console errors", "; ".join(errors)[:200])
+    page.close()
+
+
 def widths(browser, port, t):
     """Narrow and wide cards: the input panel stays inside the card, no console errors."""
     t.group("widths - responsive layout")
@@ -1436,7 +1495,7 @@ def unit(browser, port, t):
 
 GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
-          "flow": flow_labels, "cardapi": card_api, "widths": widths}
+          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths}
 
 
 def main():

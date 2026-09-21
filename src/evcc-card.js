@@ -1,5 +1,5 @@
 import { detectIntegration, discoverEntities, partitionDisabledLoadpoints } from "./core/entity-discovery.js";
-import { CARD_SIZES, RENDER_ATTRS, normalizeStatsPeriod, legacyStatsPeriod } from "./core/constants.js";
+import { CARD_SIZES, RENDER_ATTRS, normalizeStatsPeriod, legacyStatsPeriod, validateCardConfig } from "./core/constants.js";
 import { stateVal, unitStr } from "./utils/state.js";
 import { escHtml } from "./utils/html.js";
 import { socFillGradient } from "./utils/format.js";
@@ -292,6 +292,9 @@ export class EvccCard extends HTMLElement {
   }
 
   setConfig(config) {
+    // Throws before anything is applied, so a rejected config leaves the card on
+    // the one it had and Home Assistant shows its error card with the reason.
+    validateCardConfig(config);
     this._config = config || {};
     this._syncIntegrationInstance();
     // Both stats paths are fed from the same normalised value, so the current
@@ -307,10 +310,6 @@ export class EvccCard extends HTMLElement {
     this._statsPeriod = legacyStatsPeriod(rawPeriod, "total");
     if (this._statsMetric == null) this._statsMetric = "energy"; // energy | cost | co2
     if (this._statsGroup  == null) this._statsGroup  = "solar";  // solar | loadpoint | vehicle
-    const validSizes = ["small", "medium", "large"];
-    if (this._config.size && !validSizes.includes(this._config.size)) {
-      delete this._config.size;
-    }
 
     if (!this._translationsReady && !this._loadingTranslations) {
       this._loadingTranslations = true;
