@@ -265,22 +265,20 @@ export class EvccCard extends HTMLElement {
     return Math.max(1, n);
   }
 
-  // The sections layout asks for grid units instead of masonry rows: a section is
-  // 12 columns wide and `rows` counts in the same 50 px steps as getCardSize().
-  // The minimums are what the content still reads at, half a section wide and
-  // half its height, so dragging the card smaller cannot squeeze it flat.
+  // Width only, on purpose. A cell of the sections grid is 56 px high with an
+  // 8 px gap, and a card that declares no `rows` keeps its own height instead of
+  // being fitted into that raster. This card's height depends on how many
+  // loadpoints were discovered, whether the detail tables are expanded and
+  // whether a plan is running, so any fixed row count is wrong in one of two
+  // ways: too tall leaves an empty area under the card, too short lets the
+  // content spill over the card below it. `min_columns` is the one useful limit:
+  // a column is about 30 px, and the card starts to run over its own edge below
+  // roughly 272 px. The layout editor resizes in steps of three columns unless
+  // its precision mode is on, so the floor sits on that raster: nine columns,
+  // about 334 px. Eight would fit as well, but reads as nine to everyone who
+  // drags the handle, and nobody runs the card narrower than that anyway.
   getGridOptions() {
-    const mode = this._config?.mode || "loadpoint";
-    const rows = this.getCardSize();
-    // priority is a list of short rows and reads fine in half a section, debug
-    // is a YAML dump that should not be wrapped at all.
-    const columns = mode === "priority" || mode === "repeatplan" ? 6 : 12;
-    return {
-      rows,
-      columns,
-      min_rows:    Math.max(1, Math.round(rows / 2)),
-      min_columns: mode === "debug" ? 12 : 6,
-    };
+    return { min_columns: 9 };
   }
 
   static getConfigElement() {

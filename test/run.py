@@ -1305,8 +1305,8 @@ def card_api(browser, port, t):
     })()""")
     t.check(isinstance(fresh["size"], (int, float)) and fresh["size"] >= 1,
             "a card without hass already reports a size", json.dumps(fresh["size"]))
-    t.check(fresh["grid"]["rows"] == fresh["size"] and fresh["grid"]["columns"] >= 1,
-            "and usable grid options", json.dumps(fresh["grid"]))
+    t.check("rows" not in fresh["grid"] and fresh["grid"].get("min_columns", 1) >= 1,
+            "and grid options that leave its height alone", json.dumps(fresh["grid"]))
     t.group("cardapi - card picker registration")
     entry = page.evaluate("""(() => (window.customCards || []).find(c => c.type === "evcc-card") || null)()""")
     t.check(entry is not None, "the card registers itself in window.customCards", json.dumps(entry))
@@ -1396,22 +1396,26 @@ def card_api(browser, port, t):
       const out = {};
       for (const mode of ["loadpoint","compact","plan","repeatplan","priority","site","flow","grid","stats","battery","debug"]) {
         window.__card.setConfig({ mode, loadpoints: ["openwb"] });
-        out[mode] = { ...window.__card.getGridOptions(), size: window.__card.getCardSize() };
+        out[mode] = window.__card.getGridOptions();
       }
       return out;
     })()""")
-    def broken(g):
-        return not (isinstance(g["rows"], (int, float)) and g["rows"] >= 1
-                    and g["columns"] % 3 == 0 and 1 <= g["columns"] <= 12
-                    and 1 <= g["min_rows"] <= g["rows"]
-                    and 1 <= g["min_columns"] <= g["columns"])
-    bad = {m: g for m, g in grid.items() if broken(g)}
-    t.check(not bad, "every mode reports usable grid options", f"unbrauchbar: {bad}" if bad else json.dumps(grid["flow"]))
-    mismatch = {m: g for m, g in grid.items() if g["rows"] != g["size"]}
-    t.check(not mismatch, "the grid rows follow getCardSize()", f"abweichend: {mismatch}")
-    t.check(grid["priority"]["columns"] < grid["flow"]["columns"],
-            "a narrow mode asks for fewer columns than a diagram",
-            f'priority={grid["priority"]["columns"]} flow={grid["flow"]["columns"]}')
+    # A declared row count fits the card into the 56 px raster of the sections
+    # grid. This card's height is not fixed, so too many rows leave an empty area
+    # under it and too few let the content run into the card below: no mode may
+    # declare rows at all.
+    with_rows = {m: g for m, g in grid.items() if {"rows", "min_rows", "max_rows"} & set(g)}
+    t.check(not with_rows, "no mode pins itself to a row count", f"mit rows: {with_rows}" if with_rows else "keine")
+    bad = {m: g for m, g in grid.items()
+           if not (1 <= g.get("min_columns", 1) <= g.get("columns", 12) <= 12)}
+    t.check(not bad, "the column limits stay inside the 12 column section",
+            f"unbrauchbar: {bad}" if bad else json.dumps(grid["flow"]))
+    # The layout editor resizes in steps of three columns; a limit off that
+    # raster reads as the next step up for everyone who drags the handle.
+    off = {m: g for m, g in grid.items()
+           if any(g.get(k, 3) % 3 for k in ("min_columns", "max_columns", "columns") if isinstance(g.get(k, 3), int))}
+    t.check(not off, "the column limits sit on the 3 column steps of the layout editor",
+            f"daneben: {off}" if off else "alle Vielfache von 3")
 
     page.close()
 
@@ -1478,7 +1482,9 @@ def setconfig(browser, port, t):
 def widths(browser, port, t):
     """Narrow and wide cards: the input panel stays inside the card, no console errors."""
     t.group("widths - responsive layout")
-    for w in (300, 650):
+    # 334 px is nine columns of a section, the floor getGridOptions reports as
+    # min_columns; below roughly 272 px the card runs over its own edge.
+    for w in (334, 650):
         page = new_page(browser, w + 40, 1600)
         errors = open_card(page, port, width=w, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"})
         page.locator(in_card('input[data-entity="number.evcc_openwb_smart_cost_limit"] + button.slider-val')).click(); page.wait_for_timeout(150)
