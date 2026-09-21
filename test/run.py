@@ -1301,9 +1301,34 @@ def card_api(browser, port, t):
     fresh = page.evaluate("""(() => {
       const c = document.createElement("evcc-card");
       c.setConfig({ mode: "flow" });
-      return c.getCardSize();
+      return { size: c.getCardSize(), grid: c.getGridOptions() };
     })()""")
-    t.check(isinstance(fresh, (int, float)) and fresh >= 1, "a card without hass already reports a size", f"{fresh!r}")
+    t.check(isinstance(fresh["size"], (int, float)) and fresh["size"] >= 1,
+            "a card without hass already reports a size", json.dumps(fresh["size"]))
+    t.check(fresh["grid"]["rows"] == fresh["size"] and fresh["grid"]["columns"] >= 1,
+            "and usable grid options", json.dumps(fresh["grid"]))
+    t.group("cardapi - getGridOptions")
+    grid = page.evaluate("""(() => {
+      const out = {};
+      for (const mode of ["loadpoint","compact","plan","repeatplan","priority","site","flow","grid","stats","battery","debug"]) {
+        window.__card.setConfig({ mode, loadpoints: ["openwb"] });
+        out[mode] = { ...window.__card.getGridOptions(), size: window.__card.getCardSize() };
+      }
+      return out;
+    })()""")
+    def broken(g):
+        return not (isinstance(g["rows"], (int, float)) and g["rows"] >= 1
+                    and g["columns"] % 3 == 0 and 1 <= g["columns"] <= 12
+                    and 1 <= g["min_rows"] <= g["rows"]
+                    and 1 <= g["min_columns"] <= g["columns"])
+    bad = {m: g for m, g in grid.items() if broken(g)}
+    t.check(not bad, "every mode reports usable grid options", f"unbrauchbar: {bad}" if bad else json.dumps(grid["flow"]))
+    mismatch = {m: g for m, g in grid.items() if g["rows"] != g["size"]}
+    t.check(not mismatch, "the grid rows follow getCardSize()", f"abweichend: {mismatch}")
+    t.check(grid["priority"]["columns"] < grid["flow"]["columns"],
+            "a narrow mode asks for fewer columns than a diagram",
+            f'priority={grid["priority"]["columns"]} flow={grid["flow"]["columns"]}')
+
     page.close()
 
 

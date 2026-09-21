@@ -265,6 +265,24 @@ export class EvccCard extends HTMLElement {
     return Math.max(1, n);
   }
 
+  // The sections layout asks for grid units instead of masonry rows: a section is
+  // 12 columns wide and `rows` counts in the same 50 px steps as getCardSize().
+  // The minimums are what the content still reads at, half a section wide and
+  // half its height, so dragging the card smaller cannot squeeze it flat.
+  getGridOptions() {
+    const mode = this._config?.mode || "loadpoint";
+    const rows = this.getCardSize();
+    // priority is a list of short rows and reads fine in half a section, debug
+    // is a YAML dump that should not be wrapped at all.
+    const columns = mode === "priority" || mode === "repeatplan" ? 6 : 12;
+    return {
+      rows,
+      columns,
+      min_rows:    Math.max(1, Math.round(rows / 2)),
+      min_columns: mode === "debug" ? 12 : 6,
+    };
+  }
+
   static getConfigElement() {
     return document.createElement("evcc-card-editor");
   }
