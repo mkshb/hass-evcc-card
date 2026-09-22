@@ -9,6 +9,9 @@ import { escHtml, escAttr } from "../utils/html.js";
 // every element carrying the attribute; empty when the entity is not discovered.
 const moreInfo = (entityId) => entityId ? ` data-more-info="${escAttr(entityId)}"` : "";
 
+// Cycle of the soc-pulse animation in loadpointCss, the phase is kept across renders.
+const SOC_PULSE_MS = 1400;
+
 // Loadpoint and compact modes: header, mode selector, power row, vehicle and session info, toggles. Methods are mixed into EvccCard.prototype.
 export const loadpointView = {
   _renderLoadpoint(lpName, ents) {
@@ -319,6 +322,11 @@ export const loadpointView = {
     const minSoc = ents.min_soc   ? parseFloat(stateVal(this._hass, ents.min_soc))    : null;
     const fillBg  = soc !== null ? socFillGradient(soc, minSoc ?? 0, limit ?? 100) : "var(--evcc-blue)";
     const trackBg = socTrackBg(minSoc ?? 0, limit ?? 100);
+    // The pulse of a charging bar runs on the wall clock: a re-render replaces
+    // the element, and a fresh element would start the 1.4 s cycle over, so the
+    // bar jumped back to full brightness with every evcc update. A negative
+    // delay puts the new element at the phase the old one had.
+    const pulse   = charging ? `;animation-delay:-${Date.now() % SOC_PULSE_MS}ms` : "";
 
     const _rawLimit  = ents.smart_cost_limit ? parseFloat(stateVal(this._hass, ents.smart_cost_limit)) : NaN;
     const smartLimit = ents.smart_cost_limit && !isNaN(_rawLimit) ? _rawLimit : null;
@@ -363,7 +371,7 @@ export const loadpointView = {
           <div class="soc-fill ${charging ? 'charging' : ''}"
                data-live-entity="${ents.vehicle_soc}" data-live-type="soc-fill"
                data-min-soc="${minSoc ?? 0}" data-limit-soc="${limit ?? 100}"
-               style="width:${soc}%;background:${fillBg}"></div>
+               style="width:${soc}%;background:${fillBg}${pulse}"></div>
           ${minSoc !== null ? `<div class="soc-min-marker"   style="left:${Math.min(minSoc,100)}%"></div>` : ""}
           ${limit  !== null ? `<div class="soc-limit-marker" style="left:${Math.min(limit,100)}%"></div>`  : ""}
         </div>` : ""}

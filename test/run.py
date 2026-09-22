@@ -916,6 +916,24 @@ def interactions(browser, port, t):
     t.check(page.evaluate("!window.__card._inputFocused && !window.__card._pendingRender"), "a re-mount clears the guard")
     page.close()
 
+    # --- the charging pulse keeps its phase across renders --------------------------
+    t.group("interaction - charging pulse")
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+    phase = lambda: page.evaluate("""() => { const c = window.__card; c._lastRenderKey = null; c._render();
+        const el = c.shadowRoot.querySelector('.soc-fill.charging'); const a = el?.getAnimations()[0];
+        // the phase is the negative delay: where in the 1.4 s cycle the fresh element starts
+        return a ? { t: ((a.currentTime - a.effect.getTiming().delay) % 1400 + 1400) % 1400, wall: Date.now() % 1400 } : null; }""")
+    # The harness clock is fixed, so the 700 ms pass on the clock, not in real time.
+    a = phase()
+    page.clock.set_fixed_time("2026-09-18T13:00:00.700+02:00"); b = phase()
+    page.clock.set_fixed_time(FIXED_TIME)
+    close = lambda r: r and abs(((r["t"] - r["wall"]) + 700) % 1400 - 700) < 120
+    t.check(close(a) and close(b), "a re-rendered charging bar continues the pulse at the wall-clock phase", json.dumps([a, b]))
+    t.check(a and b and abs(((b["t"] - a["t"]) + 700) % 1400 - 700) > 400,
+            "two renders 700 ms apart sit at different phases", json.dumps([a, b]))
+    page.close()
+
 
 def editor(browser, port, t):
     """The visual editor writes the whole card config on every change.
