@@ -1,5 +1,5 @@
-import { detectIntegration, discoverEntities, partitionDisabledLoadpoints } from "./core/entity-discovery.js";
-import { RENDER_ATTRS, normalizeStatsPeriod, legacyStatsPeriod } from "./core/constants.js";
+import { detectIntegration, discoverEntities, selectLoadpoints, partitionDisabledLoadpoints } from "./core/entity-discovery.js";
+import { CARD_SIZES, CARD_SIZE_DETAILS, CARD_SIZE_FOOTER, RENDER_ATTRS, normalizeStatsPeriod, legacyStatsPeriod, validateCardConfig, loadpointFilter } from "./core/constants.js";
 import { stateVal, unitStr } from "./utils/state.js";
 import { escHtml } from "./utils/html.js";
 import { socFillGradient } from "./utils/format.js";
@@ -89,13 +89,6 @@ export class EvccCard extends HTMLElement {
   // rebuilt here, or the re-mounted card is only half alive.
   connectedCallback() {
     window.addEventListener("evcc-plan-reset", this._onPlanReset);
-    // The inline handlers of the site and flow views reach the card through this
-    // map, so its entry has to come back with the element. On the very first
-    // mount there is no id yet; _render creates it.
-    if (this._cardId) {
-      window.__evccCards = window.__evccCards || new Map();
-      window.__evccCards.set(this._cardId, this);
-    }
     if (!this._countdownInterval) {
       this._countdownInterval = setInterval(() => this._tickCountdowns(), 1000);
     }
@@ -106,14 +99,12 @@ export class EvccCard extends HTMLElement {
 
   disconnectedCallback() {
     window.removeEventListener("evcc-plan-reset", this._onPlanReset);
-    if (this._cardId) window.__evccCards?.delete(this._cardId);
     if (this._countdownInterval) {
       clearInterval(this._countdownInterval);
       this._countdownInterval = null;
     }
-    // Nothing may render on a detached element: a first render would register
-    // the card in window.__evccCards after the delete above, and the deferred
-    // work would run against a DOM nobody sees.
+    // Nothing may render on a detached element: the deferred work would run
+    // against a DOM nobody sees, and the re-mount renders from the state held.
     if (this._renderTimer)   { clearTimeout(this._renderTimer);   this._renderTimer   = null; }
     if (this._wsRenderTimer) { clearTimeout(this._wsRenderTimer); this._wsRenderTimer = null; }
     for (const k of Object.keys(this._planPreviewDebounce)) clearTimeout(this._planPreviewDebounce[k]);
@@ -220,7 +211,7 @@ export class EvccCard extends HTMLElement {
       this._evccIds       = Object.keys(hass.states).filter(id => id.split(".")[1]?.startsWith(prefix));
     }
 
-    const lang = this._config.language || (hass.language ?? "de");
+    const lang = this._config.language || (hass.language ?? "en");
     // \u001f (unit separator) keeps attribute values from colliding with the
     // key's own delimiters; a title or an option may contain anything else.
     return lang + "|" + this._evccIds.map(id => {
@@ -239,6 +230,68 @@ export class EvccCard extends HTMLElement {
     }).join("|");
   }
 
+  // Home Assistant sizes the layout from this, one unit being 50 px, in the
+  // masonry view and as the row span in a section. A rendered card measures
+  // itself, because no per-mode estimate survives the configuration: a collapsed
+  // detail table, a hidden footer, the number of loadpoints and the `size` scale
+  // each move the height, and a site card runs from 2 to 12 units across them.
+  // HA asks again whenever it relayouts, so this is the value it sees in
+  // practice; the estimate covers the moment before the first render and the
+  // time the translations are still loading, when the shadow root holds the
+  // loading placeholder, an ha-card of its own that says nothing about the
+  // card's height.
+  getCardSize() {
+    if (this._translationsReady) {
+      const rendered = this.shadowRoot?.querySelector("ha-card")?.getBoundingClientRect().height;
+      if (rendered > 0) return Math.max(1, Math.ceil(rendered / 50));
+    }
+    return this._estimatedCardSize();
+  }
+
+  // The pre-render fallback: the bare card per mode, plus the two blocks a
+  // configuration can remove. It must answer without hass and without a single
+  // discovered entity, so it never returns 0. The `size` scale is not in here:
+  // it only stretches the card once it renders, and then the measurement wins.
+  _estimatedCardSize() {
+    const mode = this._config?.mode || "loadpoint";
+    let rows = CARD_SIZES[mode] ?? CARD_SIZES.loadpoint;
+    if (mode === "loadpoint" || mode === "compact") rows *= this._sizedLoadpointCount();
+    if (this._config?.site_details !== "collapsed") rows += CARD_SIZE_DETAILS[mode] ?? 0;
+    if (normalizeStatsPeriod(this._config?.stats_period, "total") !== "none") {
+      rows += CARD_SIZE_FOOTER[mode] ?? 0;
+    }
+    return Math.max(1, rows);
+  }
+
+  // How many loadpoints the card would draw: the discovered ones narrowed by the
+  // `loadpoints` filter. Nothing is discovered before the first render, so a
+  // configured filter still yields a count there and everything else falls back
+  // to one loadpoint rather than to zero.
+  _sizedLoadpointCount() {
+    const filter = loadpointFilter(this._config);
+    const found  = this._cachedEntities?.loadpoints || {};
+    const n = Object.keys(found).length
+      ? Object.keys(selectLoadpoints(found, this._config)).length
+      : (filter ? filter.length : 0);
+    return Math.max(1, n);
+  }
+
+  // Width only, on purpose. A cell of the sections grid is 56 px high with an
+  // 8 px gap, and a card that declares no `rows` keeps its own height instead of
+  // being fitted into that raster. This card's height depends on how many
+  // loadpoints were discovered, whether the detail tables are expanded and
+  // whether a plan is running, so any fixed row count is wrong in one of two
+  // ways: too tall leaves an empty area under the card, too short lets the
+  // content spill over the card below it. `min_columns` is the one useful limit:
+  // a column is about 30 px, and the card starts to run over its own edge below
+  // roughly 272 px. The layout editor resizes in steps of three columns unless
+  // its precision mode is on, so the floor sits on that raster: nine columns,
+  // about 334 px. Eight would fit as well, but reads as nine to everyone who
+  // drags the handle, and nobody runs the card narrower than that anyway.
+  getGridOptions() {
+    return { min_columns: 9 };
+  }
+
   static getConfigElement() {
     return document.createElement("evcc-card-editor");
   }
@@ -248,6 +301,9 @@ export class EvccCard extends HTMLElement {
   }
 
   setConfig(config) {
+    // Throws before anything is applied, so a rejected config leaves the card on
+    // the one it had and Home Assistant shows its error card with the reason.
+    validateCardConfig(config);
     this._config = config || {};
     this._syncIntegrationInstance();
     // Both stats paths are fed from the same normalised value, so the current
@@ -263,10 +319,6 @@ export class EvccCard extends HTMLElement {
     this._statsPeriod = legacyStatsPeriod(rawPeriod, "total");
     if (this._statsMetric == null) this._statsMetric = "energy"; // energy | cost | co2
     if (this._statsGroup  == null) this._statsGroup  = "solar";  // solar | loadpoint | vehicle
-    const validSizes = ["small", "medium", "large"];
-    if (this._config.size && !validSizes.includes(this._config.size)) {
-      delete this._config.size;
-    }
 
     if (!this._translationsReady && !this._loadingTranslations) {
       this._loadingTranslations = true;
@@ -303,7 +355,7 @@ export class EvccCard extends HTMLElement {
     // Use pre-resolved strings from current render cycle; fall back to resolving on demand
     const strings = this._renderStrings ?? (() => {
       const lang = (this._config.language
-        || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+        || (this._hass?.language ?? "en")).split("-")[0].toLowerCase();
       return this._translations[lang] || this._translations["en"] || {};
     })();
 
@@ -327,12 +379,6 @@ export class EvccCard extends HTMLElement {
     this._sliderEditing   = false;
     this._sliderEditPanel = null;
     this._dropSliderEditOutside();
-    if (!this._cardId) {
-      this._cardId = Math.random().toString(36).slice(2);
-      window.__evccCards = window.__evccCards || new Map();
-      window.__evccCards.set(this._cardId, this);
-    }
-
     if (!this._translationsReady) {
       if (!this.shadowRoot.firstChild) {
         this.shadowRoot.innerHTML = `
@@ -345,7 +391,7 @@ export class EvccCard extends HTMLElement {
 
     // Resolve language strings once per render — reused by all _t() calls
     const lang = (this._config.language
-      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+      || (this._hass?.language ?? "en")).split("-")[0].toLowerCase();
     this._renderStrings = this._translations[lang] || this._translations["en"] || {};
 
     const prefix = this._getPrefix();
@@ -359,21 +405,12 @@ export class EvccCard extends HTMLElement {
     }
     const { loadpoints, site, meters } = this._cachedEntities;
 
-    const filterRaw = this._config.loadpoints;
-    const filter = filterRaw
-      ? (Array.isArray(filterRaw) ? filterRaw : [filterRaw])
-      : null;
-    const visible = filter && filter.length > 0
-      ? Object.fromEntries(
-          Object.entries(loadpoints).filter(([lp]) => filter.includes(lp))
-        )
-      : loadpoints;
+    const visible = selectLoadpoints(loadpoints, this._config);
 
     // disabled_loadpoints: hide (default) | dim | show - how to treat
     // loadpoints that are disabled in the evcc config (ha-evcc 2026.8.8+).
-    const dlpOpt = ["hide", "dim", "show"].includes(this._config.disabled_loadpoints)
-      ? this._config.disabled_loadpoints
-      : "hide";
+    // setConfig() has already rejected anything outside DISABLED_LOADPOINT_MODES.
+    const dlpOpt = this._config.disabled_loadpoints || "hide";
     const { enabled: lpEnabled, disabled: lpDisabled } =
       partitionDisabledLoadpoints(this._hass, visible);
     // Interactive modes (plan/priority) can never work on a disabled

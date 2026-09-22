@@ -1,4 +1,4 @@
-export const EVCC_CARD_VERSION = "0.8.1";
+export const EVCC_CARD_VERSION = "0.8.2";
 
 export const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -158,6 +158,85 @@ export function legacyStatsPeriod(value, fallback = "total") {
   return STATS_PERIOD_LEGACY_VALUES.includes(value)
     ? value
     : STATS_PERIOD_TO_LEGACY[normalizeStatsPeriod(value, fallback)];
+}
+
+// Fallback height per mode in Home Assistant's units (one unit is 50 px), used
+// only before the card has rendered once; a rendered card measures itself. The
+// numbers are the bare card: the detail table and the statistics footer are
+// added below, because a configuration can switch both off and that moves a
+// site card by a factor of five.
+export const CARD_SIZES = {
+  loadpoint:  16,
+  compact:     6,
+  plan:       10,
+  repeatplan:  5,
+  priority:    5,
+  site:        3,
+  flow:        6,
+  grid:        7,
+  site2:       7,   // legacy alias of grid
+  stats:      10,
+  battery:     7,
+  debug:      20,
+};
+
+// The expandable detail table under the flow bar (`site_details`), and the
+// statistics footer (`stats_period: none` removes it). Both measured at 420 px.
+export const CARD_SIZE_DETAILS = { site: 8, flow: 6 };
+export const CARD_SIZE_FOOTER  = { site: 1, flow: 1, grid: 1, site2: 1 };
+
+// Every mode the card renders, and the values the other enumerated options take.
+// setConfig() rejects anything outside these lists. The modes are spelled out
+// rather than read off CARD_SIZES: a mode is a view and a _render branch, the
+// height table is an estimate that may or may not know it. `site2` is the
+// former name of `grid` and stays valid so dashboards carrying it keep working.
+export const CARD_MODES = [
+  "loadpoint", "compact", "plan", "repeatplan", "priority",
+  "site", "flow", "grid", "site2", "stats", "battery", "debug",
+];
+export const CARD_SIZE_OPTIONS        = ["small", "medium", "large"];
+export const DISABLED_LOADPOINT_MODES = ["hide", "dim", "show"];
+export const STATS_PERIOD_OPTIONS     = Object.keys(STATS_PERIOD_ALIASES);
+
+// The `loadpoints` option as a list, or null when it is not set. A single name
+// is shorthand for a list of one. Every reader of the option goes through here,
+// so the shorthand and "not set" mean the same thing everywhere; a value that
+// is set but empty never gets past validateCardConfig().
+export function loadpointFilter(config) {
+  const raw = config?.loadpoints;
+  if (raw === undefined || raw === null) return null;
+  return Array.isArray(raw) ? raw : [raw];
+}
+
+// Home Assistant expects setConfig() to throw on a configuration the card cannot
+// render: it catches the error and shows its own error card with the message, so
+// a typo in the YAML is visible instead of quietly rendering something else. The
+// messages are English because that is where they end up, in the HA error card.
+export function validateCardConfig(config) {
+  const c = config || {};
+  const oneOf = (key, valid) => {
+    if (c[key] === undefined || c[key] === null) return;
+    if (!valid.includes(c[key])) {
+      throw new Error(`evcc-card: ${key} "${c[key]}" is not valid. Use one of: ${valid.join(", ")}`);
+    }
+  };
+  oneOf("mode",                CARD_MODES);
+  oneOf("size",                CARD_SIZE_OPTIONS);
+  oneOf("disabled_loadpoints", DISABLED_LOADPOINT_MODES);
+  oneOf("stats_period",        STATS_PERIOD_OPTIONS);
+
+  for (const key of ["prefix", "language"]) {
+    const v = c[key];
+    if (v === undefined || v === null) continue;
+    if (typeof v !== "string" || !v.trim()) {
+      throw new Error(`evcc-card: ${key} has to be a non-empty string`);
+    }
+  }
+
+  const list = loadpointFilter(c);
+  if (list && (!list.length || list.some(lp => typeof lp !== "string" || !lp.trim()))) {
+    throw new Error("evcc-card: loadpoints has to be a loadpoint name or a list of names");
+  }
 }
 
 // Entity attributes the card reads while rendering. The render key is built from

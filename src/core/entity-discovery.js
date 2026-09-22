@@ -1,8 +1,26 @@
-import { FEATURES } from "./constants.js";
+import { FEATURES, loadpointFilter } from "./constants.js";
 import { isOn } from "../utils/state.js";
 
 // Longest suffix first: `limit_soc` has to win over `soc` for the same entity.
 const SORTED_FEATURES = [...FEATURES].sort((a, b) => b.suffix.length - a.suffix.length);
+
+const SITE_FEATURES = FEATURES.filter(f => !f.lp);
+
+// The prefix an entity id reveals when it is a site entity: everything in front
+// of a known site suffix. A loadpoint entity yields null, its prefix cannot be
+// told apart from the loadpoint name without more context.
+function sitePrefixOf(entityId) {
+  const dotIdx = entityId.indexOf(".");
+  const domain = entityId.slice(0, dotIdx);
+  const slug   = entityId.slice(dotIdx + 1);
+  for (const feat of SITE_FEATURES) {
+    if (feat.domain === domain && slug.endsWith(feat.suffix)) {
+      const detected = slug.slice(0, slug.length - feat.suffix.length);
+      if (detected.length > 0) return detected;
+    }
+  }
+  return null;
+}
 
 // Detect the entity prefix AND the integration's config_entry_id from a single
 // `config/entity_registry/list` call. The entry_id is required by the ha-evcc
@@ -22,20 +40,6 @@ export async function detectIntegration(hass, preferredPrefix = null) {
     const evccEnts = entities.filter(e => e.platform === "evcc_intg");
     if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null, instances: [] };
 
-    const siteSuffixes = FEATURES.filter(f => !f.lp);
-    const prefixOf = (entityId) => {
-      const dotIdx = entityId.indexOf(".");
-      const domain = entityId.slice(0, dotIdx);
-      const slug   = entityId.slice(dotIdx + 1);
-      for (const feat of siteSuffixes) {
-        if (feat.domain === domain && slug.endsWith(feat.suffix)) {
-          const detected = slug.slice(0, slug.length - feat.suffix.length);
-          if (detected.length > 0) return detected;
-        }
-      }
-      return null;
-    };
-
     // One group per config entry, in registry order; the prefix of a group comes
     // from its own first site entity.
     const byEntry = new Map();
@@ -43,7 +47,7 @@ export async function detectIntegration(hass, preferredPrefix = null) {
       const key = ent.config_entry_id ?? null;
       if (!byEntry.has(key)) byEntry.set(key, { entryId: key, prefix: null });
       const group = byEntry.get(key);
-      if (!group.prefix) group.prefix = prefixOf(ent.entity_id);
+      if (!group.prefix) group.prefix = sitePrefixOf(ent.entity_id);
     }
 
     const instances = [...byEntry.values()].map(g => ({ prefix: g.prefix ?? "evcc_", entryId: g.entryId }));
@@ -88,6 +92,12 @@ export function discoverEntities(hass, prefix = "evcc_") {
   const site = {};
   const meters = {};
 
+  // A second installation whose prefix extends this one ("evcc_" next to
+  // "evcc_demo_") shares the start of every entity id. Read under the shorter
+  // prefix, its loadpoints would turn up here as "demo_carport" and its
+  // vehicles as meters, so anything under a longer installed prefix is skipped.
+  const foreign = installedPrefixes(hass).filter(p => p.length > prefixLen && p.startsWith(prefix));
+
   for (const entityId of Object.keys(hass.states)) {
     const dotIdx = entityId.indexOf(".");
     if (dotIdx < 0) continue;
@@ -95,6 +105,7 @@ export function discoverEntities(hass, prefix = "evcc_") {
     const slug   = entityId.slice(dotIdx + 1);
 
     if (!slug.startsWith(prefix)) continue;
+    if (foreign.some(p => slug.startsWith(p))) continue;
 
     const rest = slug.slice(prefixLen);
 
@@ -142,10 +153,76 @@ export function discoverEntities(hass, prefix = "evcc_") {
   return { loadpoints, site, meters };
 }
 
+// The prefixes of every ha-evcc installation, without a round trip: HA mirrors
+// the entity registry into `hass.entities` (platform per entity, disabled ones
+// left out), and each installation's site entities reveal its prefix the same
+// way detectIntegration() reads it from the registry itself. A candidate only
+// counts when one of the core site sensors sits under it: a named meter like
+// `sensor.evcc_garage_battery_soc` ends in a site suffix too and would
+// otherwise pass off "evcc_garage_" as an installation of its own.
+const CORE_SITE_FEATURES = SITE_FEATURES.filter(f => f.core);
+export function installedPrefixes(hass) {
+  const entities = hass?.entities || {};
+  const found = new Set();
+  for (const ent of Object.values(entities)) {
+    if (ent?.platform !== "evcc_intg") continue;
+    const prefix = sitePrefixOf(ent.entity_id);
+    if (!prefix || found.has(prefix)) continue;
+    if (CORE_SITE_FEATURES.some(f => entities[`${f.domain}.${prefix}${f.suffix}`]?.platform === "evcc_intg")) {
+      found.add(prefix);
+    }
+  }
+  return [...found];
+}
+
+// Which installation and loadpoint an entity belongs to. The card picker asks
+// synchronously, so the registry-backed detection with its WebSocket call is
+// out; `hass.entities` answers instead: it says whether the entity is ha-evcc's
+// at all, and the installed prefixes narrow the cut between prefix and loadpoint
+// name down to the ones that exist. Guessing the cut from the id alone would go
+// wrong on every prefix with an underscore of its own ("my_evcc_" reads as
+// prefix "my_" plus loadpoint "evcc_..."). The longest installed prefix the id
+// starts with is tried first: with both "evcc_" and "evcc_home_" installed, an
+// id under the longer one is far more likely to be its own than a loadpoint of
+// the shorter one that happens to be called "home_...".
+// Returns { prefix, loadpoint } with an empty loadpoint for a site entity, or
+// null when the entity is not ha-evcc's or matches no known feature. What
+// discoverEntities() files under meters (named PV, battery and grid meters,
+// vehicle entities) is site data as well: no loadpoint, the site views fit.
+export function locateEntity(hass, entityId) {
+  if (hass?.entities?.[entityId]?.platform !== "evcc_intg") return null;
+  if (!hass.states?.[entityId]) return null;
+  const slug = entityId.slice(entityId.indexOf(".") + 1);
+
+  const candidates = installedPrefixes(hass)
+    .filter(prefix => slug.startsWith(prefix))
+    .sort((a, b) => b.length - a.length);
+
+  for (const prefix of candidates) {
+    const { loadpoints, site, meters } = discoverEntities(hass, prefix);
+    for (const [lp, ents] of Object.entries(loadpoints)) {
+      if (Object.values(ents).includes(entityId)) return { prefix, loadpoint: lp };
+    }
+    if (Object.values(site).includes(entityId)) return { prefix, loadpoint: "" };
+    for (const ents of Object.values(meters)) {
+      if (Object.values(ents).includes(entityId)) return { prefix, loadpoint: "" };
+    }
+  }
+  return null;
+}
+
 // ha-evcc 2026.8.8+: true when the loadpoint is disabled in the evcc config.
 // Older integration versions never create the sensor, so this stays false.
 export function isLoadpointDisabled(hass, ents) {
   return !!ents.disabled_in_config && isOn(hass, ents.disabled_in_config);
+}
+
+// The discovered loadpoints narrowed by the card's `loadpoints` option; without
+// the option every discovered loadpoint is in.
+export function selectLoadpoints(loadpoints, config) {
+  const filter = loadpointFilter(config);
+  if (!filter) return loadpoints;
+  return Object.fromEntries(Object.entries(loadpoints).filter(([lp]) => filter.includes(lp)));
 }
 
 // Split a loadpoints map into enabled/disabled buckets (config-disabled ones).

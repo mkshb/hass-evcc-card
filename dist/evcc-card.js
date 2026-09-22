@@ -1,5 +1,5 @@
 /* hass-evcc-card. Built from src/ with Rollup; edit the sources, not this file. */
-const EVCC_CARD_VERSION = "0.8.1";
+const EVCC_CARD_VERSION = "0.8.2";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -161,6 +161,85 @@ function legacyStatsPeriod(value, fallback = "total") {
     : STATS_PERIOD_TO_LEGACY[normalizeStatsPeriod(value, fallback)];
 }
 
+// Fallback height per mode in Home Assistant's units (one unit is 50 px), used
+// only before the card has rendered once; a rendered card measures itself. The
+// numbers are the bare card: the detail table and the statistics footer are
+// added below, because a configuration can switch both off and that moves a
+// site card by a factor of five.
+const CARD_SIZES = {
+  loadpoint:  16,
+  compact:     6,
+  plan:       10,
+  repeatplan:  5,
+  priority:    5,
+  site:        3,
+  flow:        6,
+  grid:        7,
+  site2:       7,   // legacy alias of grid
+  stats:      10,
+  battery:     7,
+  debug:      20,
+};
+
+// The expandable detail table under the flow bar (`site_details`), and the
+// statistics footer (`stats_period: none` removes it). Both measured at 420 px.
+const CARD_SIZE_DETAILS = { site: 8, flow: 6 };
+const CARD_SIZE_FOOTER  = { site: 1, flow: 1, grid: 1, site2: 1 };
+
+// Every mode the card renders, and the values the other enumerated options take.
+// setConfig() rejects anything outside these lists. The modes are spelled out
+// rather than read off CARD_SIZES: a mode is a view and a _render branch, the
+// height table is an estimate that may or may not know it. `site2` is the
+// former name of `grid` and stays valid so dashboards carrying it keep working.
+const CARD_MODES = [
+  "loadpoint", "compact", "plan", "repeatplan", "priority",
+  "site", "flow", "grid", "site2", "stats", "battery", "debug",
+];
+const CARD_SIZE_OPTIONS        = ["small", "medium", "large"];
+const DISABLED_LOADPOINT_MODES = ["hide", "dim", "show"];
+const STATS_PERIOD_OPTIONS     = Object.keys(STATS_PERIOD_ALIASES);
+
+// The `loadpoints` option as a list, or null when it is not set. A single name
+// is shorthand for a list of one. Every reader of the option goes through here,
+// so the shorthand and "not set" mean the same thing everywhere; a value that
+// is set but empty never gets past validateCardConfig().
+function loadpointFilter(config) {
+  const raw = config?.loadpoints;
+  if (raw === undefined || raw === null) return null;
+  return Array.isArray(raw) ? raw : [raw];
+}
+
+// Home Assistant expects setConfig() to throw on a configuration the card cannot
+// render: it catches the error and shows its own error card with the message, so
+// a typo in the YAML is visible instead of quietly rendering something else. The
+// messages are English because that is where they end up, in the HA error card.
+function validateCardConfig(config) {
+  const c = config || {};
+  const oneOf = (key, valid) => {
+    if (c[key] === undefined || c[key] === null) return;
+    if (!valid.includes(c[key])) {
+      throw new Error(`evcc-card: ${key} "${c[key]}" is not valid. Use one of: ${valid.join(", ")}`);
+    }
+  };
+  oneOf("mode",                CARD_MODES);
+  oneOf("size",                CARD_SIZE_OPTIONS);
+  oneOf("disabled_loadpoints", DISABLED_LOADPOINT_MODES);
+  oneOf("stats_period",        STATS_PERIOD_OPTIONS);
+
+  for (const key of ["prefix", "language"]) {
+    const v = c[key];
+    if (v === undefined || v === null) continue;
+    if (typeof v !== "string" || !v.trim()) {
+      throw new Error(`evcc-card: ${key} has to be a non-empty string`);
+    }
+  }
+
+  const list = loadpointFilter(c);
+  if (list && (!list.length || list.some(lp => typeof lp !== "string" || !lp.trim()))) {
+    throw new Error("evcc-card: loadpoints has to be a loadpoint name or a list of names");
+  }
+}
+
 // Entity attributes the card reads while rendering. The render key is built from
 // these next to the state, because HA hands out a new state object for a pure
 // attribute change too: a select whose options change, a number whose min/max
@@ -227,6 +306,24 @@ function isOn(hass, entityId) {
 // Longest suffix first: `limit_soc` has to win over `soc` for the same entity.
 const SORTED_FEATURES = [...FEATURES].sort((a, b) => b.suffix.length - a.suffix.length);
 
+const SITE_FEATURES = FEATURES.filter(f => !f.lp);
+
+// The prefix an entity id reveals when it is a site entity: everything in front
+// of a known site suffix. A loadpoint entity yields null, its prefix cannot be
+// told apart from the loadpoint name without more context.
+function sitePrefixOf(entityId) {
+  const dotIdx = entityId.indexOf(".");
+  const domain = entityId.slice(0, dotIdx);
+  const slug   = entityId.slice(dotIdx + 1);
+  for (const feat of SITE_FEATURES) {
+    if (feat.domain === domain && slug.endsWith(feat.suffix)) {
+      const detected = slug.slice(0, slug.length - feat.suffix.length);
+      if (detected.length > 0) return detected;
+    }
+  }
+  return null;
+}
+
 // Detect the entity prefix AND the integration's config_entry_id from a single
 // `config/entity_registry/list` call. The entry_id is required by the ha-evcc
 // WebSocket data API commands (evcc_intg/forecast|sessions|plan_preview); every
@@ -245,20 +342,6 @@ async function detectIntegration(hass, preferredPrefix = null) {
     const evccEnts = entities.filter(e => e.platform === "evcc_intg");
     if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null, instances: [] };
 
-    const siteSuffixes = FEATURES.filter(f => !f.lp);
-    const prefixOf = (entityId) => {
-      const dotIdx = entityId.indexOf(".");
-      const domain = entityId.slice(0, dotIdx);
-      const slug   = entityId.slice(dotIdx + 1);
-      for (const feat of siteSuffixes) {
-        if (feat.domain === domain && slug.endsWith(feat.suffix)) {
-          const detected = slug.slice(0, slug.length - feat.suffix.length);
-          if (detected.length > 0) return detected;
-        }
-      }
-      return null;
-    };
-
     // One group per config entry, in registry order; the prefix of a group comes
     // from its own first site entity.
     const byEntry = new Map();
@@ -266,7 +349,7 @@ async function detectIntegration(hass, preferredPrefix = null) {
       const key = ent.config_entry_id ?? null;
       if (!byEntry.has(key)) byEntry.set(key, { entryId: key, prefix: null });
       const group = byEntry.get(key);
-      if (!group.prefix) group.prefix = prefixOf(ent.entity_id);
+      if (!group.prefix) group.prefix = sitePrefixOf(ent.entity_id);
     }
 
     const instances = [...byEntry.values()].map(g => ({ prefix: g.prefix ?? "evcc_", entryId: g.entryId }));
@@ -311,6 +394,12 @@ function discoverEntities(hass, prefix = "evcc_") {
   const site = {};
   const meters = {};
 
+  // A second installation whose prefix extends this one ("evcc_" next to
+  // "evcc_demo_") shares the start of every entity id. Read under the shorter
+  // prefix, its loadpoints would turn up here as "demo_carport" and its
+  // vehicles as meters, so anything under a longer installed prefix is skipped.
+  const foreign = installedPrefixes(hass).filter(p => p.length > prefixLen && p.startsWith(prefix));
+
   for (const entityId of Object.keys(hass.states)) {
     const dotIdx = entityId.indexOf(".");
     if (dotIdx < 0) continue;
@@ -318,6 +407,7 @@ function discoverEntities(hass, prefix = "evcc_") {
     const slug   = entityId.slice(dotIdx + 1);
 
     if (!slug.startsWith(prefix)) continue;
+    if (foreign.some(p => slug.startsWith(p))) continue;
 
     const rest = slug.slice(prefixLen);
 
@@ -365,10 +455,76 @@ function discoverEntities(hass, prefix = "evcc_") {
   return { loadpoints, site, meters };
 }
 
+// The prefixes of every ha-evcc installation, without a round trip: HA mirrors
+// the entity registry into `hass.entities` (platform per entity, disabled ones
+// left out), and each installation's site entities reveal its prefix the same
+// way detectIntegration() reads it from the registry itself. A candidate only
+// counts when one of the core site sensors sits under it: a named meter like
+// `sensor.evcc_garage_battery_soc` ends in a site suffix too and would
+// otherwise pass off "evcc_garage_" as an installation of its own.
+const CORE_SITE_FEATURES = SITE_FEATURES.filter(f => f.core);
+function installedPrefixes(hass) {
+  const entities = hass?.entities || {};
+  const found = new Set();
+  for (const ent of Object.values(entities)) {
+    if (ent?.platform !== "evcc_intg") continue;
+    const prefix = sitePrefixOf(ent.entity_id);
+    if (!prefix || found.has(prefix)) continue;
+    if (CORE_SITE_FEATURES.some(f => entities[`${f.domain}.${prefix}${f.suffix}`]?.platform === "evcc_intg")) {
+      found.add(prefix);
+    }
+  }
+  return [...found];
+}
+
+// Which installation and loadpoint an entity belongs to. The card picker asks
+// synchronously, so the registry-backed detection with its WebSocket call is
+// out; `hass.entities` answers instead: it says whether the entity is ha-evcc's
+// at all, and the installed prefixes narrow the cut between prefix and loadpoint
+// name down to the ones that exist. Guessing the cut from the id alone would go
+// wrong on every prefix with an underscore of its own ("my_evcc_" reads as
+// prefix "my_" plus loadpoint "evcc_..."). The longest installed prefix the id
+// starts with is tried first: with both "evcc_" and "evcc_home_" installed, an
+// id under the longer one is far more likely to be its own than a loadpoint of
+// the shorter one that happens to be called "home_...".
+// Returns { prefix, loadpoint } with an empty loadpoint for a site entity, or
+// null when the entity is not ha-evcc's or matches no known feature. What
+// discoverEntities() files under meters (named PV, battery and grid meters,
+// vehicle entities) is site data as well: no loadpoint, the site views fit.
+function locateEntity(hass, entityId) {
+  if (hass?.entities?.[entityId]?.platform !== "evcc_intg") return null;
+  if (!hass.states?.[entityId]) return null;
+  const slug = entityId.slice(entityId.indexOf(".") + 1);
+
+  const candidates = installedPrefixes(hass)
+    .filter(prefix => slug.startsWith(prefix))
+    .sort((a, b) => b.length - a.length);
+
+  for (const prefix of candidates) {
+    const { loadpoints, site, meters } = discoverEntities(hass, prefix);
+    for (const [lp, ents] of Object.entries(loadpoints)) {
+      if (Object.values(ents).includes(entityId)) return { prefix, loadpoint: lp };
+    }
+    if (Object.values(site).includes(entityId)) return { prefix, loadpoint: "" };
+    for (const ents of Object.values(meters)) {
+      if (Object.values(ents).includes(entityId)) return { prefix, loadpoint: "" };
+    }
+  }
+  return null;
+}
+
 // ha-evcc 2026.8.8+: true when the loadpoint is disabled in the evcc config.
 // Older integration versions never create the sensor, so this stays false.
 function isLoadpointDisabled(hass, ents) {
   return !!ents.disabled_in_config && isOn(hass, ents.disabled_in_config);
+}
+
+// The discovered loadpoints narrowed by the card's `loadpoints` option; without
+// the option every discovered loadpoint is in.
+function selectLoadpoints(loadpoints, config) {
+  const filter = loadpointFilter(config);
+  if (!filter) return loadpoints;
+  return Object.fromEntries(Object.entries(loadpoints).filter(([lp]) => filter.includes(lp)));
 }
 
 // Split a loadpoints map into enabled/disabled buckets (config-disabled ones).
@@ -2527,15 +2683,7 @@ const priorityView = {
     if (!this._hass) return null;
     const prefix = this._getPrefix();
     const { loadpoints } = discoverEntities(this._hass, prefix);
-    const filterRaw = this._config.loadpoints;
-    const filter = filterRaw
-      ? (Array.isArray(filterRaw) ? filterRaw : [filterRaw])
-      : null;
-    const visible = filter && filter.length > 0
-      ? Object.fromEntries(
-          Object.entries(loadpoints).filter(([lp]) => filter.includes(lp))
-        )
-      : loadpoints;
+    const visible = selectLoadpoints(loadpoints, this._config);
     // Config-disabled loadpoints have no interactive entities - callers of
     // _currentVisible (plan/priority interactions) can never act on them.
     return partitionDisabledLoadpoints(this._hass, visible).enabled;
@@ -2958,8 +3106,7 @@ const siteView = {
         <div class="lp-header">
           <span class="lp-name">${escHtml(this._config.title || this._t("overview"))}</span>
         </div>
-        <div class="flow-wrap-clickable" role="button" tabindex="0"
-             onclick="window.__evccCards.get('${this._cardId}')._toggleSite()"
+        <div class="flow-wrap-clickable" role="button" tabindex="0" data-action="toggle-site"
              title="${siteExpanded ? this._t("siteCollapse") : this._t("siteExpand")}">
           ${flowBar}
         </div>
@@ -3144,8 +3291,6 @@ const flowView = {
     this._spreadSankeyLabels(srcNodes);
     this._spreadSankeyLabels(dstNodes);
 
-    const sankeyId = `sankey-${this._cardId}`;
-
     // --- Flow paths ---
     const srcRightOffsets = srcNodes.map(() => 0);
     const dstLeftOffsets  = dstNodes.map(() => 0);
@@ -3240,8 +3385,7 @@ const flowView = {
       : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z";
 
     const sankeySvg = `
-      <div class="sankey-wrap" role="button" tabindex="0" style="cursor:pointer"
-           onclick="if(!event.target.closest('[data-more-info]'))window.__evccCards.get('${this._cardId}')._toggleSite()">
+      <div class="sankey-wrap" role="button" tabindex="0" style="cursor:pointer" data-action="toggle-site">
         <svg viewBox="0 0 ${SVG_W} ${SVG_H}" width="100%" preserveAspectRatio="xMidYMid meet"
              style="display:block;overflow:visible;font-family:inherit">
           ${flowPaths.join("")}
@@ -4564,7 +4708,7 @@ const debugView = {
     const prefix    = this._getPrefix();
     const haVer     = this._hass?.config?.version || "?";
     const lang      = (this._config.language
-      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+      || (this._hass?.language ?? "en")).split("-")[0].toLowerCase();
     const cfgLang   = this._config.language || null;
     const ua        = (typeof navigator !== "undefined" ? navigator.userAgent : "—");
     const evccCount = Object.keys(this._hass?.states || {})
@@ -4735,7 +4879,7 @@ const debugView = {
     const prefix    = this._getPrefix();
     const haVer     = this._hass?.config?.version || "?";
     const lang      = (this._config.language
-      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+      || (this._hass?.language ?? "en")).split("-")[0].toLowerCase();
     const cfgLang   = this._config.language || null;
     const ua        = (typeof navigator !== "undefined" ? navigator.userAgent : "—").slice(0, 300);
     const evccCount = Object.keys(this._hass?.states || {})
@@ -4848,15 +4992,53 @@ const debugView = {
   },
 };
 
+// Non-native click targets: everything the card wires a click handler to that
+// is not a <button>, <input>, <select> or <a> and so gets no keyboard support
+// from the browser. They are made focusable and get the button role here,
+// once per render, instead of every view remembering to do it.
+const NON_NATIVE_CLICKABLES = "[data-more-info], [data-action], [data-lp-current-toggle], [data-lp-smart-cost-open]";
+const NATIVE = "button, input, select, textarea, a[href]";
+
 // Event delegation for the whole card. Methods are mixed into EvccCard.prototype.
 const listeners = {
   _attachListeners() {
+    // Keyboard activation for the button-role elements: Enter and Space click
+    // them, as a native button would. Bound to the shadow root once; the root
+    // survives every innerHTML replacement, the elements inside do not.
+    if (!this._keyboardBound) {
+      this._keyboardBound = true;
+      this.shadowRoot.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        const el = e.target?.closest?.('[role="button"]');
+        if (!el || el.matches(NATIVE)) return;
+        e.preventDefault();
+        // dispatched rather than el.click(): SVG elements (the flow nodes) have no click()
+        el.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true }));
+      });
+    }
+    this.shadowRoot.querySelectorAll(NON_NATIVE_CLICKABLES).forEach(el => {
+      if (el.matches(NATIVE)) return;
+      if (!el.hasAttribute("role"))     el.setAttribute("role", "button");
+      if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "0");
+    });
+
     this.shadowRoot.querySelectorAll("[data-more-info]").forEach(el => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         this.dispatchEvent(new CustomEvent("hass-more-info", {
           detail: { entityId: el.dataset.moreInfo }, bubbles: true, composed: true,
         }));
+      });
+    });
+
+    // The site and flow views fold their detail table on a click on the flow
+    // graphic. A click on a node inside it opens more-info instead: that handler
+    // above stops propagation, and the check here keeps the two apart even when
+    // the click lands on a node that has no more-info listener attached.
+    this.shadowRoot.querySelectorAll('[data-action="toggle-site"]').forEach(el => {
+      el.addEventListener("click", (e) => {
+        if (e.target.closest("[data-more-info]")) return;
+        this._toggleSite();
       });
     });
 
@@ -6125,13 +6307,6 @@ class EvccCard extends HTMLElement {
   // rebuilt here, or the re-mounted card is only half alive.
   connectedCallback() {
     window.addEventListener("evcc-plan-reset", this._onPlanReset);
-    // The inline handlers of the site and flow views reach the card through this
-    // map, so its entry has to come back with the element. On the very first
-    // mount there is no id yet; _render creates it.
-    if (this._cardId) {
-      window.__evccCards = window.__evccCards || new Map();
-      window.__evccCards.set(this._cardId, this);
-    }
     if (!this._countdownInterval) {
       this._countdownInterval = setInterval(() => this._tickCountdowns(), 1000);
     }
@@ -6142,14 +6317,12 @@ class EvccCard extends HTMLElement {
 
   disconnectedCallback() {
     window.removeEventListener("evcc-plan-reset", this._onPlanReset);
-    if (this._cardId) window.__evccCards?.delete(this._cardId);
     if (this._countdownInterval) {
       clearInterval(this._countdownInterval);
       this._countdownInterval = null;
     }
-    // Nothing may render on a detached element: a first render would register
-    // the card in window.__evccCards after the delete above, and the deferred
-    // work would run against a DOM nobody sees.
+    // Nothing may render on a detached element: the deferred work would run
+    // against a DOM nobody sees, and the re-mount renders from the state held.
     if (this._renderTimer)   { clearTimeout(this._renderTimer);   this._renderTimer   = null; }
     if (this._wsRenderTimer) { clearTimeout(this._wsRenderTimer); this._wsRenderTimer = null; }
     for (const k of Object.keys(this._planPreviewDebounce)) clearTimeout(this._planPreviewDebounce[k]);
@@ -6256,7 +6429,7 @@ class EvccCard extends HTMLElement {
       this._evccIds       = Object.keys(hass.states).filter(id => id.split(".")[1]?.startsWith(prefix));
     }
 
-    const lang = this._config.language || (hass.language ?? "de");
+    const lang = this._config.language || (hass.language ?? "en");
     // \u001f (unit separator) keeps attribute values from colliding with the
     // key's own delimiters; a title or an option may contain anything else.
     return lang + "|" + this._evccIds.map(id => {
@@ -6275,6 +6448,68 @@ class EvccCard extends HTMLElement {
     }).join("|");
   }
 
+  // Home Assistant sizes the layout from this, one unit being 50 px, in the
+  // masonry view and as the row span in a section. A rendered card measures
+  // itself, because no per-mode estimate survives the configuration: a collapsed
+  // detail table, a hidden footer, the number of loadpoints and the `size` scale
+  // each move the height, and a site card runs from 2 to 12 units across them.
+  // HA asks again whenever it relayouts, so this is the value it sees in
+  // practice; the estimate covers the moment before the first render and the
+  // time the translations are still loading, when the shadow root holds the
+  // loading placeholder, an ha-card of its own that says nothing about the
+  // card's height.
+  getCardSize() {
+    if (this._translationsReady) {
+      const rendered = this.shadowRoot?.querySelector("ha-card")?.getBoundingClientRect().height;
+      if (rendered > 0) return Math.max(1, Math.ceil(rendered / 50));
+    }
+    return this._estimatedCardSize();
+  }
+
+  // The pre-render fallback: the bare card per mode, plus the two blocks a
+  // configuration can remove. It must answer without hass and without a single
+  // discovered entity, so it never returns 0. The `size` scale is not in here:
+  // it only stretches the card once it renders, and then the measurement wins.
+  _estimatedCardSize() {
+    const mode = this._config?.mode || "loadpoint";
+    let rows = CARD_SIZES[mode] ?? CARD_SIZES.loadpoint;
+    if (mode === "loadpoint" || mode === "compact") rows *= this._sizedLoadpointCount();
+    if (this._config?.site_details !== "collapsed") rows += CARD_SIZE_DETAILS[mode] ?? 0;
+    if (normalizeStatsPeriod(this._config?.stats_period, "total") !== "none") {
+      rows += CARD_SIZE_FOOTER[mode] ?? 0;
+    }
+    return Math.max(1, rows);
+  }
+
+  // How many loadpoints the card would draw: the discovered ones narrowed by the
+  // `loadpoints` filter. Nothing is discovered before the first render, so a
+  // configured filter still yields a count there and everything else falls back
+  // to one loadpoint rather than to zero.
+  _sizedLoadpointCount() {
+    const filter = loadpointFilter(this._config);
+    const found  = this._cachedEntities?.loadpoints || {};
+    const n = Object.keys(found).length
+      ? Object.keys(selectLoadpoints(found, this._config)).length
+      : (filter ? filter.length : 0);
+    return Math.max(1, n);
+  }
+
+  // Width only, on purpose. A cell of the sections grid is 56 px high with an
+  // 8 px gap, and a card that declares no `rows` keeps its own height instead of
+  // being fitted into that raster. This card's height depends on how many
+  // loadpoints were discovered, whether the detail tables are expanded and
+  // whether a plan is running, so any fixed row count is wrong in one of two
+  // ways: too tall leaves an empty area under the card, too short lets the
+  // content spill over the card below it. `min_columns` is the one useful limit:
+  // a column is about 30 px, and the card starts to run over its own edge below
+  // roughly 272 px. The layout editor resizes in steps of three columns unless
+  // its precision mode is on, so the floor sits on that raster: nine columns,
+  // about 334 px. Eight would fit as well, but reads as nine to everyone who
+  // drags the handle, and nobody runs the card narrower than that anyway.
+  getGridOptions() {
+    return { min_columns: 9 };
+  }
+
   static getConfigElement() {
     return document.createElement("evcc-card-editor");
   }
@@ -6284,6 +6519,9 @@ class EvccCard extends HTMLElement {
   }
 
   setConfig(config) {
+    // Throws before anything is applied, so a rejected config leaves the card on
+    // the one it had and Home Assistant shows its error card with the reason.
+    validateCardConfig(config);
     this._config = config || {};
     this._syncIntegrationInstance();
     // Both stats paths are fed from the same normalised value, so the current
@@ -6299,10 +6537,6 @@ class EvccCard extends HTMLElement {
     this._statsPeriod = legacyStatsPeriod(rawPeriod, "total");
     if (this._statsMetric == null) this._statsMetric = "energy"; // energy | cost | co2
     if (this._statsGroup  == null) this._statsGroup  = "solar";  // solar | loadpoint | vehicle
-    const validSizes = ["small", "medium", "large"];
-    if (this._config.size && !validSizes.includes(this._config.size)) {
-      delete this._config.size;
-    }
 
     if (!this._translationsReady && !this._loadingTranslations) {
       this._loadingTranslations = true;
@@ -6339,7 +6573,7 @@ class EvccCard extends HTMLElement {
     // Use pre-resolved strings from current render cycle; fall back to resolving on demand
     const strings = this._renderStrings ?? (() => {
       const lang = (this._config.language
-        || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+        || (this._hass?.language ?? "en")).split("-")[0].toLowerCase();
       return this._translations[lang] || this._translations["en"] || {};
     })();
 
@@ -6363,12 +6597,6 @@ class EvccCard extends HTMLElement {
     this._sliderEditing   = false;
     this._sliderEditPanel = null;
     this._dropSliderEditOutside();
-    if (!this._cardId) {
-      this._cardId = Math.random().toString(36).slice(2);
-      window.__evccCards = window.__evccCards || new Map();
-      window.__evccCards.set(this._cardId, this);
-    }
-
     if (!this._translationsReady) {
       if (!this.shadowRoot.firstChild) {
         this.shadowRoot.innerHTML = `
@@ -6381,7 +6609,7 @@ class EvccCard extends HTMLElement {
 
     // Resolve language strings once per render — reused by all _t() calls
     const lang = (this._config.language
-      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+      || (this._hass?.language ?? "en")).split("-")[0].toLowerCase();
     this._renderStrings = this._translations[lang] || this._translations["en"] || {};
 
     const prefix = this._getPrefix();
@@ -6395,21 +6623,12 @@ class EvccCard extends HTMLElement {
     }
     const { loadpoints, site, meters } = this._cachedEntities;
 
-    const filterRaw = this._config.loadpoints;
-    const filter = filterRaw
-      ? (Array.isArray(filterRaw) ? filterRaw : [filterRaw])
-      : null;
-    const visible = filter && filter.length > 0
-      ? Object.fromEntries(
-          Object.entries(loadpoints).filter(([lp]) => filter.includes(lp))
-        )
-      : loadpoints;
+    const visible = selectLoadpoints(loadpoints, this._config);
 
     // disabled_loadpoints: hide (default) | dim | show - how to treat
     // loadpoints that are disabled in the evcc config (ha-evcc 2026.8.8+).
-    const dlpOpt = ["hide", "dim", "show"].includes(this._config.disabled_loadpoints)
-      ? this._config.disabled_loadpoints
-      : "hide";
+    // setConfig() has already rejected anything outside DISABLED_LOADPOINT_MODES.
+    const dlpOpt = this._config.disabled_loadpoints || "hide";
     const { enabled: lpEnabled, disabled: lpDisabled } =
       partitionDisabledLoadpoints(this._hass, visible);
     // Interactive modes (plan/priority) can never work on a disabled
@@ -6532,11 +6751,12 @@ class EvccCardEditor extends HTMLElement {
     this._availableLoadpoints = [];
     this._detectedPrefix = null;
     this._detectingPrefix = false;
+    this._instances = [];   // every ha-evcc entry in the registry, first one is the default
   }
 
   _t(key, replacements = {}) {
     const lang = (this._config?.language
-      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+      || (this._hass?.language ?? "en")).split("-")[0].toLowerCase();
     const t = sharedTranslations();
     const strings = t[lang] || t["en"] || {};
     let val = strings[key] ?? key;
@@ -6551,9 +6771,10 @@ class EvccCardEditor extends HTMLElement {
     }
     if (!this._detectedPrefix && !this._detectingPrefix) {
       this._detectingPrefix = true;
-      detectPrefix(hass).then(prefix => {
+      detectIntegration(hass).then(({ prefix, instances }) => {
         this._detectingPrefix = false;
         this._detectedPrefix = prefix;
+        this._instances = instances;
         this._discoverLoadpoints();
         this._render();
       });
@@ -6593,6 +6814,20 @@ class EvccCardEditor extends HTMLElement {
       bubbles: true,
       composed: true,
     }));
+  }
+
+  // The ha-evcc entries the registry reports, as select options. Only shown
+  // with more than one entry, or when the config names a prefix the registry
+  // does not know, so it can be cleared. The registry carries no entry title,
+  // so the prefix stands in for it, underscores read as spaces.
+  _instanceOptions() {
+    const cfg = this._config.prefix;
+    const opts = this._instances.map((inst, i) => {
+      const name = inst.prefix.replace(/_$/, "").replace(/_/g, " ");
+      return [inst.prefix, i === 0 ? `${name} (${this._t("editorInstanceDefault")})` : name];
+    });
+    if (cfg && !this._instances.some(inst => inst.prefix === cfg)) opts.push([cfg, cfg]);
+    return opts.length > 1 || (cfg && !this._instances.some(inst => inst.prefix === cfg)) ? opts : null;
   }
 
   _sel(id, options, current) {
@@ -6655,6 +6890,7 @@ class EvccCardEditor extends HTMLElement {
     const showStatsPeriod   = ["stats", "site", "flow", "grid"].includes(mode);
     const showVehicleFilter = mode === "repeatplan";
     const rplanVehicles     = Array.isArray(c.repeating_plan_vehicles) ? c.repeating_plan_vehicles : [];
+    const instanceOptions   = this._instanceOptions();
 
     // `stats_period` has no implicit value: unconfigured, every mode follows its
     // own default (the stats mode opens on the most recent month, the compact
@@ -6746,6 +6982,13 @@ class EvccCardEditor extends HTMLElement {
           ], mode)}
           ${modeDesc ? `<div class="hint">${modeDesc}</div>` : ""}
         </div>
+        ${instanceOptions ? `
+        <div class="field">
+          <label class="field-label" for="prefix">${this._t("editorInstanceLabel")}</label>
+          ${this._sel("prefix", instanceOptions, this._getPrefix())}
+          <div class="hint">${this._t("editorInstanceHint")}</div>
+        </div>
+        ` : ""}
         <div class="field">
           <label class="field-label" for="title">${this._t("editorTitleLabel")} <span class="hint" style="display:inline">(${this._t("editorOptional")})</span></label>
           <input id="title" class="ha-input" type="text" value="${this._esc(c.title || "")}" placeholder="${titlePlaceholder}">
@@ -6862,6 +7105,25 @@ class EvccCardEditor extends HTMLElement {
       });
     });
 
+    // Instance: the first entry is what the card detects on its own, so picking
+    // it drops `prefix` from the config. Loadpoint and vehicle selections belong
+    // to the instance they were made for and are cleared along with the switch.
+    const prefixEl = this.shadowRoot.getElementById("prefix");
+    if (prefixEl) {
+      prefixEl.addEventListener("change", () => {
+        const chosen = prefixEl.value;
+        const isDefault = this._instances.length > 0 && chosen === this._instances[0].prefix;
+        this._config = {
+          ...this._config,
+          prefix: isDefault ? undefined : chosen,
+          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined,
+        };
+        this._discoverLoadpoints();
+        this._fire();
+        this._render();
+      });
+    }
+
     const titleEl = this.shadowRoot.getElementById("title");
     if (titleEl) {
       titleEl.addEventListener("input", () => {
@@ -6910,7 +7172,6 @@ class EvccCardEditor extends HTMLElement {
 
 customElements.define("evcc-card-editor", EvccCardEditor);
 customElements.define("evcc-card", EvccCard);
-window.__evccCards = window.__evccCards || new Map();
 
 console.info(
   `%c evcc-card %c ${EVCC_CARD_VERSION} %c`,
@@ -6919,11 +7180,42 @@ console.info(
   "background:transparent"
 );
 
+// The picker offers matching cards when an entity is added to a dashboard. A
+// loadpoint entity gets the two loadpoint views, a site, meter or vehicle
+// entity the two site views, anything else is not ours and returns null. The
+// labels stay English: the translations are fetched at runtime and the picker
+// asks synchronously.
+function entitySuggestion(hass, entityId) {
+  const hit = locateEntity(hass, entityId);
+  if (!hit) return null;
+  // Only a second installation needs its prefix written into the config, the
+  // default one is what the card detects by itself.
+  const base = hit.prefix === "evcc_" ? {} : { prefix: hit.prefix };
+  const card = (mode, extra) => ({ type: "custom:evcc-card", mode, ...extra, ...base });
+  return hit.loadpoint
+    ? [
+        { label: "Loadpoint", config: card("loadpoint", { loadpoints: [hit.loadpoint] }) },
+        { label: "Compact",   config: card("compact",   { loadpoints: [hit.loadpoint] }) },
+      ]
+    : [
+        { label: "Site", config: card("site") },
+        { label: "Flow", config: card("flow") },
+      ];
+}
+
+// What the Lovelace card picker shows. `preview: true` makes it render a live
+// card from getStubConfig() instead of listing the name only; that render also
+// happens on an instance without ha-evcc, where the card finds no entity and
+// draws its empty state, which the `cardapi` test group holds to.
+// `version` is not part of the documented shape. It stays because it costs
+// nothing and makes the installed version visible to anything reading the entry.
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type:        "evcc-card",
-  name:        "EVCC Card",
-  description: "Dashboard card for ha-evcc integration.",
-  preview:     false,
-  version:     EVCC_CARD_VERSION,
+  type:                "evcc-card",
+  name:                "EVCC Card",
+  description:         "Dashboard card for ha-evcc integration.",
+  preview:             true,
+  documentationURL:    "https://github.com/mkshb/hass-evcc-card",
+  version:             EVCC_CARD_VERSION,
+  getEntitySuggestion: entitySuggestion,
 });

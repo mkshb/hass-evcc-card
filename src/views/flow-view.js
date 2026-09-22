@@ -172,8 +172,6 @@ export const flowView = {
     this._spreadSankeyLabels(srcNodes);
     this._spreadSankeyLabels(dstNodes);
 
-    const sankeyId = `sankey-${this._cardId}`;
-
     // --- Flow paths ---
     const srcRightOffsets = srcNodes.map(() => 0);
     const dstLeftOffsets  = dstNodes.map(() => 0);
@@ -268,8 +266,7 @@ export const flowView = {
       : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z";
 
     const sankeySvg = `
-      <div class="sankey-wrap" role="button" tabindex="0" style="cursor:pointer"
-           onclick="if(!event.target.closest('[data-more-info]'))window.__evccCards.get('${this._cardId}')._toggleSite()">
+      <div class="sankey-wrap" role="button" tabindex="0" style="cursor:pointer" data-action="toggle-site">
         <svg viewBox="0 0 ${SVG_W} ${SVG_H}" width="100%" preserveAspectRatio="xMidYMid meet"
              style="display:block;overflow:visible;font-family:inherit">
           ${flowPaths.join("")}

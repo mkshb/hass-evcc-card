@@ -172,6 +172,8 @@ Then restart Home Assistant or reload the Lovelace resources.
 
 Add the card to any Lovelace dashboard and use the **visual editor** to configure it - all options are available interactively, and the editor shows only the options relevant to the selected mode.
 
+Adding an evcc entity to a dashboard offers the card straight away: the picker suggests the **Loadpoint** and **Compact** views for a charge point entity and the **Site** and **Flow** views for a site, meter or vehicle entity, with the charge point already filled in.
+
 ### Configuration options
 
 | Option | Type | Default | Description |
@@ -191,7 +193,9 @@ Add the card to any Lovelace dashboard and use the **visual editor** to configur
 | `hide_settings` | `list` | *(none)* | Remove individual settings from the `loadpoint` / `compact` card: `limit_soc`, `min_soc`, `phases`, `max_current`, `min_current`, `battery_boost`, `priority`, `smart_cost_limit`, `smart_feed_in_priority_limit`. See [Slider settings](#slider-settings) |
 | `slider_steps` | `map` | *(entity)* | **YAML only** — Override the step of a number slider per setting, e.g. `{ smart_cost_limit: 0.01, limit_soc: 5 }`. Keys are ha-evcc feature names and are matched exactly. Also sets the increment of the − / + buttons in the direct-input panel. Number entities only. See [Slider settings](#slider-settings) |
 | `stats_period` | `string` | *(see note)* | Statistics period: `month`, `year`, `total`, `none`. Unconfigured, the `stats` mode opens on the most recent month and the footer under `site`/`grid`/`flow` summarises everything; `none` hides that footer. The older values `30d`, `365d` and `thisYear` still work |
-| `prefix` | `string` | *(auto)* | **YAML only** — Entity prefix, auto-detected from ha-evcc. Only needed for multiple EVCC instances with custom prefixes. |
+| `prefix` | `string` | *(auto)* | Entity prefix, auto-detected from ha-evcc. With more than one ha-evcc entry the visual editor offers the instance to use; the first entry is the default and needs no `prefix` |
+
+> **Invalid values are rejected.** `mode`, `size`, `disabled_loadpoints` and `stats_period` only accept the values listed above, and `prefix`, `language` and `loadpoints` have to be non-empty. A dashboard carrying something else shows the Home Assistant error card naming the option, instead of quietly falling back to another view.
 
 ---
 
@@ -236,7 +240,7 @@ The **CHARGE SETTINGS** section is collapsed by default and can be toggled using
 Every slider in the card (target SoC, min SoC, current limits, battery boost, priority, smart charging limit, feed-in priority limit, and the target SoC of the charge plan) can also be set without dragging:
 
 - **Direct input** - tap the value next to the slider. A touch-sized row opens below it with **−** and **+** buttons, a number field with the unit, and apply / cancel. The buttons walk the slider step (for the current sliders: the next available option), the field accepts an exact value with either a comma or a dot and is clamped to the slider range. **Enter** or **✓** writes the value, **Escape** or **✕** discards it. Only one panel is open at a time.
-- **Keyboard** - with the slider focused, the arrow keys, Home / End and PageUp / PageDown change the value and write it as well.
+- **Keyboard** - with the slider focused, the arrow keys, Home / End and PageUp / PageDown change the value and write it as well. Everything else that reacts to a tap (the more-info rows, the flow graphic that folds the detail table, the buttons and chips) is reachable with Tab and fires on Enter or Space.
 - **Step size** - the step comes from the ha-evcc entity (for example 0.005 for the smart charging limit). Use `slider_steps` to make a slider coarser or finer per setting; the − / + buttons follow the same step:
 
   ```yaml
@@ -473,12 +477,14 @@ number.evcc_<loadpoint_name>_limit_soc
 ...
 ```
 
-> **Edge case:** If you run **multiple EVCC instances** with a custom prefix (e.g. `evcc2_`), you can override the auto-detection via YAML:
+> **Multiple EVCC instances:** every ha-evcc entry gets its own prefix from its title (`evcc` → `evcc_`, `evcc demo` → `evcc_demo_`). The visual editor then shows an **ha-evcc instance** field; the first entry is used unless another one is picked. In YAML the same choice is the `prefix` option:
 >
 > ```yaml
 > type: custom:evcc-card
-> prefix: evcc2_
+> prefix: evcc_demo_
 > ```
+>
+> A card sees only its own instance, also when one prefix starts with another (`evcc_` next to `evcc_demo_`).
 
 ---
 

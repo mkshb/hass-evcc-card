@@ -107,7 +107,7 @@ export const debugView = {
     const prefix    = this._getPrefix();
     const haVer     = this._hass?.config?.version || "?";
     const lang      = (this._config.language
-      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+      || (this._hass?.language ?? "en")).split("-")[0].toLowerCase();
     const cfgLang   = this._config.language || null;
     const ua        = (typeof navigator !== "undefined" ? navigator.userAgent : "—");
     const evccCount = Object.keys(this._hass?.states || {})
@@ -278,7 +278,7 @@ export const debugView = {
     const prefix    = this._getPrefix();
     const haVer     = this._hass?.config?.version || "?";
     const lang      = (this._config.language
-      || (this._hass?.language ?? "de")).split("-")[0].toLowerCase();
+      || (this._hass?.language ?? "en")).split("-")[0].toLowerCase();
     const cfgLang   = this._config.language || null;
     const ua        = (typeof navigator !== "undefined" ? navigator.userAgent : "—").slice(0, 300);
     const evccCount = Object.keys(this._hass?.states || {})

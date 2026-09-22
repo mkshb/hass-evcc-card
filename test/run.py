@@ -64,8 +64,9 @@ def card_version():
 
 class T:
     """Collects check results and writes report.md / report.json / junit.xml."""
-    def __init__(self, suite="evcc-card tests", browser="chromium"):
+    def __init__(self, suite="evcc-card tests", browser="chromium", frozen_time=FIXED_TIME):
         self.suite, self.browser, self.results, self.started, self.section = suite, browser, [], time.time(), ""
+        self.frozen_time = frozen_time   # None for a run on the live clock (test/e2e.py)
     def group(self, title):        self.section = title; print(f"\n[{title}]")
     def ok(self, name, detail=""):   self._add(True, name, detail);  print(f"  PASS {name}" + (f"  ({detail})" if detail else ""))
     def fail(self, name, detail=""): self._add(False, name, detail); print(f"  FAIL {name}  {detail}")
@@ -78,12 +79,13 @@ class T:
         out = Path(out); out.mkdir(parents=True, exist_ok=True)
         passed, failed = len(self.results) - len(self.failed), len(self.failed)
         meta = {"suite": self.suite, "browser": self.browser, "card_version": card_version(), "run_at": datetime.datetime.now().isoformat(timespec="seconds"),
-                "duration_s": round(time.time() - self.started, 1), "fixed_browser_time": FIXED_TIME, "passed": passed, "failed": failed}
+                "duration_s": round(time.time() - self.started, 1), "fixed_browser_time": self.frozen_time, "passed": passed, "failed": failed}
         (out / "report.json").write_text(json.dumps({**meta, "results": self.results, "screenshots": [str(s) for s in screenshots]}, indent=1, ensure_ascii=False))
         lines = [f"# {self.suite}", "",
                  f"**{'FAILED' if failed else 'PASSED'}**: {passed} passed, {failed} failed", "",
-                 f"- Card version: {meta['card_version']}", f"- Browser: {self.browser}", f"- Run at: {meta['run_at']} ({meta['duration_s']} s)",
-                 f"- Browser clock frozen at: {FIXED_TIME} {TIMEZONE}", ""]
+                 f"- Card version: {meta['card_version']}", f"- Browser: {self.browser}", f"- Run at: {meta['run_at']} ({meta['duration_s']} s)"]
+        lines += [f"- Browser clock frozen at: {self.frozen_time} {TIMEZONE}"] if self.frozen_time else ["- Browser clock: live"]
+        lines += [""]
         if failed:
             lines += ["## Failures", ""] + [f"- **{r['section']}** / {r['name']}" + (f": {r['detail']}" if r['detail'] else "") for r in self.failed] + [""]
         lines += ["## All checks", "", "| Result | Section | Check | Detail |", "|---|---|---|---|"]
@@ -416,22 +418,18 @@ def lifecycle(browser, port, t):
         page.evaluate("""() => {
           const c = window.__card, host = c.parentNode;
           host.removeChild(c);
-          window.__whileDetached = { cards: window.__evccCards.size, interval: !!c._countdownInterval };
+          window.__whileDetached = { interval: !!c._countdownInterval };
           host.appendChild(c);
         }""")
         page.wait_for_timeout(300)
         return page.evaluate("window.__whileDetached")
 
-    card_id = page.evaluate("window.__card._cardId")
     t.check(plan_reset_works(), "mounted: evcc-plan-reset clears the local plan state")
-    t.check(page.evaluate(f"window.__evccCards.has('{card_id}')"), "mounted: the card is in the registry")
 
     detached = remount()
-    t.check(detached["cards"] == 0, "detached: the registry entry is released, no instance leaks", json.dumps(detached))
     t.check(detached["interval"] is False, "detached: the countdown interval is stopped", json.dumps(detached))
 
     t.check(plan_reset_works(), "re-mounted: evcc-plan-reset is handled again")
-    t.check(page.evaluate(f"window.__evccCards.get('{card_id}') === window.__card"), "re-mounted: the registry entry is restored")
     t.check(page.evaluate("!!window.__card._countdownInterval"), "re-mounted: the countdown interval runs again")
 
     # capabilities and entry_id survive on purpose: re-probing them on every
@@ -443,46 +441,63 @@ def lifecycle(browser, port, t):
             "re-mounting costs no extra backend call", f"{n_before} capabilities call(s) before and after")
 
     for _ in range(3): remount()
-    t.check(page.evaluate("window.__evccCards.size") == 1, "repeated re-mounts keep exactly one registry entry",
-            str(page.evaluate("window.__evccCards.size")))
+    t.check(page.evaluate("!!window.__card._countdownInterval") and not errors, "repeated re-mounts leave one live card behind",
+            "; ".join(errors)[:200])
 
     # A hass update arms the 300 ms render timer; detaching inside that window
-    # must cancel it (a render on a detached element would re-register the card
-    # after the delete hook ran), and the re-mount must pick the update up again.
+    # must cancel it (a render on a detached element would work against a DOM
+    # nobody sees), and the re-mount must pick the update up again.
     page.evaluate("""() => {
       const c = window.__card, host = c.parentNode, id = 'sensor.evcc_openwb_charge_power';
       const st = { ...window.__hass.states, [id]: { ...window.__hass.states[id], state: '5151' } };
       window.__hass.states = st; c.hass = { ...window.__hass, states: st };
       window.__armed = !!c._renderTimer;
       host.removeChild(c);
-      window.__afterDetach = { timer: !!c._renderTimer, cards: window.__evccCards.size };
+      window.__afterDetach = { timer: !!c._renderTimer };
     }""")
     page.wait_for_timeout(500)
     t.check(page.evaluate("window.__armed") and page.evaluate("window.__afterDetach.timer") is False,
             "detach cancels a pending render", json.dumps(page.evaluate("window.__afterDetach")))
-    t.check(page.evaluate("window.__evccCards.size") == 0, "no render ran on the detached element (registry stays empty)",
-            str(page.evaluate("window.__evccCards.size")))
+    t.check("5151" not in (page.evaluate("window.__card._lastRenderKey") or ""), "no render ran on the detached element",
+            str(page.evaluate("window.__card._lastRenderKey"))[:80])
     page.evaluate("() => document.getElementById('host').appendChild(window.__card)")
     page.wait_for_timeout(500)
     t.check("5151" in (page.evaluate("window.__card._lastRenderKey") or ""), "re-mount renders the update that was pending at detach")
     t.check(not errors, "no console errors across the re-mounts", "; ".join(errors)[:200])
     page.close()
 
-    # The site view wires its expand toggle through the registry with an inline
-    # onclick, so a lost entry breaks it in a way no other check would notice.
-    page = new_page(browser, 480, 1400)
-    errors = open_card(page, port, mode="site")
+    # The site and flow views fold their detail table on a click on the flow
+    # graphic. That used to be an inline onclick through a global registry, which
+    # a strict Content-Security-Policy blocks; now it is a data-action in the
+    # delegation, and the markup must carry no inline handler at all.
     shown = lambda: page.evaluate("""(() => { const el = window.__card.shadowRoot.querySelector('.site-table');
                                              return el ? getComputedStyle(el).display !== 'none' : null; })()""")
+    for mode, target in (("site", ".flow-wrap-clickable"), ("flow", ".sankey-wrap")):
+        page = new_page(browser, 480, 1400)
+        errors = open_card(page, port, mode=mode)
+        inline = page.evaluate("window.__card.shadowRoot.querySelectorAll('[onclick]').length")
+        t.check(inline == 0, f"{mode}: no inline handler in the markup", f"{inline} element(s) with onclick")
+        before = shown()
+        page.locator(in_card(target)).click(); page.wait_for_timeout(300)
+        t.check(before is not None and shown() != before, f"{mode}: the toggle folds the table while mounted", f"{before} -> {shown()}")
+        page.evaluate("""() => { const c = window.__card, host = c.parentNode; host.removeChild(c); host.appendChild(c); }""")
+        page.wait_for_timeout(300)
+        before = shown()
+        page.locator(in_card(target)).click(); page.wait_for_timeout(300)
+        t.check(shown() != before, f"{mode}: the toggle still works after a re-mount", f"{before} -> {shown()}")
+        t.check(not errors, f"{mode}: no console errors around the toggle", "; ".join(errors)[:200])
+        page.close()
+
+    # In the flow view a click on a node opens more-info and must not fold the
+    # table; the delegation keeps the two apart.
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, mode="flow")
+    page.evaluate("() => { window.__moreInfo = []; window.__card.addEventListener('hass-more-info', e => window.__moreInfo.push(e.detail.entityId)); }")
     before = shown()
-    page.locator(in_card(".flow-wrap-clickable")).click(); page.wait_for_timeout(300)
-    t.check(shown() != before, "site toggle works while mounted", f"{before} -> {shown()}")
-    page.evaluate("""() => { const c = window.__card, host = c.parentNode; host.removeChild(c); host.appendChild(c); }""")
-    page.wait_for_timeout(300)
-    before = shown()
-    page.locator(in_card(".flow-wrap-clickable")).click(); page.wait_for_timeout(300)
-    t.check(shown() != before, "site toggle still works after a re-mount", f"{before} -> {shown()}")
-    t.check(not errors, "no console errors from the inline handler after a re-mount", "; ".join(errors)[:200])
+    page.locator(in_card(".sankey-wrap [data-more-info]")).first.click(); page.wait_for_timeout(300)
+    t.check(shown() == before and len(page.evaluate("window.__moreInfo")) == 1,
+            "flow: a click on a node opens more-info and leaves the table alone",
+            f"table {before} -> {shown()}, more-info={page.evaluate('window.__moreInfo')}")
     page.close()
 
 
@@ -1104,6 +1119,21 @@ def discovery(browser, port, t):
     t.check(page.locator(in_card('button.mode-btn[data-entity="select.myevcc_openwb_mode"]')).count() > 0 and not errors,
             "custom prefix myevcc_ detected from the registry", "; ".join(errors)[:200])
     page.close()
+
+    # A second installation whose prefix extends the first one: "evcc demo" next
+    # to "evcc". Every demo entity id starts with evcc_ too, and the production
+    # card would read the demo loadpoints as "demo_openwb" and "demo_wp".
+    for cfg, want, label in (({"mode": "loadpoint"}, 2, "the production card shows only its own two loadpoints"),
+                             ({"mode": "loadpoint", "prefix": "evcc_demo_"}, 2, "the demo card shows the two demo loadpoints")):
+        page = new_page(browser, 480, 1800)
+        errors = open_card(page, port, config=cfg, second={"prefix": "evcc_demo_"})
+        rows = page.locator(in_card(".loadpoint")).count()
+        modes = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('button.mode-btn')].map(b => b.dataset.entity)")
+        own = cfg.get("prefix", "evcc_")
+        clean = all(m.startswith(f"select.{own}") and (own != "evcc_" or not m.startswith("select.evcc_demo_")) for m in modes)
+        t.check(rows == want and clean and not errors, f"prefix evcc_ next to evcc_demo_: {label}",
+                f"rows={rows} modes={sorted(set(modes))[:4]}; {'; '.join(errors)[:120]}")
+        page.close()
     for opt, want_rows, want_badge in (("hide", 1, 0), ("dim", 2, 1), ("show", 2, 0)):
         page = new_page(browser, 480, 1800)
         open_card(page, port, config={"mode": "loadpoint", "disabled_loadpoints": opt}, set={"binary_sensor.evcc_wp_disabled_in_config": "on"})
@@ -1262,10 +1292,265 @@ def flow_labels(browser, port, t):
         page.close()
 
 
+def card_api(browser, port, t):
+    """The methods Home Assistant expects on a custom card.
+
+    getCardSize() feeds the masonry layout (one unit is 50 px). Without it HA
+    assumes a single row for everything from the compact line to a debug dump.
+    The numbers live in CARD_SIZES; the checks pin the contract, not the values:
+    never 0, never undefined, larger for a taller mode, and scaling with the
+    number of loadpoints where the card repeats a block per loadpoint.
+    """
+    t.group("cardapi - getCardSize")
+    page = new_page(browser, 480, 2400)
+    errors = open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+
+    # A rendered card reports its own height. Anything else is an estimate that a
+    # configuration can invalidate: `site_details: collapsed` and
+    # `stats_period: none` together take a site card from 12 units down to 3, and
+    # a card that reports 12 while being 3 tall leaves a gap in the sections grid.
+    MEASURED = [
+        ({"mode": "site"}, "site, everything shown"),
+        ({"mode": "site", "site_details": "collapsed", "stats_period": "none"}, "site, table and footer off"),
+        ({"mode": "flow", "site_details": "collapsed", "stats_period": "none"}, "flow, table and footer off"),
+        ({"mode": "grid", "stats_period": "none", "size": "medium"}, "grid, scaled up"),
+        ({"mode": "loadpoint", "loadpoints": ["openwb"], "size": "medium"}, "a scaled loadpoint"),
+        ({"mode": "debug"}, "debug"),
+    ]
+    sizes = {}
+    for cfg, label in MEASURED:
+        p2 = new_page(browser, 480, 2400)
+        open_card(p2, port, config=cfg)
+        real = p2.locator(in_card("ha-card")).bounding_box()["height"] / 50
+        size = p2.evaluate("window.__card.getCardSize()")
+        sizes[label] = size
+        t.check(size >= real - 0.01 and size - real < 1.5,
+                f"the reported size matches the rendered height: {label}",
+                f"gemeldet={size} real={real:.1f}")
+        p2.close()
+
+    # While the translations load, the shadow root holds the loading placeholder,
+    # an ha-card of about 70 px. A relayout in that moment must get the estimate,
+    # not a measurement of the placeholder.
+    ph = page.evaluate("""(() => {
+      const c = window.__card;
+      c._translationsReady = false; c.shadowRoot.innerHTML = ""; c._render();
+      const placeholder = c.shadowRoot.querySelector("ha-card .loading") !== null;
+      const during = c.getCardSize();
+      const estimate = c._estimatedCardSize();
+      c._translationsReady = true; c._lastRenderKey = null; c._render();
+      return { placeholder, during, estimate, after: c.getCardSize() };
+    })()""")
+    t.check(ph["placeholder"] and ph["during"] == ph["estimate"] and ph["estimate"] > 2,
+            "the loading placeholder is not measured, the estimate answers instead", json.dumps(ph))
+    t.check(sizes["site, table and footer off"] * 2 < sizes["site, everything shown"],
+            "a collapsed site card reports a fraction of the full one", json.dumps(sizes))
+
+    # The estimate only has to carry the moment before the first render, but it
+    # must not be wildly off either, and it must answer without hass.
+    est = page.evaluate("""(() => {
+      const out = {};
+      for (const [name, cfg] of [
+        ["site",           { mode: "site" }],
+        ["site collapsed", { mode: "site", site_details: "collapsed", stats_period: "none" }],
+        ["flow",           { mode: "flow" }],
+        ["loadpoint",      { mode: "loadpoint", loadpoints: ["openwb"] }],
+        ["two loadpoints", { mode: "loadpoint", loadpoints: ["openwb", "wp"] }],
+        ["debug",          { mode: "debug" }],
+      ]) {
+        const c = document.createElement("evcc-card");
+        c.setConfig(cfg);
+        out[name] = c.getCardSize();
+      }
+      return out;
+    })()""")
+    bad = {m: v for m, v in est.items() if not isinstance(v, (int, float)) or v < 1}
+    t.check(not bad, "an unrendered card estimates a usable size for every config",
+            f"unbrauchbar: {bad}" if bad else json.dumps(est))
+    t.check(est["site collapsed"] < est["site"], "the estimate drops the table and the footer when they are off",
+            json.dumps(est))
+    t.check(est["two loadpoints"] == 2 * est["loadpoint"], "the estimate scales with the loadpoint count",
+            json.dumps(est))
+    t.check(not errors, "no console errors while sizing", "; ".join(errors)[:200])
+
+    t.group("cardapi - card picker registration")
+    entry = page.evaluate("""(() => (window.customCards || []).find(c => c.type === "evcc-card") || null)()""")
+    t.check(entry is not None, "the card registers itself in window.customCards", json.dumps(entry))
+    if entry:
+        missing = [k for k in ("type", "name", "description", "documentationURL") if not entry.get(k)]
+        t.check(not missing, "the picker entry carries name, description and a documentation link",
+                f"fehlt: {missing}" if missing else entry.get("documentationURL"))
+        t.check(entry.get("preview") is True, "the picker renders a live preview", json.dumps(entry.get("preview")))
+
+    # The preview runs on any instance, including one without ha-evcc at all.
+    # It must draw the empty state rather than throw, or the picker breaks.
+    stub = new_page(browser, 480, 900)
+    stub_errors = open_card(stub, port, config={**page.evaluate("window.__card.constructor.getStubConfig()"),
+                                                "prefix": "no_evcc_here_"})
+    drawn = stub.locator(in_card("ha-card")).count() > 0
+    t.check(drawn and not stub_errors, "the stub config renders without any evcc entity present",
+            "; ".join(stub_errors)[:200] or f"ha-card={drawn}")
+    stub.close()
+
+    t.group("cardapi - getEntitySuggestion")
+    sug = page.evaluate("""(() => {
+      const fn = (window.customCards || []).find(c => c.type === "evcc-card")?.getEntitySuggestion;
+      if (!fn) return { missing: true };
+      const hass = window.__hass;
+      return {
+        loadpoint: fn(hass, "sensor.evcc_openwb_charge_power"),
+        site:      fn(hass, "sensor.evcc_grid_power"),
+        foreign:   fn(hass, "sensor.some_other_integration_power"),
+        unknown:   fn(hass, "sensor.evcc_openwb_not_a_feature"),
+        meter:     fn(hass, "switch.evcc_ex30_repeating_plan_2"),
+      };
+    })()""")
+    t.check(not sug.get("missing"), "the picker entry carries getEntitySuggestion")
+    if not sug.get("missing"):
+        lp = sug["loadpoint"] or []
+        ok_lp = (isinstance(lp, list) and len(lp) >= 1
+                 and all(s["config"]["type"] == "custom:evcc-card" and s.get("label") for s in lp)
+                 and lp[0]["config"]["mode"] == "loadpoint"
+                 and lp[0]["config"]["loadpoints"] == ["openwb"])
+        t.check(ok_lp, "a loadpoint entity suggests the card with that loadpoint filled in", json.dumps(lp)[:250])
+        site = sug["site"] or []
+        ok_site = (isinstance(site, list) and len(site) >= 1
+                   and {s["config"]["mode"] for s in site} == {"site", "flow"}
+                   and all("loadpoints" not in s["config"] for s in site))
+        t.check(ok_site, "a site entity suggests the site and flow views", json.dumps(site)[:250])
+        t.check(sug["foreign"] is None, "an entity of another integration is not ours", json.dumps(sug["foreign"]))
+        t.check(sug["unknown"] is None, "an evcc-looking entity that is no known feature is refused",
+                json.dumps(sug["unknown"]))
+        # Vehicle entities and named meters have no loadpoint; discovery files
+        # them under meters, and they are site data for the picker.
+        meter = sug["meter"] or []
+        ok_meter = (isinstance(meter, list) and {s["config"]["mode"] for s in meter} == {"site", "flow"}
+                    and all("loadpoints" not in s["config"] for s in meter))
+        t.check(ok_meter, "a vehicle entity, filed under meters, suggests the site views", json.dumps(meter)[:250])
+
+    # A second installation with its own prefix has to end up in the config.
+    second = new_page(browser, 480, 900)
+    open_card(second, port, config={"mode": "loadpoint"}, second={"prefix": "evcc2_"})
+    pref = second.evaluate("""(() => {
+      const fn = (window.customCards || []).find(c => c.type === "evcc-card")?.getEntitySuggestion;
+      const hit = fn(window.__hass, "sensor.evcc2_openwb_charge_power");
+      return hit ? hit[0].config : null;
+    })()""")
+    t.check(pref and pref.get("prefix") == "evcc2_", "a second installation carries its prefix into the config",
+            json.dumps(pref))
+    second.close()
+
+    # ha-evcc slugifies the config entry title into the prefix, so a two-word
+    # title gives a prefix with an underscore of its own. Cut from the id alone,
+    # "my_evcc_openwb_charge_power" would read as prefix "my_" plus loadpoint
+    # "evcc_openwb"; the installed prefixes from hass.entities settle it.
+    second = new_page(browser, 480, 900)
+    open_card(second, port, config={"mode": "loadpoint"}, second={"prefix": "my_evcc_"})
+    multi = second.evaluate("""(() => {
+      const fn = (window.customCards || []).find(c => c.type === "evcc-card")?.getEntitySuggestion;
+      const lp   = fn(window.__hass, "sensor.my_evcc_openwb_charge_power");
+      const site = fn(window.__hass, "sensor.my_evcc_grid_power");
+      return { lp: lp ? lp[0].config : null, site: site ? site[0].config : null };
+    })()""")
+    ok_multi = (multi["lp"] and multi["lp"].get("prefix") == "my_evcc_" and multi["lp"].get("loadpoints") == ["openwb"]
+                and multi["site"] and multi["site"].get("prefix") == "my_evcc_" and "loadpoints" not in multi["site"])
+    t.check(ok_multi, "a prefix with an underscore of its own is not cut short", json.dumps(multi))
+    second.close()
+
+    t.group("cardapi - getGridOptions")
+    grid = page.evaluate("""(() => {
+      const out = {};
+      for (const mode of ["loadpoint","compact","plan","repeatplan","priority","site","flow","grid","stats","battery","debug"]) {
+        window.__card.setConfig({ mode, loadpoints: ["openwb"] });
+        out[mode] = window.__card.getGridOptions();
+      }
+      return out;
+    })()""")
+    # A declared row count fits the card into the 56 px raster of the sections
+    # grid. This card's height is not fixed, so too many rows leave an empty area
+    # under it and too few let the content run into the card below: no mode may
+    # declare rows at all.
+    with_rows = {m: g for m, g in grid.items() if {"rows", "min_rows", "max_rows"} & set(g)}
+    t.check(not with_rows, "no mode pins itself to a row count", f"mit rows: {with_rows}" if with_rows else "keine")
+    bad = {m: g for m, g in grid.items()
+           if not (1 <= g.get("min_columns", 1) <= g.get("columns", 12) <= 12)}
+    t.check(not bad, "the column limits stay inside the 12 column section",
+            f"unbrauchbar: {bad}" if bad else json.dumps(grid["flow"]))
+    # The layout editor resizes in steps of three columns; a limit off that
+    # raster reads as the next step up for everyone who drags the handle.
+    off = {m: g for m, g in grid.items()
+           if any(g.get(k, 3) % 3 for k in ("min_columns", "max_columns", "columns") if isinstance(g.get(k, 3), int))}
+    t.check(not off, "the column limits sit on the 3 column steps of the layout editor",
+            f"daneben: {off}" if off else "alle Vielfache von 3")
+
+    page.close()
+
+
+def setconfig(browser, port, t):
+    """setConfig() rejects a configuration the card cannot render.
+
+    Home Assistant catches the exception and shows its error card with the
+    message, which is the only way a typo in the YAML becomes visible: before
+    this, an unknown mode fell through to the loadpoint view and an invalid size
+    was silently deleted.
+    """
+    VALID = [
+        ({}, "an empty config"),
+        ({"mode": "loadpoint", "loadpoints": ["openwb"]}, "a normal config"),
+        ({"mode": "site2"}, "the legacy mode name site2"),
+        ({"mode": "flow", "size": "large"}, "a known size"),
+        ({"stats_period": "month"}, "a current stats_period"),
+        ({"stats_period": "365d"}, "a legacy stats_period"),
+        ({"disabled_loadpoints": "dim"}, "a known disabled_loadpoints"),
+        ({"loadpoints": "openwb"}, "a single loadpoint as a string"),
+        ({"prefix": "evcc2_", "language": "en"}, "prefix and language"),
+    ]
+    INVALID = [
+        ({"mode": "quatsch"}, "mode", "an unknown mode"),
+        ({"size": "huge"}, "size", "an unknown size"),
+        ({"disabled_loadpoints": "maybe"}, "disabled_loadpoints", "an unknown disabled_loadpoints"),
+        ({"stats_period": "weekly"}, "stats_period", "an unknown stats_period"),
+        ({"prefix": ""}, "prefix", "an empty prefix"),
+        ({"prefix": 5}, "prefix", "a numeric prefix"),
+        ({"language": ""}, "language", "an empty language"),
+        ({"loadpoints": []}, "loadpoints", "an empty loadpoint list"),
+        ({"loadpoints": [""]}, "loadpoints", "a blank loadpoint name"),
+        ({"loadpoints": 5}, "loadpoints", "a numeric loadpoints"),
+    ]
+
+    t.group("setconfig - invalid configuration is rejected")
+    page = new_page(browser, 480, 900)
+    errors = open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+    probe = """((cfg) => {
+      const c = document.createElement("evcc-card");
+      try { c.setConfig(cfg); return { threw: false }; }
+      catch (e) { return { threw: true, message: String(e && e.message || e) }; }
+    })"""
+    for cfg, label in VALID:
+        r = page.evaluate(probe, cfg)
+        t.check(not r["threw"], f"accepted: {label}", r.get("message", "")[:150])
+    for cfg, key, label in INVALID:
+        r = page.evaluate(probe, cfg)
+        ok = r["threw"] and key in r.get("message", "")
+        t.check(ok, f"rejected: {label}", r.get("message", "(kein Fehler)")[:150])
+
+    # The rejected config must not have been applied on the way out.
+    kept = page.evaluate("""(() => {
+      const before = window.__card._config.mode;
+      try { window.__card.setConfig({ mode: "quatsch" }); } catch (e) {}
+      return { before, after: window.__card._config.mode };
+    })()""")
+    t.check(kept["before"] == kept["after"], "a rejected config leaves the card on the previous one", json.dumps(kept))
+    t.check(not errors, "no console errors", "; ".join(errors)[:200])
+    page.close()
+
+
 def widths(browser, port, t):
     """Narrow and wide cards: the input panel stays inside the card, no console errors."""
     t.group("widths - responsive layout")
-    for w in (300, 650):
+    # 334 px is nine columns of a section, the floor getGridOptions reports as
+    # min_columns; below roughly 272 px the card runs over its own edge.
+    for w in (334, 650):
         page = new_page(browser, w + 40, 1600)
         errors = open_card(page, port, width=w, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"})
         page.locator(in_card('input[data-entity="number.evcc_openwb_smart_cost_limit"] + button.slider-val')).click(); page.wait_for_timeout(150)
@@ -1275,6 +1560,110 @@ def widths(browser, port, t):
         page.locator("#host").screenshot(path=str(OUT / f"width-{w}.png"))
         t.check(inside and scroll <= 0 and not errors, f"{w} px: input panel inside the card, no horizontal overflow", f"overflow={scroll}; {'; '.join(errors)[:150]}")
         page.close()
+
+
+def editor_instances(browser, port, t):
+    """With two ha-evcc entries the editor offers the instance; with one it does not."""
+    t.group("editor - instance selection")
+
+    def mount(page, config):
+        page.evaluate("""async (config) => {
+          document.querySelectorAll("evcc-card-editor").forEach(e => e.remove());
+          const ed = document.createElement("evcc-card-editor");
+          window.__cfg = [];
+          ed.addEventListener("config-changed", e => window.__cfg.push(JSON.parse(JSON.stringify(e.detail.config))));
+          ed.setConfig(config);
+          ed.hass = window.__hass;
+          document.body.appendChild(ed);
+          await new Promise(r => setTimeout(r, 900));
+        }""", config)
+    last = lambda page: page.evaluate("window.__cfg.length ? window.__cfg[window.__cfg.length - 1] : {}")
+    opts = lambda page: page.evaluate("""() => { const s = document.querySelector('evcc-card-editor').shadowRoot.getElementById('prefix');
+      return s ? [...s.options].map(o => o.value) : null; }""")
+
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint"})
+    mount(page, {"mode": "loadpoint"})
+    t.check(opts(page) is None, "one ha-evcc entry: no instance field", json.dumps(opts(page)))
+    page.close()
+
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint"}, second={"prefix": "evcc_demo_"})
+    mount(page, {"mode": "loadpoint", "loadpoints": ["openwb"]})
+    t.check(opts(page) == ["evcc_", "evcc_demo_"], "two entries: the instance field lists both prefixes", json.dumps(opts(page)))
+    sel = page.locator("evcc-card-editor #prefix")
+    sel.select_option("evcc_demo_"); page.wait_for_timeout(200)
+    got = last(page)
+    t.check(got.get("prefix") == "evcc_demo_" and "loadpoints" not in got,
+            "picking the second instance writes its prefix and clears the loadpoint filter", json.dumps(got))
+    t.check(page.evaluate("document.querySelector('evcc-card-editor').shadowRoot.getElementById('prefix').value") == "evcc_demo_",
+            "the field keeps the selection after the re-render")
+    page.locator("evcc-card-editor #prefix").select_option("evcc_"); page.wait_for_timeout(200)
+    got = last(page)
+    t.check("prefix" not in got, "picking the first instance drops the prefix again (auto-detection)", json.dumps(got))
+    mount(page, {"mode": "loadpoint", "prefix": "evcc_demo_"})
+    t.check(page.evaluate("document.querySelector('evcc-card-editor').shadowRoot.getElementById('prefix').value") == "evcc_demo_",
+            "a configured prefix is preselected")
+    page.close()
+
+
+def keyboard(browser, port, t):
+    """Every clickable element is reachable with Tab and fires on Enter or Space;
+    without a language from HA the card and the editor fall back to English."""
+    t.group("keyboard - focus and activation")
+    NON_NATIVE = "[data-more-info], [data-action], [data-lp-current-toggle], [data-lp-smart-cost-open]"
+    unreachable = lambda page: page.evaluate("""(sel) => [...window.__card.shadowRoot.querySelectorAll(sel)]
+        .filter(el => !el.matches('button, input, select, textarea, a[href]'))
+        .filter(el => el.getAttribute('tabindex') !== '0' || el.getAttribute('role') !== 'button')
+        .map(el => el.tagName + (el.className.baseVal ?? el.className ? '.' + (el.className.baseVal ?? el.className) : '')).slice(0, 5)""", NON_NATIVE)
+    hook = "() => { window.__moreInfo = []; window.__card.addEventListener('hass-more-info', e => window.__moreInfo.push(e.detail.entityId)); }"
+
+    for mode in ("loadpoint", "site", "flow", "battery", "grid"):
+        page = new_page(browser, 480, 1600)
+        errors = open_card(page, port, mode=mode)
+        left = unreachable(page)
+        t.check(not left and not errors, f"{mode}: every non-native click target is focusable with the button role", f"unreachable: {left}; {'; '.join(errors)[:100]}")
+        page.close()
+
+    # Enter and Space on a focused more-info row fire the event a click would
+    # (the site view has them as plain divs; the loadpoint view uses buttons).
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="site")
+    page.evaluate(hook)
+    row = page.locator(in_card("div[data-more-info]")).first
+    row.focus(); page.keyboard.press("Enter"); page.keyboard.press(" ")
+    fired = page.evaluate("window.__moreInfo")
+    t.check(len(fired) == 2 and all(fired), "site: Enter and Space on a focused row open more-info", json.dumps(fired))
+    page.close()
+
+    # The SVG nodes of the flow view are focusable too, and the site toggle folds on Space.
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="flow")
+    page.evaluate(hook)
+    page.locator(in_card("g[data-more-info]")).first.focus(); page.keyboard.press("Enter")
+    t.check(len(page.evaluate("window.__moreInfo")) == 1, "flow: Enter on a focused SVG node opens more-info", json.dumps(page.evaluate("window.__moreInfo")))
+    shown = lambda: page.evaluate("(() => { const el = window.__card.shadowRoot.querySelector('.site-table'); return el ? getComputedStyle(el).display !== 'none' : null; })()")
+    before = shown()
+    page.locator(in_card(".sankey-wrap")).focus(); page.keyboard.press(" "); page.wait_for_timeout(200)
+    t.check(before is not None and shown() != before, "flow: Space on the focused graphic folds the table", f"{before} -> {shown()}")
+    page.close()
+
+    t.group("keyboard - language fallback")
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="loadpoint")
+    label = lambda: page.locator(in_card('button.mode-btn[data-value="off"] .mode-label')).first.inner_text().strip()
+    t.check(label() == "Aus", "with hass.language de the card is German", label())
+    page.evaluate("() => { const c = window.__card; c.hass = { ...window.__hass, language: undefined, locale: {} }; c._lastRenderKey = null; c._render(); }")
+    page.wait_for_timeout(200)
+    t.check(label() == "Off", "without a language from HA the card falls back to English", label())
+    ed = page.evaluate("""async () => {
+      const ed = document.createElement('evcc-card-editor'); ed.setConfig({ mode: 'loadpoint' });
+      ed.hass = { ...window.__hass, language: undefined, locale: {} }; document.body.appendChild(ed);
+      await new Promise(r => setTimeout(r, 700));
+      return ed.shadowRoot.querySelector('label[for=mode]')?.textContent.trim();
+    }""")
+    t.check(ed == "Mode", "without a language from HA the editor falls back to English", str(ed))
+    page.close()
 
 
 def escaping(browser, port, t):
@@ -1364,9 +1753,9 @@ def unit(browser, port, t):
             t.fail(f"{f.name} contains tests", f"no testcase in the report; stderr={p.stderr[:200]}")
 
 
-GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "escaping": escaping, "contracts": contracts,
+GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "editor_instances": editor_instances, "keyboard": keyboard, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
-          "flow": flow_labels, "widths": widths}
+          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths}
 
 
 def main():

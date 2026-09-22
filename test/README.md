@@ -14,7 +14,7 @@ Groups in `run.py` (`--only <group>`, repeatable):
 | `stats_fallback` | Stats mode on an ha-evcc without `evcc_intg/sessions`: the recorder is queried for sum buckets, the chart is rebuilt from the deltas, the solar split survives, the `30d` tab switches to day buckets |
 | `stats_period` | Every `stats_period` value steers both stats paths the same way: the current vocabulary (`month`/`year`/`total`/`none`), the legacy one older dashboards carry (`30d`/`365d`/`thisYear`), and the unconfigured default, each with and without the sessions API; plus `none` hiding the footer under `site` |
 | `renderkey` | A hass update only reaches the DOM when the render key changes. Changed select options and number bounds must trigger a render, an update that changes nothing must not, and `RENDER_ATTRS` must list every attribute the card reads: the group proxies the attribute objects during a render of every mode and fails on anything outside the list |
-| `lifecycle` | Detach and re-attach the same card element, the way Lovelace re-mounts on a view switch: the `evcc-plan-reset` listener, the registry entry the inline site handlers resolve through and the countdown interval must all come back, the registry must not leak instances, a re-mount must cost no backend call, and a render pending at detach is cancelled and picked up again on re-mount |
+| `lifecycle` | Detach and re-attach the same card element, the way Lovelace re-mounts on a view switch: the `evcc-plan-reset` listener and the countdown interval must come back, a re-mount must cost no backend call, a render pending at detach is cancelled and picked up again on re-mount; the site and flow toggles work through the delegation before and after a re-mount, the markup carries no inline handler, and a click on a flow node opens more-info without folding the table |
 | `interaction` | Direct-input panel on number sliders, select-backed sliders (min/max current), battery boost and the plan target; keyboard writes (none for a key that moved nothing); outside click (inside and outside the card) / tab switch closing the panel, a deferred hass update surviving a panel switch; `hide_settings`, `slider_steps` (matched against the feature key, not the tail of the entity id, and reported in the console when a select-backed slider cannot honour it); plan preview request |
 | `editor` | The visual editor emits every field into the config (text, all selects, all checkbox groups), emits the complete config rather than a patch, and drops a key again when a field returns to its default; the mode switch re-renders the form; `stats_period` shows the default of the current mode instead of a preselected period and keeps a legacy value selected without rewriting it |
 | `escaping` | Names that are free text in an evcc/HA configuration reach the DOM as text: card title, vehicle title, loadpoint title, PV device title, unit of measurement, the session names and the currency from the WebSocket API, the config dump and a vehicle id inside an attribute. Each payload has to appear verbatim and create no element |
@@ -23,9 +23,13 @@ Groups in `run.py` (`--only <group>`, repeatable):
 | `traffic` | Plan preview traffic rules promised to ha-evcc: one call per target change, none while idle, cache hit on repeat, one call per slider drag |
 | `priority` | Regression for #170: drag and drop reorders the rows without jitter, apply writes the new priorities |
 | `locales` | All 8 locale files share the same keys, `index.json` is complete, no untranslated key reaches the DOM in any language |
-| `discovery` | Custom entity prefix, `disabled_loadpoints` hide/dim/show, heating loadpoint (temperature label, and no charge plan block, also with a plan running and in the plan mode, where no `plan_preview` may go out); disabled limit entities; two ha-evcc config entries, where the prefix and the entry id behind the WebSocket commands have to come from the same instance, also when the prefix is configured after the registry probe |
+| `editor_instances` | With one ha-evcc entry the editor shows no instance field; with two it lists both prefixes, picking the second writes `prefix` and clears the loadpoint filter, picking the first drops `prefix` again, and a configured prefix is preselected |
+| `keyboard` | Every non-native click target (more-info rows, the site and flow toggles, the SVG nodes of the flow view) carries `role="button"` and `tabindex="0"` in every mode, Enter and Space on a focused element fire what a click would; without a language from HA the card and the editor fall back to English |
+| `discovery` | Custom entity prefix; a second installation whose prefix extends the first (`evcc_` next to `evcc_demo_`) stays out of the first card and shows up in its own; `disabled_loadpoints` hide/dim/show, heating loadpoint (temperature label, and no charge plan block, also with a plan running and in the plan mode, where no `plan_preview` may go out); disabled limit entities; two ha-evcc config entries, where the prefix and the entry id behind the WebSocket commands have to come from the same instance, also when the prefix is configured after the registry probe |
 | `flow` | Sankey labels keep their distance on both sides, with the default fixture and with every value below a tenth of a kW, where the bands hit their minimum height and the node centres move closer together than the labels are tall |
-| `widths` | 300 px and 650 px cards: the input panel stays inside the card, no horizontal overflow |
+| `cardapi` | The methods Home Assistant expects on a custom card: a rendered `getCardSize()` matches the card's own height within one unit, across a collapsed detail table, a hidden footer and the `size` scale, a collapsed site card reports a fraction of the full one, and the loading placeholder shown while the translations load is never measured; the pre-render estimate answers without hass for every config, drops the table and the footer when they are off and scales with the loadpoint count; `getGridOptions()` declares no row count in any mode, so the sections grid leaves the card's own height alone, and its column limits stay inside the 12 column section; the `window.customCards` entry carries a name, a description, a documentation link and `preview: true`, and the stub config renders on an instance with no evcc entity at all, which is what the picker preview does; `getEntitySuggestion()` returns the loadpoint views for a charge point entity with the name filled in, the site and flow views for a site entity and for a vehicle or meter entity without a loadpoint, `null` for a foreign entity and for an evcc-looking id that matches no feature, and carries the prefix of a second installation into the config, also one with an underscore of its own like `my_evcc_`, read from `hass.entities` |
+| `setconfig` | `setConfig()` accepts every documented value, including the legacy `site2` mode and the legacy `stats_period` values, and throws on an unknown `mode`, `size`, `disabled_loadpoints` or `stats_period` and on an empty or non-string `prefix`, `language` or `loadpoints`; the message names the option and a rejected config leaves the card on the previous one |
+| `widths` | 334 px (nine columns, the floor from `getGridOptions()`) and 650 px cards: the input panel stays inside the card, no horizontal overflow |
 
 Assertions are made on the service calls the card issues (`hass.callService`)
 and the WebSocket commands it sends, which the mock records instead of executing.
@@ -45,6 +49,39 @@ python3 test/run.py --only unit   # the same tests inside the suite report
 The suite runs each file through node's junit reporter and feeds the individual
 cases into the same `report.md` / `junit.xml` as the browser checks, so a broken
 helper shows up in one place with everything else.
+
+## End-to-end against HA-Dev and the evcc demo
+
+`test/e2e.py` is the one suite that does not use the mock. It logs into the
+development Home Assistant with a browser, writes its own dashboard
+`evcc-demo-e2e` (one view per card mode, every card pinned to
+`prefix: evcc_demo_`), renders each mode against the real ha-evcc entities and
+pushes a mode change through the whole stack: card, HA service, ha-evcc, evcc
+API, and back into the card. The evcc behind it is the demo instance
+(`evcc --demo`), so writes are harmless; the production entry in HA-Dev is
+never touched.
+
+It needs the running stack and an admin user in HA-Dev for the test, so it is
+run by hand before a release, not in CI:
+
+```bash
+# once: credentials in test/.e2e.env (gitignored), or exported
+E2E_HA_USER=e2e
+E2E_HA_PASSWORD=...
+
+python3 test/e2e.py                 # smoke + roundtrip, report in test/out/e2e/
+python3 test/e2e.py --only smoke    # one group; --headed shows the browser
+```
+
+| Group | What it covers |
+|---|---|
+| `smoke` | Every mode renders on the real dashboard without card errors; the loadpoint modes show every demo loadpoint by name, the debug mode the prefix. One screenshot per mode in `test/out/e2e/` |
+| `roundtrip` | Garage starts off; a click on "now" in the card arrives at evcc (card → HA service → ha-evcc → evcc API), the state comes back into the card, and a change made in evcc itself reaches the card. The demo is reset to its shipped modes before and after |
+
+Defaults: `E2E_HA_URL=http://localhost:8123` (the sidecar shares the HA-Dev pod),
+`E2E_EVCC_URL=http://evcc.evcc-demo.svc.cluster.local:7070`, `E2E_PREFIX=evcc_demo_`.
+The demo values change every few seconds, so the checks are structural; nothing
+compares numbers.
 
 ## ha-evcc contract check
 
