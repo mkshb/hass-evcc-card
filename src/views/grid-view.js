@@ -132,3 +132,39 @@ export const gridView = {
       </div>`;
   },
 };
+
+// Grid mode.
+// Part of the card stylesheet, see src/styles.js.
+export const gridCss = `
+      .s2-net {
+        text-align: center; padding: 14px 0 16px;
+        border-bottom: 1px solid var(--divider-color, #333); margin-bottom: 14px;
+      }
+      .s2-net-label {
+        font-size: .6rem; font-weight: 700; letter-spacing: .1em;
+        text-transform: uppercase; color: var(--secondary-text-color); margin-bottom: 4px;
+      }
+      .s2-net-value { font-size: 2.2rem; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
+      .s2-net-status { font-size: .75rem; font-weight: 600; margin-top: 4px; }
+      .s2-pv-badge {
+        display: inline-flex; align-items: center; gap: 4px;
+        margin-top: 8px; background: rgba(34,197,94,0.12); color: #22c55e;
+        border-radius: 20px; padding: 3px 10px; font-size: .68rem; font-weight: 700;
+      }
+      .s2-section { margin-bottom: 12px; }
+      .s2-section-label {
+        font-size: .58rem; font-weight: 700; letter-spacing: .12em;
+        text-transform: uppercase; color: var(--secondary-text-color); opacity: .55; margin-bottom: 6px;
+      }
+      .s2-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+      .s2-chip {
+        display: inline-flex; align-items: center; gap: 5px;
+        background: var(--secondary-background-color, rgba(255,255,255,0.05));
+        border-radius: 20px; padding: 5px 11px; font-size: .72rem; font-weight: 600;
+        border: 1px solid var(--divider-color, #333);
+      }
+      .s2-chip-clickable { cursor: pointer; }
+      .s2-chip-clickable:hover { opacity: 0.75; }
+      .s2-chip-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+      .s2-chip-sub { font-size: .62rem; color: var(--secondary-text-color); font-weight: 400; }
+`;

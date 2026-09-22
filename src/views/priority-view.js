@@ -232,3 +232,97 @@ export const priorityView = {
     return partitionDisabledLoadpoints(this._hass, visible).enabled;
   },
 };
+
+// Priority mode.
+// Part of the card stylesheet, see src/styles.js.
+export const priorityCss = `
+      .priority-mode { display: flex; flex-direction: column; gap: 12px; }
+      .priority-hint { font-size: .8rem; color: var(--secondary-text-color); }
+      .priority-list {
+        position: relative;
+        display: flex; flex-direction: column;
+        border: 1px solid var(--divider-color);
+        border-radius: 6px;
+        overflow: hidden;
+        background: var(--card-background-color);
+      }
+      .priority-row {
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 12px;
+        background: var(--card-background-color);
+        user-select: none;
+        border-bottom: 1px solid var(--divider-color);
+        transition: background .15s ease;
+      }
+      .priority-row:last-child { border-bottom: none; }
+      .priority-row.no-entity { opacity: .55; }
+      .priority-handle {
+        cursor: grab;
+        font-size: 1.2rem; line-height: 1;
+        color: var(--secondary-text-color);
+        touch-action: none;
+        padding: 4px 6px;
+        user-select: none;
+      }
+      .priority-handle:active { cursor: grabbing; }
+      .priority-row.no-entity .priority-handle { cursor: not-allowed; }
+      .priority-row.priority-dragging {
+        /* Out of the flow; left/right stretch it to the list width regardless
+           of box-sizing, so no inline width is needed. */
+        position: absolute; left: 0; right: 0; z-index: 5;
+        opacity: .92;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, .22);
+        background: var(--card-background-color);
+        border-bottom: none;
+        will-change: transform;
+      }
+      .priority-placeholder {
+        background: var(--divider-color);
+        opacity: .25;
+      }
+      .priority-name { flex: 1; font-weight: 500; }
+      .priority-target {
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        min-width: 2.5em;
+        text-align: right;
+      }
+      .priority-target.changed { color: var(--evcc-amber); }
+      .priority-was {
+        font-weight: 400;
+        color: var(--secondary-text-color);
+        margin-left: 4px;
+        font-size: .8em;
+      }
+      .priority-no-ent {
+        font-weight: 400;
+        font-size: .8em;
+        color: var(--secondary-text-color);
+      }
+      .priority-empty-note {
+        font-size: .8rem;
+        color: var(--secondary-text-color);
+        font-style: italic;
+      }
+      .priority-actions {
+        display: flex; gap: 8px; justify-content: flex-end;
+      }
+      .priority-btn {
+        padding: 6px 14px;
+        border-radius: 4px;
+        border: 1px solid var(--divider-color);
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+        cursor: pointer;
+        font: inherit;
+      }
+      .priority-btn:hover:not(:disabled) {
+        background: var(--secondary-background-color);
+      }
+      .priority-btn:disabled { opacity: .5; cursor: not-allowed; }
+      .priority-btn.apply:not(:disabled) {
+        background: var(--evcc-green);
+        color: white;
+        border-color: transparent;
+      }
+`;

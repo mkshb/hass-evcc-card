@@ -107,6 +107,10 @@ export class EvccCard extends HTMLElement {
     // against a DOM nobody sees, and the re-mount renders from the state held.
     if (this._renderTimer)   { clearTimeout(this._renderTimer);   this._renderTimer   = null; }
     if (this._wsRenderTimer) { clearTimeout(this._wsRenderTimer); this._wsRenderTimer = null; }
+    // The re-mount sets the same hass object again; without a snapshot the
+    // setter compares the key instead of the state identities, so the render
+    // cancelled here is picked up and an unchanged card renders nothing.
+    this._seenStates = null;
     for (const k of Object.keys(this._planPreviewDebounce)) clearTimeout(this._planPreviewDebounce[k]);
     this._planPreviewDebounce = {};
     // An open direct-input panel would keep hass updates deferred after re-mount.
@@ -166,6 +170,12 @@ export class EvccCard extends HTMLElement {
       this._updateLiveValues();
       return;
     }
+    // Home Assistant sets `hass` on every state change anywhere in the system,
+    // and the key below walks every evcc entity with its attributes. HA keeps
+    // the state object of an entity that did not change, so when no evcc
+    // entity carries a new object the key cannot differ from the last one and
+    // is not built at all.
+    if (!this._evccStatesChanged(hass)) return;
     const key = this._buildRenderKey(hass);
     if (key === this._lastRenderKey) return;
 
@@ -199,17 +209,41 @@ export class EvccCard extends HTMLElement {
     this._loadCapabilities();
   }
 
-  _buildRenderKey(hass) {
-    if (!hass) return "";
+  // The evcc entity ids under the current prefix. Re-filtered only when the
+  // entity count or the prefix changes, not on every value update. Returns true
+  // when the list was rebuilt, so a caller comparing states knows the set moved.
+  _refreshEvccIds(hass) {
     const prefix     = this._getPrefix();
     const stateCount = Object.keys(hass.states).length;
+    if (this._evccIds && this._evccIdsCount === stateCount && this._evccIdsPrefix === prefix) return false;
+    this._evccIdsCount  = stateCount;
+    this._evccIdsPrefix = prefix;
+    this._evccIds       = Object.keys(hass.states).filter(id => id.split(".")[1]?.startsWith(prefix));
+    return true;
+  }
 
-    // Re-filter evcc entity IDs only when entity count or prefix changes (not on every value update)
-    if (!this._evccIds || this._evccIdsCount !== stateCount || this._evccIdsPrefix !== prefix) {
-      this._evccIdsCount  = stateCount;
-      this._evccIdsPrefix = prefix;
-      this._evccIds       = Object.keys(hass.states).filter(id => id.split(".")[1]?.startsWith(prefix));
+  // True when a hass update can change the render key: an evcc entity carries
+  // a new state object, the set of evcc entities moved, the language changed,
+  // or no key has been built yet. The snapshot is the previous `states` table;
+  // HA copies the table on every update and keeps the untouched entries, so an
+  // identity check per evcc entity is enough and no string is built. The
+  // snapshot is taken here in every case, or a change seen once would be
+  // reported again on the next update.
+  _evccStatesChanged(hass) {
+    const idsMoved = this._refreshEvccIds(hass);
+    const seen     = this._seenStates;
+    const lang     = this._config.language || (hass.language ?? "en");
+    this._seenStates = hass.states;
+    if (idsMoved || !seen || this._lastRenderKey === null || lang !== this._seenLang) {
+      this._seenLang = lang;
+      return true;
     }
+    return this._evccIds.some(id => hass.states[id] !== seen[id]);
+  }
+
+  _buildRenderKey(hass) {
+    if (!hass) return "";
+    this._refreshEvccIds(hass);
 
     const lang = this._config.language || (hass.language ?? "en");
     // \u001f (unit separator) keeps attribute values from colliding with the
@@ -421,7 +455,7 @@ export class EvccCard extends HTMLElement {
       && Object.keys(lpEnabled).length === 0;
 
     this.shadowRoot.innerHTML = `
-      <style>${this._styles()}</style>
+      ${this._styleTag()}
       <div class="evcc-scale-wrap"${this._config.size ? ` data-size="${this._config.size}"` : ""}><ha-card>
         <div class="card-content">
         ${this._config.mode === "debug"

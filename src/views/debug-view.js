@@ -389,4 +389,144 @@ export const debugView = {
     out.push(`</details>`);
     return out.join("\n");
   },
+
+  // Listeners of the debug view: the report copy button and the mask toggle.
+  // Called by _attachListeners() after every render.
+  _attachDebugListeners() {
+    const copyBtn = this.shadowRoot.querySelector(".debug-copy-btn");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", async () => {
+        const toast = this.shadowRoot.querySelector(".debug-toast");
+        const showToast = (msg, tone = "ok") => {
+          if (!toast) return;
+          toast.textContent = msg;
+          toast.className = `debug-toast ${tone}`;
+          toast.hidden = false;
+          clearTimeout(this._debugToastTimer);
+          this._debugToastTimer = setTimeout(() => { toast.hidden = true; }, 3000);
+        };
+        let md;
+        try {
+          md = this._buildDebugReport(this._debugMask === true);
+        } catch (e) {
+          console.error("[evcc-card] _buildDebugReport crashed:", e);
+          showToast("Report build failed: " + (e?.message || e), "err");
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(md);
+          showToast(this._t("debugCopied"), "ok");
+        } catch (e) {
+          showToast(this._t("debugCopyFailed"), "err");
+          const dbg = this.shadowRoot.querySelector(".debug");
+          if (dbg && !dbg.querySelector(".debug-fallback-ta")) {
+            const ta = document.createElement("textarea");
+            ta.className = "debug-fallback-ta";
+            ta.readOnly = true;
+            ta.value = md;
+            dbg.appendChild(ta);
+            ta.focus();
+            ta.select();
+          }
+        }
+      });
+    }
+
+    const maskTog = this.shadowRoot.querySelector(".debug-mask-toggle");
+    if (maskTog) {
+      maskTog.addEventListener("change", () => {
+        this._debugMask = maskTog.checked;
+        this._lastRenderKey = null;
+        this._render();
+      });
+    }
+  },
 };
+
+// Debug mode.
+// Part of the card stylesheet, see src/styles.js.
+export const debugCss = `
+      .debug { font-size: .85rem; color: var(--primary-text-color); }
+      .debug code { background: color-mix(in srgb, var(--primary-text-color) 8%, transparent); padding: 1px 5px; border-radius: 4px; font-size: .78rem; word-break: break-word; }
+      .debug-header {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+        padding-bottom: 10px; margin-bottom: 10px;
+        border-bottom: 1px solid var(--divider-color, #4b5563);
+      }
+      .debug-title { font-size: 1rem; font-weight: 600; flex: 1; }
+      .debug-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      .debug-copy-btn {
+        background: var(--primary-color); color: var(--text-primary-color, white);
+        border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer;
+        font: inherit; font-weight: 600;
+      }
+      .debug-copy-btn:hover { filter: brightness(1.1); }
+      .debug-mask { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--secondary-text-color); cursor: pointer; }
+      .debug-mask input { margin: 0; }
+      .debug-toast {
+        flex-basis: 100%; padding: 6px 10px; border-radius: 6px;
+        font-size: .78rem; font-weight: 600;
+      }
+      .debug-toast.ok  { background: color-mix(in srgb, var(--evcc-green, #0a0)  18%, transparent); color: var(--evcc-green, #0a0); }
+      .debug-toast.err { background: color-mix(in srgb, #ef4444 18%, transparent); color: #ef4444; }
+
+      .debug-section { margin: 12px 0; }
+      .debug-section-title { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--secondary-text-color); margin-bottom: 6px; }
+      .debug-kv { list-style: none; padding: 0; margin: 0; }
+      .debug-kv li { padding: 3px 0; line-height: 1.5; }
+      .debug-kv strong { color: var(--secondary-text-color); font-weight: 500; margin-right: 6px; }
+      .debug-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+      .debug-list > li {
+        padding: 8px 10px; border-radius: 6px;
+        background: color-mix(in srgb, var(--primary-text-color) 4%, transparent);
+        border: 1px solid var(--divider-color, #4b5563);
+      }
+      .debug-list-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+      .debug-count { color: var(--secondary-text-color); font-size: .78rem; }
+      .debug-missing { margin-top: 4px; font-size: .76rem; color: var(--secondary-text-color); line-height: 1.5; }
+      .debug-suffix-list { margin: 4px 0; font-size: .78rem; line-height: 1.6; }
+      .debug-empty { color: var(--secondary-text-color); font-style: italic; padding: 4px 0; }
+      .debug-pill {
+        display: inline-flex; align-items: center; padding: 1px 8px;
+        border-radius: 999px; font-size: .7rem; font-weight: 700;
+      }
+      .debug-pill.ok   { background: color-mix(in srgb, var(--evcc-green, #0a0)  20%, transparent); color: var(--evcc-green, #0a0); }
+      .debug-pill.warn { background: color-mix(in srgb, var(--evcc-amber, #f59e0b) 20%, transparent); color: var(--evcc-amber, #f59e0b); }
+      .debug-pill.err  { background: color-mix(in srgb, #ef4444 20%, transparent); color: #ef4444; }
+      .debug-pill.info { background: color-mix(in srgb, var(--primary-text-color) 12%, transparent); color: var(--secondary-text-color); }
+      .debug-missing-opt { margin-top: 6px; font-size: .76rem; color: var(--secondary-text-color); }
+      .debug-missing-opt summary { cursor: pointer; user-select: none; padding: 2px 0; }
+      .debug-missing-opt code { margin-top: 4px; display: inline-block; word-break: break-word; }
+      .debug-warn-box { margin-top: 8px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, #ef4444 14%, transparent); color: #ef4444; font-size: .82rem; }
+      .debug-cfg-note { margin-bottom: 6px; padding: 6px 10px; border-radius: 6px; background: color-mix(in srgb, var(--primary-color) 12%, transparent); color: var(--primary-color); font-size: .76rem; }
+      .debug-yaml {
+        background: var(--code-editor-background-color, #1e1e1e);
+        color: var(--primary-text-color); padding: 10px; border-radius: 6px;
+        font-size: .78rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+        margin: 0; max-height: 220px; overflow: auto;
+      }
+      .debug-fallback-ta {
+        width: 100%; min-height: 180px; margin-top: 8px;
+        font-family: monospace; font-size: .75rem; padding: 8px;
+        border-radius: 6px; border: 1px solid var(--divider-color, #4b5563);
+        background: var(--card-background-color); color: var(--primary-text-color);
+      }
+      .compact-tabs {
+        display: flex; gap: 4px; margin-bottom: 12px;
+        border-bottom: 1px solid var(--divider-color, #e5e7eb); padding-bottom: 0;
+      }
+      .compact-tab {
+        flex: 1; display: flex; flex-direction: column; align-items: center;
+        gap: 2px; padding: 6px 4px 8px; background: transparent; border: none;
+        border-bottom: 2px solid transparent; color: var(--secondary-text-color);
+        cursor: pointer; font-size: .68rem; margin-bottom: -1px;
+        transition: color .15s, border-color .15s;
+      }
+      .compact-tab:hover { color: var(--primary-text-color); }
+      .compact-tab.active { color: var(--primary-color); border-bottom-color: var(--primary-color); font-weight: 600; }
+      .compact-tab-icon  { font-size: 1rem; line-height: 1; }
+      .compact-tab-label { font-size: .68rem; }
+      .compact-panel[hidden] { display: none; }
+      .compact-panel .plan-block,
+      .compact-panel .session-block { border-top: none; margin-top: 0; padding-top: 0; }
+`;

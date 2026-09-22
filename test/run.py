@@ -159,6 +159,31 @@ def render_smoke(browser, port, t):
                 t.check(page.locator(in_card(".stats-chart-loading")).count() == 0, "stats: no loading placeholder left")
             page.close()
 
+    # The stylesheet is parsed once per page and adopted by every card, so a
+    # render carries no <style> element and two cards share the same sheet.
+    t.group("render - one shared stylesheet")
+    page = new_page(browser, 480, 1200)
+    errors = open_card(page, port, mode="loadpoint")
+    sheets = page.evaluate("""() => {
+      const a = window.__card, root = a.shadowRoot;
+      const b = document.createElement('evcc-card');
+      b.setConfig({ mode: 'site' }); document.getElementById('host').appendChild(b); b.hass = window.__hass;
+      return new Promise(res => setTimeout(() => res({
+        adopted: root.adoptedStyleSheets.length,
+        inline:  root.querySelectorAll('style').length,
+        shared:  b.shadowRoot.adoptedStyleSheets[0] === root.adoptedStyleSheets[0],
+        rules:   root.adoptedStyleSheets[0]?.cssRules.length ?? 0,
+        styled:  getComputedStyle(root.querySelector('.card-content')).paddingLeft,
+      }), 600));
+    }""")
+    t.check(sheets["adopted"] == 1 and sheets["inline"] == 0, "a rendered card adopts one sheet and inlines no <style>", json.dumps(sheets))
+    t.check(sheets["shared"] and sheets["rules"] > 100, "a second card shares the same parsed sheet", json.dumps(sheets))
+    t.check(sheets["styled"] == "16px" and not errors, "the adopted sheet styles the card", json.dumps(sheets))
+    # A re-render keeps the one sheet, it is not adopted twice.
+    page.evaluate("() => { const c = window.__card; c._lastRenderKey = null; c._render(); c._render(); }")
+    t.check(page.evaluate("window.__card.shadowRoot.adoptedStyleSheets.length") == 1, "re-renders keep a single adopted sheet")
+    page.close()
+
 
 
 def stats_fallback(browser, port, t):
@@ -327,6 +352,55 @@ def renderkey(browser, port, t):
     })""")
     page.wait_for_timeout(900)
     t.check(page.evaluate("window.__card._lastRenderKey !== null"), "a state change primes the render key")
+
+    # HA sets `hass` on every state change in the whole system. A change to a
+    # foreign entity must cost the card nothing beyond an identity check per
+    # evcc entity: the key is not built and nothing renders.
+    page.evaluate("""() => {
+      const c = window.__card, origKey = c._buildRenderKey.bind(c);
+      window.__keys = 0;
+      c._buildRenderKey = function (...a) { window.__keys++; return origKey(...a); };
+    }""")
+    page.evaluate("window.__renders = 0")
+    page.evaluate("""() => window.__push(st => {
+      st['sensor.foreign_temperature'] = { entity_id: 'sensor.foreign_temperature', state: '21.5', attributes: {} };
+    })""")
+    page.wait_for_timeout(500)
+    # The new entity moves the count, so this one update rebuilds the id list; the next does not.
+    page.evaluate("""() => window.__push(st => {
+      st['sensor.foreign_temperature'] = { ...st['sensor.foreign_temperature'], state: '22.0' };
+    })""")
+    page.wait_for_timeout(500)
+    keys_foreign = page.evaluate("window.__keys")
+    page.evaluate("window.__keys = 0; window.__renders = 0")
+    page.evaluate("""() => window.__push(st => {
+      st['sensor.foreign_temperature'] = { ...st['sensor.foreign_temperature'], state: '22.5' };
+    })""")
+    page.wait_for_timeout(500)
+    t.check(page.evaluate("window.__keys") == 0 and page.evaluate("window.__renders") == 0,
+            "a foreign entity change builds no key and renders nothing",
+            f"keys={page.evaluate('window.__keys')} renders={page.evaluate('window.__renders')} (first two updates: {keys_foreign} keys)")
+    page.evaluate("window.__keys = 0; window.__renders = 0")
+    page.evaluate("""() => window.__push(st => {
+      const id = 'sensor.evcc_openwb_charge_power';
+      st[id] = { ...st[id], state: '4343' };
+    })""")
+    page.wait_for_timeout(900)
+    t.check(page.evaluate("window.__keys") >= 1 and page.evaluate("window.__renders") == 1,
+            "an evcc entity change still builds the key and renders once",
+            f"keys={page.evaluate('window.__keys')} renders={page.evaluate('window.__renders')}")
+    # The same states table pushed again is no change either.
+    page.evaluate("window.__keys = 0; window.__renders = 0")
+    page.evaluate("() => { window.__card.hass = { ...window.__hass }; }")
+    page.wait_for_timeout(500)
+    t.check(page.evaluate("window.__keys") == 0, "the same states table pushed again builds no key", str(page.evaluate("window.__keys")))
+    # A language change without any state change has to get through.
+    page.evaluate("window.__keys = 0; window.__renders = 0")
+    page.evaluate("() => { window.__card.hass = { ...window.__hass, language: 'en' }; }")
+    page.wait_for_timeout(900)
+    t.check(page.evaluate("window.__renders") == 1, "a language change alone renders", str(page.evaluate("window.__renders")))
+    page.evaluate("() => { window.__card.hass = { ...window.__hass }; }")
+    page.wait_for_timeout(900)
 
     modes = lambda: page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.mode-btn')].map(x => x.dataset.value)")
     before = modes()
@@ -704,6 +778,49 @@ def interactions(browser, port, t):
             "a key that matches nothing stays quiet", "; ".join(warnings)[:200])
     page.close()
 
+    # --- more-info on the header values (loadpoint and compact share the render) ---
+    t.group("interaction - more-info on the loadpoint values")
+    hook = "() => { window.__moreInfo = []; window.__card.addEventListener('hass-more-info', e => window.__moreInfo.push(e.detail.entityId)); }"
+    expected = {
+        ".power-value":                 "sensor.evcc_openwb_charge_power",
+        ".power-current":               "sensor.evcc_openwb_charge_currents_0",
+        ".vehicle-name":                "select.evcc_openwb_vehicle_name",
+        '[data-live-type="soc-pct"]':   "sensor.evcc_openwb_vehicle_soc",
+        ".lp-badge":                    "binary_sensor.evcc_openwb_charging",
+        ".lp-remaining":                "sensor.evcc_openwb_charge_remaining_duration",
+        ".session-item":                "sensor.evcc_openwb_session_energy",
+    }
+    for mode in ("loadpoint", "compact"):
+        page = new_page(browser, 480, 1600)
+        errors = open_card(page, port, config={"mode": mode, "loadpoints": ["openwb"]})
+        page.evaluate(hook)
+        for sel, entity in expected.items():
+            el = page.locator(in_card(sel)).first
+            if el.count() == 0:
+                t.fail(f"{mode}: {sel} is rendered", "not found"); continue
+            if mode == "compact" and sel == ".session-item":
+                page.locator(in_card('button.compact-tab[data-tab="3"]')).click(); page.wait_for_timeout(100)
+            attr = el.get_attribute("data-more-info")
+            if attr != entity:
+                t.fail(f"{mode}: {sel} carries the entity", f"data-more-info={attr}"); continue
+            page.evaluate("() => { window.__moreInfo = []; }")
+            el.click(force=True); page.wait_for_timeout(50)
+            fired = page.evaluate("window.__moreInfo")
+            t.check(fired == [entity], f"{mode}: a click on {sel} opens more-info of {entity}", json.dumps(fired))
+        # The slider values keep their own action: no more-info on the tap target of a slider.
+        t.check(page.locator(in_card("button.slider-val[data-more-info]")).count() == 0,
+                f"{mode}: the slider values open the input panel, not more-info")
+        t.check(not errors, f"{mode}: no console errors", "; ".join(errors)[:200])
+        page.close()
+
+    # Live updates of the power value and the SoC keep the attribute in place.
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+    page.evaluate("() => { const c = window.__card; c._updateLiveValues(); }")
+    kept = page.evaluate("""() => ['.power-value', '[data-live-type="soc-pct"]']
+        .map(s => window.__card.shadowRoot.querySelector(s)?.dataset.moreInfo)""")
+    t.check(all(kept), "a live update leaves the more-info attribute on the value", json.dumps(kept))
+    page.close()
 
 
 def editor(browser, port, t):
@@ -1656,6 +1773,25 @@ def keyboard(browser, port, t):
     page.evaluate("() => { const c = window.__card; c.hass = { ...window.__hass, language: undefined, locale: {} }; c._lastRenderKey = null; c._render(); }")
     page.wait_for_timeout(200)
     t.check(label() == "Off", "without a language from HA the card falls back to English", label())
+    page.close()
+
+    # The chart labels of the statistics follow the same rule: the year scope
+    # prints month names, and without a language from HA they are English.
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="stats")
+    months = lambda: page.evaluate("""() => { const c = window.__card; c._statsScope = 'year'; c._lastRenderKey = null; c._render();
+        return [...c.shadowRoot.querySelectorAll('.evcc-chart-wrap text')].map(t => t.textContent.trim()); }""")
+    de = months()
+    t.check("Dez" in de or "Mär" in de, "stats: with hass.language de the month labels are German", json.dumps(de)[:120])
+    page.evaluate("() => { const c = window.__card; c.hass = { ...window.__hass, language: undefined, locale: {} }; }")
+    page.wait_for_timeout(200)
+    en = months()
+    t.check(("Dec" in en or "Mar" in en) and "Dez" not in en, "stats: without a language from HA the month labels are English", json.dumps(en)[:120])
+    t.check(page.evaluate("window.__card._statsLang()") == "en", "stats: _statsLang() falls back to en")
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="loadpoint")
     ed = page.evaluate("""async () => {
       const ed = document.createElement('evcc-card-editor'); ed.setConfig({ mode: 'loadpoint' });
       ed.hass = { ...window.__hass, language: undefined, locale: {} }; document.body.appendChild(ed);

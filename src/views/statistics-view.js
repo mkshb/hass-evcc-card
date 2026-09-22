@@ -17,7 +17,9 @@ export const statisticsView = {
     return evccDate(raw);
   },
 
-  _statsLang() { return (this._config?.language || this._hass?.language || "de").split("-")[0]; },
+  // The locale of the chart labels: the configured language, else the one from
+  // HA, else English, the reference locale, like every other text of the card.
+  _statsLang() { return (this._config?.language || this._hass?.language || "en").split("-")[0]; },
 
   // Earliest/latest session date — bounds the month/year stepper.
   _sessionRange(sessions) {
@@ -434,4 +436,204 @@ export const statisticsView = {
     }
     return this._renderStatsBlockEntities();
   },
+
+  // Listeners of both statistics paths: the period, scope, metric and group
+  // tabs, the month and year steppers and the chart tooltip. Called by
+  // _attachListeners() after every render.
+  _attachStatsListeners() {
+    this.shadowRoot.querySelectorAll("button.stats-period-tab").forEach(btn => {
+      btn.addEventListener("click", () => {
+        // Sessions path: data-scope/-metric/-group. Legacy entity path: data-period.
+        if      (btn.dataset.scope)  this._statsScope  = btn.dataset.scope;
+        else if (btn.dataset.metric) this._statsMetric = btn.dataset.metric;
+        else if (btn.dataset.group)  this._statsGroup  = btn.dataset.group;
+        else                         this._statsPeriod = btn.dataset.period;
+        this._render();
+      });
+    });
+
+    // Two independent steppers: month (wraps 0-11) and year (sessions stats path).
+    this.shadowRoot.querySelectorAll("button[data-stats-step]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const dir = btn.dataset.statsStep === "next" ? 1 : -1;
+        const now = new Date();
+        if (btn.dataset.statsUnit === "year") {
+          this._statsYearSel = (this._statsYearSel ?? now.getFullYear()) + dir;
+        } else {
+          const m = (this._statsMonthSel ?? now.getMonth()) + dir;
+          this._statsMonthSel = (m + 12) % 12;
+        }
+        this._render();
+      });
+    });
+
+    const chartWrap = this.shadowRoot.querySelector(".evcc-chart-wrap");
+    if (chartWrap) {
+      const tooltip = chartWrap.querySelector(".evcc-chart-tooltip");
+      const dot = (color) => `<span class="ectt-dot" style="background:${color}"></span>`;
+      const barKey = (bar) => bar.dataset.idx != null ? "i" + bar.dataset.idx : (bar.dataset.label || "") + (bar.dataset.total || "");
+      const positionTooltip = (bar) => {
+        const barRect  = bar.getBoundingClientRect();
+        const wrapRect = chartWrap.getBoundingClientRect();
+        const rawLeft  = barRect.left - wrapRect.left + barRect.width / 2;
+        tooltip.hidden = false;
+        const ttW  = tooltip.getBoundingClientRect().width;
+        const left = Math.min(wrapRect.width - ttW / 2 - 4, Math.max(ttW / 2 + 4, rawLeft));
+        tooltip.style.left = `${left}px`;
+      };
+      const showTooltip = (bar) => {
+        // Sessions stacked chart: look the bucket up by index.
+        if (bar.dataset.idx != null && this._statsChartData) {
+          const { buckets, series, metric, currency } = this._statsChartData;
+          const b = buckets[+bar.dataset.idx];
+          if (!b || !(b.total > 0)) { tooltip.hidden = true; return; }
+          const mf = this._metricFmt(metric, currency);
+          const rows = series.filter(s => (b.seg[s.key] || 0) > 0)
+            .map(s => `<div class="ectt-row">${dot(s.color)}<span class="ectt-name">${escHtml(s.label)}</span><span class="ectt-val">${mf.fmt(b.seg[s.key])} ${mf.unit}</span></div>`).join("");
+          tooltip.innerHTML = `<div class="ectt-header">${escHtml(b.labelFull || b.labelStr)}</div>${rows}<div class="ectt-summary">${mf.fmt(b.total)} ${mf.unit} ${this._t("total")}</div>`;
+          positionTooltip(bar);
+          tooltip.dataset.activeBar = barKey(bar);
+          return;
+        }
+        // Legacy entity chart (solar/grid).
+        const total = bar.dataset.total;
+        if (!total) { tooltip.hidden = true; return; }
+        const solar = bar.dataset.solar ? parseFloat(bar.dataset.solar) : null;
+        const grid  = solar != null ? (parseFloat(total) - solar).toFixed(1) : null;
+        const solarColor = getComputedStyle(chartWrap).getPropertyValue("--evcc-green").trim() || "#22c55e";
+        const gridColor  = getComputedStyle(chartWrap).getPropertyValue("--primary-color").trim() || "#3b82f6";
+        tooltip.innerHTML =
+          `<div class="ectt-header">${escHtml(bar.dataset.label)}</div>` +
+          (solar != null ? `<div class="ectt-row">${dot(solarColor)}<span class="ectt-name">${this._t("solar")}</span><span class="ectt-val">${bar.dataset.solar} kWh</span></div>` : "") +
+          (grid  != null ? `<div class="ectt-row">${dot(gridColor)}<span class="ectt-name">${this._t("grid")}</span><span class="ectt-val">${grid} kWh</span></div>` : "") +
+          `<div class="ectt-summary">${total} kWh ${this._t("total")}</div>`;
+        positionTooltip(bar);
+        tooltip.dataset.activeBar = barKey(bar);
+      };
+      chartWrap.addEventListener("mouseover", (e) => {
+        const bar = e.target.closest(".evcc-bar");
+        if (bar) showTooltip(bar);
+      });
+      chartWrap.addEventListener("mouseout", (e) => {
+        if (e.target.closest(".evcc-bar")) tooltip.hidden = true;
+      });
+      chartWrap.addEventListener("click", (e) => {
+        const bar = e.target.closest(".evcc-bar");
+        if (bar) {
+          const key = barKey(bar);
+          if (!tooltip.hidden && tooltip.dataset.activeBar === key) {
+            tooltip.hidden = true;
+          } else {
+            showTooltip(bar);
+          }
+        } else {
+          tooltip.hidden = true;
+        }
+      });
+    }
+  },
 };
+
+// Both statistics paths: tabs, footer, KPI row, chart and tooltip.
+// Part of the card stylesheet, see src/styles.js.
+export const statsCss = `
+      .stats-period-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+      .stats-period-tab {
+        padding: 2px 10px; border-radius: 999px;
+        border: 1px solid var(--divider-color, #e5e7eb);
+        background: transparent; color: var(--secondary-text-color);
+        cursor: pointer; font-size: .72rem; font-weight: 600; transition: all .15s;
+      }
+      .stats-period-tab.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+      .stats-period-tabs--small .stats-period-tab { font-size: .65rem; padding: 1px 8px; }
+
+      .stats-footer-wrap {
+        border-top: 1px solid var(--divider-color, #333);
+        margin-top: 12px; padding-top: 8px;
+      }
+      .stats-footer-wrap .stats-footer { border-top: none; margin-top: 6px; padding-top: 0; }
+
+      .stats-footer {
+        border-top: 1px solid var(--divider-color, #333);
+        margin-top: 12px; padding-top: 10px;
+      }
+      .sf-period {
+        font-size: .6rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 700;
+        color: var(--secondary-text-color); text-align: center; margin-bottom: 6px; opacity: 0.7;
+      }
+      .sf-items { display: flex; align-items: center; }
+      .sf-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+      .sf-val  { font-size: .82rem; font-weight: 700; }
+      .sf-lbl  { font-size: .58rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+      .sf-sep  { width: 1px; height: 28px; background: var(--divider-color, #333); flex-shrink: 0; }
+
+      .stats-no-data {
+        font-size: .76rem; color: var(--warning-color, #f4b942);
+        background: rgba(244,185,66,.08);
+        border: 1px solid var(--warning-color, #f4b942);
+        border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; line-height: 1.6;
+      }
+      .stats-no-data-link {
+        display: inline-block; margin-top: 4px; color: var(--primary-color);
+        text-decoration: none; font-weight: 600;
+      }
+      .stats-no-data-link:hover { text-decoration: underline; }
+
+      .stats-kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+      .stats-kpi {
+        background: var(--secondary-background-color, rgba(255,255,255,.05));
+        border-radius: 8px; padding: 10px 8px; text-align: center;
+        display: flex; flex-direction: column; gap: 3px;
+      }
+      .stats-kpi-val { font-size: 1.1rem; font-weight: 800; line-height: 1; }
+      .stats-kpi-lbl { font-size: .58rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+      .stats-chart-section { margin-top: 4px; }
+      .stats-stepper { display: flex; align-items: center; justify-content: center; }
+      .stats-step-btn {
+        border: 1px solid var(--divider-color, rgba(127,127,127,0.3)); background: transparent;
+        color: var(--primary-text-color); border-radius: 8px; width: 26px; height: 24px; line-height: 1;
+        font-size: 1rem; cursor: pointer; padding: 0;
+      }
+      .stats-step-btn:hover:not([disabled]) { background: var(--secondary-background-color, rgba(127,127,127,0.12)); }
+      .stats-step-btn[disabled] { opacity: 0.35; cursor: default; }
+      .stats-stepper { gap: 4px; }
+      .stats-step-label { text-align: center; font-weight: 600; font-size: 0.85rem; white-space: nowrap; overflow: hidden; }
+      .stats-step-label--month { width: 74px; }
+      .stats-step-label--year { width: 42px; }
+      .stats-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+      .stats-controls .stats-period-tabs { margin-bottom: 0; }
+      .stats-steppers { flex: 0 0 100%; display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-height: 26px; }
+      .stats-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; margin-top: 8px; font-size: 0.74rem; color: var(--secondary-text-color); }
+      .sl-item { display: inline-flex; align-items: center; gap: 5px; }
+      .sl-dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+      .evcc-chart-wrap { position: relative; margin-left: -16px; margin-right: 0; }
+      .evcc-chart-tooltip {
+        position: absolute; top: 0; transform: translateX(-50%);
+        background: var(--ha-card-background, var(--card-background-color, #1f2937));
+        border-radius: 8px; padding: 8px 12px;
+        font-size: 12px; line-height: 1.6; white-space: nowrap;
+        pointer-events: none; z-index: 10;
+        box-shadow: 0 4px 16px rgba(0,0,0,.35);
+      }
+      .ectt-header { font-weight: 700; margin-bottom: 4px; }
+      .ectt-row { display: flex; align-items: center; gap: 6px; }
+      .ectt-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+      .ectt-name { flex: 1; color: var(--primary-text-color); }
+      .ectt-val { font-weight: 600; margin-left: 12px; }
+      .ectt-summary { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--divider-color, #374151); font-weight: 700; }
+      .stats-chart-title {
+        font-size: .58rem; font-weight: 700; letter-spacing: .12em;
+        text-transform: uppercase; color: var(--secondary-text-color); opacity: .55; margin-bottom: 8px;
+      }
+      .stats-chart-loading {
+        height: 75px; display: flex; align-items: center; justify-content: center;
+        color: var(--secondary-text-color); font-size: .75rem; opacity: .5;
+      }
+      .stats-solar-hint {
+        font-size: .72rem; color: var(--secondary-text-color);
+        margin-top: 10px; padding: 6px 10px;
+        background: color-mix(in srgb, var(--evcc-green) 8%, transparent);
+        border: 1px solid color-mix(in srgb, var(--evcc-green) 25%, transparent);
+        border-radius: 6px; line-height: 1.4;
+      }
+`;

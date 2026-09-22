@@ -211,6 +211,8 @@ The main charge point view. For each discovered charge point it shows:
 - Sliders: Target SoC, Min SoC - tap the value next to any slider to enter it directly, see [Slider settings](#slider-settings)
 - Charge plan block
 
+A tap on a value in the header opens the more-info dialog of the ha-evcc entity behind it, as the rows of the `site` and `flow` views do: the status badge and the remaining time, the vehicle name, SoC and range, the charging power, current and phases, and the figures of the charging session. The sliders keep their own action.
+
 #### Charge modes
 
 The mode selector mirrors evcc's own logic, where the available modes depend on whether the charge point has a PV system (controlled here via the [`no_pv`](#configuration-options) option) and whether a dynamic electricity tariff is configured:

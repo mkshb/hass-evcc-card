@@ -525,4 +525,226 @@ export const planningView = {
         </div>`;
     }).join("");
   },
+
+  // Listeners of the charge plan block: precondition, target slider with its
+  // direct input, time, vehicle, save and delete. Called by _attachListeners()
+  // after every render.
+  _attachPlanListeners() {
+    this.shadowRoot.querySelectorAll("select.plan-precondition-select").forEach(sel => {
+      sel.addEventListener("change", () => {
+        this._setSelectOption(sel.dataset.entity, sel.value);
+        if (sel.dataset.lp) this._requestPlanPreview(sel.dataset.lp);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("input.plan-soc-range").forEach(input => {
+      input.addEventListener("pointerdown", () => {
+        this._isDragging    = true;
+        this._pendingRender = false;
+      });
+      input.addEventListener("input", () => {
+        const lpName = input.dataset.lp;
+        const val    = parseInt(input.value, 10);
+        if (this._planState[lpName]) this._planState[lpName].soc = val;
+        const span = input.nextElementSibling;
+        if (span) span.textContent = `${val} %`;
+      });
+      input.addEventListener("pointerup", () => {
+        this._isDragging = false;
+        this._requestPlanPreview(input.dataset.lp);
+        if (this._pendingRender) { this._pendingRender = false; this._render(); }
+      });
+      input.addEventListener("blur", () => {
+        if (this._isDragging) {
+          this._isDragging = false;
+          if (this._pendingRender) { this._pendingRender = false; this._render(); }
+        }
+      });
+      // Keyboard changes update the state via "input" but never asked for a preview.
+      input.addEventListener("keyup", (e) => {
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(e.key)) {
+          this._requestPlanPreview(input.dataset.lp);
+        }
+      });
+    });
+
+    // Direct input for the plan target (local state, no entity behind it).
+    this.shadowRoot.querySelectorAll("button.plan-soc-val[data-plan-soc-edit]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (btn.classList.contains("editing")) { this._closeSliderEdit(); return; }
+        const input  = btn.previousElementSibling;
+        const lpName = input?.dataset.lp;
+        this._openSliderEdit(btn, {
+          unit:  "%",
+          value: parseInt(input?.value, 10),
+          onApply: (val) => {
+            if (this._planState[lpName]) this._planState[lpName].soc = val;
+            this._requestPlanPreview(lpName);
+          },
+        });
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("input.plan-time-input").forEach(input => {
+      input.addEventListener("change", () => {
+        const lpName = input.dataset.lp;
+        if (this._planState[lpName]) this._planState[lpName].time = input.value;
+        this._requestPlanPreview(lpName);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("select.plan-vehicle-select").forEach(sel => {
+      sel.addEventListener("focus", () => {
+        this._pendingRender = false;
+      });
+      sel.addEventListener("blur", () => {
+        this._isDragging = false;
+        if (this._pendingRender) { this._pendingRender = false; this._render(); }
+      });
+      sel.addEventListener("change", () => {
+        const lpName = sel.dataset.lp;
+        const eid    = sel.dataset.entity;
+        const val    = sel.value;
+        if (this._planState[lpName]) {
+          this._planState[lpName].vehicle = val;
+          this._planState[lpName].soc     = null;
+          this._planState[lpName].time    = null;
+        }
+        if (eid && this._hass) {
+          this._setSelectOption(eid, val);
+        }
+        this._requestPlanPreview(lpName);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.plan-btn.save").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const lpName  = btn.dataset.lp;
+        const state   = this._planState[lpName] || {};
+        const soc     = state.soc || 80;
+        const dtValue = state.time || "";
+
+        if (!dtValue) { alert(this._t("noTimeAlert")); return; }
+
+        const showError = (msg) => {
+          const block = btn.closest(".plan-block");
+          if (!block) return;
+          let errEl = block.querySelector(".plan-error");
+          if (!errEl) {
+            errEl = document.createElement("div");
+            errEl.className = "plan-error";
+            block.querySelector(".plan-actions")?.after(errEl);
+          }
+          errEl.textContent = msg;
+        };
+        const showSuccess = () => {
+          const block = btn.closest(".plan-block");
+          if (!block) return;
+          const errEl = block.querySelector(".plan-error");
+          if (errEl) errEl.remove();
+          const badge = block.querySelector(".plan-badge");
+          if (badge) { badge.textContent = this._t("planned"); badge.classList.remove("active"); badge.classList.add("planned"); }
+        };
+
+        const vehicleDbId = (state.vehicle && state.vehicle !== "null") ? state.vehicle : null;
+        const dt  = new Date(dtValue);
+        const pad = n => String(n).padStart(2, "0");
+        const startdate = `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())} ` +
+                          `${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`;
+
+        // Only a vehicle evcc knows can be planned from here: its plan is the SoC
+        // this block collects. A loadpoint plan is an energy target in kWh, which
+        // the card does not ask for yet, and ha-evcc would accept a call without
+        // one and do nothing, leaving a plan badge behind for a plan that does
+        // not exist. So say it instead of pretending.
+        const savePlan = async () => {
+          if (!vehicleDbId) { showError(`❌ ${this._t("planNeedsVehicle")}`); return; }
+          try {
+            await this._setVehiclePlan(vehicleDbId, soc, startdate);
+            window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } }));
+            showSuccess();
+          } catch(e) {
+            showError(`❌ ${e?.message || JSON.stringify(e) || "Unknown error"}`);
+          }
+        };
+        savePlan();
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.plan-btn.delete").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const lpName      = btn.dataset.lp;
+        const planSt      = this._planState[lpName] || {};
+        const vehicleDbId = (planSt.vehicle && planSt.vehicle !== "null") ? planSt.vehicle : null;
+        const block       = btn.closest(".plan-block");
+        const resetBadge  = () => {
+          const badge = block?.querySelector(".plan-badge");
+          if (badge) { badge.textContent = this._t("noPlan"); badge.classList.remove("active", "planned"); }
+        };
+        if (vehicleDbId) {
+          this._deleteVehiclePlan(vehicleDbId)
+            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } })); })
+            .catch(e => console.warn("[evcc-card] delete plan:", e));
+        } else {
+          // Deleting works without a kWh target, it only needs the evcc index.
+          const lpIdx = this._lpIndex(lpName);
+          if (lpIdx == null) { console.warn("[evcc-card] delete plan: no loadpoint index for", lpName); return; }
+          this._deleteLoadpointPlan(lpIdx)
+            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } })); })
+            .catch(e => console.warn("[evcc-card] delete plan:", e));
+        }
+      });
+    });
+  },
 };
+
+// Charge plan block, plan mode and repeating plans.
+// Part of the card stylesheet, see src/styles.js.
+export const planCss = `
+      .plan-block { border-top: 1px solid var(--divider-color, #e5e7eb); margin-top: 10px; padding-top: 10px; }
+      .plan-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+      .plan-badge { font-size: .7rem; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--divider-color); color: var(--secondary-text-color); }
+      .plan-badge.planned { background: rgba(0, 120, 180, 0.3); color: #60aaff; }
+      .plan-badge.active  { background: color-mix(in srgb, var(--evcc-green) 15%, transparent); color: var(--evcc-green); border-color: var(--evcc-green); }
+      .plan-projection { display: flex; flex-direction: column; gap: 3px; font-size: .78rem; color: var(--secondary-text-color); margin-bottom: 10px; padding: 7px 10px; background: var(--secondary-background-color, rgba(0,0,0,.08)); border-radius: 6px; }
+      .plan-projection strong { color: var(--primary-text-color); }
+      .plan-inputs { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+      .plan-row { display: flex; align-items: center; gap: 8px; font-size: .83rem; flex-wrap: wrap; }
+      .plan-row label { flex: 0 0 auto; min-width: 60px; white-space: nowrap; color: var(--secondary-text-color); }
+      .plan-soc-control { display: flex; align-items: center; gap: 8px; flex: 1; }
+      .plan-soc-range { flex: 1; accent-color: var(--primary-color); }
+      .plan-soc-val { min-width: 42px; text-align: right; font-size: .8rem; }
+      input.plan-time-input { flex: 1; padding: 4px 8px; border: 1px solid var(--divider-color, #4b5563); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); font-size: .82rem; color-scheme: dark light; }
+      .plan-actions { display: flex; gap: 8px; }
+      .plan-btn { flex: 1; padding: 7px 10px; border-radius: 7px; border: 1px solid var(--divider-color); font-size: .8rem; font-weight: 600; cursor: pointer; transition: all .15s; background: transparent; color: var(--primary-text-color); }
+      .plan-btn.save { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+      .plan-btn.save:hover { filter: brightness(1.1); }
+      .plan-btn.delete { color: #ef4444; border-color: #ef444466; }
+      .plan-btn.delete:hover { background: #ef444422; }
+      select.plan-vehicle-select,
+      select.plan-precondition-select { flex: 1; padding: 4px 8px; border: 1px solid var(--divider-color, #4b5563); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); font-size: .82rem; }
+      .plan-row .toggle { margin-left: auto; }
+      .plan-error { margin-top: 8px; padding: 6px 10px; border-radius: 6px; background: #ef444422; color: #ef4444; font-size: .78rem; word-break: break-all; }
+      .plan-preview { margin: 10px 0 4px; }
+      .plan-preview-loading { text-align: center; padding: 12px; font-size: .78rem; color: var(--secondary-text-color); }
+      .plan-preview-error, .plan-preview-info { padding: 8px 10px; border-radius: 6px; background: var(--secondary-background-color, rgba(0,0,0,.08)); color: var(--secondary-text-color); font-size: .78rem; }
+      .plan-preview-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+      .plan-preview-left, .plan-preview-right { display: flex; flex-direction: column; }
+      .plan-preview-right { text-align: right; }
+      .plan-preview-label { font-size: .65rem; text-transform: uppercase; letter-spacing: .03em; color: var(--secondary-text-color); }
+      .plan-preview-value { font-size: .88rem; font-weight: 600; color: var(--evcc-green,#22c55e); }
+      .rplan-block .plan-header { justify-content: flex-start; gap: 6px; }
+      .rplan-hint { display: inline-flex; align-items: center; color: var(--secondary-text-color); cursor: help; }
+      .rplan-list { display: flex; flex-direction: column; gap: 8px; }
+      .rplan-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--divider-color); border-radius: 8px; }
+      .rplan-days { display: flex; gap: 3px; flex-wrap: wrap; }
+      .rplan-day { font-size: .68rem; font-weight: 600; line-height: 1; padding: 4px 5px; border-radius: 5px; min-width: 15px; text-align: center; background: var(--secondary-background-color, rgba(0,0,0,.08)); color: var(--secondary-text-color); border: 1px solid transparent; }
+      .rplan-day.on { background: var(--primary-color); color: #fff; }
+      .rplan-line { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      .rplan-info { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+      .rplan-field { display: inline-flex; align-items: baseline; gap: 5px; }
+      .rplan-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--secondary-text-color); }
+      .rplan-value { font-size: .9rem; font-weight: 600; }
+      .rplan-line .toggle { margin-left: auto; }
+`;

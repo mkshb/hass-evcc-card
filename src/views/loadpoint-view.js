@@ -3,6 +3,12 @@ import { stateVal, attr, unitStr, isOn } from "../utils/state.js";
 import { fmtRemainingDuration, fmtCountdownFromISO, fmtCountdownFromTimestamp, socFillGradient, socTrackBg } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
 
+// A value that maps onto one ha-evcc entity opens that entity's more-info
+// dialog on a click, the way the rows of the site and flow views do. The
+// delegation in listeners.js attaches the handler, the focus and the keys to
+// every element carrying the attribute; empty when the entity is not discovered.
+const moreInfo = (entityId) => entityId ? ` data-more-info="${escAttr(entityId)}"` : "";
+
 // Loadpoint and compact modes: header, mode selector, power row, vehicle and session info, toggles. Methods are mixed into EvccCard.prototype.
 export const loadpointView = {
   _renderLoadpoint(lpName, ents) {
@@ -19,8 +25,8 @@ export const loadpointView = {
       <div class="loadpoint">
         <div class="lp-header">
           <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
-          ${remaining ? `<span class="lp-remaining" title="${this._t("remaining")}">${remaining}</span>` : ""}
-          <span class="lp-badge ${statusClass}">
+          ${remaining ? `<span class="lp-remaining" title="${this._t("remaining")}"${moreInfo(ents.charge_remaining_duration)}>${remaining}</span>` : ""}
+          <span class="lp-badge ${statusClass}"${moreInfo(charging ? ents.charging : ents.connected)}>
             ${statusLabel}
           </span>
         </div>
@@ -91,8 +97,8 @@ export const loadpointView = {
       <div class="loadpoint" data-lp-compact="${escAttr(lpName)}">
         <div class="lp-header">
           <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
-          ${remaining ? `<span class="lp-remaining" title="${this._t("remaining")}">${remaining}</span>` : ""}
-          <span class="lp-badge ${statusClass}">
+          ${remaining ? `<span class="lp-remaining" title="${this._t("remaining")}"${moreInfo(ents.charge_remaining_duration)}>${remaining}</span>` : ""}
+          <span class="lp-badge ${statusClass}"${moreInfo(charging ? ents.charging : ents.connected)}>
             ${statusLabel}
           </span>
         </div>
@@ -348,9 +354,9 @@ export const loadpointView = {
     return `
       <div class="soc-section">
         <div class="soc-label-row">
-          ${validName ? `<span class="vehicle-name"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M5,11L6.5,6.5H17.5L19,11M17.5,16A1.5,1.5 0 0,1 16,14.5A1.5,1.5 0 0,1 17.5,13A1.5,1.5 0 0,1 19,14.5A1.5,1.5 0 0,1 17.5,16M6.5,16A1.5,1.5 0 0,1 5,14.5A1.5,1.5 0 0,1 6.5,13A1.5,1.5 0 0,1 8,14.5A1.5,1.5 0 0,1 6.5,16M18.92,6C18.72,5.42 18.16,5 17.5,5H6.5C5.84,5 5.28,5.42 5.08,6L3,12V20A1,1 0 0,0 4,21H5A1,1 0 0,0 6,20V19H18V20A1,1 0 0,0 19,21H20A1,1 0 0,0 21,20V12L18.92,6Z"/></svg> ${escHtml(validName)}</span>` : ""}
-          ${soc !== null ? `<span data-live-entity="${ents.vehicle_soc}" data-live-type="soc-pct"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${escHtml(unitStr(this._hass, ents.vehicle_soc))}</span>` : ""}
-          ${range !== null ? `<span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M11.5 0L9 8H11V16H13V8H15L11.5 0M3 18V20H21V18L11.5 16L3 18Z"/></svg> ${range} km</span>` : ""}
+          ${validName ? `<span class="vehicle-name"${moreInfo(ents.vehicle_name)}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M5,11L6.5,6.5H17.5L19,11M17.5,16A1.5,1.5 0 0,1 16,14.5A1.5,1.5 0 0,1 17.5,13A1.5,1.5 0 0,1 19,14.5A1.5,1.5 0 0,1 17.5,16M6.5,16A1.5,1.5 0 0,1 5,14.5A1.5,1.5 0 0,1 6.5,13A1.5,1.5 0 0,1 8,14.5A1.5,1.5 0 0,1 6.5,16M18.92,6C18.72,5.42 18.16,5 17.5,5H6.5C5.84,5 5.28,5.42 5.08,6L3,12V20A1,1 0 0,0 4,21H5A1,1 0 0,0 6,20V19H18V20A1,1 0 0,0 19,21H20A1,1 0 0,0 21,20V12L18.92,6Z"/></svg> ${escHtml(validName)}</span>` : ""}
+          ${soc !== null ? `<span data-live-entity="${ents.vehicle_soc}" data-live-type="soc-pct"${moreInfo(ents.vehicle_soc)}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${escHtml(unitStr(this._hass, ents.vehicle_soc))}</span>` : ""}
+          ${range !== null ? `<span${moreInfo(ents.vehicle_range)}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M11.5 0L9 8H11V16H13V8H15L11.5 0M3 18V20H21V18L11.5 16L3 18Z"/></svg> ${range} km</span>` : ""}
         </div>
         ${soc !== null ? `
         <div class="soc-track" style="background:${trackBg}">
@@ -408,12 +414,12 @@ export const loadpointView = {
     return `
       <div class="power-row ${charging ? "charging" : ""}">
         <span class="power-value"
-              data-live-entity="${ents.charge_power}" data-live-type="power">
+              data-live-entity="${ents.charge_power}" data-live-type="power"${moreInfo(ents.charge_power)}>
           ${power} ${escHtml(unit)}
         </span>
-        ${phaseStr ? `<span class="power-sep">·</span><span class="power-current">${phaseStr}</span>` : ""}
-        ${current !== null ? `<span class="power-sep">·</span><span class="power-current">${current} A</span>` : ""}
-        ${phasesLabel !== null ? `<span class="power-sep">·</span><span class="power-phases">${phasesLabel}</span>` : ""}
+        ${phaseStr ? `<span class="power-sep">·</span><span class="power-current"${moreInfo(ents.charge_currents_0 || ents.charge_currents_1 || ents.charge_currents_2)}>${phaseStr}</span>` : ""}
+        ${current !== null ? `<span class="power-sep">·</span><span class="power-current"${moreInfo(ents.charge_current)}>${current} A</span>` : ""}
+        ${phasesLabel !== null ? `<span class="power-sep">·</span><span class="power-phases"${moreInfo(ents.phases_active)}>${phasesLabel}</span>` : ""}
       </div>
       ${hint}
     `;
@@ -443,11 +449,11 @@ export const loadpointView = {
     const solar       = ents.session_solar_percentage? (() => { const v = parseFloat(stateVal(this._hass, ents.session_solar_percentage)); return isNaN(v) ? "—" : `${Math.round(v)} %`; })() : null;
 
     const items = [
-      energy      ? `<div class="session-item"><span class="si-label">${this._t("energy")}</span><span class="si-value">${energy}</span></div>`          : "",
-      price       ? `<div class="session-item"><span class="si-label">${this._t("cost")}</span><span class="si-value">${price}</span></div>`              : "",
-      pricePerKwh ? `<div class="session-item"><span class="si-label">${this._t("sessionPricePerKwh")}</span><span class="si-value">${pricePerKwh}</span></div>` : "",
-      co2PerKwh   ? `<div class="session-item"><span class="si-label">${this._t("sessionCo2PerKwh")}</span><span class="si-value">${co2PerKwh}</span></div>`     : "",
-      solar       ? `<div class="session-item"><span class="si-label">${this._t("sessionSolar")}</span><span class="si-value">${solar}</span></div>`           : "",
+      energy      ? `<div class="session-item"${moreInfo(ents.session_energy)}><span class="si-label">${this._t("energy")}</span><span class="si-value">${energy}</span></div>`          : "",
+      price       ? `<div class="session-item"${moreInfo(ents.session_price)}><span class="si-label">${this._t("cost")}</span><span class="si-value">${price}</span></div>`              : "",
+      pricePerKwh ? `<div class="session-item"${moreInfo(ents.session_price_per_kwh)}><span class="si-label">${this._t("sessionPricePerKwh")}</span><span class="si-value">${pricePerKwh}</span></div>` : "",
+      co2PerKwh   ? `<div class="session-item"${moreInfo(ents.session_co2_per_kwh)}><span class="si-label">${this._t("sessionCo2PerKwh")}</span><span class="si-value">${co2PerKwh}</span></div>`     : "",
+      solar       ? `<div class="session-item"${moreInfo(ents.session_solar_percentage)}><span class="si-label">${this._t("sessionSolar")}</span><span class="si-value">${solar}</span></div>`           : "",
     ].filter(Boolean);
 
     return `
@@ -532,4 +538,223 @@ export const loadpointView = {
       </div>
     `;
   },
+
+  // Listeners of the loadpoint and compact views: the charge settings toggle
+  // and the jump to the smart cost limit, the compact tabs, the boost chip,
+  // the mode buttons, the entity toggles and the phase buttons. Called by
+  // _attachListeners() after every render.
+  _attachLoadpointListeners() {
+    this.shadowRoot.querySelectorAll("[data-lp-current-toggle]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const lpName   = btn.dataset.lpCurrentToggle;
+        // Same fallback as the render: with `charge_current_settings: expanded`
+        // the block starts open, so the first click must collapse it.
+        const expanded = this._currentBlockExpanded[lpName]
+          ?? (this._config.charge_current_settings === "expanded");
+        this._currentBlockExpanded[lpName] = !expanded;
+
+        const block = this.shadowRoot.querySelector(`[data-lp-current="${lpName}"]`);
+        if (!block) return;
+        const body = block.querySelector(".current-block-body");
+        if (body) {
+          if (!expanded) body.removeAttribute("hidden");
+          else body.setAttribute("hidden", "");
+        }
+        btn.classList.toggle("active", !expanded);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("[data-lp-smart-cost-open]").forEach(chip => {
+      chip.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const lpName = chip.dataset.lpSmartCostOpen;
+        const block  = this.shadowRoot.querySelector(`[data-lp-current="${lpName}"]`);
+        if (!block) return;
+        const body = block.querySelector(".current-block-body");
+        if (body) body.removeAttribute("hidden");
+        this._currentBlockExpanded[lpName] = true;
+        const toggleBtn = block.querySelector("[data-lp-current-toggle]");
+        if (toggleBtn) toggleBtn.classList.add("active");
+        const section = block.querySelector(`[data-lp-smart-cost-section="${lpName}"]`);
+        if (section) {
+          section.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          section.classList.add("smart-cost-highlight");
+          setTimeout(() => section.classList.remove("smart-cost-highlight"), 1500);
+        }
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.compact-tab").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const lpName   = btn.dataset.lp;
+        const tabIdx   = parseInt(btn.dataset.tab);
+        this._tabState[lpName] = tabIdx;
+
+        const block = btn.closest("[data-lp-compact]");
+        block.querySelectorAll("button.compact-tab").forEach((b, i) =>
+          b.classList.toggle("active", i === tabIdx));
+        block.querySelectorAll(".compact-panel").forEach((p, i) =>
+          i === tabIdx ? p.removeAttribute("hidden") : p.setAttribute("hidden", ""));
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.boost-activate-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const on = btn.dataset.on === "true";
+        this._toggleEntity("switch", btn.dataset.entity, on);
+        btn.classList.toggle("on", !on);
+        btn.dataset.on = String(!on);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.mode-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._setSelectOption(btn.dataset.entity, btn.dataset.value);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.toggle").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const on     = btn.dataset.on === "true";
+        const domain = btn.dataset.domain;
+        this._toggleEntity(domain, btn.dataset.entity, on);
+        btn.classList.toggle("on", !on);
+        btn.dataset.on = String(!on);
+        if (btn.dataset.lp) this._requestPlanPreview(btn.dataset.lp);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.phase-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._setSelectOption(btn.dataset.entity, btn.dataset.value);
+        const group = btn.closest(".phase-btn-group");
+        if (group) {
+          group.querySelectorAll(".phase-btn").forEach(b => b.classList.remove("active"));
+          btn.classList.add("active");
+        }
+      });
+    });
+  },
 };
+
+// Loadpoint and compact modes: header, badges, action chips, mode row, vehicle
+// and power row, the entity toggles and the session block.
+// Part of the card stylesheet, see src/styles.js.
+export const loadpointCss = `
+      .loadpoint {
+        padding: 12px 0;
+        border-bottom: 1px solid var(--divider-color, #e5e7eb);
+        margin-bottom: 0;
+      }
+      .loadpoint:first-child { padding-top: 0; }
+      .loadpoint:last-child { border-bottom: none; padding-bottom: 0; }
+      /* The header values of a loadpoint open more-info; the site rows and the
+         grid chips carry their own hover, this one covers the inline values. */
+      .loadpoint [data-more-info] { cursor: pointer; }
+      .loadpoint [data-more-info]:hover { opacity: .75; }
+      .lp-header {
+        display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+      }
+      .lp-name { font-size: 1rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px; }
+      .lp-badge {
+        font-size: .75rem; font-weight: 600; padding: 2px 10px;
+        border-radius: 999px; border: 1px solid currentColor;
+      }
+      .lp-badge.charging  { color: var(--evcc-green);  background: color-mix(in srgb, var(--evcc-green)  15%, transparent); }
+      .lp-badge.connected { color: var(--evcc-blue);   background: color-mix(in srgb, var(--evcc-blue)   15%, transparent); }
+      .lp-badge.ready     { color: var(--evcc-gray);   background: color-mix(in srgb, var(--evcc-gray)   15%, transparent); }
+      .lp-badge.disabled  { color: var(--evcc-gray);   background: color-mix(in srgb, var(--evcc-gray)   15%, transparent); }
+      .loadpoint.lp-disabled { opacity: 0.55; }
+      .lp-action-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+      .lp-action-chip {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 3px 8px; border-radius: 999px;
+        font-size: .72rem; font-weight: 600;
+        border: 1px solid var(--divider-color, #4b5563);
+        color: var(--primary-text-color);
+      }
+      .lp-action-chip svg { width: 14px; height: 14px; flex: 0 0 14px; }
+      .lp-action-chip.phase { color: var(--evcc-bolt, #ffae00); border-color: color-mix(in srgb, var(--evcc-bolt, #ffae00) 50%, transparent); background: color-mix(in srgb, var(--evcc-bolt, #ffae00) 10%, transparent); }
+      .lp-action-chip.pv    { color: var(--evcc-green, #0a0);  border-color: color-mix(in srgb, var(--evcc-green, #0a0)  50%, transparent); background: color-mix(in srgb, var(--evcc-green, #0a0)  10%, transparent); }
+      .lp-action-chip.vehicle { color: var(--info-color, #2196f3); border-color: color-mix(in srgb, var(--info-color, #2196f3) 50%, transparent); background: color-mix(in srgb, var(--info-color, #2196f3) 10%, transparent); }
+      .lp-remaining {
+        font-size: .85em; color: var(--secondary-text-color);
+        margin-right: 8px; white-space: nowrap;
+      }
+
+      .mode-row { display: flex; gap: 6px; margin-bottom: 12px; }
+      .mode-row.has-sub { margin-bottom: 6px; }
+      .alwayscharge-row { margin-bottom: 12px; }
+      .mode-btn {
+        flex: 1; display: flex; flex-direction: column; align-items: center;
+        gap: 2px; padding: 8px 2px; min-width: 0;
+        border: 1px solid var(--divider-color, #e5e7eb); border-radius: 8px;
+        background: transparent; color: var(--secondary-text-color);
+        cursor: pointer; font-size: .7rem; transition: all .15s; overflow: hidden;
+      }
+      .mode-btn:hover { border-color: var(--primary-color); }
+      .mode-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+      .mode-icon { display: flex; align-items: center; justify-content: center; line-height: 1; min-height: 20px; }
+      .mode-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+      .soc-section { margin-bottom: 12px; }
+      .soc-label-row {
+        display: flex; justify-content: space-between;
+        font-size: .85rem; margin-bottom: 6px; color: var(--secondary-text-color);
+      }
+      .vehicle-name { font-weight: 500; color: var(--primary-text-color); }
+      .smart-cost-row { display: flex; justify-content: flex-end; margin-top: 4px; }
+      .boost-activate-row { display: flex; justify-content: flex-start; margin-top: 6px; margin-bottom: 2px; }
+      .boost-activate-btn {
+        display: inline-flex; align-items: center; gap: 4px;
+        background: none; border: 1px solid var(--divider-color, #555);
+        border-radius: 4px; cursor: pointer;
+        font-size: .75rem; color: var(--secondary-text-color);
+        padding: 3px 8px; font-family: inherit;
+        transition: border-color .15s, color .15s, background .15s;
+      }
+      .boost-activate-btn:hover { border-color: var(--evcc-bolt, #ffae00); color: var(--evcc-bolt, #ffae00); }
+      .boost-activate-btn.on { color: var(--evcc-bolt, #ffae00); border-color: var(--evcc-bolt, #ffae00); background: rgba(255,174,0,0.08); }
+      .soc-track {
+        position: relative; height: 8px;
+        background: var(--divider-color, #e5e7eb); border-radius: 4px; overflow: visible;
+      }
+      @keyframes soc-pulse {
+        0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; }
+      }
+      .soc-fill { height: 100%; border-radius: 4px; transition: width .4s ease; }
+      .soc-fill.charging { animation: soc-pulse 1.4s ease-in-out infinite; }
+      .soc-limit-marker {
+        position: absolute; top: -3px; width: 3px; height: 14px;
+        background: #22c55e; border-radius: 2px; transform: translateX(-50%);
+      }
+      .soc-min-marker {
+        position: absolute; top: -3px; width: 3px; height: 14px;
+        background: #f59e0b; border-radius: 2px; transform: translateX(-50%);
+      }
+
+      .power-row { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 12px; color: var(--secondary-text-color); flex-wrap: wrap; }
+      .power-row.charging { color: #22c55e; }
+      .power-value { font-size: 1.6rem; font-weight: 700; }
+      .power-sep { font-size: .8rem; color: var(--secondary-text-color); align-self: flex-end; padding-bottom: .2rem; }
+      .power-current { font-size: .82rem; align-self: flex-end; padding-bottom: .2rem; }
+      .power-phases  { font-size: .82rem; align-self: flex-end; padding-bottom: .2rem; }
+      .power-currents-hint { font-size: .72rem; color: var(--secondary-text-color, #757575); margin-top: 2px; opacity: .8; }
+
+      .toggles { margin-bottom: 10px; }
+      .toggle-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; flex-wrap: wrap; gap: 4px; }
+      button.toggle {
+        padding: 3px 14px; border-radius: 999px; border: 1px solid var(--divider-color);
+        background: transparent; color: var(--secondary-text-color);
+        cursor: pointer; font-size: .75rem; font-weight: 600; transition: all .15s;
+      }
+      button.toggle.on { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+
+      .session-block { border-top: 1px solid var(--divider-color, #e5e7eb); margin-top: 10px; padding-top: 10px; }
+      .session-title { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--secondary-text-color); margin-bottom: 8px; }
+      .session-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 6px; }
+      .session-item { display: flex; flex-direction: column; gap: 2px; }
+      .si-label { font-size: .7rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .05em; }
+      .si-value { font-size: .95rem; font-weight: 600; color: var(--primary-text-color); }
+`;
