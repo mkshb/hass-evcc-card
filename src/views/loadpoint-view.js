@@ -9,9 +9,6 @@ import { escHtml, escAttr } from "../utils/html.js";
 // every element carrying the attribute; empty when the entity is not discovered.
 const moreInfo = (entityId) => entityId ? ` data-more-info="${escAttr(entityId)}"` : "";
 
-// Cycle of the soc-pulse animation in loadpointCss, the phase is kept across renders.
-const SOC_PULSE_MS = 1400;
-
 // Loadpoint and compact modes: header, mode selector, power row, vehicle and session info, toggles. Methods are mixed into EvccCard.prototype.
 export const loadpointView = {
   _renderLoadpoint(lpName, ents) {
@@ -322,11 +319,6 @@ export const loadpointView = {
     const minSoc = ents.min_soc   ? parseFloat(stateVal(this._hass, ents.min_soc))    : null;
     const fillBg  = soc !== null ? socFillGradient(soc, minSoc ?? 0, limit ?? 100) : "var(--evcc-blue)";
     const trackBg = socTrackBg(minSoc ?? 0, limit ?? 100);
-    // The pulse of a charging bar runs on the wall clock: a re-render replaces
-    // the element, and a fresh element would start the 1.4 s cycle over, so the
-    // bar jumped back to full brightness with every evcc update. A negative
-    // delay puts the new element at the phase the old one had.
-    const pulse   = charging ? `;animation-delay:-${Date.now() % SOC_PULSE_MS}ms` : "";
 
     const _rawLimit  = ents.smart_cost_limit ? parseFloat(stateVal(this._hass, ents.smart_cost_limit)) : NaN;
     const smartLimit = ents.smart_cost_limit && !isNaN(_rawLimit) ? _rawLimit : null;
@@ -371,7 +363,7 @@ export const loadpointView = {
           <div class="soc-fill ${charging ? 'charging' : ''}"
                data-live-entity="${ents.vehicle_soc}" data-live-type="soc-fill"
                data-min-soc="${minSoc ?? 0}" data-limit-soc="${limit ?? 100}"
-               style="width:${soc}%;background:${fillBg}${pulse}"></div>
+               style="width:${soc}%;background:${fillBg}"></div>
           ${minSoc !== null ? `<div class="soc-min-marker"   style="left:${Math.min(minSoc,100)}%"></div>` : ""}
           ${limit  !== null ? `<div class="soc-limit-marker" style="left:${Math.min(limit,100)}%"></div>`  : ""}
         </div>` : ""}
@@ -552,7 +544,7 @@ export const loadpointView = {
   // the mode buttons, the entity toggles and the phase buttons. Called by
   // _attachListeners() after every render.
   _attachLoadpointListeners() {
-    this.shadowRoot.querySelectorAll("[data-lp-current-toggle]").forEach(btn => {
+    this._fresh("[data-lp-current-toggle]").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const lpName   = btn.dataset.lpCurrentToggle;
@@ -573,7 +565,7 @@ export const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("[data-lp-smart-cost-open]").forEach(chip => {
+    this._fresh("[data-lp-smart-cost-open]").forEach(chip => {
       chip.addEventListener("click", (e) => {
         e.stopPropagation();
         const lpName = chip.dataset.lpSmartCostOpen;
@@ -593,7 +585,7 @@ export const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.compact-tab").forEach(btn => {
+    this._fresh("button.compact-tab").forEach(btn => {
       btn.addEventListener("click", () => {
         const lpName   = btn.dataset.lp;
         const tabIdx   = parseInt(btn.dataset.tab);
@@ -607,7 +599,7 @@ export const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.boost-activate-btn").forEach(btn => {
+    this._fresh("button.boost-activate-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         const on = btn.dataset.on === "true";
         this._toggleEntity("switch", btn.dataset.entity, on);
@@ -619,13 +611,13 @@ export const loadpointView = {
     // The mode buttons mark the pressed one at once. The real state comes back
     // through evcc, ha-evcc and HA, which takes up to a few seconds while the
     // button would look as if the tap had not landed; a failed call reverts.
-    this.shadowRoot.querySelectorAll("button.mode-btn").forEach(btn => {
+    this._fresh("button.mode-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         this._pressGroupButton(btn, ".mode-row", ".mode-btn");
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.toggle").forEach(btn => {
+    this._fresh("button.toggle").forEach(btn => {
       btn.addEventListener("click", () => {
         const on     = btn.dataset.on === "true";
         const domain = btn.dataset.domain;
@@ -636,7 +628,7 @@ export const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.phase-btn").forEach(btn => {
+    this._fresh("button.phase-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         this._pressGroupButton(btn, ".phase-btn-group", ".phase-btn");
       });

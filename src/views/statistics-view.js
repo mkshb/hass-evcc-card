@@ -317,7 +317,7 @@ export const statisticsView = {
       return segs + hit + labelSvg;
     }).join("");
     const legend = `<div class="stats-legend">${series.map(s => `<span class="sl-item"><span class="sl-dot" style="background:${s.color}"></span>${escHtml(s.label)}</span>`).join("")}</div>`;
-    return `<div class="evcc-chart-wrap"><svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${grid}${axisLbl}${bars}</svg><div class="evcc-chart-tooltip" hidden></div></div>${legend}`;
+    return `<div class="evcc-chart-wrap"><svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${grid}${axisLbl}${bars}</svg><div class="evcc-chart-tooltip" data-morph-keep hidden></div></div>${legend}`;
   },
 
   _renderStatsBlockSessions(sessions) {
@@ -441,7 +441,7 @@ export const statisticsView = {
   // tabs, the month and year steppers and the chart tooltip. Called by
   // _attachListeners() after every render.
   _attachStatsListeners() {
-    this.shadowRoot.querySelectorAll("button.stats-period-tab").forEach(btn => {
+    this._fresh("button.stats-period-tab").forEach(btn => {
       btn.addEventListener("click", () => {
         // Sessions path: data-scope/-metric/-group. Legacy entity path: data-period.
         if      (btn.dataset.scope)  this._statsScope  = btn.dataset.scope;
@@ -453,7 +453,7 @@ export const statisticsView = {
     });
 
     // Two independent steppers: month (wraps 0-11) and year (sessions stats path).
-    this.shadowRoot.querySelectorAll("button[data-stats-step]").forEach(btn => {
+    this._fresh("button[data-stats-step]").forEach(btn => {
       btn.addEventListener("click", () => {
         const dir = btn.dataset.statsStep === "next" ? 1 : -1;
         const now = new Date();
@@ -467,7 +467,7 @@ export const statisticsView = {
       });
     });
 
-    const chartWrap = this.shadowRoot.querySelector(".evcc-chart-wrap");
+    const chartWrap = this._fresh(".evcc-chart-wrap")[0];
     if (chartWrap) {
       const tooltip = chartWrap.querySelector(".evcc-chart-tooltip");
       const dot = (color) => `<span class="ectt-dot" style="background:${color}"></span>`;

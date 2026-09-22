@@ -569,6 +569,132 @@ function escAttr(str) {
   return escHtml(str);
 }
 
+// Brings a live DOM tree in line with freshly rendered markup without
+// replacing the nodes that are still there. The card renders one HTML string
+// per update; assigning it to innerHTML threw every element away, so a hovered
+// button lost its highlight, a focused element its focus, the charging bar its
+// pulse phase and the chart its tooltip with every evcc update, about every
+// two seconds. Here the string is parsed into a template and walked next to
+// the live tree: attributes and text that differ are updated in place, nodes
+// that have no counterpart are inserted, nodes that are no longer rendered are
+// removed. A node that stays keeps its identity, its listeners and its state.
+//
+// Two nodes are counterparts when their tag and their key match. The key is
+// `data-key` when set, otherwise the first class name, so a row that appears
+// (the remaining time in the loadpoint header, an action chip) is inserted
+// before its siblings instead of being morphed out of the badge that stood at
+// that index. An element with `data-morph-keep` is left alone once it exists,
+// for things the card writes into the DOM at runtime, such as the chart
+// tooltip.
+
+const KEY_ATTRS = ["data-key"];
+
+// Attributes the card sets after a render rather than in the markup (the
+// button role and the tab stop that listeners.js gives every click target).
+// They are not in the template, so a plain sync would strip them again with
+// every update, and a focused element loses its focus with its tabindex.
+const RUNTIME_ATTRS = new Set(["role", "tabindex"]);
+
+function keyOf(node) {
+  if (node.nodeType !== Node.ELEMENT_NODE) return String(node.nodeType);
+  for (const a of KEY_ATTRS) {
+    const v = node.getAttribute(a);
+    if (v != null) return `${node.localName}#${v}`;
+  }
+  const cls = node.getAttribute("class");
+  const first = cls ? cls.trim().split(/\s+/)[0] : "";
+  return `${node.localName}.${first}`;
+}
+
+function compatible(a, b) {
+  return a.nodeType === b.nodeType && keyOf(a) === keyOf(b);
+}
+
+// Attributes, plus the properties a form control keeps apart from them:
+// `value` of an input or select and `checked` of a checkbox follow the
+// markup, so a re-rendered slider stands where the state says. The card never
+// morphs while such a control is focused or dragged (see _inputBusy), so this
+// never fights the user.
+function syncAttributes(live, next) {
+  for (const { name } of [...live.attributes]) {
+    if (!next.hasAttribute(name) && !RUNTIME_ATTRS.has(name)) live.removeAttribute(name);
+  }
+  for (const { name, value } of [...next.attributes]) {
+    if (live.getAttribute(name) !== value) live.setAttribute(name, value);
+  }
+  const tag = live.localName;
+  if (tag === "input") {
+    const type = live.type;
+    if (type === "checkbox" || type === "radio") {
+      const on = next.hasAttribute("checked");
+      if (live.checked !== on) live.checked = on;
+    } else if (type !== "file") {
+      const v = next.getAttribute("value") ?? "";
+      if (live.value !== v) live.value = v;
+    }
+  } else if (tag === "select") {
+    // Options are morphed below; the selection follows the `selected`
+    // attribute of the new markup once they are in place.
+    live.__evccSyncSelect = true;
+  } else if (tag === "textarea") {
+    const v = next.textContent;
+    if (live.value !== v) live.value = v;
+  }
+}
+
+function morphNode(live, next) {
+  if (live.nodeType === Node.TEXT_NODE || live.nodeType === Node.COMMENT_NODE) {
+    if (live.data !== next.data) live.data = next.data;
+    return;
+  }
+  if (live.hasAttribute("data-morph-keep")) return;
+  syncAttributes(live, next);
+  morphChildren(live, next);
+  if (live.__evccSyncSelect) {
+    delete live.__evccSyncSelect;
+    const wanted = [...next.options].findIndex(o => o.hasAttribute("selected"));
+    if (wanted >= 0 && live.selectedIndex !== wanted) live.selectedIndex = wanted;
+  }
+}
+
+function morphChildren(liveParent, nextParent) {
+  const nextKids = [...nextParent.childNodes];
+  let cursor = liveParent.firstChild;
+  for (const nextKid of nextKids) {
+    // The node at the cursor is the counterpart when it fits; otherwise one
+    // further down the live list may be (a sibling before it disappeared), and
+    // it is pulled forward; otherwise the new node is inserted here.
+    let match = null;
+    if (cursor && compatible(cursor, nextKid)) {
+      match = cursor;
+    } else {
+      for (let n = cursor?.nextSibling; n; n = n.nextSibling) {
+        if (compatible(n, nextKid)) { match = n; break; }
+      }
+      if (match) liveParent.insertBefore(match, cursor);
+    }
+    if (match) {
+      morphNode(match, nextKid);
+      cursor = match.nextSibling;
+    } else {
+      liveParent.insertBefore(liveParent.ownerDocument.importNode(nextKid, true), cursor);
+    }
+  }
+  // Whatever is left past the last counterpart is no longer rendered.
+  while (cursor) {
+    const gone = cursor;
+    cursor = cursor.nextSibling;
+    liveParent.removeChild(gone);
+  }
+}
+
+// Renders `html` into `root` by morphing.
+function morphInto(root, html) {
+  const tpl = root.ownerDocument.createElement("template");
+  tpl.innerHTML = html;
+  morphChildren(root, tpl.content);
+}
+
 // Decimal places implied by a slider step (0.005 → 3, 1 → 0).
 function stepDecimals(step) {
   const s = String(step);
@@ -987,9 +1113,6 @@ const evccApi = {
 // every element carrying the attribute; empty when the entity is not discovered.
 const moreInfo = (entityId) => entityId ? ` data-more-info="${escAttr(entityId)}"` : "";
 
-// Cycle of the soc-pulse animation in loadpointCss, the phase is kept across renders.
-const SOC_PULSE_MS = 1400;
-
 // Loadpoint and compact modes: header, mode selector, power row, vehicle and session info, toggles. Methods are mixed into EvccCard.prototype.
 const loadpointView = {
   _renderLoadpoint(lpName, ents) {
@@ -1300,11 +1423,6 @@ const loadpointView = {
     const minSoc = ents.min_soc   ? parseFloat(stateVal(this._hass, ents.min_soc))    : null;
     const fillBg  = soc !== null ? socFillGradient(soc, minSoc ?? 0, limit ?? 100) : "var(--evcc-blue)";
     const trackBg = socTrackBg(minSoc ?? 0, limit ?? 100);
-    // The pulse of a charging bar runs on the wall clock: a re-render replaces
-    // the element, and a fresh element would start the 1.4 s cycle over, so the
-    // bar jumped back to full brightness with every evcc update. A negative
-    // delay puts the new element at the phase the old one had.
-    const pulse   = charging ? `;animation-delay:-${Date.now() % SOC_PULSE_MS}ms` : "";
 
     const _rawLimit  = ents.smart_cost_limit ? parseFloat(stateVal(this._hass, ents.smart_cost_limit)) : NaN;
     const smartLimit = ents.smart_cost_limit && !isNaN(_rawLimit) ? _rawLimit : null;
@@ -1349,7 +1467,7 @@ const loadpointView = {
           <div class="soc-fill ${charging ? 'charging' : ''}"
                data-live-entity="${ents.vehicle_soc}" data-live-type="soc-fill"
                data-min-soc="${minSoc ?? 0}" data-limit-soc="${limit ?? 100}"
-               style="width:${soc}%;background:${fillBg}${pulse}"></div>
+               style="width:${soc}%;background:${fillBg}"></div>
           ${minSoc !== null ? `<div class="soc-min-marker"   style="left:${Math.min(minSoc,100)}%"></div>` : ""}
           ${limit  !== null ? `<div class="soc-limit-marker" style="left:${Math.min(limit,100)}%"></div>`  : ""}
         </div>` : ""}
@@ -1530,7 +1648,7 @@ const loadpointView = {
   // the mode buttons, the entity toggles and the phase buttons. Called by
   // _attachListeners() after every render.
   _attachLoadpointListeners() {
-    this.shadowRoot.querySelectorAll("[data-lp-current-toggle]").forEach(btn => {
+    this._fresh("[data-lp-current-toggle]").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const lpName   = btn.dataset.lpCurrentToggle;
@@ -1551,7 +1669,7 @@ const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("[data-lp-smart-cost-open]").forEach(chip => {
+    this._fresh("[data-lp-smart-cost-open]").forEach(chip => {
       chip.addEventListener("click", (e) => {
         e.stopPropagation();
         const lpName = chip.dataset.lpSmartCostOpen;
@@ -1571,7 +1689,7 @@ const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.compact-tab").forEach(btn => {
+    this._fresh("button.compact-tab").forEach(btn => {
       btn.addEventListener("click", () => {
         const lpName   = btn.dataset.lp;
         const tabIdx   = parseInt(btn.dataset.tab);
@@ -1585,7 +1703,7 @@ const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.boost-activate-btn").forEach(btn => {
+    this._fresh("button.boost-activate-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         const on = btn.dataset.on === "true";
         this._toggleEntity("switch", btn.dataset.entity, on);
@@ -1597,13 +1715,13 @@ const loadpointView = {
     // The mode buttons mark the pressed one at once. The real state comes back
     // through evcc, ha-evcc and HA, which takes up to a few seconds while the
     // button would look as if the tap had not landed; a failed call reverts.
-    this.shadowRoot.querySelectorAll("button.mode-btn").forEach(btn => {
+    this._fresh("button.mode-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         this._pressGroupButton(btn, ".mode-row", ".mode-btn");
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.toggle").forEach(btn => {
+    this._fresh("button.toggle").forEach(btn => {
       btn.addEventListener("click", () => {
         const on     = btn.dataset.on === "true";
         const domain = btn.dataset.domain;
@@ -1614,7 +1732,7 @@ const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.phase-btn").forEach(btn => {
+    this._fresh("button.phase-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         this._pressGroupButton(btn, ".phase-btn-group", ".phase-btn");
       });
@@ -2190,7 +2308,7 @@ const socControl = {
   // keyboard, write-back) and the tap target that opens the direct input.
   // Called by _attachListeners() after every render.
   _attachSliderListeners() {
-    this.shadowRoot.querySelectorAll("input[data-boost-entity]").forEach(input => {
+    this._fresh("input[data-boost-entity]").forEach(input => {
       input.addEventListener("pointerdown", () => { this._isDragging = true; this._pendingRender = false; });
       input.addEventListener("input", () => {
         const val     = parseInt(input.value, 10);
@@ -2204,7 +2322,7 @@ const socControl = {
 
     // Direct input for battery boost: the range already carries the option
     // list, so apply just moves the range and reuses _boostCommit.
-    this.shadowRoot.querySelectorAll("button.boost-val[data-boost-edit]").forEach(btn => {
+    this._fresh("button.boost-val[data-boost-edit]").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         if (btn.classList.contains("editing")) { this._closeSliderEdit(); return; }
@@ -2218,13 +2336,13 @@ const socControl = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.smart-cost-clear-btn").forEach(btn => {
+    this._fresh("button.smart-cost-clear-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         this._pressButton(btn.dataset.entity);
       });
     });
 
-    this.shadowRoot.querySelectorAll("input[type=range]:not(.plan-soc-range):not([data-boost-entity])").forEach(input => {
+    this._fresh("input[type=range]:not(.plan-soc-range):not([data-boost-entity])").forEach(input => {
       input.addEventListener("pointerdown", () => {
         this._isDragging    = true;
         this._pendingRender = false;
@@ -2267,7 +2385,7 @@ const socControl = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.slider-val[data-slider-edit]").forEach(btn => {
+    this._fresh("button.slider-val[data-slider-edit]").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         if (btn.classList.contains("editing")) this._closeSliderEdit();
@@ -2898,14 +3016,14 @@ const planningView = {
   // direct input, time, vehicle, save and delete. Called by _attachListeners()
   // after every render.
   _attachPlanListeners() {
-    this.shadowRoot.querySelectorAll("select.plan-precondition-select").forEach(sel => {
+    this._fresh("select.plan-precondition-select").forEach(sel => {
       sel.addEventListener("change", () => {
         this._setSelectOption(sel.dataset.entity, sel.value);
         if (sel.dataset.lp) this._requestPlanPreview(sel.dataset.lp);
       });
     });
 
-    this.shadowRoot.querySelectorAll("input.plan-soc-range").forEach(input => {
+    this._fresh("input.plan-soc-range").forEach(input => {
       input.addEventListener("pointerdown", () => {
         this._isDragging    = true;
         this._pendingRender = false;
@@ -2937,7 +3055,7 @@ const planningView = {
     });
 
     // Direct input for the plan target (local state, no entity behind it).
-    this.shadowRoot.querySelectorAll("button.plan-soc-val[data-plan-soc-edit]").forEach(btn => {
+    this._fresh("button.plan-soc-val[data-plan-soc-edit]").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         if (btn.classList.contains("editing")) { this._closeSliderEdit(); return; }
@@ -2954,7 +3072,7 @@ const planningView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("input.plan-time-input").forEach(input => {
+    this._fresh("input.plan-time-input").forEach(input => {
       input.addEventListener("change", () => {
         const lpName = input.dataset.lp;
         if (this._planState[lpName]) this._planState[lpName].time = input.value;
@@ -2962,7 +3080,7 @@ const planningView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("select.plan-vehicle-select").forEach(sel => {
+    this._fresh("select.plan-vehicle-select").forEach(sel => {
       sel.addEventListener("change", () => {
         const lpName = sel.dataset.lp;
         const eid    = sel.dataset.entity;
@@ -2979,7 +3097,7 @@ const planningView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.plan-btn.save").forEach(btn => {
+    this._fresh("button.plan-btn.save").forEach(btn => {
       btn.addEventListener("click", () => {
         const lpName  = btn.dataset.lp;
         const state   = this._planState[lpName] || {};
@@ -3033,7 +3151,7 @@ const planningView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.plan-btn.delete").forEach(btn => {
+    this._fresh("button.plan-btn.delete").forEach(btn => {
       btn.addEventListener("click", () => {
         const lpName      = btn.dataset.lp;
         const planSt      = this._planState[lpName] || {};
@@ -3215,7 +3333,7 @@ const priorityView = {
 
     const list = root.querySelector(".priority-list");
 
-    root.querySelectorAll(".priority-row").forEach(row => {
+    this._fresh(".priority-row", root).forEach(row => {
       const handle = row.querySelector(".priority-handle");
       if (!handle || row.classList.contains("no-entity")) return;
 
@@ -3228,7 +3346,7 @@ const priorityView = {
       handle.addEventListener("lostpointercapture", (e) => this._priorityDragEnd(e));
     });
 
-    const applyBtn = root.querySelector("[data-priority-apply]");
+    const applyBtn = this._fresh("[data-priority-apply]", root)[0];
     if (applyBtn) {
       applyBtn.addEventListener("click", () => {
         const visible = this._currentVisible();
@@ -3236,7 +3354,7 @@ const priorityView = {
       });
     }
 
-    const resetBtn = root.querySelector("[data-priority-reset]");
+    const resetBtn = this._fresh("[data-priority-reset]", root)[0];
     if (resetBtn) {
       resetBtn.addEventListener("click", () => {
         this._priorityDraft = null;
@@ -4823,7 +4941,7 @@ const statisticsLegacy = {
       <svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">
         ${grid}${kwhLbl}${bars}
       </svg>
-      <div class="evcc-chart-tooltip" hidden></div>
+      <div class="evcc-chart-tooltip" data-morph-keep hidden></div>
     </div>`;
   },
 
@@ -5197,7 +5315,7 @@ const statisticsView = {
       return segs + hit + labelSvg;
     }).join("");
     const legend = `<div class="stats-legend">${series.map(s => `<span class="sl-item"><span class="sl-dot" style="background:${s.color}"></span>${escHtml(s.label)}</span>`).join("")}</div>`;
-    return `<div class="evcc-chart-wrap"><svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${grid}${axisLbl}${bars}</svg><div class="evcc-chart-tooltip" hidden></div></div>${legend}`;
+    return `<div class="evcc-chart-wrap"><svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${grid}${axisLbl}${bars}</svg><div class="evcc-chart-tooltip" data-morph-keep hidden></div></div>${legend}`;
   },
 
   _renderStatsBlockSessions(sessions) {
@@ -5321,7 +5439,7 @@ const statisticsView = {
   // tabs, the month and year steppers and the chart tooltip. Called by
   // _attachListeners() after every render.
   _attachStatsListeners() {
-    this.shadowRoot.querySelectorAll("button.stats-period-tab").forEach(btn => {
+    this._fresh("button.stats-period-tab").forEach(btn => {
       btn.addEventListener("click", () => {
         // Sessions path: data-scope/-metric/-group. Legacy entity path: data-period.
         if      (btn.dataset.scope)  this._statsScope  = btn.dataset.scope;
@@ -5333,7 +5451,7 @@ const statisticsView = {
     });
 
     // Two independent steppers: month (wraps 0-11) and year (sessions stats path).
-    this.shadowRoot.querySelectorAll("button[data-stats-step]").forEach(btn => {
+    this._fresh("button[data-stats-step]").forEach(btn => {
       btn.addEventListener("click", () => {
         const dir = btn.dataset.statsStep === "next" ? 1 : -1;
         const now = new Date();
@@ -5347,7 +5465,7 @@ const statisticsView = {
       });
     });
 
-    const chartWrap = this.shadowRoot.querySelector(".evcc-chart-wrap");
+    const chartWrap = this._fresh(".evcc-chart-wrap")[0];
     if (chartWrap) {
       const tooltip = chartWrap.querySelector(".evcc-chart-tooltip");
       const dot = (color) => `<span class="ectt-dot" style="background:${color}"></span>`;
@@ -5653,7 +5771,7 @@ const batteryView = {
   // Listeners of the battery view: the discharge toggle and the inline
   // selects. Called by _attachListeners() after every render.
   _attachBatteryListeners() {
-    this.shadowRoot.querySelectorAll("button.batt-discharge-toggle").forEach(btn => {
+    this._fresh("button.batt-discharge-toggle").forEach(btn => {
       btn.addEventListener("click", () => {
         const on     = btn.dataset.on === "true";
         const domain = btn.dataset.domain;
@@ -5663,7 +5781,7 @@ const batteryView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll(".batt-inline-select").forEach(sel => {
+    this._fresh(".batt-inline-select").forEach(sel => {
       sel.addEventListener("change", () => {
         this._setSelectOption(sel.dataset.entity, sel.value);
       });
@@ -6100,7 +6218,7 @@ const debugView = {
   // Listeners of the debug view: the report copy button and the mask toggle.
   // Called by _attachListeners() after every render.
   _attachDebugListeners() {
-    const copyBtn = this.shadowRoot.querySelector(".debug-copy-btn");
+    const copyBtn = this._fresh(".debug-copy-btn")[0];
     if (copyBtn) {
       copyBtn.addEventListener("click", async () => {
         const toast = this.shadowRoot.querySelector(".debug-toast");
@@ -6139,7 +6257,7 @@ const debugView = {
       });
     }
 
-    const maskTog = this.shadowRoot.querySelector(".debug-mask-toggle");
+    const maskTog = this._fresh(".debug-mask-toggle")[0];
     if (maskTog) {
       maskTog.addEventListener("change", () => {
         this._debugMask = maskTog.checked;
@@ -6250,6 +6368,20 @@ const NATIVE = "button, input, select, textarea, a[href]";
 // is attached by that view's _attach<Name>Listeners(), called at the end. Methods
 // are mixed into EvccCard.prototype.
 const listeners = {
+  // The elements matching `sel` that have not been wired for `sel` yet. A
+  // render morphs the DOM instead of replacing it (src/utils/morph.js), so an
+  // element and its listeners outlive the render; every attach site asks here
+  // and binds only what is new. Keyed by selector: one element may be wired by
+  // two sites (a select by the focus guard and by its own change handler).
+  _fresh(sel, root = this.shadowRoot) {
+    return [...root.querySelectorAll(sel)].filter(el => {
+      const bound = el.__evccBound || (el.__evccBound = new Set());
+      if (bound.has(sel)) return false;
+      bound.add(sel);
+      return true;
+    });
+  },
+
   _attachListeners() {
     // Keyboard activation for the button-role elements: Enter and Space click
     // them, as a native button would. Bound to the shadow root once; the root
@@ -6265,13 +6397,13 @@ const listeners = {
         el.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true }));
       });
     }
-    this.shadowRoot.querySelectorAll(NON_NATIVE_CLICKABLES).forEach(el => {
+    this._fresh(NON_NATIVE_CLICKABLES).forEach(el => {
       if (el.matches(NATIVE)) return;
       if (!el.hasAttribute("role"))     el.setAttribute("role", "button");
       if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "0");
     });
 
-    this.shadowRoot.querySelectorAll("[data-more-info]").forEach(el => {
+    this._fresh("[data-more-info]").forEach(el => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         this.dispatchEvent(new CustomEvent("hass-more-info", {
@@ -6284,14 +6416,14 @@ const listeners = {
     // graphic. A click on a node inside it opens more-info instead: that handler
     // above stops propagation, and the check here keeps the two apart even when
     // the click lands on a node that has no more-info listener attached.
-    this.shadowRoot.querySelectorAll('[data-action="toggle-site"]').forEach(el => {
+    this._fresh('[data-action="toggle-site"]').forEach(el => {
       el.addEventListener("click", (e) => {
         if (e.target.closest("[data-more-info]")) return;
         this._toggleSite();
       });
     });
 
-    this.shadowRoot.querySelectorAll('[data-action="open-debug"]').forEach(btn => {
+    this._fresh('[data-action="open-debug"]').forEach(btn => {
       btn.addEventListener("click", () => {
         this._origConfig = { ...this._config };
         this._config = { ...this._config, mode: "debug" };
@@ -6304,7 +6436,7 @@ const listeners = {
     // replacing the DOM would close an open dropdown or picker and wipe a
     // half-typed time. Registered before the views' own handlers, so a change
     // handler that renders finds the guard already lifted.
-    this.shadowRoot.querySelectorAll("select, input[type=datetime-local]").forEach(el => {
+    this._fresh("select, input[type=datetime-local]").forEach(el => {
       el.addEventListener("focus",  () => this._holdInput(el));
       el.addEventListener("change", () => this._releaseInput(el));
       el.addEventListener("blur",   () => this._releaseInput(el));
@@ -6885,7 +7017,10 @@ class EvccCard extends HTMLElement {
     const allDisabled = Object.keys(visible).length > 0
       && Object.keys(lpEnabled).length === 0;
 
-    this.shadowRoot.innerHTML = `
+    // Morphed into the live tree, not assigned: the elements that are still
+    // rendered keep their identity, so focus, hover, a running animation, the
+    // chart tooltip and the listeners survive the update. See src/utils/morph.js.
+    morphInto(this.shadowRoot, `
       ${this._styleTag()}
       <div class="evcc-scale-wrap"${this._config.size ? ` data-size="${this._config.size}"` : ""}><ha-card>
         <div class="card-content">
@@ -6931,7 +7066,7 @@ class EvccCard extends HTMLElement {
           }
         </div>
       </ha-card></div>
-    `;
+    `);
     this._attachListeners();
     return true;
   }

@@ -393,7 +393,7 @@ export const debugView = {
   // Listeners of the debug view: the report copy button and the mask toggle.
   // Called by _attachListeners() after every render.
   _attachDebugListeners() {
-    const copyBtn = this.shadowRoot.querySelector(".debug-copy-btn");
+    const copyBtn = this._fresh(".debug-copy-btn")[0];
     if (copyBtn) {
       copyBtn.addEventListener("click", async () => {
         const toast = this.shadowRoot.querySelector(".debug-toast");
@@ -432,7 +432,7 @@ export const debugView = {
       });
     }
 
-    const maskTog = this.shadowRoot.querySelector(".debug-mask-toggle");
+    const maskTog = this._fresh(".debug-mask-toggle")[0];
     if (maskTog) {
       maskTog.addEventListener("change", () => {
         this._debugMask = maskTog.checked;

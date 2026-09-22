@@ -2,6 +2,7 @@ import { detectIntegration, discoverEntities, selectLoadpoints, partitionDisable
 import { CARD_SIZES, CARD_SIZE_DETAILS, CARD_SIZE_FOOTER, RENDER_ATTRS, normalizeStatsPeriod, legacyStatsPeriod, validateCardConfig, loadpointFilter } from "./core/constants.js";
 import { stateVal, unitStr } from "./utils/state.js";
 import { escHtml } from "./utils/html.js";
+import { morphInto } from "./utils/morph.js";
 import { socFillGradient } from "./utils/format.js";
 import { loadSharedTranslations, sharedTranslations } from "./utils/translations.js";
 
@@ -503,7 +504,10 @@ export class EvccCard extends HTMLElement {
     const allDisabled = Object.keys(visible).length > 0
       && Object.keys(lpEnabled).length === 0;
 
-    this.shadowRoot.innerHTML = `
+    // Morphed into the live tree, not assigned: the elements that are still
+    // rendered keep their identity, so focus, hover, a running animation, the
+    // chart tooltip and the listeners survive the update. See src/utils/morph.js.
+    morphInto(this.shadowRoot, `
       ${this._styleTag()}
       <div class="evcc-scale-wrap"${this._config.size ? ` data-size="${this._config.size}"` : ""}><ha-card>
         <div class="card-content">
@@ -549,7 +553,7 @@ export class EvccCard extends HTMLElement {
           }
         </div>
       </ha-card></div>
-    `;
+    `);
     this._attachListeners();
     return true;
   }
