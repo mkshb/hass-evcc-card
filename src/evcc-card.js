@@ -120,11 +120,12 @@ export class EvccCard extends HTMLElement {
     this._pendingRender = false;
     this._inputFocused  = null;
     this._closeSliderEdit();
-    // Drop the on-demand WS caches. Capabilities and entry_id are kept on
-    // purpose: they do not change while the page lives, and re-probing them on
-    // every re-mount would be a backend call for nothing.
-    this._wsCache    = {};
-    this._wsInflight = {};
+    // The WebSocket caches stay, like the capabilities and the entry id: a view
+    // switch would otherwise show the footer, the forecast and the plan preview
+    // as loading and fetch them again. _wsFetch refreshes sessions and forecast
+    // after their TTL and serves the old value meanwhile; a plan preview is
+    // served until the input changes. Only a switch of the ha-evcc instance
+    // drops them (_syncIntegrationInstance).
   }
 
   async _loadTranslations() {

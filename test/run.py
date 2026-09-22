@@ -540,6 +540,21 @@ def lifecycle(browser, port, t):
     t.check(len([c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/capabilities"]) == n_before,
             "re-mounting costs no extra backend call", f"{n_before} capabilities call(s) before and after")
 
+    # The WebSocket caches survive a re-mount: a view switch neither refetches
+    # the sessions behind the footer nor shows it in its loading state.
+    page2 = new_page(browser, 480, 1400)
+    open_card(page2, port, mode="site")
+    page2.wait_for_timeout(800)
+    footer = lambda: page2.evaluate("window.__card.shadowRoot.querySelector('.stats-footer')?.textContent.trim() || ''")
+    sessions_calls = lambda: len([c for c in page2.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/sessions"])
+    f_before, n_before = footer(), sessions_calls()
+    page2.evaluate("""() => { const c = window.__card, host = c.parentNode; host.removeChild(c); host.appendChild(c); }""")
+    page2.wait_for_timeout(800)
+    t.check(n_before > 0 and sessions_calls() == n_before, "re-mount within the TTL fetches the sessions again: no",
+            f"{n_before} sessions call(s) before, {sessions_calls()} after")
+    t.check(f_before and footer() == f_before, "the footer keeps its figures over the re-mount", f"{f_before[:40]!r} -> {footer()[:40]!r}")
+    page2.close()
+
     for _ in range(3): remount()
     t.check(page.evaluate("!!window.__card._countdownInterval") and not errors, "repeated re-mounts leave one live card behind",
             "; ".join(errors)[:200])
