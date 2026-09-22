@@ -931,6 +931,38 @@ def interactions(browser, port, t):
     t.check(page.evaluate("!window.__card._inputFocused && !window.__card._pendingRender"), "a re-mount clears the guard")
     page.close()
 
+    # Regression: with a render pending while the dropdown is open, the pick
+    # must reach HA as picked. The guard used to run the deferred render right
+    # inside the change event, before the view's handler read the value, and
+    # the morph had put the old state back by then.
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+    page.evaluate("""() => {
+      const c = window.__card;
+      // HA answers late: the call goes out, the state does not move.
+      c._hass.callService = (d, s, data) => { window.__hass.serviceCalls.push({ domain: d, service: s, data }); return Promise.resolve(); };
+      c.shadowRoot.querySelector('select.plan-precondition-select').focus();
+      const st = { ...window.__hass.states }; const id = 'sensor.evcc_openwb_charge_power';
+      st[id] = { ...st[id], state: '1.111' }; window.__hass.states = st; c.hass = { ...window.__hass, states: st };
+      window.__hass.serviceCalls.length = 0;
+    }""")
+    t.check(page.evaluate("window.__card._pendingRender"), "a render is pending while the precondition select is open")
+    page.locator(in_card("select.plan-precondition-select")).select_option("1800"); page.wait_for_timeout(300)
+    call = page.evaluate("window.__hass.serviceCalls.find(c => c.service === 'select_option')")
+    t.check(call and call["data"]["option"] == "1800", "the picked precondition is what goes to HA, not the old state", json.dumps(call))
+    t.check(page.evaluate("window.__card.shadowRoot.querySelector('select.plan-precondition-select').value") == "1800",
+            "and the select keeps showing the pick until HA reports it back")
+    # The same for a typed time: the value the user set is what the plan state takes.
+    page.evaluate("""() => { const c = window.__card; c.shadowRoot.querySelector('input.plan-time-input').focus();
+      const st = { ...window.__hass.states }; const id = 'sensor.evcc_openwb_charge_power';
+      st[id] = { ...st[id], state: '2.222' }; window.__hass.states = st; c.hass = { ...window.__hass, states: st }; }""")
+    page.locator(in_card("input.plan-time-input")).fill("2026-09-19T07:30")
+    page.evaluate("() => window.__card.shadowRoot.querySelector('input.plan-time-input').dispatchEvent(new Event('change', { bubbles: true }))")
+    page.wait_for_timeout(300)
+    t.check(page.evaluate("window.__card._planState.openwb?.time") == "2026-09-19T07:30",
+            "a typed plan time survives the deferred render", str(page.evaluate("window.__card._planState.openwb?.time")))
+    page.close()
+
     # --- the charging bar outlives the render, so its pulse just goes on --------------
     t.group("interaction - charging pulse")
     page = new_page(browser, 480, 1600)

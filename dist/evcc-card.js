@@ -610,11 +610,14 @@ function compatible(a, b) {
   return a.nodeType === b.nodeType && keyOf(a) === keyOf(b);
 }
 
-// Attributes, plus the properties a form control keeps apart from them:
-// `value` of an input or select and `checked` of a checkbox follow the
-// markup, so a re-rendered slider stands where the state says. The card never
-// morphs while such a control is focused or dragged (see _inputBusy), so this
-// never fights the user.
+// Attributes, plus the properties a form control keeps apart from them. The
+// `value` of an input or select and the `checked` of a checkbox follow the
+// markup only when the markup moved since the last render: the state behind
+// the control changed, so the control shows it. When the markup still says
+// what it said last time, the control is left alone, because then whatever
+// differs is the user's doing, a choice made a moment ago that HA has not
+// reported back yet (up to a few seconds), and the render in between must not
+// flip it back to the old state.
 function syncAttributes(live, next) {
   for (const { name } of [...live.attributes]) {
     if (!next.hasAttribute(name) && !RUNTIME_ATTRS.has(name)) live.removeAttribute(name);
@@ -627,10 +630,10 @@ function syncAttributes(live, next) {
     const type = live.type;
     if (type === "checkbox" || type === "radio") {
       const on = next.hasAttribute("checked");
-      if (live.checked !== on) live.checked = on;
+      if (rendered(live, on)) live.checked = on;
     } else if (type !== "file") {
       const v = next.getAttribute("value") ?? "";
-      if (live.value !== v) live.value = v;
+      if (rendered(live, v)) live.value = v;
     }
   } else if (tag === "select") {
     // Options are morphed below; the selection follows the `selected`
@@ -638,8 +641,16 @@ function syncAttributes(live, next) {
     live.__evccSyncSelect = true;
   } else if (tag === "textarea") {
     const v = next.textContent;
-    if (live.value !== v) live.value = v;
+    if (rendered(live, v)) live.value = v;
   }
+}
+
+// True when `value` differs from what the previous render put on the control,
+// and remembers it. The first render after an insert counts as moved.
+function rendered(live, value) {
+  const moved = live.__evccRendered !== value;
+  live.__evccRendered = value;
+  return moved;
 }
 
 function morphNode(live, next) {
@@ -652,8 +663,8 @@ function morphNode(live, next) {
   morphChildren(live, next);
   if (live.__evccSyncSelect) {
     delete live.__evccSyncSelect;
-    const wanted = [...next.options].findIndex(o => o.hasAttribute("selected"));
-    if (wanted >= 0 && live.selectedIndex !== wanted) live.selectedIndex = wanted;
+    const wanted = [...next.options].find(o => o.hasAttribute("selected"))?.value;
+    if (wanted != null && rendered(live, wanted) && live.value !== wanted) live.value = wanted;
   }
 }
 
@@ -6941,7 +6952,17 @@ class EvccCard extends HTMLElement {
   _releaseInput(el) {
     if (this._inputFocused !== el && this._inputFocused?.isConnected) return;
     this._inputFocused = null;
-    if (this._pendingRender) { this._pendingRender = false; this._render(); }
+    // The deferred render runs as a task, after every listener of the event
+    // that lifted the guard: the view's own change handler still has to read
+    // the value the user picked, and a render in between would have put the
+    // state's value back first.
+    if (this._pendingRender) {
+      setTimeout(() => {
+        if (this._inputBusy() || !this._pendingRender) return;
+        this._pendingRender = false;
+        this._render();
+      }, 0);
+    }
   }
 
   _render() {

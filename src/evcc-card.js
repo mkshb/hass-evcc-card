@@ -428,7 +428,17 @@ export class EvccCard extends HTMLElement {
   _releaseInput(el) {
     if (this._inputFocused !== el && this._inputFocused?.isConnected) return;
     this._inputFocused = null;
-    if (this._pendingRender) { this._pendingRender = false; this._render(); }
+    // The deferred render runs as a task, after every listener of the event
+    // that lifted the guard: the view's own change handler still has to read
+    // the value the user picked, and a render in between would have put the
+    // state's value back first.
+    if (this._pendingRender) {
+      setTimeout(() => {
+        if (this._inputBusy() || !this._pendingRender) return;
+        this._pendingRender = false;
+        this._render();
+      }, 0);
+    }
   }
 
   _render() {
