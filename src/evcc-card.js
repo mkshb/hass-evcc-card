@@ -33,6 +33,7 @@ export class EvccCard extends HTMLElement {
     this._sliderEditing = false;   // direct-input panel open (defers re-renders like a drag)
     this._sliderEditPanel = null;
     this._inputFocused  = null;   // focused select or date input, see _inputBusy()
+    this._readIds       = null;   // entity ids the last render read, see _render()
     this._renderTimer   = null;
     this._lastRenderKey = null;
     this._countdownInterval = null;
@@ -225,9 +226,9 @@ export class EvccCard extends HTMLElement {
     return true;
   }
 
-  // True when a hass update can change the render key: an evcc entity carries
-  // a new state object, the set of evcc entities moved, the language changed,
-  // or no key has been built yet. The snapshot is the previous `states` table;
+  // True when a hass update can change what the card shows: an entity the last
+  // render read carries a new state object, the set of evcc entities moved,
+  // the language changed, or no key has been built yet. The snapshot is the previous `states` table;
   // HA copies the table on every update and keeps the untouched entries, so an
   // identity check per evcc entity is enough and no string is built. The
   // snapshot is taken here in every case, or a change seen once would be
@@ -241,7 +242,12 @@ export class EvccCard extends HTMLElement {
       this._seenLang = lang;
       return true;
     }
-    return this._evccIds.some(id => hass.states[id] !== seen[id]);
+    // The entities the last render read, or every evcc entity before the
+    // first render. An entity that appears or disappears moves the count and
+    // has forced a full check above.
+    const ids = this._readIds ?? this._evccIds;
+    for (const id of ids) if (hass.states[id] !== seen[id]) return true;
+    return false;
   }
 
   _buildRenderKey(hass) {
@@ -430,6 +436,31 @@ export class EvccCard extends HTMLElement {
     // interaction that holds it renders when it ends (pointerup, panel close,
     // drag end, blur).
     if (this._inputBusy()) { this._pendingRender = true; return; }
+
+    // What this render reads from hass.states is what the next hass update is
+    // compared against: a loadpoint card is not redrawn because the PV power
+    // moved. Every read goes through hass.states[id], so a recording proxy on
+    // the states table catches them all, including the ones views make past
+    // the discovery (tariff sensors, clear buttons, stat_* entities) and the
+    // ones that find nothing. A render that bailed out early (translations
+    // still loading) leaves the previous set in place.
+    const real  = this._hass;
+    const reads = new Set();
+    this._hass = { ...real, states: new Proxy(real.states, {
+      get: (t, k) => { if (typeof k === "string") reads.add(k); return t[k]; },
+    }) };
+    let done = false;
+    try {
+      done = this._renderNow();
+    } finally {
+      this._hass = real;
+      if (done) this._readIds = reads;
+    }
+  }
+
+  // The render itself. Returns true when the card was drawn, false when it
+  // showed the loading placeholder instead.
+  _renderNow() {
     if (!this._translationsReady) {
       if (!this.shadowRoot.firstChild) {
         this.shadowRoot.innerHTML = `
@@ -437,7 +468,7 @@ export class EvccCard extends HTMLElement {
           .loading{padding:24px;text-align:center;color:var(--secondary-text-color);font-size:.9rem}</style>
           <ha-card><div class="loading">⏳</div></ha-card>`;
       }
-      return;
+      return false;
     }
 
     // Resolve language strings once per render — reused by all _t() calls
@@ -519,6 +550,7 @@ export class EvccCard extends HTMLElement {
       </ha-card></div>
     `;
     this._attachListeners();
+    return true;
   }
 
   _updateLiveValues() {

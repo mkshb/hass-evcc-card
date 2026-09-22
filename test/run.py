@@ -402,6 +402,32 @@ def renderkey(browser, port, t):
     page.evaluate("() => { window.__card.hass = { ...window.__hass }; }")
     page.wait_for_timeout(900)
 
+    # Only the entities the last render read count. This card shows openwb, so
+    # the heating loadpoint moving is nothing to it, while the tariff sensor,
+    # read past the discovery for the smart mode, is.
+    reads = page.evaluate("[...window.__card._readIds]")
+    t.check(0 < len(reads) < len(page.evaluate("window.__card._evccIds")) and "sensor.evcc_tariff_grid" in reads
+            and not any("_wp_" in i for i in reads),
+            "the render records what it read: openwb and the tariff sensor, not the heating loadpoint",
+            f"{len(reads)} of {page.evaluate('window.__card._evccIds.length')} ids")
+    page.evaluate("window.__keys = 0; window.__renders = 0")
+    page.evaluate("""() => window.__push(st => {
+      const id = 'sensor.evcc_wp_charge_power';
+      st[id] = { ...st[id], state: '777' };
+    })""")
+    page.wait_for_timeout(600)
+    t.check(page.evaluate("window.__keys") == 0 and page.evaluate("window.__renders") == 0,
+            "a change on a loadpoint the card does not show renders nothing",
+            f"keys={page.evaluate('window.__keys')} renders={page.evaluate('window.__renders')}")
+    page.evaluate("window.__keys = 0; window.__renders = 0")
+    page.evaluate("""() => window.__push(st => {
+      const id = 'sensor.evcc_tariff_grid';
+      st[id] = { ...st[id], state: '0.0001' };
+    })""")
+    page.wait_for_timeout(900)
+    t.check(page.evaluate("window.__renders") == 1, "a change on the tariff sensor, read past the discovery, renders",
+            str(page.evaluate("window.__renders")))
+
     modes = lambda: page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.mode-btn')].map(x => x.dataset.value)")
     before = modes()
     page.evaluate("window.__renders = 0")
@@ -521,8 +547,9 @@ def lifecycle(browser, port, t):
     # A hass update arms the 300 ms render timer; detaching inside that window
     # must cancel it (a render on a detached element would work against a DOM
     # nobody sees), and the re-mount must pick the update up again.
+    # (an entity the plan mode reads: a change to one it does not show is no update to it)
     page.evaluate("""() => {
-      const c = window.__card, host = c.parentNode, id = 'sensor.evcc_openwb_charge_power';
+      const c = window.__card, host = c.parentNode, id = 'sensor.evcc_openwb_effective_plan_soc';
       const st = { ...window.__hass.states, [id]: { ...window.__hass.states[id], state: '5151' } };
       window.__hass.states = st; c.hass = { ...window.__hass, states: st };
       window.__armed = !!c._renderTimer;
