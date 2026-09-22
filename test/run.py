@@ -402,6 +402,32 @@ def renderkey(browser, port, t):
     page.evaluate("() => { window.__card.hass = { ...window.__hass }; }")
     page.wait_for_timeout(900)
 
+    # Only the entities the last render read count. This card shows openwb, so
+    # the heating loadpoint moving is nothing to it, while the tariff sensor,
+    # read past the discovery for the smart mode, is.
+    reads = page.evaluate("[...window.__card._readIds]")
+    t.check(0 < len(reads) < len(page.evaluate("window.__card._evccIds")) and "sensor.evcc_tariff_grid" in reads
+            and not any("_wp_" in i for i in reads),
+            "the render records what it read: openwb and the tariff sensor, not the heating loadpoint",
+            f"{len(reads)} of {page.evaluate('window.__card._evccIds.length')} ids")
+    page.evaluate("window.__keys = 0; window.__renders = 0")
+    page.evaluate("""() => window.__push(st => {
+      const id = 'sensor.evcc_wp_charge_power';
+      st[id] = { ...st[id], state: '777' };
+    })""")
+    page.wait_for_timeout(600)
+    t.check(page.evaluate("window.__keys") == 0 and page.evaluate("window.__renders") == 0,
+            "a change on a loadpoint the card does not show renders nothing",
+            f"keys={page.evaluate('window.__keys')} renders={page.evaluate('window.__renders')}")
+    page.evaluate("window.__keys = 0; window.__renders = 0")
+    page.evaluate("""() => window.__push(st => {
+      const id = 'sensor.evcc_tariff_grid';
+      st[id] = { ...st[id], state: '0.0001' };
+    })""")
+    page.wait_for_timeout(900)
+    t.check(page.evaluate("window.__renders") == 1, "a change on the tariff sensor, read past the discovery, renders",
+            str(page.evaluate("window.__renders")))
+
     modes = lambda: page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.mode-btn')].map(x => x.dataset.value)")
     before = modes()
     page.evaluate("window.__renders = 0")
@@ -514,6 +540,21 @@ def lifecycle(browser, port, t):
     t.check(len([c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/capabilities"]) == n_before,
             "re-mounting costs no extra backend call", f"{n_before} capabilities call(s) before and after")
 
+    # The WebSocket caches survive a re-mount: a view switch neither refetches
+    # the sessions behind the footer nor shows it in its loading state.
+    page2 = new_page(browser, 480, 1400)
+    open_card(page2, port, mode="site")
+    page2.wait_for_timeout(800)
+    footer = lambda: page2.evaluate("window.__card.shadowRoot.querySelector('.stats-footer')?.textContent.trim() || ''")
+    sessions_calls = lambda: len([c for c in page2.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/sessions"])
+    f_before, n_before = footer(), sessions_calls()
+    page2.evaluate("""() => { const c = window.__card, host = c.parentNode; host.removeChild(c); host.appendChild(c); }""")
+    page2.wait_for_timeout(800)
+    t.check(n_before > 0 and sessions_calls() == n_before, "re-mount within the TTL fetches the sessions again: no",
+            f"{n_before} sessions call(s) before, {sessions_calls()} after")
+    t.check(f_before and footer() == f_before, "the footer keeps its figures over the re-mount", f"{f_before[:40]!r} -> {footer()[:40]!r}")
+    page2.close()
+
     for _ in range(3): remount()
     t.check(page.evaluate("!!window.__card._countdownInterval") and not errors, "repeated re-mounts leave one live card behind",
             "; ".join(errors)[:200])
@@ -521,8 +562,9 @@ def lifecycle(browser, port, t):
     # A hass update arms the 300 ms render timer; detaching inside that window
     # must cancel it (a render on a detached element would work against a DOM
     # nobody sees), and the re-mount must pick the update up again.
+    # (an entity the plan mode reads: a change to one it does not show is no update to it)
     page.evaluate("""() => {
-      const c = window.__card, host = c.parentNode, id = 'sensor.evcc_openwb_charge_power';
+      const c = window.__card, host = c.parentNode, id = 'sensor.evcc_openwb_effective_plan_soc';
       const st = { ...window.__hass.states, [id]: { ...window.__hass.states[id], state: '5151' } };
       window.__hass.states = st; c.hass = { ...window.__hass, states: st };
       window.__armed = !!c._renderTimer;
@@ -733,6 +775,21 @@ def interactions(browser, port, t):
     bars = page.locator(in_card(".plan-preview svg rect")).count()
     t.check(bars > 0 and page.locator(in_card(".plan-preview-value")).count() >= 2, "plan preview chart + duration/cost rendered", f"{bars} bars")
     page.locator("#host").screenshot(path=str(OUT / "plan-preview.png"))
+    # evcc computes the preview with the vehicle's current precondition, which
+    # the request does not carry. A changed setting reported by HA has to fetch
+    # the preview again and redraw the chart, without a page reload.
+    n0 = len([c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/plan_preview"])
+    page.evaluate("""() => { const st = { ...window.__hass.states }, id = 'select.evcc_openwb_plan_strategy_precondition';
+      st[id] = { ...st[id], state: '3600' }; window.__hass.states = st; window.__card.hass = { ...window.__hass, states: st }; }""")
+    page.wait_for_timeout(1500)
+    n1 = len([c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/plan_preview"])
+    t.check(n1 == n0 + 1, "a changed precondition fetches the preview again", f"{n0} -> {n1} plan_preview call(s)")
+    t.check(page.locator(in_card(".plan-preview svg rect")).count() > 0 and page.locator(in_card(".plan-preview-loading")).count() == 0,
+            "and the chart is drawn again from the new answer")
+    # The same setting again is no reason to fetch: the key holds the settings, not the render count.
+    page.evaluate("() => { window.__card._lastRenderKey = null; window.__card._render(); }"); page.wait_for_timeout(800)
+    n2 = len([c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/plan_preview"])
+    t.check(n2 == n1, "a render with unchanged settings fetches nothing", f"{n1} -> {n2}")
     page.close()
 
     # --- hide_settings + slider_steps ---------------------------------------------------
@@ -820,6 +877,140 @@ def interactions(browser, port, t):
     kept = page.evaluate("""() => ['.power-value', '[data-live-type="soc-pct"]']
         .map(s => window.__card.shadowRoot.querySelector(s)?.dataset.moreInfo)""")
     t.check(all(kept), "a live update leaves the more-info attribute on the value", json.dumps(kept))
+    page.close()
+
+    # --- mode buttons mark the pressed one at once ---------------------------------
+    t.group("interaction - mode buttons")
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+    active = lambda: page.evaluate("window.__card.shadowRoot.querySelector('.mode-btn.active')?.dataset.value")
+    before = active()
+    # Synchronous click and read: no hass update, no render, no round trip in between.
+    now = page.evaluate("""() => { const c = window.__card;
+      c.shadowRoot.querySelector('button.mode-btn[data-value="now"]').click();
+      return c.shadowRoot.querySelector('.mode-btn.active')?.dataset.value; }""")
+    t.check(before != "now" and now == "now", "the pressed mode button is active before HA answers", f"{before} -> {now}")
+    page.wait_for_timeout(600)
+    t.check(active() == "now", "and stays active once the state comes back", active())
+    # A failed service call gives the mark back to the previous button.
+    # The card holds its own copy of the hass object, so the stub goes there.
+    page.evaluate("() => { window.__card._hass.callService = () => Promise.reject(new Error('mock: refused')); }")
+    warnings = []
+    page.on("console", lambda m: warnings.append(m.text) if m.type == "warning" else None)
+    page.evaluate("""() => window.__card.shadowRoot.querySelector('button.mode-btn[data-value="off"]').click()""")
+    page.wait_for_timeout(100)
+    t.check(active() == "now", "a refused call reverts to the previous mode button", active())
+    t.check(any("select_option failed" in w for w in warnings), "and says so in the console", "; ".join(warnings)[:120])
+    page.close()
+
+    # Before HA answers, a render for some other value must not take the mark
+    # away again: the pressed mode has to be what the template draws until the
+    # state moves, on every control with an optimistic mark.
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"})
+    page.evaluate("""() => { const c = window.__card;
+      c._hass.callService = (d, s, data) => { window.__hass.serviceCalls.push({ domain: d, service: s, data }); return Promise.resolve(); };
+      window.__push = (mut) => { const st = { ...window.__hass.states }; mut(st); window.__hass.states = st; c.hass = { ...window.__hass, states: st }; }; }""")
+    page.locator(in_card('button.mode-btn[data-value="now"]')).click()
+    page.locator(in_card('button.phase-btn[data-value="1"]')).click()
+    page.evaluate("""() => window.__push(st => { const id = 'sensor.evcc_openwb_charge_power'; st[id] = { ...st[id], state: '9.9' }; })""")
+    page.wait_for_timeout(600)
+    r = page.evaluate("""() => { const r = window.__card.shadowRoot; return {
+      mode: r.querySelector('.mode-btn.active')?.dataset.value, phase: r.querySelector('.phase-btn.active')?.dataset.value }; }""")
+    t.check(r["mode"] == "now" and r["phase"] == "1", "a render before HA answers keeps the pressed mode and phase", json.dumps(r))
+    # HA reports something other than the old state: that wins over the mark.
+    page.evaluate("""() => window.__push(st => { const id = 'select.evcc_openwb_mode'; st[id] = { ...st[id], state: 'off' }; })""")
+    page.wait_for_timeout(600)
+    t.check(page.evaluate("window.__card.shadowRoot.querySelector('.mode-btn.active')?.dataset.value") == "off",
+            "a state HA reports overrides the optimistic mark")
+    page.close()
+
+    # --- a focused input holds every render back ------------------------------------
+    t.group("interaction - inputs hold the render")
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+    # The render is asked for directly, the way a WebSocket result or a plan
+    # reset does, so the guard has to sit in _render() itself.
+    same_after_render = lambda sel: page.evaluate("""(sel) => { const c = window.__card, before = c.shadowRoot.querySelector(sel);
+        c._lastRenderKey = null; c._render();
+        return { same: before === c.shadowRoot.querySelector(sel), pending: c._pendingRender }; }""", sel)
+    page.locator(in_card("input.plan-time-input")).first.focus()
+    r = same_after_render("input.plan-time-input")
+    t.check(r["same"] and r["pending"], "a focused time input keeps its element through a render", json.dumps(r))
+    page.evaluate("() => window.__card.shadowRoot.querySelector('input.plan-time-input').blur()")
+    page.wait_for_timeout(50)
+    r2 = page.evaluate("""() => { const c = window.__card; return { pending: c._pendingRender, focused: c._inputFocused }; }""")
+    t.check(not r2["pending"] and r2["focused"] is None, "blur runs the deferred render and lifts the guard", json.dumps(r2))
+    sel = page.locator(in_card("select.plan-vehicle-select")).first
+    if sel.count():
+        sel.focus()
+        r = same_after_render("select.plan-vehicle-select")
+        t.check(r["same"] and r["pending"], "a focused vehicle select keeps its element through a render", json.dumps(r))
+        page.evaluate("""() => { const s = window.__card.shadowRoot.querySelector('select.plan-vehicle-select');
+            s.dispatchEvent(new Event('change', { bubbles: true })); }""")
+        page.wait_for_timeout(700)
+        t.check(page.evaluate("!window.__card._pendingRender && !window.__card._inputFocused"),
+                "a change lifts the guard and the deferred render runs")
+    else:
+        t.fail("a focused vehicle select keeps its element through a render", "no vehicle select rendered")
+    # A slider drag holds a direct render too, not only the hass setter.
+    rng = page.locator(in_card('input[data-entity="number.evcc_openwb_limit_soc"]'))
+    box = rng.bounding_box()
+    page.mouse.move(box["x"] + 10, box["y"] + box["height"] / 2); page.mouse.down()
+    r = same_after_render('input[data-entity="number.evcc_openwb_limit_soc"]')
+    page.mouse.up(); page.wait_for_timeout(100)
+    t.check(r["same"] and r["pending"], "a slider drag keeps its element through a direct render", json.dumps(r))
+    t.check(page.evaluate("!window.__card._pendingRender && !window.__card._isDragging"), "pointerup runs the deferred render")
+    # A re-mount with the guard still set must not stay deferred: detach clears it.
+    page.locator(in_card("input.plan-time-input")).first.focus()
+    page.evaluate("""() => { const c = window.__card, host = c.parentNode; host.removeChild(c); host.appendChild(c); }""")
+    page.wait_for_timeout(500)
+    t.check(page.evaluate("!window.__card._inputFocused && !window.__card._pendingRender"), "a re-mount clears the guard")
+    page.close()
+
+    # Regression: with a render pending while the dropdown is open, the pick
+    # must reach HA as picked. The guard used to run the deferred render right
+    # inside the change event, before the view's handler read the value, and
+    # the morph had put the old state back by then.
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+    page.evaluate("""() => {
+      const c = window.__card;
+      // HA answers late: the call goes out, the state does not move.
+      c._hass.callService = (d, s, data) => { window.__hass.serviceCalls.push({ domain: d, service: s, data }); return Promise.resolve(); };
+      c.shadowRoot.querySelector('select.plan-precondition-select').focus();
+      const st = { ...window.__hass.states }; const id = 'sensor.evcc_openwb_charge_power';
+      st[id] = { ...st[id], state: '1.111' }; window.__hass.states = st; c.hass = { ...window.__hass, states: st };
+      window.__hass.serviceCalls.length = 0;
+    }""")
+    t.check(page.evaluate("window.__card._pendingRender"), "a render is pending while the precondition select is open")
+    page.locator(in_card("select.plan-precondition-select")).select_option("1800"); page.wait_for_timeout(300)
+    call = page.evaluate("window.__hass.serviceCalls.find(c => c.service === 'select_option')")
+    t.check(call and call["data"]["option"] == "1800", "the picked precondition is what goes to HA, not the old state", json.dumps(call))
+    t.check(page.evaluate("window.__card.shadowRoot.querySelector('select.plan-precondition-select').value") == "1800",
+            "and the select keeps showing the pick until HA reports it back")
+    # The same for a typed time: the value the user set is what the plan state takes.
+    page.evaluate("""() => { const c = window.__card; c.shadowRoot.querySelector('input.plan-time-input').focus();
+      const st = { ...window.__hass.states }; const id = 'sensor.evcc_openwb_charge_power';
+      st[id] = { ...st[id], state: '2.222' }; window.__hass.states = st; c.hass = { ...window.__hass, states: st }; }""")
+    page.locator(in_card("input.plan-time-input")).fill("2026-09-19T07:30")
+    page.evaluate("() => window.__card.shadowRoot.querySelector('input.plan-time-input').dispatchEvent(new Event('change', { bubbles: true }))")
+    page.wait_for_timeout(300)
+    t.check(page.evaluate("window.__card._planState.openwb?.time") == "2026-09-19T07:30",
+            "a typed plan time survives the deferred render", str(page.evaluate("window.__card._planState.openwb?.time")))
+    page.close()
+
+    # --- the charging bar outlives the render, so its pulse just goes on --------------
+    t.group("interaction - charging pulse")
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+    r = page.evaluate("""() => { const c = window.__card;
+        const before = c.shadowRoot.querySelector('.soc-fill.charging'); const a0 = before?.getAnimations()[0];
+        c._lastRenderKey = null; c._render();
+        const after = c.shadowRoot.querySelector('.soc-fill.charging');
+        return { same: before === after, sameAnim: !!a0 && after.getAnimations()[0] === a0, state: a0?.playState }; }""")
+    t.check(r["same"] and r["sameAnim"] and r["state"] == "running",
+            "a re-render keeps the charging bar and its running pulse animation", json.dumps(r))
     page.close()
 
 
@@ -1724,6 +1915,100 @@ def editor_instances(browser, port, t):
     page.close()
 
 
+def morph(browser, port, t):
+    """A render morphs the live DOM instead of replacing it: elements that are
+    still rendered keep their identity, and with it focus, hover, a running
+    animation, the chart tooltip and their listeners; only what is new is
+    inserted and wired, only what is gone is removed."""
+    t.group("morph - a render keeps the elements that stay")
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"})
+    page.evaluate("""() => {
+      window.__push = (mut) => {
+        const st = { ...window.__hass.states };
+        if (mut) mut(st);
+        window.__hass.states = st;
+        window.__card.hass = { ...window.__hass, states: st };
+      };
+    }""")
+    ident = lambda: page.evaluate("""() => { const r = window.__card.shadowRoot; window.__ids = window.__ids || new Map();
+        const sels = ['ha-card', '.power-value', '.soc-fill', 'button.mode-btn[data-value="now"]', 'input[data-entity="number.evcc_openwb_limit_soc"]', '.lp-badge'];
+        return sels.map(s => { const el = r.querySelector(s); const known = window.__ids.get(s); window.__ids.set(s, el); return [s, !!el, known === el]; }); }""")
+    ident()
+    # A value change: the power text moves, nothing else.
+    page.evaluate("""() => window.__push(st => { const id = 'sensor.evcc_openwb_charge_power'; st[id] = { ...st[id], state: '4.2' }; })""")
+    page.wait_for_timeout(600)
+    same = ident()
+    power = page.evaluate("window.__card.shadowRoot.querySelector('.power-value').textContent.trim()")
+    t.check(all(found and kept for _, found, kept in same), "a value change keeps every element in place", json.dumps(same))
+    t.check(power.startswith("4.2"), "and the changed value is in the old element", power)
+
+    # Focus survives, so does the keyboard position.
+    page.locator(in_card('button.mode-btn[data-value="now"]')).focus()
+    page.evaluate("""() => window.__push(st => { const id = 'sensor.evcc_openwb_charge_power'; st[id] = { ...st[id], state: '4.3' }; })""")
+    page.wait_for_timeout(600)
+    focused = page.evaluate("window.__card.shadowRoot.activeElement?.dataset.value")
+    t.check(focused == "now", "a focused button keeps the focus through an update", str(focused))
+
+    # Listeners are bound once: three renders, one click, one service call.
+    page.evaluate("""() => { for (let i = 0; i < 3; i++) { window.__card._lastRenderKey = null; window.__card._render(); } window.__hass.serviceCalls.length = 0; }""")
+    page.locator(in_card('button.mode-btn[data-value="off"]')).click(); page.wait_for_timeout(200)
+    calls = page.evaluate("window.__hass.serviceCalls.filter(c => c.domain === 'select').length")
+    t.check(calls == 1, "after three renders a click fires its handler once", f"{calls} select_option call(s)")
+
+    # Structure: the remaining time appears and disappears with charging, the
+    # badge next to it stays the same element and reads the new state.
+    badge_before = page.evaluate("window.__card.shadowRoot.querySelector('.lp-badge')")
+    page.evaluate("""() => window.__push(st => {
+      const c = 'binary_sensor.evcc_openwb_charging'; st[c] = { ...st[c], state: 'off' };
+    })""")
+    page.wait_for_timeout(600)
+    r = page.evaluate("""() => { const r = window.__card.shadowRoot;
+      return { remaining: !!r.querySelector('.lp-remaining'), badge: r.querySelector('.lp-badge')?.className, connected: r.querySelector('.lp-badge')?.dataset.moreInfo }; }""")
+    t.check(not r["remaining"] and "connected" in (r["badge"] or "") and r["connected"] == "binary_sensor.evcc_openwb_connected",
+            "charging off: the remaining time leaves, the badge switches to connected", json.dumps(r))
+    page.evaluate("""() => window.__push(st => {
+      const c = 'binary_sensor.evcc_openwb_charging'; st[c] = { ...st[c], state: 'on' };
+    })""")
+    page.wait_for_timeout(600)
+    r = page.evaluate("""() => { const r = window.__card.shadowRoot; const h = r.querySelector('.lp-header');
+      return { order: [...h.children].map(e => e.className.split(' ')[0]), badge: r.querySelector('.lp-badge')?.className }; }""")
+    t.check(r["order"] == ["lp-name", "lp-remaining", "lp-badge"] and "charging" in r["badge"],
+            "charging on: the remaining time is inserted before the badge, in order", json.dumps(r))
+    # A newly inserted element gets its listeners: the remaining time opens more-info.
+    page.evaluate("() => { window.__moreInfo = []; window.__card.addEventListener('hass-more-info', e => window.__moreInfo.push(e.detail.entityId)); }")
+    page.locator(in_card(".lp-remaining")).click(force=True); page.wait_for_timeout(50)
+    t.check(page.evaluate("window.__moreInfo") == ["sensor.evcc_openwb_charge_remaining_duration"],
+            "an element inserted by the morph is wired like any other", json.dumps(page.evaluate("window.__moreInfo")))
+
+    # The rendered DOM equals what a plain innerHTML assignment would produce.
+    diff = page.evaluate("""() => { const c = window.__card, r = c.shadowRoot;
+      const live = r.innerHTML;
+      const tpl = document.createElement('template');
+      const orig = c.shadowRoot; // render the same markup fresh into a detached host
+      const host = document.createElement('div'); const sr = host.attachShadow({ mode: 'open' });
+      const saved = c.shadowRoot;
+      // reuse the card's renderer on a scratch root: swap the root, render, swap back
+      Object.defineProperty(c, 'shadowRoot', { value: sr, configurable: true });
+      c._lastRenderKey = null; c._renderNow();
+      Object.defineProperty(c, 'shadowRoot', { value: saved, configurable: true });
+      const norm = s => s.replace(/\s+/g, ' ').replace(/ data-morph-keep/g, '');
+      return norm(sr.innerHTML) === norm(live) ? null : { live: norm(live).slice(0, 200), fresh: norm(sr.innerHTML).slice(0, 200) }; }""")
+    t.check(diff is None and not errors, "the morphed DOM equals a fresh render of the same markup", json.dumps(diff)[:300] if diff else "; ".join(errors)[:200])
+    page.close()
+
+    # The chart tooltip is written at runtime and marked to be left alone.
+    t.group("morph - the chart tooltip survives")
+    page = new_page(browser, 480, 1200)
+    open_card(page, port, mode="stats")
+    page.locator(in_card(".evcc-bar")).first.hover(); page.wait_for_timeout(100)
+    shown = page.evaluate("() => { const tt = window.__card.shadowRoot.querySelector('.evcc-chart-tooltip'); return !tt.hidden && tt.textContent.length > 0; }")
+    page.evaluate("() => { window.__card._lastRenderKey = null; window.__card._render(); }")
+    still = page.evaluate("() => { const tt = window.__card.shadowRoot.querySelector('.evcc-chart-tooltip'); return !tt.hidden && tt.textContent.length > 0; }")
+    t.check(shown and still, "an open tooltip stays open through a render", f"before={shown} after={still}")
+    page.close()
+
+
 def keyboard(browser, port, t):
     """Every clickable element is reachable with Tab and fires on Enter or Space;
     without a language from HA the card and the editor fall back to English."""
@@ -1889,7 +2174,7 @@ def unit(browser, port, t):
             t.fail(f"{f.name} contains tests", f"no testcase in the report; stderr={p.stderr[:200]}")
 
 
-GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "editor_instances": editor_instances, "keyboard": keyboard, "escaping": escaping, "contracts": contracts,
+GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
           "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths}
 

@@ -298,7 +298,7 @@ export const statisticsLegacy = {
       <svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">
         ${grid}${kwhLbl}${bars}
       </svg>
-      <div class="evcc-chart-tooltip" hidden></div>
+      <div class="evcc-chart-tooltip" data-morph-keep hidden></div>
     </div>`;
   },
 

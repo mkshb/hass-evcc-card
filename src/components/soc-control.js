@@ -431,7 +431,7 @@ export const socControl = {
   // keyboard, write-back) and the tap target that opens the direct input.
   // Called by _attachListeners() after every render.
   _attachSliderListeners() {
-    this.shadowRoot.querySelectorAll("input[data-boost-entity]").forEach(input => {
+    this._fresh("input[data-boost-entity]").forEach(input => {
       input.addEventListener("pointerdown", () => { this._isDragging = true; this._pendingRender = false; });
       input.addEventListener("input", () => {
         const val     = parseInt(input.value, 10);
@@ -445,7 +445,7 @@ export const socControl = {
 
     // Direct input for battery boost: the range already carries the option
     // list, so apply just moves the range and reuses _boostCommit.
-    this.shadowRoot.querySelectorAll("button.boost-val[data-boost-edit]").forEach(btn => {
+    this._fresh("button.boost-val[data-boost-edit]").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         if (btn.classList.contains("editing")) { this._closeSliderEdit(); return; }
@@ -459,13 +459,13 @@ export const socControl = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.smart-cost-clear-btn").forEach(btn => {
+    this._fresh("button.smart-cost-clear-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         this._pressButton(btn.dataset.entity);
       });
     });
 
-    this.shadowRoot.querySelectorAll("input[type=range]:not(.plan-soc-range):not([data-boost-entity])").forEach(input => {
+    this._fresh("input[type=range]:not(.plan-soc-range):not([data-boost-entity])").forEach(input => {
       input.addEventListener("pointerdown", () => {
         this._isDragging    = true;
         this._pendingRender = false;
@@ -508,7 +508,7 @@ export const socControl = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.slider-val[data-slider-edit]").forEach(btn => {
+    this._fresh("button.slider-val[data-slider-edit]").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         if (btn.classList.contains("editing")) this._closeSliderEdit();

@@ -136,7 +136,7 @@ export const batteryView = {
   // Listeners of the battery view: the discharge toggle and the inline
   // selects. Called by _attachListeners() after every render.
   _attachBatteryListeners() {
-    this.shadowRoot.querySelectorAll("button.batt-discharge-toggle").forEach(btn => {
+    this._fresh("button.batt-discharge-toggle").forEach(btn => {
       btn.addEventListener("click", () => {
         const on     = btn.dataset.on === "true";
         const domain = btn.dataset.domain;
@@ -146,7 +146,7 @@ export const batteryView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll(".batt-inline-select").forEach(sel => {
+    this._fresh(".batt-inline-select").forEach(sel => {
       sel.addEventListener("change", () => {
         this._setSelectOption(sel.dataset.entity, sel.value);
       });

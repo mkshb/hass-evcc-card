@@ -1,5 +1,5 @@
 /* hass-evcc-card. Built from src/ with Rollup; edit the sources, not this file. */
-const EVCC_CARD_VERSION = "0.8.3";
+const EVCC_CARD_VERSION = "0.8.4";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -569,6 +569,143 @@ function escAttr(str) {
   return escHtml(str);
 }
 
+// Brings a live DOM tree in line with freshly rendered markup without
+// replacing the nodes that are still there. The card renders one HTML string
+// per update; assigning it to innerHTML threw every element away, so a hovered
+// button lost its highlight, a focused element its focus, the charging bar its
+// pulse phase and the chart its tooltip with every evcc update, about every
+// two seconds. Here the string is parsed into a template and walked next to
+// the live tree: attributes and text that differ are updated in place, nodes
+// that have no counterpart are inserted, nodes that are no longer rendered are
+// removed. A node that stays keeps its identity, its listeners and its state.
+//
+// Two nodes are counterparts when their tag and their key match. The key is
+// `data-key` when set, otherwise the first class name, so a row that appears
+// (the remaining time in the loadpoint header, an action chip) is inserted
+// before its siblings instead of being morphed out of the badge that stood at
+// that index. An element with `data-morph-keep` is left alone once it exists,
+// for things the card writes into the DOM at runtime, such as the chart
+// tooltip.
+
+const KEY_ATTRS = ["data-key"];
+
+// Attributes the card sets after a render rather than in the markup (the
+// button role and the tab stop that listeners.js gives every click target).
+// They are not in the template, so a plain sync would strip them again with
+// every update, and a focused element loses its focus with its tabindex.
+const RUNTIME_ATTRS = new Set(["role", "tabindex"]);
+
+function keyOf(node) {
+  if (node.nodeType !== Node.ELEMENT_NODE) return String(node.nodeType);
+  for (const a of KEY_ATTRS) {
+    const v = node.getAttribute(a);
+    if (v != null) return `${node.localName}#${v}`;
+  }
+  const cls = node.getAttribute("class");
+  const first = cls ? cls.trim().split(/\s+/)[0] : "";
+  return `${node.localName}.${first}`;
+}
+
+function compatible(a, b) {
+  return a.nodeType === b.nodeType && keyOf(a) === keyOf(b);
+}
+
+// Attributes, plus the properties a form control keeps apart from them. The
+// `value` of an input or select and the `checked` of a checkbox follow the
+// markup only when the markup moved since the last render: the state behind
+// the control changed, so the control shows it. When the markup still says
+// what it said last time, the control is left alone, because then whatever
+// differs is the user's doing, a choice made a moment ago that HA has not
+// reported back yet (up to a few seconds), and the render in between must not
+// flip it back to the old state.
+function syncAttributes(live, next) {
+  for (const { name } of [...live.attributes]) {
+    if (!next.hasAttribute(name) && !RUNTIME_ATTRS.has(name)) live.removeAttribute(name);
+  }
+  for (const { name, value } of [...next.attributes]) {
+    if (live.getAttribute(name) !== value) live.setAttribute(name, value);
+  }
+  const tag = live.localName;
+  if (tag === "input") {
+    const type = live.type;
+    if (type === "checkbox" || type === "radio") {
+      const on = next.hasAttribute("checked");
+      if (rendered(live, on)) live.checked = on;
+    } else if (type !== "file") {
+      const v = next.getAttribute("value") ?? "";
+      if (rendered(live, v)) live.value = v;
+    }
+  } else if (tag === "select") {
+    // Options are morphed below; the selection follows the `selected`
+    // attribute of the new markup once they are in place.
+    live.__evccSyncSelect = true;
+  } else if (tag === "textarea") {
+    const v = next.textContent;
+    if (rendered(live, v)) live.value = v;
+  }
+}
+
+// True when `value` differs from what the previous render put on the control,
+// and remembers it. The first render after an insert counts as moved.
+function rendered(live, value) {
+  const moved = live.__evccRendered !== value;
+  live.__evccRendered = value;
+  return moved;
+}
+
+function morphNode(live, next) {
+  if (live.nodeType === Node.TEXT_NODE || live.nodeType === Node.COMMENT_NODE) {
+    if (live.data !== next.data) live.data = next.data;
+    return;
+  }
+  if (live.hasAttribute("data-morph-keep")) return;
+  syncAttributes(live, next);
+  morphChildren(live, next);
+  if (live.__evccSyncSelect) {
+    delete live.__evccSyncSelect;
+    const wanted = [...next.options].find(o => o.hasAttribute("selected"))?.value;
+    if (wanted != null && rendered(live, wanted) && live.value !== wanted) live.value = wanted;
+  }
+}
+
+function morphChildren(liveParent, nextParent) {
+  const nextKids = [...nextParent.childNodes];
+  let cursor = liveParent.firstChild;
+  for (const nextKid of nextKids) {
+    // The node at the cursor is the counterpart when it fits; otherwise one
+    // further down the live list may be (a sibling before it disappeared), and
+    // it is pulled forward; otherwise the new node is inserted here.
+    let match = null;
+    if (cursor && compatible(cursor, nextKid)) {
+      match = cursor;
+    } else {
+      for (let n = cursor?.nextSibling; n; n = n.nextSibling) {
+        if (compatible(n, nextKid)) { match = n; break; }
+      }
+      if (match) liveParent.insertBefore(match, cursor);
+    }
+    if (match) {
+      morphNode(match, nextKid);
+      cursor = match.nextSibling;
+    } else {
+      liveParent.insertBefore(liveParent.ownerDocument.importNode(nextKid, true), cursor);
+    }
+  }
+  // Whatever is left past the last counterpart is no longer rendered.
+  while (cursor) {
+    const gone = cursor;
+    cursor = cursor.nextSibling;
+    liveParent.removeChild(gone);
+  }
+}
+
+// Renders `html` into `root` by morphing.
+function morphInto(root, html) {
+  const tpl = root.ownerDocument.createElement("template");
+  tpl.innerHTML = html;
+  morphChildren(root, tpl.content);
+}
+
 // Decimal places implied by a slider step (0.005 → 3, 1 → 0).
 function stepDecimals(step) {
   const s = String(step);
@@ -714,6 +851,11 @@ async function loadSharedTranslations() {
 function sharedTranslations() { return _sharedTranslations; }
 function sharedTranslationsReady() { return _sharedTranslationsReady; }
 
+// How long a written value stands in for the state before HA has to have
+// answered: ha-evcc bundles evcc updates for up to two seconds, HA and the
+// card's own debounce add a little.
+const EXPECT_MS = 6000;
+
 // Every write the card sends to Home Assistant. Methods are mixed into EvccCard.prototype.
 const actions = {
   // ── Service calls ───────────────────────────────────────────────────────
@@ -724,17 +866,46 @@ const actions = {
   // failures await the promise or chain on it.
 
   _setSelectOption(entityId, option) {
-    return this._hass.callService("select", "select_option", { entity_id: entityId, option });
+    return this._expect(entityId, String(option),
+      this._hass.callService("select", "select_option", { entity_id: entityId, option }));
   },
 
   _setNumberValue(entityId, value) {
-    return this._hass.callService("number", "set_value", { entity_id: entityId, value });
+    return this._expect(entityId, String(value),
+      this._hass.callService("number", "set_value", { entity_id: entityId, value }));
   },
 
   // Toggles pass the state they currently show, not the one they want: a
   // control rendered "on" turns off.
   _toggleEntity(domain, entityId, isOn) {
-    return this._hass.callService(domain, isOn ? "turn_off" : "turn_on", { entity_id: entityId });
+    return this._expect(entityId, isOn ? "off" : "on",
+      this._hass.callService(domain, isOn ? "turn_off" : "turn_on", { entity_id: entityId }));
+  },
+
+  // ── Optimistic state ────────────────────────────────────────────────────
+  // A written value takes up to a few seconds to come back through evcc,
+  // ha-evcc and HA, and every render in between would draw the old state,
+  // so a pressed mode button or a flipped toggle fell back until HA answered.
+  // The value is noted here and the render reads it in place of the state
+  // (see the states proxy in _render) until HA reports anything else for
+  // the entity, a failed call drops it, and a stale note expires on its own.
+  _expect(entityId, value, call) {
+    const state = this._hass?.states?.[entityId]?.state;
+    if (state != null) this._expected[entityId] = { value, from: state, ts: Date.now() };
+    call?.catch?.(() => { delete this._expected[entityId]; });
+    return call;
+  },
+
+  // The state object a render sees for an entity: the real one, or a copy
+  // carrying the expected value while HA still reports what it did before.
+  _expectedState(entityId, real) {
+    const e = this._expected[entityId];
+    if (!e || !real) return real;
+    if (real.state !== e.from || Date.now() - e.ts > EXPECT_MS) {
+      delete this._expected[entityId];
+      return real;
+    }
+    return { ...real, state: e.value };
   },
 
   _pressButton(entityId) {
@@ -900,8 +1071,22 @@ const evccApi = {
     };
   },
 
+  // The key carries the plan settings on top of the request parameters: the
+  // static preview takes neither the precondition nor the continuous flag,
+  // evcc applies the vehicle's current settings itself, so a cached preview is
+  // only good for the settings it was computed with. Once HA reports a changed
+  // setting, the render path finds nothing under the new key and fetches.
   _planPreviewKey(opts) {
-    return "plan:" + JSON.stringify(this._planPreviewParams(opts));
+    return "plan:" + JSON.stringify(this._planPreviewParams(opts)) + "|" + (opts.settings ?? "");
+  },
+
+  // The plan settings of a loadpoint as HA reports them, for the preview key.
+  _planSettingsKey(lpName) {
+    const ents = this._cachedEntities?.loadpoints?.[lpName]
+      || discoverEntities(this._hass, this._getPrefix()).loadpoints[lpName] || {};
+    const pre  = ents.plan_strategy_precondition ? stateVal(this._hass, ents.plan_strategy_precondition) : "";
+    const cont = ents.plan_strategy_continuous   ? stateVal(this._hass, ents.plan_strategy_continuous)   : "";
+    return `${pre}|${cont}`;
   },
 
   // opts: { loadpoint:int, kind:"soc"|"energy", value, timestamp }  →
@@ -966,7 +1151,7 @@ const evccApi = {
       const d = new Date(state.time);
       if (isNaN(d.getTime())) return;
       const ts = d.toISOString();
-      const opts = { loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts };
+      const opts = { loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts, settings: this._planSettingsKey(lpName) };
       const cacheKey = this._planPreviewKey(opts);
       // Drop previews for OTHER inputs of this loadpoint (bounds the cache), but
       // keep the current one — refetching what we already have wastes a backend call.
@@ -1522,7 +1707,7 @@ const loadpointView = {
   // the mode buttons, the entity toggles and the phase buttons. Called by
   // _attachListeners() after every render.
   _attachLoadpointListeners() {
-    this.shadowRoot.querySelectorAll("[data-lp-current-toggle]").forEach(btn => {
+    this._fresh("[data-lp-current-toggle]").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const lpName   = btn.dataset.lpCurrentToggle;
@@ -1543,7 +1728,7 @@ const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("[data-lp-smart-cost-open]").forEach(chip => {
+    this._fresh("[data-lp-smart-cost-open]").forEach(chip => {
       chip.addEventListener("click", (e) => {
         e.stopPropagation();
         const lpName = chip.dataset.lpSmartCostOpen;
@@ -1563,7 +1748,7 @@ const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.compact-tab").forEach(btn => {
+    this._fresh("button.compact-tab").forEach(btn => {
       btn.addEventListener("click", () => {
         const lpName   = btn.dataset.lp;
         const tabIdx   = parseInt(btn.dataset.tab);
@@ -1577,7 +1762,7 @@ const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.boost-activate-btn").forEach(btn => {
+    this._fresh("button.boost-activate-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         const on = btn.dataset.on === "true";
         this._toggleEntity("switch", btn.dataset.entity, on);
@@ -1586,13 +1771,16 @@ const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.mode-btn").forEach(btn => {
+    // The mode buttons mark the pressed one at once. The real state comes back
+    // through evcc, ha-evcc and HA, which takes up to a few seconds while the
+    // button would look as if the tap had not landed; a failed call reverts.
+    this._fresh("button.mode-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        this._setSelectOption(btn.dataset.entity, btn.dataset.value);
+        this._pressGroupButton(btn, ".mode-row", ".mode-btn");
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.toggle").forEach(btn => {
+    this._fresh("button.toggle").forEach(btn => {
       btn.addEventListener("click", () => {
         const on     = btn.dataset.on === "true";
         const domain = btn.dataset.domain;
@@ -1603,16 +1791,31 @@ const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.phase-btn").forEach(btn => {
+    this._fresh("button.phase-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        this._setSelectOption(btn.dataset.entity, btn.dataset.value);
-        const group = btn.closest(".phase-btn-group");
-        if (group) {
-          group.querySelectorAll(".phase-btn").forEach(b => b.classList.remove("active"));
-          btn.classList.add("active");
-        }
+        this._pressGroupButton(btn, ".phase-btn-group", ".phase-btn");
       });
     });
+  },
+
+  // One button of a group writes its value to the select entity and shows as
+  // active right away; the previous button gets the mark back when the service
+  // call fails. The next render draws the state HA reports.
+  _pressGroupButton(btn, groupSel, buttonSel) {
+    const group = btn.closest(groupSel);
+    const was   = group?.querySelector(`${buttonSel}.active`);
+    if (group) {
+      group.querySelectorAll(buttonSel).forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+    }
+    const call = this._setSelectOption(btn.dataset.entity, btn.dataset.value);
+    call?.catch?.((e) => {
+      console.warn("[evcc-card] select_option failed:", e?.message || e);
+      if (!btn.isConnected) return;
+      btn.classList.remove("active");
+      if (was?.isConnected) was.classList.add("active");
+    });
+    return call;
   },
 };
 
@@ -2164,7 +2367,7 @@ const socControl = {
   // keyboard, write-back) and the tap target that opens the direct input.
   // Called by _attachListeners() after every render.
   _attachSliderListeners() {
-    this.shadowRoot.querySelectorAll("input[data-boost-entity]").forEach(input => {
+    this._fresh("input[data-boost-entity]").forEach(input => {
       input.addEventListener("pointerdown", () => { this._isDragging = true; this._pendingRender = false; });
       input.addEventListener("input", () => {
         const val     = parseInt(input.value, 10);
@@ -2178,7 +2381,7 @@ const socControl = {
 
     // Direct input for battery boost: the range already carries the option
     // list, so apply just moves the range and reuses _boostCommit.
-    this.shadowRoot.querySelectorAll("button.boost-val[data-boost-edit]").forEach(btn => {
+    this._fresh("button.boost-val[data-boost-edit]").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         if (btn.classList.contains("editing")) { this._closeSliderEdit(); return; }
@@ -2192,13 +2395,13 @@ const socControl = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.smart-cost-clear-btn").forEach(btn => {
+    this._fresh("button.smart-cost-clear-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         this._pressButton(btn.dataset.entity);
       });
     });
 
-    this.shadowRoot.querySelectorAll("input[type=range]:not(.plan-soc-range):not([data-boost-entity])").forEach(input => {
+    this._fresh("input[type=range]:not(.plan-soc-range):not([data-boost-entity])").forEach(input => {
       input.addEventListener("pointerdown", () => {
         this._isDragging    = true;
         this._pendingRender = false;
@@ -2241,7 +2444,7 @@ const socControl = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.slider-val[data-slider-edit]").forEach(btn => {
+    this._fresh("button.slider-val[data-slider-edit]").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         if (btn.classList.contains("editing")) this._closeSliderEdit();
@@ -2550,7 +2753,8 @@ const planningView = {
     const ts = d.toISOString();
     // Cache-only read: serve the cached preview, prime one fetch if absent.
     // Never refetches on its own → an idle plan card makes zero backend calls.
-    const res = this._wsPlanPreviewCached({ loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts });
+    const res = this._wsPlanPreviewCached({ loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts,
+                                            settings: this._planSettingsKey(lpName) });
     if (!res) {
       return `<div class="plan-preview"><div class="plan-preview-loading">${this._t("planPreviewLoading")}</div></div>`;
     }
@@ -2872,14 +3076,14 @@ const planningView = {
   // direct input, time, vehicle, save and delete. Called by _attachListeners()
   // after every render.
   _attachPlanListeners() {
-    this.shadowRoot.querySelectorAll("select.plan-precondition-select").forEach(sel => {
+    this._fresh("select.plan-precondition-select").forEach(sel => {
       sel.addEventListener("change", () => {
         this._setSelectOption(sel.dataset.entity, sel.value);
         if (sel.dataset.lp) this._requestPlanPreview(sel.dataset.lp);
       });
     });
 
-    this.shadowRoot.querySelectorAll("input.plan-soc-range").forEach(input => {
+    this._fresh("input.plan-soc-range").forEach(input => {
       input.addEventListener("pointerdown", () => {
         this._isDragging    = true;
         this._pendingRender = false;
@@ -2911,7 +3115,7 @@ const planningView = {
     });
 
     // Direct input for the plan target (local state, no entity behind it).
-    this.shadowRoot.querySelectorAll("button.plan-soc-val[data-plan-soc-edit]").forEach(btn => {
+    this._fresh("button.plan-soc-val[data-plan-soc-edit]").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         if (btn.classList.contains("editing")) { this._closeSliderEdit(); return; }
@@ -2928,7 +3132,7 @@ const planningView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("input.plan-time-input").forEach(input => {
+    this._fresh("input.plan-time-input").forEach(input => {
       input.addEventListener("change", () => {
         const lpName = input.dataset.lp;
         if (this._planState[lpName]) this._planState[lpName].time = input.value;
@@ -2936,14 +3140,7 @@ const planningView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("select.plan-vehicle-select").forEach(sel => {
-      sel.addEventListener("focus", () => {
-        this._pendingRender = false;
-      });
-      sel.addEventListener("blur", () => {
-        this._isDragging = false;
-        if (this._pendingRender) { this._pendingRender = false; this._render(); }
-      });
+    this._fresh("select.plan-vehicle-select").forEach(sel => {
       sel.addEventListener("change", () => {
         const lpName = sel.dataset.lp;
         const eid    = sel.dataset.entity;
@@ -2960,7 +3157,7 @@ const planningView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.plan-btn.save").forEach(btn => {
+    this._fresh("button.plan-btn.save").forEach(btn => {
       btn.addEventListener("click", () => {
         const lpName  = btn.dataset.lp;
         const state   = this._planState[lpName] || {};
@@ -3014,7 +3211,7 @@ const planningView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.plan-btn.delete").forEach(btn => {
+    this._fresh("button.plan-btn.delete").forEach(btn => {
       btn.addEventListener("click", () => {
         const lpName      = btn.dataset.lp;
         const planSt      = this._planState[lpName] || {};
@@ -3196,7 +3393,7 @@ const priorityView = {
 
     const list = root.querySelector(".priority-list");
 
-    root.querySelectorAll(".priority-row").forEach(row => {
+    this._fresh(".priority-row", root).forEach(row => {
       const handle = row.querySelector(".priority-handle");
       if (!handle || row.classList.contains("no-entity")) return;
 
@@ -3209,7 +3406,7 @@ const priorityView = {
       handle.addEventListener("lostpointercapture", (e) => this._priorityDragEnd(e));
     });
 
-    const applyBtn = root.querySelector("[data-priority-apply]");
+    const applyBtn = this._fresh("[data-priority-apply]", root)[0];
     if (applyBtn) {
       applyBtn.addEventListener("click", () => {
         const visible = this._currentVisible();
@@ -3217,7 +3414,7 @@ const priorityView = {
       });
     }
 
-    const resetBtn = root.querySelector("[data-priority-reset]");
+    const resetBtn = this._fresh("[data-priority-reset]", root)[0];
     if (resetBtn) {
       resetBtn.addEventListener("click", () => {
         this._priorityDraft = null;
@@ -4804,7 +5001,7 @@ const statisticsLegacy = {
       <svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">
         ${grid}${kwhLbl}${bars}
       </svg>
-      <div class="evcc-chart-tooltip" hidden></div>
+      <div class="evcc-chart-tooltip" data-morph-keep hidden></div>
     </div>`;
   },
 
@@ -5178,7 +5375,7 @@ const statisticsView = {
       return segs + hit + labelSvg;
     }).join("");
     const legend = `<div class="stats-legend">${series.map(s => `<span class="sl-item"><span class="sl-dot" style="background:${s.color}"></span>${escHtml(s.label)}</span>`).join("")}</div>`;
-    return `<div class="evcc-chart-wrap"><svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${grid}${axisLbl}${bars}</svg><div class="evcc-chart-tooltip" hidden></div></div>${legend}`;
+    return `<div class="evcc-chart-wrap"><svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${grid}${axisLbl}${bars}</svg><div class="evcc-chart-tooltip" data-morph-keep hidden></div></div>${legend}`;
   },
 
   _renderStatsBlockSessions(sessions) {
@@ -5302,7 +5499,7 @@ const statisticsView = {
   // tabs, the month and year steppers and the chart tooltip. Called by
   // _attachListeners() after every render.
   _attachStatsListeners() {
-    this.shadowRoot.querySelectorAll("button.stats-period-tab").forEach(btn => {
+    this._fresh("button.stats-period-tab").forEach(btn => {
       btn.addEventListener("click", () => {
         // Sessions path: data-scope/-metric/-group. Legacy entity path: data-period.
         if      (btn.dataset.scope)  this._statsScope  = btn.dataset.scope;
@@ -5314,7 +5511,7 @@ const statisticsView = {
     });
 
     // Two independent steppers: month (wraps 0-11) and year (sessions stats path).
-    this.shadowRoot.querySelectorAll("button[data-stats-step]").forEach(btn => {
+    this._fresh("button[data-stats-step]").forEach(btn => {
       btn.addEventListener("click", () => {
         const dir = btn.dataset.statsStep === "next" ? 1 : -1;
         const now = new Date();
@@ -5328,7 +5525,7 @@ const statisticsView = {
       });
     });
 
-    const chartWrap = this.shadowRoot.querySelector(".evcc-chart-wrap");
+    const chartWrap = this._fresh(".evcc-chart-wrap")[0];
     if (chartWrap) {
       const tooltip = chartWrap.querySelector(".evcc-chart-tooltip");
       const dot = (color) => `<span class="ectt-dot" style="background:${color}"></span>`;
@@ -5634,7 +5831,7 @@ const batteryView = {
   // Listeners of the battery view: the discharge toggle and the inline
   // selects. Called by _attachListeners() after every render.
   _attachBatteryListeners() {
-    this.shadowRoot.querySelectorAll("button.batt-discharge-toggle").forEach(btn => {
+    this._fresh("button.batt-discharge-toggle").forEach(btn => {
       btn.addEventListener("click", () => {
         const on     = btn.dataset.on === "true";
         const domain = btn.dataset.domain;
@@ -5644,7 +5841,7 @@ const batteryView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll(".batt-inline-select").forEach(sel => {
+    this._fresh(".batt-inline-select").forEach(sel => {
       sel.addEventListener("change", () => {
         this._setSelectOption(sel.dataset.entity, sel.value);
       });
@@ -6081,7 +6278,7 @@ const debugView = {
   // Listeners of the debug view: the report copy button and the mask toggle.
   // Called by _attachListeners() after every render.
   _attachDebugListeners() {
-    const copyBtn = this.shadowRoot.querySelector(".debug-copy-btn");
+    const copyBtn = this._fresh(".debug-copy-btn")[0];
     if (copyBtn) {
       copyBtn.addEventListener("click", async () => {
         const toast = this.shadowRoot.querySelector(".debug-toast");
@@ -6120,7 +6317,7 @@ const debugView = {
       });
     }
 
-    const maskTog = this.shadowRoot.querySelector(".debug-mask-toggle");
+    const maskTog = this._fresh(".debug-mask-toggle")[0];
     if (maskTog) {
       maskTog.addEventListener("change", () => {
         this._debugMask = maskTog.checked;
@@ -6231,6 +6428,20 @@ const NATIVE = "button, input, select, textarea, a[href]";
 // is attached by that view's _attach<Name>Listeners(), called at the end. Methods
 // are mixed into EvccCard.prototype.
 const listeners = {
+  // The elements matching `sel` that have not been wired for `sel` yet. A
+  // render morphs the DOM instead of replacing it (src/utils/morph.js), so an
+  // element and its listeners outlive the render; every attach site asks here
+  // and binds only what is new. Keyed by selector: one element may be wired by
+  // two sites (a select by the focus guard and by its own change handler).
+  _fresh(sel, root = this.shadowRoot) {
+    return [...root.querySelectorAll(sel)].filter(el => {
+      const bound = el.__evccBound || (el.__evccBound = new Set());
+      if (bound.has(sel)) return false;
+      bound.add(sel);
+      return true;
+    });
+  },
+
   _attachListeners() {
     // Keyboard activation for the button-role elements: Enter and Space click
     // them, as a native button would. Bound to the shadow root once; the root
@@ -6246,13 +6457,13 @@ const listeners = {
         el.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true }));
       });
     }
-    this.shadowRoot.querySelectorAll(NON_NATIVE_CLICKABLES).forEach(el => {
+    this._fresh(NON_NATIVE_CLICKABLES).forEach(el => {
       if (el.matches(NATIVE)) return;
       if (!el.hasAttribute("role"))     el.setAttribute("role", "button");
       if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "0");
     });
 
-    this.shadowRoot.querySelectorAll("[data-more-info]").forEach(el => {
+    this._fresh("[data-more-info]").forEach(el => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         this.dispatchEvent(new CustomEvent("hass-more-info", {
@@ -6265,20 +6476,30 @@ const listeners = {
     // graphic. A click on a node inside it opens more-info instead: that handler
     // above stops propagation, and the check here keeps the two apart even when
     // the click lands on a node that has no more-info listener attached.
-    this.shadowRoot.querySelectorAll('[data-action="toggle-site"]').forEach(el => {
+    this._fresh('[data-action="toggle-site"]').forEach(el => {
       el.addEventListener("click", (e) => {
         if (e.target.closest("[data-more-info]")) return;
         this._toggleSite();
       });
     });
 
-    this.shadowRoot.querySelectorAll('[data-action="open-debug"]').forEach(btn => {
+    this._fresh('[data-action="open-debug"]').forEach(btn => {
       btn.addEventListener("click", () => {
         this._origConfig = { ...this._config };
         this._config = { ...this._config, mode: "debug" };
         this._lastRenderKey = null;
         this._render();
       });
+    });
+
+    // A focused select or date input holds every render back, see _inputBusy():
+    // replacing the DOM would close an open dropdown or picker and wipe a
+    // half-typed time. Registered before the views' own handlers, so a change
+    // handler that renders finds the guard already lifted.
+    this._fresh("select, input[type=datetime-local]").forEach(el => {
+      el.addEventListener("focus",  () => this._holdInput(el));
+      el.addEventListener("change", () => this._releaseInput(el));
+      el.addEventListener("blur",   () => this._releaseInput(el));
     });
 
     this._attachLoadpointListeners();
@@ -6385,6 +6606,9 @@ class EvccCard extends HTMLElement {
     this._pendingRender = false;
     this._sliderEditing = false;   // direct-input panel open (defers re-renders like a drag)
     this._sliderEditPanel = null;
+    this._inputFocused  = null;   // focused select or date input, see _inputBusy()
+    this._readIds       = null;   // entity ids the last render read, see _render()
+    this._expected      = {};     // entity id -> value written, not yet reported back (actions.js)
     this._renderTimer   = null;
     this._lastRenderKey = null;
     this._countdownInterval = null;
@@ -6466,14 +6690,17 @@ class EvccCard extends HTMLElement {
     this._seenStates = null;
     for (const k of Object.keys(this._planPreviewDebounce)) clearTimeout(this._planPreviewDebounce[k]);
     this._planPreviewDebounce = {};
-    // An open direct-input panel would keep hass updates deferred after re-mount.
+    // An open direct-input panel or a focused input would keep hass updates
+    // deferred after re-mount; a detached element gets no blur.
     this._pendingRender = false;
+    this._inputFocused  = null;
     this._closeSliderEdit();
-    // Drop the on-demand WS caches. Capabilities and entry_id are kept on
-    // purpose: they do not change while the page lives, and re-probing them on
-    // every re-mount would be a backend call for nothing.
-    this._wsCache    = {};
-    this._wsInflight = {};
+    // The WebSocket caches stay, like the capabilities and the entry id: a view
+    // switch would otherwise show the footer, the forecast and the plan preview
+    // as loading and fetch them again. _wsFetch refreshes sessions and forecast
+    // after their TTL and serves the old value meanwhile; a plan preview is
+    // served until the input changes. Only a switch of the ha-evcc instance
+    // drops them (_syncIntegrationInstance).
   }
 
   async _loadTranslations() {
@@ -6518,7 +6745,7 @@ class EvccCard extends HTMLElement {
 
     this._syncIntegrationInstance();
 
-    if (this._isDragging || this._sliderEditing) {
+    if (this._inputBusy()) {
       this._pendingRender = true;
       this._updateLiveValues();
       return;
@@ -6575,9 +6802,9 @@ class EvccCard extends HTMLElement {
     return true;
   }
 
-  // True when a hass update can change the render key: an evcc entity carries
-  // a new state object, the set of evcc entities moved, the language changed,
-  // or no key has been built yet. The snapshot is the previous `states` table;
+  // True when a hass update can change what the card shows: an entity the last
+  // render read carries a new state object, the set of evcc entities moved,
+  // the language changed, or no key has been built yet. The snapshot is the previous `states` table;
   // HA copies the table on every update and keeps the untouched entries, so an
   // identity check per evcc entity is enough and no string is built. The
   // snapshot is taken here in every case, or a change seen once would be
@@ -6591,7 +6818,12 @@ class EvccCard extends HTMLElement {
       this._seenLang = lang;
       return true;
     }
-    return this._evccIds.some(id => hass.states[id] !== seen[id]);
+    // The entities the last render read, or every evcc entity before the
+    // first render. An entity that appears or disappears moves the count and
+    // has forced a full check above.
+    const ids = this._readIds ?? this._evccIds;
+    for (const id of ids) if (hass.states[id] !== seen[id]) return true;
+    return false;
   }
 
   _buildRenderKey(hass) {
@@ -6755,17 +6987,73 @@ class EvccCard extends HTMLElement {
     return val;
   }
 
+  // True while the user is in the middle of something the DOM must not be
+  // replaced under: a slider drag, an open direct-input panel, a priority drag,
+  // or a focused select or date input (an open dropdown or picker would close,
+  // a half-typed time would be gone). The end of each interaction runs the
+  // render that was deferred meanwhile.
+  _inputBusy() {
+    return !!(this._isDragging || this._sliderEditing || this._priorityDragging || this._inputFocused);
+  }
+
+  // The focus guard for selects and date inputs, set by the shared listener in
+  // listeners.js; lifted on change (the choice is made) and on blur.
+  _holdInput(el)    { this._inputFocused = el; }
+  _releaseInput(el) {
+    if (this._inputFocused !== el && this._inputFocused?.isConnected) return;
+    this._inputFocused = null;
+    // The deferred render runs as a task, after every listener of the event
+    // that lifted the guard: the view's own change handler still has to read
+    // the value the user picked, and a render in between would have put the
+    // state's value back first.
+    if (this._pendingRender) {
+      setTimeout(() => {
+        if (this._inputBusy() || !this._pendingRender) return;
+        this._pendingRender = false;
+        this._render();
+      }, 0);
+    }
+  }
+
   _render() {
     if (!this._hass) return;
-    // A priority drag holds live DOM references (row, placeholder, captured
-    // handle). Replacing the shadow DOM now would orphan it and leave
-    // _isDragging stuck. Defer; _priorityDragEnd re-renders.
-    if (this._priorityDragging) { this._pendingRender = true; return; }
-    // A full re-render replaces the shadow DOM, so an open direct-input panel is
-    // gone afterwards; clear the flag or hass updates would stay deferred.
-    this._sliderEditing   = false;
-    this._sliderEditPanel = null;
-    this._dropSliderEditOutside();
+    // Whoever asks for the render, the hass setter, a WebSocket result, a plan
+    // reset or a tab: nothing replaces the DOM under the user's hands. The
+    // interaction that holds it renders when it ends (pointerup, panel close,
+    // drag end, blur).
+    if (this._inputBusy()) { this._pendingRender = true; return; }
+
+    // What this render reads from hass.states is what the next hass update is
+    // compared against: a loadpoint card is not redrawn because the PV power
+    // moved. Every read goes through hass.states[id], so a recording proxy on
+    // the states table catches them all, including the ones views make past
+    // the discovery (tariff sensors, clear buttons, stat_* entities) and the
+    // ones that find nothing. A render that bailed out early (translations
+    // still loading) leaves the previous set in place.
+    const real  = this._hass;
+    const reads = new Set();
+    // The same proxy hands out the value the card just wrote for an entity HA
+    // has not answered for yet (_expectedState), so every view draws the
+    // pressed mode or the flipped toggle without knowing about it.
+    this._hass = { ...real, states: new Proxy(real.states, {
+      get: (t, k) => {
+        if (typeof k !== "string") return t[k];
+        reads.add(k);
+        return this._expectedState(k, t[k]);
+      },
+    }) };
+    let done = false;
+    try {
+      done = this._renderNow();
+    } finally {
+      this._hass = real;
+      if (done) this._readIds = reads;
+    }
+  }
+
+  // The render itself. Returns true when the card was drawn, false when it
+  // showed the loading placeholder instead.
+  _renderNow() {
     if (!this._translationsReady) {
       if (!this.shadowRoot.firstChild) {
         this.shadowRoot.innerHTML = `
@@ -6773,7 +7061,7 @@ class EvccCard extends HTMLElement {
           .loading{padding:24px;text-align:center;color:var(--secondary-text-color);font-size:.9rem}</style>
           <ha-card><div class="loading">⏳</div></ha-card>`;
       }
-      return;
+      return false;
     }
 
     // Resolve language strings once per render — reused by all _t() calls
@@ -6807,7 +7095,10 @@ class EvccCard extends HTMLElement {
     const allDisabled = Object.keys(visible).length > 0
       && Object.keys(lpEnabled).length === 0;
 
-    this.shadowRoot.innerHTML = `
+    // Morphed into the live tree, not assigned: the elements that are still
+    // rendered keep their identity, so focus, hover, a running animation, the
+    // chart tooltip and the listeners survive the update. See src/utils/morph.js.
+    morphInto(this.shadowRoot, `
       ${this._styleTag()}
       <div class="evcc-scale-wrap"${this._config.size ? ` data-size="${this._config.size}"` : ""}><ha-card>
         <div class="card-content">
@@ -6853,8 +7144,9 @@ class EvccCard extends HTMLElement {
           }
         </div>
       </ha-card></div>
-    `;
+    `);
     this._attachListeners();
+    return true;
   }
 
   _updateLiveValues() {

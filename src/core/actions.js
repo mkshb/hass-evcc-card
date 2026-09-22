@@ -1,3 +1,8 @@
+// How long a written value stands in for the state before HA has to have
+// answered: ha-evcc bundles evcc updates for up to two seconds, HA and the
+// card's own debounce add a little.
+const EXPECT_MS = 6000;
+
 // Every write the card sends to Home Assistant. Methods are mixed into EvccCard.prototype.
 export const actions = {
   // ── Service calls ───────────────────────────────────────────────────────
@@ -8,17 +13,46 @@ export const actions = {
   // failures await the promise or chain on it.
 
   _setSelectOption(entityId, option) {
-    return this._hass.callService("select", "select_option", { entity_id: entityId, option });
+    return this._expect(entityId, String(option),
+      this._hass.callService("select", "select_option", { entity_id: entityId, option }));
   },
 
   _setNumberValue(entityId, value) {
-    return this._hass.callService("number", "set_value", { entity_id: entityId, value });
+    return this._expect(entityId, String(value),
+      this._hass.callService("number", "set_value", { entity_id: entityId, value }));
   },
 
   // Toggles pass the state they currently show, not the one they want: a
   // control rendered "on" turns off.
   _toggleEntity(domain, entityId, isOn) {
-    return this._hass.callService(domain, isOn ? "turn_off" : "turn_on", { entity_id: entityId });
+    return this._expect(entityId, isOn ? "off" : "on",
+      this._hass.callService(domain, isOn ? "turn_off" : "turn_on", { entity_id: entityId }));
+  },
+
+  // ── Optimistic state ────────────────────────────────────────────────────
+  // A written value takes up to a few seconds to come back through evcc,
+  // ha-evcc and HA, and every render in between would draw the old state,
+  // so a pressed mode button or a flipped toggle fell back until HA answered.
+  // The value is noted here and the render reads it in place of the state
+  // (see the states proxy in _render) until HA reports anything else for
+  // the entity, a failed call drops it, and a stale note expires on its own.
+  _expect(entityId, value, call) {
+    const state = this._hass?.states?.[entityId]?.state;
+    if (state != null) this._expected[entityId] = { value, from: state, ts: Date.now() };
+    call?.catch?.(() => { delete this._expected[entityId]; });
+    return call;
+  },
+
+  // The state object a render sees for an entity: the real one, or a copy
+  // carrying the expected value while HA still reports what it did before.
+  _expectedState(entityId, real) {
+    const e = this._expected[entityId];
+    if (!e || !real) return real;
+    if (real.state !== e.from || Date.now() - e.ts > EXPECT_MS) {
+      delete this._expected[entityId];
+      return real;
+    }
+    return { ...real, state: e.value };
   },
 
   _pressButton(entityId) {

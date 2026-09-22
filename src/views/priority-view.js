@@ -107,7 +107,7 @@ export const priorityView = {
 
     const list = root.querySelector(".priority-list");
 
-    root.querySelectorAll(".priority-row").forEach(row => {
+    this._fresh(".priority-row", root).forEach(row => {
       const handle = row.querySelector(".priority-handle");
       if (!handle || row.classList.contains("no-entity")) return;
 
@@ -120,7 +120,7 @@ export const priorityView = {
       handle.addEventListener("lostpointercapture", (e) => this._priorityDragEnd(e));
     });
 
-    const applyBtn = root.querySelector("[data-priority-apply]");
+    const applyBtn = this._fresh("[data-priority-apply]", root)[0];
     if (applyBtn) {
       applyBtn.addEventListener("click", () => {
         const visible = this._currentVisible();
@@ -128,7 +128,7 @@ export const priorityView = {
       });
     }
 
-    const resetBtn = root.querySelector("[data-priority-reset]");
+    const resetBtn = this._fresh("[data-priority-reset]", root)[0];
     if (resetBtn) {
       resetBtn.addEventListener("click", () => {
         this._priorityDraft = null;

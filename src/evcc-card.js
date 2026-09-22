@@ -2,6 +2,7 @@ import { detectIntegration, discoverEntities, selectLoadpoints, partitionDisable
 import { CARD_SIZES, CARD_SIZE_DETAILS, CARD_SIZE_FOOTER, RENDER_ATTRS, normalizeStatsPeriod, legacyStatsPeriod, validateCardConfig, loadpointFilter } from "./core/constants.js";
 import { stateVal, unitStr } from "./utils/state.js";
 import { escHtml } from "./utils/html.js";
+import { morphInto } from "./utils/morph.js";
 import { socFillGradient } from "./utils/format.js";
 import { loadSharedTranslations, sharedTranslations } from "./utils/translations.js";
 
@@ -32,6 +33,9 @@ export class EvccCard extends HTMLElement {
     this._pendingRender = false;
     this._sliderEditing = false;   // direct-input panel open (defers re-renders like a drag)
     this._sliderEditPanel = null;
+    this._inputFocused  = null;   // focused select or date input, see _inputBusy()
+    this._readIds       = null;   // entity ids the last render read, see _render()
+    this._expected      = {};     // entity id -> value written, not yet reported back (actions.js)
     this._renderTimer   = null;
     this._lastRenderKey = null;
     this._countdownInterval = null;
@@ -113,14 +117,17 @@ export class EvccCard extends HTMLElement {
     this._seenStates = null;
     for (const k of Object.keys(this._planPreviewDebounce)) clearTimeout(this._planPreviewDebounce[k]);
     this._planPreviewDebounce = {};
-    // An open direct-input panel would keep hass updates deferred after re-mount.
+    // An open direct-input panel or a focused input would keep hass updates
+    // deferred after re-mount; a detached element gets no blur.
     this._pendingRender = false;
+    this._inputFocused  = null;
     this._closeSliderEdit();
-    // Drop the on-demand WS caches. Capabilities and entry_id are kept on
-    // purpose: they do not change while the page lives, and re-probing them on
-    // every re-mount would be a backend call for nothing.
-    this._wsCache    = {};
-    this._wsInflight = {};
+    // The WebSocket caches stay, like the capabilities and the entry id: a view
+    // switch would otherwise show the footer, the forecast and the plan preview
+    // as loading and fetch them again. _wsFetch refreshes sessions and forecast
+    // after their TTL and serves the old value meanwhile; a plan preview is
+    // served until the input changes. Only a switch of the ha-evcc instance
+    // drops them (_syncIntegrationInstance).
   }
 
   async _loadTranslations() {
@@ -165,7 +172,7 @@ export class EvccCard extends HTMLElement {
 
     this._syncIntegrationInstance();
 
-    if (this._isDragging || this._sliderEditing) {
+    if (this._inputBusy()) {
       this._pendingRender = true;
       this._updateLiveValues();
       return;
@@ -222,9 +229,9 @@ export class EvccCard extends HTMLElement {
     return true;
   }
 
-  // True when a hass update can change the render key: an evcc entity carries
-  // a new state object, the set of evcc entities moved, the language changed,
-  // or no key has been built yet. The snapshot is the previous `states` table;
+  // True when a hass update can change what the card shows: an entity the last
+  // render read carries a new state object, the set of evcc entities moved,
+  // the language changed, or no key has been built yet. The snapshot is the previous `states` table;
   // HA copies the table on every update and keeps the untouched entries, so an
   // identity check per evcc entity is enough and no string is built. The
   // snapshot is taken here in every case, or a change seen once would be
@@ -238,7 +245,12 @@ export class EvccCard extends HTMLElement {
       this._seenLang = lang;
       return true;
     }
-    return this._evccIds.some(id => hass.states[id] !== seen[id]);
+    // The entities the last render read, or every evcc entity before the
+    // first render. An entity that appears or disappears moves the count and
+    // has forced a full check above.
+    const ids = this._readIds ?? this._evccIds;
+    for (const id of ids) if (hass.states[id] !== seen[id]) return true;
+    return false;
   }
 
   _buildRenderKey(hass) {
@@ -402,17 +414,73 @@ export class EvccCard extends HTMLElement {
     return val;
   }
 
+  // True while the user is in the middle of something the DOM must not be
+  // replaced under: a slider drag, an open direct-input panel, a priority drag,
+  // or a focused select or date input (an open dropdown or picker would close,
+  // a half-typed time would be gone). The end of each interaction runs the
+  // render that was deferred meanwhile.
+  _inputBusy() {
+    return !!(this._isDragging || this._sliderEditing || this._priorityDragging || this._inputFocused);
+  }
+
+  // The focus guard for selects and date inputs, set by the shared listener in
+  // listeners.js; lifted on change (the choice is made) and on blur.
+  _holdInput(el)    { this._inputFocused = el; }
+  _releaseInput(el) {
+    if (this._inputFocused !== el && this._inputFocused?.isConnected) return;
+    this._inputFocused = null;
+    // The deferred render runs as a task, after every listener of the event
+    // that lifted the guard: the view's own change handler still has to read
+    // the value the user picked, and a render in between would have put the
+    // state's value back first.
+    if (this._pendingRender) {
+      setTimeout(() => {
+        if (this._inputBusy() || !this._pendingRender) return;
+        this._pendingRender = false;
+        this._render();
+      }, 0);
+    }
+  }
+
   _render() {
     if (!this._hass) return;
-    // A priority drag holds live DOM references (row, placeholder, captured
-    // handle). Replacing the shadow DOM now would orphan it and leave
-    // _isDragging stuck. Defer; _priorityDragEnd re-renders.
-    if (this._priorityDragging) { this._pendingRender = true; return; }
-    // A full re-render replaces the shadow DOM, so an open direct-input panel is
-    // gone afterwards; clear the flag or hass updates would stay deferred.
-    this._sliderEditing   = false;
-    this._sliderEditPanel = null;
-    this._dropSliderEditOutside();
+    // Whoever asks for the render, the hass setter, a WebSocket result, a plan
+    // reset or a tab: nothing replaces the DOM under the user's hands. The
+    // interaction that holds it renders when it ends (pointerup, panel close,
+    // drag end, blur).
+    if (this._inputBusy()) { this._pendingRender = true; return; }
+
+    // What this render reads from hass.states is what the next hass update is
+    // compared against: a loadpoint card is not redrawn because the PV power
+    // moved. Every read goes through hass.states[id], so a recording proxy on
+    // the states table catches them all, including the ones views make past
+    // the discovery (tariff sensors, clear buttons, stat_* entities) and the
+    // ones that find nothing. A render that bailed out early (translations
+    // still loading) leaves the previous set in place.
+    const real  = this._hass;
+    const reads = new Set();
+    // The same proxy hands out the value the card just wrote for an entity HA
+    // has not answered for yet (_expectedState), so every view draws the
+    // pressed mode or the flipped toggle without knowing about it.
+    this._hass = { ...real, states: new Proxy(real.states, {
+      get: (t, k) => {
+        if (typeof k !== "string") return t[k];
+        reads.add(k);
+        return this._expectedState(k, t[k]);
+      },
+    }) };
+    let done = false;
+    try {
+      done = this._renderNow();
+    } finally {
+      this._hass = real;
+      if (done) this._readIds = reads;
+    }
+  }
+
+  // The render itself. Returns true when the card was drawn, false when it
+  // showed the loading placeholder instead.
+  _renderNow() {
     if (!this._translationsReady) {
       if (!this.shadowRoot.firstChild) {
         this.shadowRoot.innerHTML = `
@@ -420,7 +488,7 @@ export class EvccCard extends HTMLElement {
           .loading{padding:24px;text-align:center;color:var(--secondary-text-color);font-size:.9rem}</style>
           <ha-card><div class="loading">⏳</div></ha-card>`;
       }
-      return;
+      return false;
     }
 
     // Resolve language strings once per render — reused by all _t() calls
@@ -454,7 +522,10 @@ export class EvccCard extends HTMLElement {
     const allDisabled = Object.keys(visible).length > 0
       && Object.keys(lpEnabled).length === 0;
 
-    this.shadowRoot.innerHTML = `
+    // Morphed into the live tree, not assigned: the elements that are still
+    // rendered keep their identity, so focus, hover, a running animation, the
+    // chart tooltip and the listeners survive the update. See src/utils/morph.js.
+    morphInto(this.shadowRoot, `
       ${this._styleTag()}
       <div class="evcc-scale-wrap"${this._config.size ? ` data-size="${this._config.size}"` : ""}><ha-card>
         <div class="card-content">
@@ -500,8 +571,9 @@ export class EvccCard extends HTMLElement {
           }
         </div>
       </ha-card></div>
-    `;
+    `);
     this._attachListeners();
+    return true;
   }
 
   _updateLiveValues() {

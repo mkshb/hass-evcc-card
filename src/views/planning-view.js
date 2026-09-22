@@ -208,7 +208,8 @@ export const planningView = {
     const ts = d.toISOString();
     // Cache-only read: serve the cached preview, prime one fetch if absent.
     // Never refetches on its own → an idle plan card makes zero backend calls.
-    const res = this._wsPlanPreviewCached({ loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts });
+    const res = this._wsPlanPreviewCached({ loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts,
+                                            settings: this._planSettingsKey(lpName) });
     if (!res) {
       return `<div class="plan-preview"><div class="plan-preview-loading">${this._t("planPreviewLoading")}</div></div>`;
     }
@@ -530,14 +531,14 @@ export const planningView = {
   // direct input, time, vehicle, save and delete. Called by _attachListeners()
   // after every render.
   _attachPlanListeners() {
-    this.shadowRoot.querySelectorAll("select.plan-precondition-select").forEach(sel => {
+    this._fresh("select.plan-precondition-select").forEach(sel => {
       sel.addEventListener("change", () => {
         this._setSelectOption(sel.dataset.entity, sel.value);
         if (sel.dataset.lp) this._requestPlanPreview(sel.dataset.lp);
       });
     });
 
-    this.shadowRoot.querySelectorAll("input.plan-soc-range").forEach(input => {
+    this._fresh("input.plan-soc-range").forEach(input => {
       input.addEventListener("pointerdown", () => {
         this._isDragging    = true;
         this._pendingRender = false;
@@ -569,7 +570,7 @@ export const planningView = {
     });
 
     // Direct input for the plan target (local state, no entity behind it).
-    this.shadowRoot.querySelectorAll("button.plan-soc-val[data-plan-soc-edit]").forEach(btn => {
+    this._fresh("button.plan-soc-val[data-plan-soc-edit]").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         if (btn.classList.contains("editing")) { this._closeSliderEdit(); return; }
@@ -586,7 +587,7 @@ export const planningView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("input.plan-time-input").forEach(input => {
+    this._fresh("input.plan-time-input").forEach(input => {
       input.addEventListener("change", () => {
         const lpName = input.dataset.lp;
         if (this._planState[lpName]) this._planState[lpName].time = input.value;
@@ -594,14 +595,7 @@ export const planningView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("select.plan-vehicle-select").forEach(sel => {
-      sel.addEventListener("focus", () => {
-        this._pendingRender = false;
-      });
-      sel.addEventListener("blur", () => {
-        this._isDragging = false;
-        if (this._pendingRender) { this._pendingRender = false; this._render(); }
-      });
+    this._fresh("select.plan-vehicle-select").forEach(sel => {
       sel.addEventListener("change", () => {
         const lpName = sel.dataset.lp;
         const eid    = sel.dataset.entity;
@@ -618,7 +612,7 @@ export const planningView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.plan-btn.save").forEach(btn => {
+    this._fresh("button.plan-btn.save").forEach(btn => {
       btn.addEventListener("click", () => {
         const lpName  = btn.dataset.lp;
         const state   = this._planState[lpName] || {};
@@ -672,7 +666,7 @@ export const planningView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.plan-btn.delete").forEach(btn => {
+    this._fresh("button.plan-btn.delete").forEach(btn => {
       btn.addEventListener("click", () => {
         const lpName      = btn.dataset.lp;
         const planSt      = this._planState[lpName] || {};

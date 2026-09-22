@@ -544,7 +544,7 @@ export const loadpointView = {
   // the mode buttons, the entity toggles and the phase buttons. Called by
   // _attachListeners() after every render.
   _attachLoadpointListeners() {
-    this.shadowRoot.querySelectorAll("[data-lp-current-toggle]").forEach(btn => {
+    this._fresh("[data-lp-current-toggle]").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const lpName   = btn.dataset.lpCurrentToggle;
@@ -565,7 +565,7 @@ export const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("[data-lp-smart-cost-open]").forEach(chip => {
+    this._fresh("[data-lp-smart-cost-open]").forEach(chip => {
       chip.addEventListener("click", (e) => {
         e.stopPropagation();
         const lpName = chip.dataset.lpSmartCostOpen;
@@ -585,7 +585,7 @@ export const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.compact-tab").forEach(btn => {
+    this._fresh("button.compact-tab").forEach(btn => {
       btn.addEventListener("click", () => {
         const lpName   = btn.dataset.lp;
         const tabIdx   = parseInt(btn.dataset.tab);
@@ -599,7 +599,7 @@ export const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.boost-activate-btn").forEach(btn => {
+    this._fresh("button.boost-activate-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         const on = btn.dataset.on === "true";
         this._toggleEntity("switch", btn.dataset.entity, on);
@@ -608,13 +608,16 @@ export const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.mode-btn").forEach(btn => {
+    // The mode buttons mark the pressed one at once. The real state comes back
+    // through evcc, ha-evcc and HA, which takes up to a few seconds while the
+    // button would look as if the tap had not landed; a failed call reverts.
+    this._fresh("button.mode-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        this._setSelectOption(btn.dataset.entity, btn.dataset.value);
+        this._pressGroupButton(btn, ".mode-row", ".mode-btn");
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.toggle").forEach(btn => {
+    this._fresh("button.toggle").forEach(btn => {
       btn.addEventListener("click", () => {
         const on     = btn.dataset.on === "true";
         const domain = btn.dataset.domain;
@@ -625,16 +628,31 @@ export const loadpointView = {
       });
     });
 
-    this.shadowRoot.querySelectorAll("button.phase-btn").forEach(btn => {
+    this._fresh("button.phase-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        this._setSelectOption(btn.dataset.entity, btn.dataset.value);
-        const group = btn.closest(".phase-btn-group");
-        if (group) {
-          group.querySelectorAll(".phase-btn").forEach(b => b.classList.remove("active"));
-          btn.classList.add("active");
-        }
+        this._pressGroupButton(btn, ".phase-btn-group", ".phase-btn");
       });
     });
+  },
+
+  // One button of a group writes its value to the select entity and shows as
+  // active right away; the previous button gets the mark back when the service
+  // call fails. The next render draws the state HA reports.
+  _pressGroupButton(btn, groupSel, buttonSel) {
+    const group = btn.closest(groupSel);
+    const was   = group?.querySelector(`${buttonSel}.active`);
+    if (group) {
+      group.querySelectorAll(buttonSel).forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+    }
+    const call = this._setSelectOption(btn.dataset.entity, btn.dataset.value);
+    call?.catch?.((e) => {
+      console.warn("[evcc-card] select_option failed:", e?.message || e);
+      if (!btn.isConnected) return;
+      btn.classList.remove("active");
+      if (was?.isConnected) was.classList.add("active");
+    });
+    return call;
   },
 };
 
