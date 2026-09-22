@@ -19,7 +19,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT  = ROOT / "test" / "out"
-MODES = ["loadpoint", "compact", "battery", "site", "flow", "grid", "stats", "plan", "repeatplan", "priority", "debug"]
+MODES = ["loadpoint", "compact", "battery", "vehicle", "site", "flow", "grid", "stats", "plan", "repeatplan", "priority", "debug"]
 
 # The browser clock is frozen at the capture time of the fixtures so every run
 # renders the same pixels (hour labels, plan times, "current month"). Timezone
@@ -110,7 +110,7 @@ def new_page(browser, width=480, height=900):
 
 
 def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="de", ws=True, set=None, disable=None,
-              rename=None, attrs=None, tariff=None, second=None, wsname=None):
+              rename=None, attrs=None, tariff=None, second=None, wsname=None, vehicle_device=True):
     q = {"w": width, "lang": lang}
     if not ws: q["ws"] = 0
     if set:     q["set"] = ",".join(f"{k}:{v}" for k, v in set.items())
@@ -120,6 +120,7 @@ def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="d
     if tariff:  q["tariff"] = tariff
     if second:  q["second"] = json.dumps(second)
     if wsname:  q["wsname"] = wsname
+    if not vehicle_device: q["vd"] = 0
     if config is not None: q["config"] = json.dumps(config)
     else: q["mode"] = mode or "loadpoint"
     if dark: q["dark"] = 1
@@ -207,6 +208,233 @@ def stats_fallback(browser, port, t):
         t.check(len(daily) >= 1, "30d tab queries day buckets", f"{len(daily)} call(s)")
         n = page.locator(in_card("rect.evcc-bar")).count()
         t.check(n == 30, "30d chart shows one bar per day", f"{n} bars")
+    page.close()
+
+
+def vehicle_mode(browser, port, t):
+    """Vehicle mode: one block per vehicle evcc knows, fed from the vehicle's own
+    entities and, while it is connected, from the loadpoint it is plugged into."""
+    UNPLUGGED = {"binary_sensor.evcc_openwb_connected": "off", "binary_sensor.evcc_openwb_charging": "off"}
+    block = lambda slug: in_card(f'.vehicle-block[data-vehicle="{slug}"]')
+
+    def card(**kw):
+        page = new_page(browser, 480, 1400)
+        kw.setdefault("config", {"mode": "vehicle"})
+        return page, open_card(page, port, **kw)
+
+    t.group("vehicle - blocks, value source and loadpoint")
+    page, errors = card()
+    slugs = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block')].map(b => b.dataset.vehicle)")
+    t.check(slugs == ["ex30", "id7"] and not errors, "every vehicle evcc knows gets a block, plugged in or not", f"{slugs}; {'; '.join(errors)[:150]}")
+    ex30 = page.locator(block("ex30"))
+    t.check(ex30.locator(".lp-name").inner_text().strip().upper() == "EX30" and ex30.locator(".vehicle-lp").inner_text().strip() == "openwb",
+            "the connected vehicle carries its evcc title and names its loadpoint", ex30.locator(".lp-header").inner_text())
+    info = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .soc-label-row [data-more-info]')].map(e => [e.dataset.moreInfo, e.textContent.trim()])")
+    t.check(info == [["sensor.evcc_openwb_vehicle_soc", "56 %"], ["sensor.evcc_openwb_vehicle_range", "198 km"], ["sensor.evcc_openwb_vehicle_odometer", "11445 km"]],
+            "connected: charge level, range and odometer are read from the loadpoint", json.dumps(info))
+    id7 = page.locator(block("id7"))
+    t.check(id7.locator(".lp-badge.ready").count() == 1 and id7.locator(".vehicle-lp").count() == 0
+            and id7.locator(".soc-track").count() == 0 and "Keine aktuellen Daten" in id7.inner_text(),
+            "a vehicle evcc cannot reach shows no 0 % bar but a hint", id7.inner_text()[:120])
+    t.check(ex30.locator(".rplan-row").count() == 2 and id7.locator(".rplan-row").count() == 0,
+            "repeating plans sit in the block of their vehicle, unavailable ones stay out",
+            f"ex30={ex30.locator('.rplan-row').count()} id7={id7.locator('.rplan-row').count()}")
+    totals = ex30.locator(".vehicle-totals .si-value").all_inner_texts()
+    t.check(totals == ["2425 kWh", "308.32 €", "1459 h"] and id7.locator(".vehicle-totals").count() == 0,
+            "session totals per vehicle, none for a vehicle that never charged", json.dumps(totals))
+    ex30.locator(".rplan-row button.toggle").first.click()
+    page.wait_for_timeout(200)
+    calls = svc(page)
+    t.check(calls and calls[-1] == {"domain": "switch", "service": "turn_on", "data": {"entity_id": "switch.evcc_ex30_repeating_plan_2"}},
+            "switching a repeating plan calls switch.turn_on on the plan entity", json.dumps(calls[-1:]))
+    page.close()
+
+    page, errors = card(set=UNPLUGGED, vehicle_device=False)
+    ex30 = page.locator(block("ex30"))
+    info = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .soc-label-row [data-more-info]')].map(e => [e.dataset.moreInfo, e.textContent.trim()])")
+    t.check(info == [["sensor.evcc_ex30_configvehicle_soc", "52 %"], ["sensor.evcc_ex30_configvehicle_range", "184 km"], ["sensor.evcc_ex30_configvehicle_odometer", "11445 km"]],
+            "unplugged: the values come from the vehicle's own sensors", json.dumps(info))
+    t.check(ex30.locator(".lp-badge.ready").inner_text().strip() == "Nicht verbunden" and ex30.locator(".vehicle-lp").count() == 0 and not errors,
+            "unplugged: badge says so, no loadpoint is named", ex30.locator(".lp-header").inner_text())
+    marker = ex30.locator(".soc-limit-marker").get_attribute("style") or ""
+    t.check("left:90%" in marker.replace(" ", ""), "the limit marker follows the vehicle's own limit", marker)
+    page.close()
+
+    t.group("vehicle - device of the vehicle's own integration")
+    VOLVO, DECOY = "f1c0de00volvoex30fixture000000001", "f1c0de00companionex30fixture00002"
+    values = "[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .soc-label-row [data-more-info]')].map(e => [e.dataset.moreInfo, e.textContent.trim()])"
+    chips  = "[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .vehicle-chip')].map(e => [e.className.replace('vehicle-chip', '').trim(), e.textContent.trim(), e.dataset.moreInfo || ''])"
+    page, errors = card()
+    link = page.evaluate("window.__card._vehicleLinks()")
+    t.check(link.get("ex30", {}).get("deviceId") == VOLVO and "id7" not in link and not errors,
+            "the device is found on its own: the integration's, not the companion app's of the same name", json.dumps({k: v["deviceId"] for k, v in link.items()}))
+    info = page.evaluate(values)
+    t.check([i[0] for i in info] == ["sensor.evcc_openwb_vehicle_soc", "sensor.evcc_openwb_vehicle_range", "sensor.evcc_openwb_vehicle_odometer"],
+            "connected: evcc's loadpoint values still lead", json.dumps(info))
+    got = page.evaluate(chips)
+    t.check(got == [["ok", "Verriegelt", "lock.volvo_ex30_schloss"], ["warn", "Tankdeckel", "binary_sensor.volvo_ex30_tankdeckel"],
+                    ["ok", "Keine Warnungen", ""], ["", "Zuhause", "device_tracker.volvo_ex30_standort"]],
+            "chips: lock, the one open lid by name, thirty warning flags as one chip, location", json.dumps(got, ensure_ascii=False))
+    t.check(page.locator(block("id7")).locator(".vehicle-chips, .vehicle-details").count() == 0, "a vehicle without a device stays as it was", "")
+    details = page.locator(block("ex30")).locator(".vehicle-detail-list")
+    t.check(details.count() == 1 and not details.is_visible(), "the remaining entities are folded away", "")
+    page.locator(block("ex30")).locator(".vehicle-details-toggle").click()
+    page.wait_for_timeout(200)
+    rows = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .vehicle-detail')].map(e => [e.dataset.moreInfo, e.textContent.replace(/\\s+/g, ' ').trim()])")
+    labels = dict(rows)
+    t.check(page.locator(block("ex30")).locator(".vehicle-detail-list").is_visible()
+            and labels.get("sensor.volvo_ex30_batteriekapazitat") == "Batteriekapazität 69 kWh"
+            and labels.get("sensor.volvo_ex30_reichweite_bis_wartung") == "Reichweite bis Wartung 18525 km"
+            and not any(i.startswith(("button.", "lock.", "device_tracker.")) or "bremsleuchte" in i for i in labels)
+            and "sensor.volvo_ex30_batterie" not in labels,
+            "unfolded: capacity and service values by their HA name, nothing shown twice, no unknown flags", json.dumps(rows[:4], ensure_ascii=False))
+    page.close()
+
+    page, errors = card(set=UNPLUGGED)
+    info = page.evaluate(values)
+    t.check(info == [["sensor.volvo_ex30_batterie", "72 %"], ["sensor.volvo_ex30_reichweite_bis_batterie_leer", "257 km"], ["sensor.volvo_ex30_kilometerstand", "11503 km"]],
+            "unplugged: the value that changed last wins, here the integration's; range is not the distance to service", json.dumps(info))
+    tip = page.locator(block("ex30")).locator(".soc-label-row [data-more-info]").first.get_attribute("title") or ""
+    t.check("Aktualisiert" in tip and "Stunde" in tip, "the tooltip tells the age of a value", tip)
+    page.close()
+
+    page, errors = card(set=dict(UNPLUGGED, **{"binary_sensor.volvo_ex30_reifen_vorne_links": "on", "lock.volvo_ex30_schloss": "unlocked"}))
+    got = page.evaluate(chips)
+    t.check(["warn", "Entriegelt", "lock.volvo_ex30_schloss"] in got and ["alert", "Reifen vorne links", "binary_sensor.volvo_ex30_reifen_vorne_links"] in got
+            and not any(c[1] == "Keine Warnungen" for c in got),
+            "a raised warning and an open lock get a chip of their own", json.dumps(got, ensure_ascii=False))
+    page.close()
+
+    for cfg, want, label in (({"vehicle_devices": False}, None, "vehicle_devices: false switches the link off"),
+                             ({"vehicle_devices": {"ex30": "none"}}, None, "\"none\" switches it off for one vehicle"),
+                             ({"vehicle_devices": {"ex30": DECOY}}, DECOY, "a configured device overrides the search"),
+                             ({"vehicle_devices": {"id7": VOLVO}}, VOLVO, "a vehicle the search finds nothing for takes a configured device")):
+        page, errors = card(config=dict({"mode": "vehicle"}, **cfg))
+        link = page.evaluate("window.__card._vehicleLinks()")
+        slug = "id7" if "id7" in (cfg["vehicle_devices"] or {}) else "ex30"
+        t.check(link.get(slug, {}).get("deviceId") == want and not errors, label, json.dumps({k: v["deviceId"] for k, v in link.items()}))
+        page.close()
+
+    page, errors = card(set=UNPLUGGED)
+    page.evaluate("""() => { const h = window.__hass; const id = "sensor.volvo_ex30_batterie";
+      h.states = { ...h.states, [id]: { ...h.states[id], state: "80", last_updated: new Date().toISOString() } };
+      window.__card.hass = { ...h }; }""")
+    page.wait_for_timeout(600)
+    soc = page.locator(block("ex30")).locator(".soc-label-row [data-more-info]").first.inner_text().strip()
+    t.check(soc == "80 %", "a change of an entity without the evcc prefix reaches the card", soc)
+    page.close()
+
+    t.group("vehicle - picture and what the vehicle is doing")
+    AWAY = dict(UNPLUGGED, **{"sensor.volvo_ex30_status_des_ladeanschluss": "disconnected"})
+    look = """(() => { const b = window.__card.shadowRoot.querySelector('.vehicle-block[data-vehicle=ex30]');
+      const g = b.querySelector('.vehicle-graphic'); const fill = g && g.querySelector('.vg-battery-fill');
+      return { state: g && g.dataset.vehicleState, badge: b.querySelector('.lp-badge').textContent.trim(),
+               charger: !!(g && g.querySelector('.vg-charger')), flow: !!(g && g.querySelector('.vg-cable-flow')), bolt: !!(g && g.querySelector('.vg-bolt')),
+               road: !!(g && g.querySelector('.vg-road')), fill: fill ? Math.round(parseFloat(fill.getAttribute('width'))) : null,
+               label: g && g.querySelector('svg').getAttribute('aria-label') }; })()"""
+    for st, label, want in (
+        ({}, "charging at the loadpoint: charger, energy in the cable, bolt",
+         {"state": "charging", "badge": "Lädt", "charger": True, "flow": True, "bolt": True, "road": False, "fill": 44, "label": "EX30: Lädt"}),
+        ({"binary_sensor.evcc_openwb_charging": "off"}, "connected: charger and cable, nothing flowing",
+         {"state": "connected", "badge": "Verbunden", "charger": True, "flow": False, "bolt": False, "road": False, "fill": 44, "label": "EX30: Verbunden"}),
+        (AWAY, "parked: the car alone, battery at the integration's 72 %",
+         {"state": "parked", "badge": "Parkt", "charger": False, "flow": False, "bolt": False, "road": False, "fill": 57, "label": "EX30: Parkt"}),
+        (dict(AWAY, **{"binary_sensor.volvo_ex30_motorstatus": "on"}), "driving: the road runs, no charger",
+         {"state": "driving", "badge": "Fährt", "charger": False, "flow": False, "bolt": False, "road": True, "fill": 57, "label": "EX30: Fährt"}),
+        (dict(AWAY, **{"sensor.volvo_ex30_ladestatus": "charging", "binary_sensor.volvo_ex30_motorstatus": "on"}), "charging away from home, told by the integration alone, beats the engine flag",
+         {"state": "charging", "badge": "Lädt", "charger": True, "flow": True, "bolt": True, "road": False, "fill": 57, "label": "EX30: Lädt"}),
+        (UNPLUGGED, "plugged in somewhere evcc does not see",
+         {"state": "connected", "badge": "Verbunden", "charger": True, "flow": False, "bolt": False, "road": False, "fill": 57, "label": "EX30: Verbunden"}),
+    ):
+        page, errors = card(set=st)
+        got = page.evaluate(look)
+        t.check(got == want and not errors, label, json.dumps(got, ensure_ascii=False))
+        page.close()
+    page, errors = card(set=UNPLUGGED, vehicle_device=False)
+    got = page.evaluate(look)
+    t.check(got["state"] == "parked" and got["badge"] == "Nicht verbunden", "without an integration the card does not claim to know: picture at rest, badge \"not connected\"", json.dumps(got, ensure_ascii=False))
+    id7 = page.evaluate("(() => { const g = window.__card.shadowRoot.querySelector('.vehicle-block[data-vehicle=id7] .vehicle-graphic'); return { there: !!g, fill: !!(g && g.querySelector('.vg-battery-fill')) }; })()")
+    t.check(id7 == {"there": True, "fill": False}, "an unknown charge level leaves the battery empty instead of drawing 0 %", json.dumps(id7))
+    page.close()
+    page, errors = card(config={"mode": "vehicle", "vehicle_graphic": "hide"})
+    t.check(page.locator(in_card(".vehicle-graphic")).count() == 0 and page.locator(in_card(".vehicle-block")).count() == 2 and not errors,
+            "vehicle_graphic: hide leaves the picture out", "")
+    page.close()
+
+    t.group("vehicle - picture of the real car")
+    PHOTO = "/test/fixtures/car.png"
+    scene = """(() => { const g = window.__card.shadowRoot.querySelector('.vehicle-block[data-vehicle=ex30] .vehicle-graphic');
+      const img = g.querySelector('image.vg-photo');
+      return { photo: img ? img.getAttribute('href') : null, drawn: !!g.querySelector('.vg-body'), charger: !!g.querySelector('.vg-charger'),
+               flow: !!g.querySelector('.vg-cable-flow'), badge: !!g.querySelector('.vg-badge'), road: !!g.querySelector('.vg-road'),
+               state: g.dataset.vehicleState, other: !!window.__card.shadowRoot.querySelector('.vehicle-block[data-vehicle=id7] .vg-body') }; })()"""
+    page, errors = card(config={"mode": "vehicle", "vehicle_images": {"ex30": PHOTO}})
+    got = page.evaluate(scene)
+    t.check(got == {"photo": PHOTO, "drawn": False, "charger": True, "flow": True, "badge": True, "road": False, "state": "charging", "other": True} and not errors,
+            "the configured picture replaces the drawn car, the scene around it stays; other vehicles keep the drawing", json.dumps(got))
+    page.close()
+    page, errors = card(config={"mode": "vehicle", "vehicle_images": {"ex30": PHOTO}}, set=dict(AWAY, **{"binary_sensor.volvo_ex30_motorstatus": "on"}))
+    got = page.evaluate(scene)
+    t.check(got["photo"] == PHOTO and got["road"] and not got["charger"] and not got["badge"], "driving with a picture: the road runs under the photo", json.dumps(got))
+    page.close()
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "vehicle", "vehicle_images": {"ex30": "/test/fixtures/missing.png"}})
+    page.wait_for_timeout(400)
+    got = page.evaluate(scene)
+    t.check(got["photo"] is None and got["drawn"], "a picture that does not load makes way for the drawing", json.dumps(got))
+    page.close()
+
+    MEDIA = "media-source://media_source/local/car.png"
+    resolves = "window.__hass.wsCalls.filter(c => c.type === 'media_source/resolve_media').length"
+    page, errors = card(config={"mode": "vehicle", "vehicle_images": {"ex30": MEDIA}})
+    got = page.evaluate(scene)
+    t.check(got["photo"] == "/test/fixtures/car.png?authSig=mock" and not got["drawn"] and not errors,
+            "a picture from the media library is shown through the signed address Home Assistant hands out", json.dumps(got))
+    page.evaluate("window.__card._lastRenderKey = null; window.__card._render(); window.__card._render()")
+    page.wait_for_timeout(300)
+    t.check(page.evaluate(resolves) == 1, "the address is asked for once, not on every render", str(page.evaluate(resolves)))
+    page.close()
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "vehicle", "vehicle_images": {"ex30": "media-source://media_source/local/gone.png"}})
+    got = page.evaluate(scene)
+    t.check(got["photo"] is None and got["drawn"] and page.evaluate(resolves) == 1, "a media item that is gone falls back to the drawing and is not asked for again", json.dumps(got))
+    page.close()
+
+    t.group("vehicle - charge plan of the loadpoint")
+    page, errors = card()
+    t.check(page.locator(in_card(".vehicle-plan")).count() == 0, "no plan block without a plan", "")
+    page.close()
+    page, errors = card(set={"sensor.evcc_openwb_effective_plan_time": "2030-01-04T06:00:00+00:00",
+                             "sensor.evcc_openwb_effective_plan_soc": "80", "binary_sensor.evcc_openwb_plan_active": "on"})
+    plan = page.locator(block("ex30")).locator(".vehicle-plan")
+    t.check(plan.count() == 1 and "80 %" in plan.inner_text() and plan.locator(".plan-badge.active").count() == 1
+            and page.locator(block("id7")).locator(".vehicle-plan").count() == 0 and not errors,
+            "the plan of the loadpoint shows up at the vehicle plugged in there, and only there", plan.inner_text()[:120] if plan.count() else "missing")
+    t.check(plan.locator("input, select, button").count() == 0, "the plan is read only", "")
+    page.close()
+
+    t.group("vehicle - filter, missing data, second instance")
+    for cfg, want, label in (({"mode": "vehicle", "vehicles": ["id7"]}, ["id7"], "a list"),
+                             ({"mode": "vehicle", "vehicles": "EX30"}, ["ex30"], "a single name, compared without case")):
+        page, errors = card(config=cfg)
+        slugs = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block')].map(b => b.dataset.vehicle)")
+        t.check(slugs == want and not errors, f"vehicles option: {label}", str(slugs))
+        page.close()
+    page, errors = card(config={"mode": "vehicle", "vehicles": ["tesla"]})
+    empty = page.locator(in_card(".empty")).inner_text()
+    t.check("Keine Fahrzeuge" in empty and "ex30" in empty and "id7" in empty, "an unknown vehicle names the ones that exist", empty[:150])
+    page.close()
+    page, errors = card(config={"mode": "vehicle", "title": "Mein Volvo", "vehicles": ["ex30"]})
+    t.check(page.locator(block("ex30")).locator(".lp-name").inner_text().strip().upper() == "MEIN VOLVO", "title names a single vehicle", "")
+    page.close()
+    page, errors = card(set=UNPLUGGED, vehicle_device=False, disable=[f"sensor.evcc_ex30_configvehicle_{k}" for k in ("soc", "range", "odometer", "limitsoc")])
+    ex30 = page.locator(block("ex30"))
+    t.check(ex30.count() == 1 and "erweiterten Fahrzeugdaten" in ex30.inner_text() and ex30.locator(".rplan-row").count() == 2 and not errors,
+            "without the extended vehicle data the block stays, with a hint instead of values", ex30.inner_text()[:160] if ex30.count() else "missing")
+    page.close()
+    page, errors = card(second={"prefix": "evcc_demo_"})
+    slugs = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block')].map(b => b.dataset.vehicle)")
+    t.check(slugs == ["ex30", "id7"] and not errors, "vehicles of a second installation under evcc_demo_ stay out", str(slugs))
     page.close()
 
 
@@ -827,6 +1055,48 @@ def editor(browser, port, t):
             str(fld('input[data-field="repeating_plan_vehicles"]').count()))
     cb("repeating_plan_vehicles", "ex30").check()
     t.check(last().get("repeating_plan_vehicles") == ["ex30"], "vehicle filter writes config.repeating_plan_vehicles", json.dumps(last()))
+
+    fld("#mode").select_option("vehicle")
+    page.wait_for_timeout(400)
+    t.check(fld('input[data-field="vehicles"]').count() == 2 and fld('input[data-field="repeating_plan_vehicles"]').count() == 0,
+            "vehicle mode offers the discovered vehicles", str(fld('input[data-field="vehicles"]').count()))
+    cb("vehicles", "id7").check()
+    t.check(last().get("vehicles") == ["id7"] and last().get("mode") == "vehicle", "vehicle filter writes config.vehicles", json.dumps(last()))
+    cb("vehicles", "id7").uncheck()
+    t.check("vehicles" not in last(), "an empty vehicle filter drops the key again", json.dumps(last()))
+    fld("#vehicle_graphic").select_option("hide")
+    t.check(last().get("vehicle_graphic") == "hide", "vehicle picture off writes config.vehicle_graphic", json.dumps(last()))
+    fld("#vehicle_graphic").select_option("")
+    t.check("vehicle_graphic" not in last(), "vehicle picture back on drops the key again", json.dumps(last()))
+    t.check(fld("ha-selector").count() == 0, "without HA's selector element the text field stands alone", "")
+    # Home Assistant's media selector, stood in for by an element that keeps what it is given.
+    page.evaluate("""() => { if (!customElements.get("ha-selector")) customElements.define("ha-selector", class extends HTMLElement {}); }""")
+    page.wait_for_timeout(300)
+    pick = "document.querySelector('evcc-card-editor').shadowRoot.querySelector('[data-vehicle-media=ex30] ha-selector')"
+    t.check(page.evaluate(f"(() => {{ const p = {pick}; return !!p && JSON.stringify(p.selector) === JSON.stringify({{media: {{accept: ['image/*']}}}}) && !!p.hass && p.value === undefined; }})()"),
+            "once it is defined, each vehicle gets HA's media selector narrowed to images", "")
+    page.evaluate(f"{pick}.dispatchEvent(new CustomEvent('value-changed', {{ detail: {{ value: {{ media_content_id: 'media-source://media_source/local/ex30.png', media_content_type: 'image/png' }} }} }}))")
+    t.check(last().get("vehicle_images") == {"ex30": "media-source://media_source/local/ex30.png"}, "a picked media item writes config.vehicle_images", json.dumps(last()))
+    t.check(page.evaluate(f"{pick}.value && {pick}.value.media_content_id") == "media-source://media_source/local/ex30.png"
+            and fld('input[data-vehicle-image="ex30"]').input_value() == "media-source://media_source/local/ex30.png",
+            "the pick shows in the selector and in the text field", "")
+    page.evaluate(f"{pick}.dispatchEvent(new CustomEvent('value-changed', {{ detail: {{ value: undefined }} }}))")
+    t.check("vehicle_images" not in last(), "clearing the selector drops the key again", json.dumps(last()))
+    img = fld('input[data-vehicle-image="ex30"]')
+    img.fill("/local/ex30.png"); img.dispatch_event("change")
+    t.check(last().get("vehicle_images") == {"ex30": "/local/ex30.png"}, "a picture path writes config.vehicle_images", json.dumps(last()))
+    img.fill("javascript:alert(1)"); img.dispatch_event("change")
+    t.check("vehicle_images" not in last(), "a path the card would reject is not written, the key goes again", json.dumps(last()))
+    dev = fld('select[data-vehicle-device="ex30"]')
+    auto = dev.locator("option").first.inner_text()
+    t.check(fld("select[data-vehicle-device]").count() == 2 and "Volvo EX30" in auto and dev.input_value() == "",
+            "one device select per vehicle, the automatic option names the device it found", auto)
+    dev.select_option("f1c0de00companionex30fixture00002")
+    t.check(last().get("vehicle_devices") == {"ex30": "f1c0de00companionex30fixture00002"}, "a picked device writes config.vehicle_devices", json.dumps(last()))
+    dev.select_option("none")
+    t.check(last().get("vehicle_devices") == {"ex30": "none"}, "no device writes \"none\"", json.dumps(last()))
+    dev.select_option("")
+    t.check("vehicle_devices" not in last(), "back to automatic drops the key again", json.dumps(last()))
     page.close()
 
 
@@ -1460,7 +1730,7 @@ def card_api(browser, port, t):
     t.group("cardapi - getGridOptions")
     grid = page.evaluate("""(() => {
       const out = {};
-      for (const mode of ["loadpoint","compact","plan","repeatplan","priority","site","flow","grid","stats","battery","debug"]) {
+      for (const mode of ["loadpoint","compact","plan","repeatplan","priority","site","flow","grid","stats","battery","vehicle","debug"]) {
         window.__card.setConfig({ mode, loadpoints: ["openwb"] });
         out[mode] = window.__card.getGridOptions();
       }
@@ -1503,6 +1773,12 @@ def setconfig(browser, port, t):
         ({"stats_period": "365d"}, "a legacy stats_period"),
         ({"disabled_loadpoints": "dim"}, "a known disabled_loadpoints"),
         ({"loadpoints": "openwb"}, "a single loadpoint as a string"),
+        ({"mode": "vehicle", "vehicles": ["ex30"]}, "the vehicle mode with a vehicle list"),
+        ({"mode": "vehicle", "vehicles": "ex30"}, "a single vehicle as a string"),
+        ({"mode": "vehicle", "vehicle_devices": False}, "the device link switched off"),
+        ({"mode": "vehicle", "vehicle_images": {"ex30": "/local/ex30.png", "id7": "https://example.org/id7.webp"}}, "vehicle pictures by path and by address"),
+        ({"mode": "vehicle", "vehicle_images": {"ex30": "media-source://media_source/local/ex30.png"}}, "a vehicle picture from the media library"),
+        ({"mode": "vehicle", "vehicle_devices": {"ex30": "abc123", "id7": "none"}}, "a device per vehicle"),
         ({"prefix": "evcc2_", "language": "en"}, "prefix and language"),
     ]
     INVALID = [
@@ -1516,6 +1792,14 @@ def setconfig(browser, port, t):
         ({"loadpoints": []}, "loadpoints", "an empty loadpoint list"),
         ({"loadpoints": [""]}, "loadpoints", "a blank loadpoint name"),
         ({"loadpoints": 5}, "loadpoints", "a numeric loadpoints"),
+        ({"vehicles": []}, "vehicles", "an empty vehicle list"),
+        ({"vehicles": [""]}, "vehicles", "a blank vehicle name"),
+        ({"vehicle_devices": "abc"}, "vehicle_devices", "vehicle_devices as a string"),
+        ({"vehicle_graphic": "no"}, "vehicle_graphic", "an unknown vehicle_graphic"),
+        ({"vehicle_images": {"ex30": "javascript:alert(1)"}}, "vehicle_images", "a vehicle image with another scheme"),
+        ({"vehicle_images": {"ex30": "//evil.example/x.png"}}, "vehicle_images", "a protocol-relative vehicle image"),
+        ({"vehicle_images": "/local/x.png"}, "vehicle_images", "vehicle_images as a string"),
+        ({"vehicle_devices": {"ex30": 5}}, "vehicle_devices", "a numeric device id"),
     ]
 
     t.group("setconfig - invalid configuration is rejected")
@@ -1754,7 +2038,7 @@ def unit(browser, port, t):
 
 
 GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "editor_instances": editor_instances, "keyboard": keyboard, "escaping": escaping, "contracts": contracts,
-          "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
+          "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery, "vehicle": vehicle_mode,
           "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths}
 
 

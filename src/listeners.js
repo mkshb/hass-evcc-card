@@ -51,6 +51,24 @@ export const listeners = {
       });
     });
 
+    // A vehicle picture that does not load (wrong path, file gone) makes way
+    // for the drawing instead of leaving a hole. Keyed by what was configured,
+    // not by the signed address a media item resolves to.
+    this.shadowRoot.querySelectorAll("[data-vehicle-image]").forEach(img => {
+      img.addEventListener("error", () => {
+        this._vehicleImageFailed[img.dataset.vehicleImage] = true;
+        this._render();
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("[data-vehicle-details]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const slug = btn.dataset.vehicleDetails;
+        this._vehicleDetailsOpen[slug] = !this._vehicleDetailsOpen[slug];
+        this._render();
+      });
+    });
+
     this.shadowRoot.querySelectorAll('[data-action="open-debug"]').forEach(btn => {
       btn.addEventListener("click", () => {
         this._origConfig = { ...this._config };

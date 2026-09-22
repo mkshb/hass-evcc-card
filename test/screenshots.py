@@ -30,6 +30,7 @@ SHOTS = {
     "battery":    {"mode": "battery"},
     "priority":   {"mode": "priority"},
     "repeatplan": {"mode": "repeatplan"},
+    "vehicle":    {"mode": "vehicle"},
 }
 
 

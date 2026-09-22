@@ -54,14 +54,15 @@
 
     // Fixture variants via query: set=entity:state,... disable=entity,... rename=from:to
     // tariff=co2, and attrs as JSON because attribute values may contain any character.
-    const set = Object.fromEntries((q.get("set") || "").split(",").filter(Boolean).map(kv => kv.split(":")));
+    // A state is everything behind the first colon: a timestamp has colons of its own.
+    const set = Object.fromEntries((q.get("set") || "").split(",").filter(Boolean).map(kv => [kv.slice(0, kv.indexOf(":")), kv.slice(kv.indexOf(":") + 1)]));
     const attrs = q.get("attrs") ? JSON.parse(q.get("attrs")) : {};
     const disable = (q.get("disable") || "").split(",").filter(Boolean);
     const rename = q.get("rename") ? (([from, to]) => ({ from, to }))(q.get("rename").split(":")) : null;
     const second = q.get("second") ? JSON.parse(q.get("second")) : null;
     const hass = await createMockHass({ language: q.get("lang") || "de", ws: q.get("ws") !== "0",
                                         set, attrs, disable, rename, tariff: q.get("tariff") || "price", second,
-                                        wsName: q.get("wsname") });
+                                        wsName: q.get("wsname"), vehicleDevice: q.get("vd") !== "0" });
     await customElements.whenDefined("evcc-card");
     const card = document.createElement("evcc-card");
     card.setConfig(config);

@@ -1,4 +1,4 @@
-export const EVCC_CARD_VERSION = "0.8.2";
+export const EVCC_CARD_VERSION = "0.9.0";
 
 export const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -120,6 +120,28 @@ export const FEATURES = [
   { suffix: "battery_grid_charge_limit",  domain: "number",        type: "slider",      lp: false },
 ];
 
+// Entities ha-evcc creates per vehicle, independent of any loadpoint:
+// <domain>.<prefix><vehicle>_<suffix>, the vehicle part being the slug of the
+// vehicle title in evcc. They are kept apart from FEATURES because that list
+// sorts an entity into a loadpoint or the site, and a vehicle is neither. The
+// configvehicle_* sensors only exist with the extended vehicle data switched on
+// in the integration, and are disabled in the registry by default.
+export const VEHICLE_FEATURES = [
+  { key: "soc",       suffix: "configvehicle_soc",      domain: "sensor" },
+  { key: "range",     suffix: "configvehicle_range",    domain: "sensor" },
+  { key: "odometer",  suffix: "configvehicle_odometer", domain: "sensor" },
+  { key: "limit_soc", suffix: "configvehicle_limitsoc", domain: "sensor" },
+];
+
+// Session totals per vehicle sit under their own infix:
+// sensor.<prefix>cstotal_<vehicle>_<suffix>
+export const VEHICLE_SESSION_INFIX = "cstotal_";
+export const VEHICLE_SESSION_FEATURES = [
+  { key: "sessions_energy",   suffix: "charging_sessions_vehicle_chargedenergy",  domain: "sensor" },
+  { key: "sessions_duration", suffix: "charging_sessions_vehicle_chargeduration", domain: "sensor" },
+  { key: "sessions_cost",     suffix: "charging_sessions_vehicle_cost",           domain: "sensor" },
+];
+
 // Icon for the "smart" mode. Used twice: for the native 'smart' mode of evcc
 // PR 32490, and for the "pv relabelled as Smart" pseudo-mode that older evcc
 // versions need when PV is hidden but a dynamic tariff exists (Mode.vue).
@@ -177,6 +199,7 @@ export const CARD_SIZES = {
   site2:       7,   // legacy alias of grid
   stats:      10,
   battery:     7,
+  vehicle:     8,
   debug:      20,
 };
 
@@ -192,11 +215,12 @@ export const CARD_SIZE_FOOTER  = { site: 1, flow: 1, grid: 1, site2: 1 };
 // former name of `grid` and stays valid so dashboards carrying it keep working.
 export const CARD_MODES = [
   "loadpoint", "compact", "plan", "repeatplan", "priority",
-  "site", "flow", "grid", "site2", "stats", "battery", "debug",
+  "site", "flow", "grid", "site2", "stats", "battery", "vehicle", "debug",
 ];
 export const CARD_SIZE_OPTIONS        = ["small", "medium", "large"];
 export const DISABLED_LOADPOINT_MODES = ["hide", "dim", "show"];
 export const STATS_PERIOD_OPTIONS     = Object.keys(STATS_PERIOD_ALIASES);
+export const VEHICLE_GRAPHIC_OPTIONS  = ["show", "hide"];
 
 // The `loadpoints` option as a list, or null when it is not set. A single name
 // is shorthand for a list of one. Every reader of the option goes through here,
@@ -206,6 +230,30 @@ export function loadpointFilter(config) {
   const raw = config?.loadpoints;
   if (raw === undefined || raw === null) return null;
   return Array.isArray(raw) ? raw : [raw];
+}
+
+// The `vehicles` option of the vehicle mode, read the same way: a list of
+// vehicle slugs, a single slug as shorthand, null when not set.
+export function vehicleFilter(config) {
+  const raw = config?.vehicles;
+  if (raw === undefined || raw === null) return null;
+  return Array.isArray(raw) ? raw : [raw];
+}
+
+// A picture of the real vehicle, per vehicle: an item of Home Assistant's media
+// library (media-source://..., what the media picker in the editor writes), a
+// path Home Assistant serves (/local/..., /api/image/serve/...) or an http(s)
+// address. Nothing else, so a dashboard YAML cannot smuggle another scheme into
+// the card.
+export const MEDIA_SOURCE_PREFIX = "media-source://";
+export function isMediaSourceId(value) {
+  return typeof value === "string" && /^media-source:\/\/\S+$/.test(value.trim());
+}
+export function isVehicleImageUrl(value) {
+  return typeof value === "string" && /^(\/(?!\/)|https?:\/\/)\S+$/.test(value.trim());
+}
+export function isVehicleImage(value) {
+  return isMediaSourceId(value) || isVehicleImageUrl(value);
 }
 
 // Home Assistant expects setConfig() to throw on a configuration the card cannot
@@ -224,6 +272,7 @@ export function validateCardConfig(config) {
   oneOf("size",                CARD_SIZE_OPTIONS);
   oneOf("disabled_loadpoints", DISABLED_LOADPOINT_MODES);
   oneOf("stats_period",        STATS_PERIOD_OPTIONS);
+  oneOf("vehicle_graphic",     VEHICLE_GRAPHIC_OPTIONS);
 
   for (const key of ["prefix", "language"]) {
     const v = c[key];
@@ -236,6 +285,26 @@ export function validateCardConfig(config) {
   const list = loadpointFilter(c);
   if (list && (!list.length || list.some(lp => typeof lp !== "string" || !lp.trim()))) {
     throw new Error("evcc-card: loadpoints has to be a loadpoint name or a list of names");
+  }
+
+  const vehicles = vehicleFilter(c);
+  if (vehicles && (!vehicles.length || vehicles.some(v => typeof v !== "string" || !v.trim()))) {
+    throw new Error("evcc-card: vehicles has to be a vehicle name or a list of names");
+  }
+
+  const images = c.vehicle_images;
+  if (images !== undefined && images !== null) {
+    const ok = typeof images === "object" && !Array.isArray(images) && Object.values(images).every(isVehicleImage);
+    if (!ok) throw new Error("evcc-card: vehicle_images has to be a map of vehicle name to a media item (media-source://...), an image path (/local/...) or an http(s) address");
+  }
+
+  // vehicle_devices: false switches the device link off, a map names the device
+  // per vehicle ("none" for a vehicle that is to stay without one).
+  const links = c.vehicle_devices;
+  if (links !== undefined && links !== null && links !== false) {
+    const ok = typeof links === "object" && !Array.isArray(links)
+      && Object.values(links).every(v => v === false || (typeof v === "string" && v.trim()));
+    if (!ok) throw new Error("evcc-card: vehicle_devices has to be false or a map of vehicle name to device id or \"none\"");
   }
 }
 
@@ -252,6 +321,7 @@ export function validateCardConfig(config) {
 export const RENDER_ATTRS = [
   "options", "min", "max", "step", "unit_of_measurement", "device_class",
   "title", "loadpoint_title", "vehicle", "soc", "time", "weekdays",
+  "state_class", "source_type", "entity_picture",
 ];
 
 // Settings the user can drop from the loadpoint/compact card via

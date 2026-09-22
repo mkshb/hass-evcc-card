@@ -9,6 +9,7 @@ import { actions } from "./core/actions.js";
 import { evccApi } from "./core/evcc-api.js";
 import { loadpointView } from "./views/loadpoint-view.js";
 import { socControl } from "./components/soc-control.js";
+import { vehicleGraphic } from "./components/vehicle-graphic.js";
 import { planningView } from "./views/planning-view.js";
 import { priorityView } from "./views/priority-view.js";
 import { siteView } from "./views/site-view.js";
@@ -17,6 +18,7 @@ import { gridView } from "./views/grid-view.js";
 import { statisticsLegacy } from "./views/statistics-legacy.js";
 import { statisticsView } from "./views/statistics-view.js";
 import { batteryView } from "./views/battery-view.js";
+import { vehicleView } from "./views/vehicle-view.js";
 import { debugView } from "./views/debug-view.js";
 import { listeners } from "./listeners.js";
 import { styles } from "./styles.js";
@@ -46,6 +48,9 @@ export class EvccCard extends HTMLElement {
 
     this._siteTableExpanded = undefined; // undefined = use config default
     this._currentBlockExpanded = {};
+    this._vehicleDetailsOpen = {};     // vehicle slug -> detail list unfolded
+    this._vehicleImageFailed = {};     // configured picture -> true once it failed to load
+    this._vehicleMedia = {};           // media-source id -> { url, ts } signed address from HA
     this._detectedPrefix = null;
     this._cachedEntities   = null;  // { loadpoints, site } — invalidated when entity IDs change
     this._cachedEntityIdKey = null; // sorted join of evcc entity IDs + prefix
@@ -211,10 +216,14 @@ export class EvccCard extends HTMLElement {
       this._evccIds       = Object.keys(hass.states).filter(id => id.split(".")[1]?.startsWith(prefix));
     }
 
+    // The vehicle mode also shows entities of the vehicles' own integrations,
+    // which carry no evcc prefix.
+    const ids = this._config.mode === "vehicle" ? this._evccIds.concat(this._vehicleLinkedIds()) : this._evccIds;
+
     const lang = this._config.language || (hass.language ?? "en");
     // \u001f (unit separator) keeps attribute values from colliding with the
     // key's own delimiters; a title or an option may contain anything else.
-    return lang + "|" + this._evccIds.map(id => {
+    return lang + "|" + ids.map(id => {
       const s = hass.states[id];
       if (!s) return `${id}=`;
       let part = `${id}=${s.state}`;
@@ -428,6 +437,8 @@ export class EvccCard extends HTMLElement {
             ? this._renderDebugBlock(loadpoints, site, meters)
             : this._config.mode === "battery"
             ? this._renderBatteryBlock(site)
+            : this._config.mode === "vehicle"
+            ? this._renderVehicleMode(lpEnabled)
             : this._config.mode === "site"
               ? this._renderSiteBlock(site, loadpoints)
               : this._config.mode === "flow"
@@ -516,7 +527,7 @@ export class EvccCard extends HTMLElement {
 
 // Mode views, components and shared behaviour are plain objects of methods
 // (no framework): mix them into the prototype, refusing silent overrides.
-const mixins = [actions, evccApi, loadpointView, socControl, planningView, priorityView, siteView, flowView, gridView, statisticsLegacy, statisticsView, batteryView, debugView, listeners, styles];
+const mixins = [actions, evccApi, loadpointView, socControl, planningView, priorityView, siteView, flowView, gridView, statisticsLegacy, statisticsView, batteryView, vehicleView, vehicleGraphic, debugView, listeners, styles];
 for (const m of mixins) {
   for (const key of Object.keys(m)) {
     if (key in EvccCard.prototype) throw new Error(`evcc-card: duplicate method ${key}`);

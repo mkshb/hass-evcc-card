@@ -1,7 +1,8 @@
-import { HIDEABLE_SETTINGS } from "./core/constants.js";
-import { detectIntegration, discoverEntities } from "./core/entity-discovery.js";
+import { HIDEABLE_SETTINGS, vehicleFilter, isVehicleImage, isMediaSourceId } from "./core/constants.js";
+import { detectIntegration, discoverEntities, discoverVehicles } from "./core/entity-discovery.js";
 import { loadSharedTranslations, sharedTranslations, sharedTranslationsReady } from "./utils/translations.js";
 import { escHtml } from "./utils/html.js";
+import { listVehicleDevices, findVehicleDevice, evccVehicleTitle } from "./core/vehicle-device.js";
 
 export class EvccCardEditor extends HTMLElement {
   constructor() {
@@ -110,9 +111,8 @@ export class EvccCardEditor extends HTMLElement {
     `).join("");
   }
 
-  _vehicleCheckboxes(type, selected) {
-    const slugs = this._availableVehicleSlugs;
-    if (slugs.length === 0) return `<div class="hint">${this._t("editorNoVehiclesFound")}</div>`;
+  _vehicleCheckboxes(type, selected, slugs = this._availableVehicleSlugs, emptyKey = "editorNoVehiclesFound") {
+    if (slugs.length === 0) return `<div class="hint">${this._t(emptyKey)}</div>`;
     return slugs.map(slug => {
       const label = String(slug).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
       return `
@@ -121,6 +121,74 @@ export class EvccCardEditor extends HTMLElement {
         <span>${this._esc(label)}</span>
       </label>`;
     }).join("");
+  }
+
+  // One device select per vehicle. The first option is what the card does on
+  // its own and names the device it found, so nobody has to pick what is
+  // already right; a choice is written to `vehicle_devices`, the automatic one
+  // removes the vehicle from it again.
+  _vehicleDeviceFields(vehicles) {
+    const slugs = Object.keys(vehicles).sort();
+    if (slugs.length === 0) return `<div class="hint">${this._t("editorVehiclesNoneFound")}</div>`;
+    const devices = listVehicleDevices(this._hass);
+    const chosen  = this._config.vehicle_devices && typeof this._config.vehicle_devices === "object" ? this._config.vehicle_devices : {};
+    const option  = (val, label, cur) => `<option value="${this._esc(val)}"${cur === val ? " selected" : ""}>${this._esc(label)}</option>`;
+
+    return slugs.map(slug => {
+      const title = evccVehicleTitle(this._hass, slug, vehicles[slug]) || slug;
+      const found = devices.find(d => d.id === findVehicleDevice(this._hass, slug, title));
+      const cur   = chosen[slug] === false ? "none" : (chosen[slug] || "");
+      const like  = devices.filter(d => d.vehicleLike);
+      const other = devices.filter(d => !d.vehicleLike);
+      return `
+        <label class="field-label" for="vehicle-device-${this._esc(slug)}">${this._esc(title)}</label>
+        <select id="vehicle-device-${this._esc(slug)}" class="ha-select" data-vehicle-device="${this._esc(slug)}">
+          ${option("", this._t("editorVehicleDeviceAuto", { val: found ? found.name : this._t("editorVehicleDeviceNotFound") }), cur)}
+          ${option("none", this._t("editorVehicleDeviceNone"), cur)}
+          ${like.length ? `<optgroup label="${this._esc(this._t("editorVehicleDeviceGroupVehicles"))}">${like.map(d => option(d.id, d.name, cur)).join("")}</optgroup>` : ""}
+          ${other.length ? `<optgroup label="${this._esc(this._t("editorVehicleDeviceGroupOther"))}">${other.map(d => option(d.id, d.name, cur)).join("")}</optgroup>` : ""}
+          ${cur && cur !== "none" && !devices.some(d => d.id === cur) ? option(cur, cur, cur) : ""}
+        </select>
+        <div class="vehicle-media" data-vehicle-media="${this._esc(slug)}"></div>
+        <input class="ha-input" type="text" data-vehicle-image="${this._esc(slug)}"
+               value="${this._esc(this._config.vehicle_images?.[slug] || "")}" placeholder="${this._esc(this._t("editorVehicleImagePlaceholder"))}">`;
+    }).join("");
+  }
+
+  // The picture of a vehicle is picked from Home Assistant's media library with
+  // HA's own media selector, narrowed to images. The element belongs to the HA
+  // frontend and is loaded on demand there, so it is created once it is defined;
+  // the text field underneath works without it and shows what was picked.
+  _mountVehicleMediaPickers() {
+    const slots = this.shadowRoot.querySelectorAll("[data-vehicle-media]");
+    if (!slots.length) return;
+    if (!customElements.get("ha-selector")) {
+      if (!this._waitingForSelector) {
+        this._waitingForSelector = true;
+        customElements.whenDefined("ha-selector").then(() => { this._waitingForSelector = false; this._render(); });
+      }
+      return;
+    }
+    slots.forEach(slot => {
+      const slug    = slot.dataset.vehicleMedia;
+      const current = this._config.vehicle_images?.[slug];
+      const picker  = document.createElement("ha-selector");
+      picker.hass     = this._hass;
+      picker.selector = { media: { accept: ["image/*"] } };
+      picker.label    = this._t("editorVehicleImagePick");
+      picker.value    = isMediaSourceId(current) ? { media_content_id: current, media_content_type: "image/*", metadata: {} } : undefined;
+      picker.addEventListener("value-changed", (e) => {
+        e.stopPropagation();
+        const id  = e.detail?.value?.media_content_id;
+        const map = { ...(this._config.vehicle_images || {}) };
+        if (isMediaSourceId(id)) map[slug] = id;
+        else delete map[slug];
+        this._config = { ...this._config, vehicle_images: Object.keys(map).length ? map : undefined };
+        this._fire();
+        this._render();
+      });
+      slot.appendChild(picker);
+    });
   }
 
   get _availableVehicleSlugs() {
@@ -151,6 +219,8 @@ export class EvccCardEditor extends HTMLElement {
     const showStatsPeriod   = ["stats", "site", "flow", "grid"].includes(mode);
     const showVehicleFilter = mode === "repeatplan";
     const rplanVehicles     = Array.isArray(c.repeating_plan_vehicles) ? c.repeating_plan_vehicles : [];
+    const showVehicles      = mode === "vehicle";
+    const selVehicles       = vehicleFilter(c) || [];
     const instanceOptions   = this._instanceOptions();
 
     // `stats_period` has no implicit value: unconfigured, every mode follows its
@@ -190,6 +260,7 @@ export class EvccCardEditor extends HTMLElement {
       grid:      this._t("editorTitlePlaceholderGrid"),
       stats:     this._t("editorTitlePlaceholderStats"),
       battery:   this._t("editorTitlePlaceholderBattery"),
+      vehicle:   this._t("editorTitlePlaceholderVehicle"),
     }[mode] || this._t("editorTitlePlaceholderLoadpoint");
 
     const modeDesc = {
@@ -199,6 +270,7 @@ export class EvccCardEditor extends HTMLElement {
       flow:       this._t("editorModeDescFlow"),
       grid:       this._t("editorModeDescGrid"),
       battery:    this._t("editorModeDescBattery"),
+      vehicle:    this._t("editorModeDescVehicle"),
       stats:      this._t("editorModeDescStats"),
       plan:       this._t("editorModeDescPlan"),
       repeatplan: this._t("editorModeDescRepeatplan"),
@@ -222,6 +294,8 @@ export class EvccCardEditor extends HTMLElement {
           box-sizing: border-box; font-family: inherit;
         }
         .ha-select:focus, .ha-input:focus { outline: none; border-color: var(--primary-color); }
+        .vehicle-media { margin-top: 6px; }
+        .vehicle-media:empty { display: none; }
         .cb-row { display: flex; align-items: center; gap: 8px; font-size: .875rem; cursor: pointer; padding: 4px 0; }
         .cb-row input[type="checkbox"] { accent-color: var(--primary-color); width: 16px; height: 16px; cursor: pointer; }
       </style>
@@ -235,6 +309,7 @@ export class EvccCardEditor extends HTMLElement {
             ["flow",      this._t("editorModeFlow")],
             ["grid",      this._t("editorModeGrid")],
             ["battery",   this._t("editorModeBattery")],
+            ["vehicle",   this._t("editorModeVehicle")],
             ["stats",     this._t("editorModeStats")],
             ["plan",      this._t("editorModePlan")],
             ["repeatplan",this._t("editorModeRepeatplan")],
@@ -302,6 +377,25 @@ export class EvccCardEditor extends HTMLElement {
           ${this._vehicleCheckboxes("repeating_plan_vehicles", rplanVehicles)}
         </div>
         ` : ""}
+        ${showVehicles ? `
+        <div class="field">
+          <div class="section-title">${this._t("editorVehicleFilterTitle")}</div>
+          <div class="hint">${this._t("editorVehicleFilterHint")}</div>
+          ${this._vehicleCheckboxes("vehicles", selVehicles, Object.keys(discoverVehicles(this._hass, this._getPrefix())).sort(), "editorVehiclesNoneFound")}
+        </div>
+        <div class="field">
+          <label class="field-label" for="vehicle_graphic">${this._t("editorVehicleGraphicLabel")}</label>
+          ${this._sel("vehicle_graphic", [
+            ["",     this._t("editorVehicleGraphicShow")],
+            ["hide", this._t("editorVehicleGraphicHide")],
+          ], c.vehicle_graphic === "hide" ? "hide" : "")}
+        </div>
+        <div class="field">
+          <div class="section-title">${this._t("editorVehicleDeviceTitle")}</div>
+          <div class="hint">${this._t("editorVehicleDeviceHint")}</div>
+          ${this._vehicleDeviceFields(discoverVehicles(this._hass, this._getPrefix()))}
+        </div>
+        ` : ""}
         ${showNoPlan ? `
         <div class="field">
           <div class="section-title">${this._t("editorNoPlanForTitle")}</div>
@@ -356,7 +450,7 @@ export class EvccCardEditor extends HTMLElement {
   }
 
   _addListeners() {
-    ["mode", "language", "site_details", "charge_current_settings", "stats_period", "size", "disabled_loadpoints"].forEach(id => {
+    ["mode", "language", "site_details", "charge_current_settings", "stats_period", "size", "disabled_loadpoints", "vehicle_graphic"].forEach(id => {
       const el = this.shadowRoot.getElementById(id);
       if (!el) return;
       el.addEventListener("change", () => {
@@ -377,13 +471,37 @@ export class EvccCardEditor extends HTMLElement {
         this._config = {
           ...this._config,
           prefix: isDefault ? undefined : chosen,
-          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined,
+          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined, vehicles: undefined, vehicle_devices: undefined, vehicle_images: undefined,
         };
         this._discoverLoadpoints();
         this._fire();
         this._render();
       });
     }
+
+    this.shadowRoot.querySelectorAll("[data-vehicle-device]").forEach(sel => {
+      sel.addEventListener("change", () => {
+        const map = { ...(this._config.vehicle_devices && typeof this._config.vehicle_devices === "object" ? this._config.vehicle_devices : {}) };
+        if (sel.value) map[sel.dataset.vehicleDevice] = sel.value;
+        else delete map[sel.dataset.vehicleDevice];
+        this._config = { ...this._config, vehicle_devices: Object.keys(map).length ? map : undefined };
+        this._fire();
+      });
+    });
+
+    this._mountVehicleMediaPickers();
+
+    // Written on change, not on every key: half a path is not a valid config.
+    this.shadowRoot.querySelectorAll("input[data-vehicle-image]").forEach(inp => {
+      inp.addEventListener("change", () => {
+        const map = { ...(this._config.vehicle_images || {}) };
+        const val = inp.value.trim();
+        if (val && isVehicleImage(val)) map[inp.dataset.vehicleImage] = val;
+        else { delete map[inp.dataset.vehicleImage]; if (val) inp.value = ""; }
+        this._config = { ...this._config, vehicle_images: Object.keys(map).length ? map : undefined };
+        this._fire();
+      });
+    });
 
     const titleEl = this.shadowRoot.getElementById("title");
     if (titleEl) {

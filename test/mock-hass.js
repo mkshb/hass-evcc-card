@@ -14,14 +14,32 @@
 //   rename:  { from: "evcc_", to: "myevcc_" }  rename the entity prefix everywhere (multi-instance setups)
 //   tariff:  "price" (default) or "co2" - what the WS data API reports as smartCostType
 //   second:  { prefix, entryId, first } - clone the fixture as a second ha-evcc config entry
+//   vehicleDevice: false  leave out the vehicle integration's device (test/fixtures/vehicle_device.json),
+//            so the vehicle mode runs on ha-evcc data alone
 //   wsName:  "…"  put this string into every name the WS data API reports (session
 //            loadpoint/vehicle, currency) - used by the escaping tests
-export async function createMockHass({ language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null } = {}) {
+export async function createMockHass({ language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, vehicleDevice = true } = {}) {
   const base = new URL("./fixtures/", import.meta.url);
   const json = (p) => fetch(new URL(p, base)).then(r => r.ok ? r.json() : Promise.reject(new Error(`fixture ${p}: ${r.status}`)));
 
   let [states, registry] = await Promise.all([json("states.json"), json("entity_registry.json")]);
   states = { ...states }; registry = registry.map(e => ({ ...e }));
+
+  // What a vehicle integration adds to Home Assistant next to ha-evcc: a device
+  // with its entities, plus the devices ha-evcc creates per vehicle. The states
+  // carry their age in minutes instead of a timestamp, so "stale" means the
+  // same thing on every run.
+  const vd = await json("vehicle_device.json");
+  const devices = Object.fromEntries(vd.devices
+    .filter(d => vehicleDevice || d.identifiers.some(([domain]) => domain === "evcc_intg"))
+    .map(d => [d.id, d]));
+  if (vehicleDevice) {
+    registry.push(...vd.entities.map(e => ({ ...e })));
+    for (const [id, st] of Object.entries(vd.states)) {
+      const stamp = new Date(Date.now() - st.age_min * 60000).toISOString();
+      states[id] = { entity_id: id, state: st.state, attributes: st.attributes, last_changed: stamp, last_updated: stamp };
+    }
+  }
   for (const [id, state] of Object.entries(set)) {
     if (states[id]) states[id] = { ...states[id], state: String(state) };
   }
@@ -120,7 +138,9 @@ export async function createMockHass({ language = "de", ws = true, set = {}, att
     // reads the ha-evcc prefixes from here, synchronously.
     entities: Object.fromEntries(registry.filter(e => !e.disabled_by).map(e => [e.entity_id, {
       entity_id: e.entity_id, platform: e.platform, name: e.original_name,
+      device_id: e.device_id ?? null, entity_category: e.entity_category ?? null, translation_key: e.translation_key ?? null,
     }])),
+    devices,
     wsCalls: [],
     serviceCalls: [],
     // HA frontend translation lookup; the card only uses it for optional
@@ -195,6 +215,15 @@ export async function createMockHass({ language = "de", ws = true, set = {}, att
             });
           }
           return Promise.resolve(out);
+        }
+
+        // The media library: an item resolves to a signed address, here to a
+        // file under test/fixtures named like the item; anything else is gone.
+        case "media_source/resolve_media": {
+          const m = /^media-source:\/\/media_source\/local\/([\w.-]+)$/.exec(msg.media_content_id || "");
+          return m && m[1] !== "gone.png"
+            ? Promise.resolve({ url: `/test/fixtures/${m[1]}?authSig=mock`, mime_type: "image/png" })
+            : Promise.reject(new Error("mock: unknown media item"));
         }
 
         default:

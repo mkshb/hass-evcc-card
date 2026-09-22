@@ -1,0 +1,1373 @@
+{
+ "devices": [
+  {
+   "id": "f1c0de00volvoex30fixture000000001",
+   "name": "Volvo EX30",
+   "name_by_user": null,
+   "manufacturer": "Volvo",
+   "model": "EX30 ELECTRIC (2024)",
+   "identifiers": [
+    [
+     "volvo",
+     "FIXTUREVIN0000001"
+    ]
+   ]
+  },
+  {
+   "id": "f1c0de00companionex30fixture00002",
+   "name": "EX30",
+   "name_by_user": null,
+   "manufacturer": "Volvo",
+   "model": "EX30",
+   "identifiers": [
+    [
+     "mobile_app",
+     "fixture-companion"
+    ]
+   ]
+  },
+  {
+   "id": "f1c0de00evccvehicleex30fixture003",
+   "name": "evcc - Fahrzeug EX30 [evcc]",
+   "name_by_user": null,
+   "manufacturer": "marq24",
+   "model": "Fahrzeug EX30 [evcc]",
+   "identifiers": [
+    [
+     "evcc_intg",
+     "did_fixture_ex30"
+    ]
+   ]
+  },
+  {
+   "id": "f1c0de00evccvehicleid7fixture0004",
+   "name": "evcc - Fahrzeug id7 [evcc]",
+   "name_by_user": null,
+   "manufacturer": "marq24",
+   "model": "Fahrzeug id7 [evcc]",
+   "identifiers": [
+    [
+     "evcc_intg",
+     "did_fixture_id7"
+    ]
+   ]
+  }
+ ],
+ "entities": [
+  {
+   "entity_id": "binary_sensor.volvo_ex30_tur_vorne_links",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Tür vorne links",
+   "entity_category": null,
+   "translation_key": "door_front_left",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_tur_vorne_rechts",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Tür vorne rechts",
+   "entity_category": null,
+   "translation_key": "door_front_right",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_tur_hinten_links",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Tür hinten links",
+   "entity_category": null,
+   "translation_key": "door_rear_left",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_tur_hinten_rechts",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Tür hinten rechts",
+   "entity_category": null,
+   "translation_key": "door_rear_right",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_haube",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Haube",
+   "entity_category": null,
+   "translation_key": "hood",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_schiebedach",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Schiebedach",
+   "entity_category": null,
+   "translation_key": "sunroof",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_heckklappe",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Heckklappe",
+   "entity_category": null,
+   "translation_key": "tailgate",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_tankdeckel",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Tankdeckel",
+   "entity_category": null,
+   "translation_key": "tank_lid",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_fenster_vorne_links",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Fenster vorne links",
+   "entity_category": null,
+   "translation_key": "window_front_left",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_fenster_vorne_rechts",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Fenster vorne rechts",
+   "entity_category": null,
+   "translation_key": "window_front_right",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_fenster_hinten_links",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Fenster hinten links",
+   "entity_category": null,
+   "translation_key": "window_rear_left",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_fenster_hinten_rechts",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Fenster hinten rechts",
+   "entity_category": null,
+   "translation_key": "window_rear_right",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_motorstatus",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Motorstatus",
+   "entity_category": null,
+   "translation_key": "engine_status",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_bremsflussigkeit",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Bremsflüssigkeit",
+   "entity_category": null,
+   "translation_key": "brake_fluid_level_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_kuhlmittelstand",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Kühlmittelstand",
+   "entity_category": null,
+   "translation_key": "coolant_level_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_olstand",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Ölstand",
+   "entity_category": null,
+   "translation_key": "oil_level_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_bremsleuchte_mitte",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Bremsleuchte Mitte",
+   "entity_category": "diagnostic",
+   "translation_key": "brake_light_center_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_bremsleuchte_links",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Bremsleuchte links",
+   "entity_category": "diagnostic",
+   "translation_key": "brake_light_left_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_bremsleuchte_rechts",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Bremsleuchte rechts",
+   "entity_category": "diagnostic",
+   "translation_key": "brake_light_right_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_tagfahrlicht_links",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Tagfahrlicht links",
+   "entity_category": "diagnostic",
+   "translation_key": "daytime_running_light_left_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_tagfahrlicht_rechts",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Tagfahrlicht rechts",
+   "entity_category": "diagnostic",
+   "translation_key": "daytime_running_light_right_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_nebelscheinwerfer",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Nebelscheinwerfer",
+   "entity_category": "diagnostic",
+   "translation_key": "fog_light_front_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_nebelschlussleuchte",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Nebelschlussleuchte",
+   "entity_category": "diagnostic",
+   "translation_key": "fog_light_rear_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_warnblinkleuchten",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Warnblinkleuchten",
+   "entity_category": "diagnostic",
+   "translation_key": "hazard_lights_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_fernlicht_links",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Fernlicht links",
+   "entity_category": "diagnostic",
+   "translation_key": "high_beam_left_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_fernlicht_rechts",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Fernlicht rechts",
+   "entity_category": "diagnostic",
+   "translation_key": "high_beam_right_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_abblendlicht_links",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Abblendlicht links",
+   "entity_category": "diagnostic",
+   "translation_key": "low_beam_left_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_abblendlicht_rechts",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Abblendlicht rechts",
+   "entity_category": "diagnostic",
+   "translation_key": "low_beam_right_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_positionsleuchte_vorne_links",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Positionsleuchte vorne links",
+   "entity_category": "diagnostic",
+   "translation_key": "position_light_front_left_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_positionsleuchte_vorne_rechts",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Positionsleuchte vorne rechts",
+   "entity_category": "diagnostic",
+   "translation_key": "position_light_front_right_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_positionsleuchte_hinten_links",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Positionsleuchte hinten links",
+   "entity_category": "diagnostic",
+   "translation_key": "position_light_rear_left_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_positionsleuchte_hinten_rechts",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Positionsleuchte hinten rechts",
+   "entity_category": "diagnostic",
+   "translation_key": "position_light_rear_right_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_kennzeichenleuchte",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Kennzeichenleuchte",
+   "entity_category": "diagnostic",
+   "translation_key": "registration_plate_light_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_ruckfahrscheinwerfer",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Rückfahrscheinwerfer",
+   "entity_category": "diagnostic",
+   "translation_key": "reverse_lights_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_seitenmarkierungsleuchten",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Seitenmarkierungsleuchten",
+   "entity_category": "diagnostic",
+   "translation_key": "side_mark_lights_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_reifen_vorne_links",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Reifen vorne links",
+   "entity_category": null,
+   "translation_key": "tire_front_left",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_reifen_vorne_rechts",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Reifen vorne rechts",
+   "entity_category": null,
+   "translation_key": "tire_front_right",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_reifen_hinten_links",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Reifen hinten links",
+   "entity_category": null,
+   "translation_key": "tire_rear_left",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_reifen_hinten_rechts",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Reifen hinten rechts",
+   "entity_category": null,
+   "translation_key": "tire_rear_right",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_blinker_vorne_links",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Blinker vorne links",
+   "entity_category": "diagnostic",
+   "translation_key": "turn_indication_front_left_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_blinker_vorne_rechts",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Blinker vorne rechts",
+   "entity_category": "diagnostic",
+   "translation_key": "turn_indication_front_right_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_blinker_hinten_links",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Blinker hinten links",
+   "entity_category": "diagnostic",
+   "translation_key": "turn_indication_rear_left_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_blinker_hinten_rechts",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Blinker hinten rechts",
+   "entity_category": "diagnostic",
+   "translation_key": "turn_indication_rear_right_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.volvo_ex30_scheibenwaschflussigkeit",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Scheibenwaschflüssigkeit",
+   "entity_category": null,
+   "translation_key": "washer_fluid_level_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "button.volvo_ex30_klimatisierung_starten",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Klimatisierung starten",
+   "entity_category": null,
+   "translation_key": "climatization_start",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "button.volvo_ex30_klimatisierung_stoppen",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Klimatisierung stoppen",
+   "entity_category": null,
+   "translation_key": "climatization_stop",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "button.volvo_ex30_blinken",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Blinken",
+   "entity_category": null,
+   "translation_key": "flash",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "button.volvo_ex30_hupen",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Hupen",
+   "entity_category": null,
+   "translation_key": "honk",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "button.volvo_ex30_hupen_blinken",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Hupen & Blinken",
+   "entity_category": null,
+   "translation_key": "honk_flash",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "device_tracker.volvo_ex30_standort",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Standort",
+   "entity_category": "diagnostic",
+   "translation_key": "location",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "lock.volvo_ex30_schloss",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Schloss",
+   "entity_category": null,
+   "translation_key": "lock",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_durchschnittlicher_energieverbrauch_trip_automatik",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Durchschnittlicher Energieverbrauch (Trip-Automatik)",
+   "entity_category": null,
+   "translation_key": "average_energy_consumption_automatic",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_durchschnittsgeschwindigkeit_trip_automatik",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Durchschnittsgeschwindigkeit (Trip-Automatik)",
+   "entity_category": null,
+   "translation_key": "average_speed_automatic",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_batterie",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Batterie",
+   "entity_category": null,
+   "translation_key": null,
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_status_des_ladeanschluss",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Status des Ladeanschluss",
+   "entity_category": null,
+   "translation_key": "charger_connection_status",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_ladeleistung",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Ladeleistung",
+   "entity_category": null,
+   "translation_key": "charging_power",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_ladestromstatus",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Ladestromstatus",
+   "entity_category": null,
+   "translation_key": "charging_power_status",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_ladestatus",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Ladestatus",
+   "entity_category": null,
+   "translation_key": "charging_status",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_ladetyp",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Ladetyp",
+   "entity_category": null,
+   "translation_key": "charging_type",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_reichweite_bis_batterie_leer",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Reichweite bis Batterie leer",
+   "entity_category": null,
+   "translation_key": "distance_to_empty_battery",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_geschatzte_ladezeit",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Geschätzte Ladezeit",
+   "entity_category": null,
+   "translation_key": "estimated_charging_time",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_soll_ladezustand_der_batterie",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Soll-Ladezustand der Batterie",
+   "entity_category": null,
+   "translation_key": "target_battery_charge_level",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_fahrtstrecke_trip_automatik",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Fahrtstrecke (Trip-Automatik)",
+   "entity_category": null,
+   "translation_key": "trip_meter_automatic",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_fahrtstrecke_trip_manuell",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Fahrtstrecke (Trip manuell)",
+   "entity_category": null,
+   "translation_key": "trip_meter_manual",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_richtung",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Richtung",
+   "entity_category": null,
+   "translation_key": "direction",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_kilometerstand",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Kilometerstand",
+   "entity_category": null,
+   "translation_key": "odometer",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_auto_anbindung",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Auto-Anbindung",
+   "entity_category": "diagnostic",
+   "translation_key": "availability",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_batteriekapazitat",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Batteriekapazität",
+   "entity_category": "diagnostic",
+   "translation_key": "battery_capacity",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_reichweite_bis_wartung",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Reichweite bis Wartung",
+   "entity_category": null,
+   "translation_key": "distance_to_service",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_zeit_bis_motorwartung",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Zeit bis Motorwartung",
+   "entity_category": null,
+   "translation_key": "engine_time_to_service",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_wartung",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Wartung",
+   "entity_category": null,
+   "translation_key": "service_warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.volvo_ex30_zeit_bis_wartung",
+   "platform": "volvo",
+   "device_id": "f1c0de00volvoex30fixture000000001",
+   "original_name": "Zeit bis Wartung",
+   "entity_category": null,
+   "translation_key": "time_to_service",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "device_tracker.ex30",
+   "platform": "mobile_app",
+   "device_id": "f1c0de00companionex30fixture00002",
+   "original_name": "EX30",
+   "entity_category": null,
+   "translation_key": null,
+   "disabled_by": null
+  },
+  {
+   "entity_id": "notify.ex30",
+   "platform": "mobile_app",
+   "device_id": "f1c0de00companionex30fixture00002",
+   "original_name": "EX30",
+   "entity_category": null,
+   "translation_key": null,
+   "disabled_by": null
+  }
+ ],
+ "states": {
+  "binary_sensor.volvo_ex30_tur_vorne_links": {
+   "state": "off",
+   "age_min": 600,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Tür vorne links",
+    "device_class": "door"
+   }
+  },
+  "binary_sensor.volvo_ex30_tur_vorne_rechts": {
+   "state": "off",
+   "age_min": 600,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Tür vorne rechts",
+    "device_class": "door"
+   }
+  },
+  "binary_sensor.volvo_ex30_tur_hinten_links": {
+   "state": "off",
+   "age_min": 600,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Tür hinten links",
+    "device_class": "door"
+   }
+  },
+  "binary_sensor.volvo_ex30_tur_hinten_rechts": {
+   "state": "off",
+   "age_min": 600,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Tür hinten rechts",
+    "device_class": "door"
+   }
+  },
+  "binary_sensor.volvo_ex30_haube": {
+   "state": "off",
+   "age_min": 600,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Haube",
+    "device_class": "door"
+   }
+  },
+  "binary_sensor.volvo_ex30_schiebedach": {
+   "state": "off",
+   "age_min": 600,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Schiebedach",
+    "device_class": "window"
+   }
+  },
+  "binary_sensor.volvo_ex30_heckklappe": {
+   "state": "off",
+   "age_min": 600,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Heckklappe",
+    "device_class": "door"
+   }
+  },
+  "binary_sensor.volvo_ex30_tankdeckel": {
+   "state": "on",
+   "age_min": 200,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Tankdeckel",
+    "device_class": "door"
+   }
+  },
+  "binary_sensor.volvo_ex30_fenster_vorne_links": {
+   "state": "off",
+   "age_min": 600,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Fenster vorne links",
+    "device_class": "window"
+   }
+  },
+  "binary_sensor.volvo_ex30_fenster_vorne_rechts": {
+   "state": "off",
+   "age_min": 600,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Fenster vorne rechts",
+    "device_class": "window"
+   }
+  },
+  "binary_sensor.volvo_ex30_fenster_hinten_links": {
+   "state": "off",
+   "age_min": 600,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Fenster hinten links",
+    "device_class": "window"
+   }
+  },
+  "binary_sensor.volvo_ex30_fenster_hinten_rechts": {
+   "state": "off",
+   "age_min": 600,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Fenster hinten rechts",
+    "device_class": "window"
+   }
+  },
+  "binary_sensor.volvo_ex30_motorstatus": {
+   "state": "off",
+   "age_min": 200,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Motorstatus",
+    "device_class": "running"
+   }
+  },
+  "binary_sensor.volvo_ex30_bremsflussigkeit": {
+   "state": "off",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Bremsflüssigkeit",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_kuhlmittelstand": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Kühlmittelstand",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_olstand": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Ölstand",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_bremsleuchte_mitte": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Bremsleuchte Mitte",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_bremsleuchte_links": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Bremsleuchte links",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_bremsleuchte_rechts": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Bremsleuchte rechts",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_tagfahrlicht_links": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Tagfahrlicht links",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_tagfahrlicht_rechts": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Tagfahrlicht rechts",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_nebelscheinwerfer": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Nebelscheinwerfer",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_nebelschlussleuchte": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Nebelschlussleuchte",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_warnblinkleuchten": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Warnblinkleuchten",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_fernlicht_links": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Fernlicht links",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_fernlicht_rechts": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Fernlicht rechts",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_abblendlicht_links": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Abblendlicht links",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_abblendlicht_rechts": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Abblendlicht rechts",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_positionsleuchte_vorne_links": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Positionsleuchte vorne links",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_positionsleuchte_vorne_rechts": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Positionsleuchte vorne rechts",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_positionsleuchte_hinten_links": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Positionsleuchte hinten links",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_positionsleuchte_hinten_rechts": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Positionsleuchte hinten rechts",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_kennzeichenleuchte": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Kennzeichenleuchte",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_ruckfahrscheinwerfer": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Rückfahrscheinwerfer",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_seitenmarkierungsleuchten": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Seitenmarkierungsleuchten",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_reifen_vorne_links": {
+   "state": "off",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Reifen vorne links",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_reifen_vorne_rechts": {
+   "state": "off",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Reifen vorne rechts",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_reifen_hinten_links": {
+   "state": "off",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Reifen hinten links",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_reifen_hinten_rechts": {
+   "state": "off",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Reifen hinten rechts",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_blinker_vorne_links": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Blinker vorne links",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_blinker_vorne_rechts": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Blinker vorne rechts",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_blinker_hinten_links": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Blinker hinten links",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_blinker_hinten_rechts": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Blinker hinten rechts",
+    "device_class": "problem"
+   }
+  },
+  "binary_sensor.volvo_ex30_scheibenwaschflussigkeit": {
+   "state": "off",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Scheibenwaschflüssigkeit",
+    "device_class": "problem"
+   }
+  },
+  "button.volvo_ex30_klimatisierung_starten": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Klimatisierung starten"
+   }
+  },
+  "button.volvo_ex30_klimatisierung_stoppen": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Klimatisierung stoppen"
+   }
+  },
+  "button.volvo_ex30_blinken": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Blinken"
+   }
+  },
+  "button.volvo_ex30_hupen": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Hupen"
+   }
+  },
+  "button.volvo_ex30_hupen_blinken": {
+   "state": "unknown",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Hupen & Blinken"
+   }
+  },
+  "device_tracker.volvo_ex30_standort": {
+   "state": "home",
+   "age_min": 20,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Standort",
+    "source_type": "gps"
+   }
+  },
+  "lock.volvo_ex30_schloss": {
+   "state": "locked",
+   "age_min": 195,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Schloss",
+    "supported_features": 0
+   }
+  },
+  "sensor.volvo_ex30_durchschnittlicher_energieverbrauch_trip_automatik": {
+   "state": "19.3999996185303",
+   "age_min": 200,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Durchschnittlicher Energieverbrauch (Trip-Automatik)",
+    "unit_of_measurement": "kWh/100km",
+    "state_class": "measurement"
+   }
+  },
+  "sensor.volvo_ex30_durchschnittsgeschwindigkeit_trip_automatik": {
+   "state": "46",
+   "age_min": 200,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Durchschnittsgeschwindigkeit (Trip-Automatik)",
+    "device_class": "speed",
+    "unit_of_measurement": "km/h",
+    "state_class": "measurement"
+   }
+  },
+  "sensor.volvo_ex30_batterie": {
+   "state": "71.6",
+   "age_min": 95,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Batterie",
+    "device_class": "battery",
+    "unit_of_measurement": "%",
+    "state_class": "measurement"
+   }
+  },
+  "sensor.volvo_ex30_status_des_ladeanschluss": {
+   "state": "connected",
+   "age_min": 200,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Status des Ladeanschluss",
+    "device_class": "enum",
+    "options": [
+     "connected",
+     "disconnected",
+     "fault"
+    ]
+   }
+  },
+  "sensor.volvo_ex30_ladeleistung": {
+   "state": "0",
+   "age_min": 140,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Ladeleistung",
+    "device_class": "power",
+    "unit_of_measurement": "W",
+    "state_class": "measurement"
+   }
+  },
+  "sensor.volvo_ex30_ladestromstatus": {
+   "state": "fault",
+   "age_min": 140,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Ladestromstatus",
+    "device_class": "enum",
+    "options": [
+     "fault",
+     "initialization",
+     "power_available_but_not_activated",
+     "providing_power",
+     "no_power_available"
+    ]
+   }
+  },
+  "sensor.volvo_ex30_ladestatus": {
+   "state": "idle",
+   "age_min": 140,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Ladestatus",
+    "device_class": "enum",
+    "options": [
+     "charging",
+     "discharging",
+     "done",
+     "error",
+     "idle",
+     "scheduled"
+    ]
+   }
+  },
+  "sensor.volvo_ex30_ladetyp": {
+   "state": "ac",
+   "age_min": 200,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Ladetyp",
+    "device_class": "enum",
+    "options": [
+     "ac",
+     "dc",
+     "none"
+    ]
+   }
+  },
+  "sensor.volvo_ex30_reichweite_bis_batterie_leer": {
+   "state": "257",
+   "age_min": 95,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Reichweite bis Batterie leer",
+    "device_class": "distance",
+    "unit_of_measurement": "km",
+    "state_class": "measurement"
+   }
+  },
+  "sensor.volvo_ex30_geschatzte_ladezeit": {
+   "state": "695",
+   "age_min": 140,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Geschätzte Ladezeit",
+    "device_class": "duration",
+    "unit_of_measurement": "min",
+    "state_class": "measurement"
+   }
+  },
+  "sensor.volvo_ex30_soll_ladezustand_der_batterie": {
+   "state": "90",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Soll-Ladezustand der Batterie",
+    "unit_of_measurement": "%"
+   }
+  },
+  "sensor.volvo_ex30_fahrtstrecke_trip_automatik": {
+   "state": "19.9",
+   "age_min": 200,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Fahrtstrecke (Trip-Automatik)",
+    "device_class": "distance",
+    "unit_of_measurement": "km",
+    "state_class": "total_increasing"
+   }
+  },
+  "sensor.volvo_ex30_fahrtstrecke_trip_manuell": {
+   "state": "1502.9",
+   "age_min": 200,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Fahrtstrecke (Trip manuell)",
+    "device_class": "distance",
+    "unit_of_measurement": "km",
+    "state_class": "total_increasing"
+   }
+  },
+  "sensor.volvo_ex30_richtung": {
+   "state": "0",
+   "age_min": 200,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Richtung",
+    "unit_of_measurement": "°"
+   }
+  },
+  "sensor.volvo_ex30_kilometerstand": {
+   "state": "11503",
+   "age_min": 180,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Kilometerstand",
+    "device_class": "distance",
+    "unit_of_measurement": "km",
+    "state_class": "total_increasing"
+   }
+  },
+  "sensor.volvo_ex30_auto_anbindung": {
+   "state": "available",
+   "age_min": 170,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Auto-Anbindung",
+    "device_class": "enum",
+    "options": [
+     "available",
+     "car_in_use",
+     "no_internet",
+     "ota_installation_in_progress",
+     "power_saving_mode"
+    ]
+   }
+  },
+  "sensor.volvo_ex30_batteriekapazitat": {
+   "state": "69.0",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Batteriekapazität",
+    "device_class": "energy_storage",
+    "unit_of_measurement": "kWh"
+   }
+  },
+  "sensor.volvo_ex30_reichweite_bis_wartung": {
+   "state": "18525",
+   "age_min": 170,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Reichweite bis Wartung",
+    "device_class": "distance",
+    "unit_of_measurement": "km",
+    "state_class": "measurement"
+   }
+  },
+  "sensor.volvo_ex30_zeit_bis_motorwartung": {
+   "state": "500",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Zeit bis Motorwartung",
+    "device_class": "duration",
+    "unit_of_measurement": "h",
+    "state_class": "measurement"
+   }
+  },
+  "sensor.volvo_ex30_wartung": {
+   "state": "no_warning",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Wartung",
+    "device_class": "enum",
+    "options": [
+     "no_warning",
+     "regular_maintenance_almost_time_for_service",
+     "regular_maintenance_time_for_service",
+     "unknown_warning"
+    ]
+   }
+  },
+  "sensor.volvo_ex30_zeit_bis_wartung": {
+   "state": "270",
+   "age_min": 1900,
+   "attributes": {
+    "friendly_name": "Volvo EX30 Zeit bis Wartung",
+    "device_class": "duration",
+    "unit_of_measurement": "d",
+    "state_class": "measurement"
+   }
+  },
+  "device_tracker.ex30": {
+   "state": "home",
+   "age_min": 5,
+   "attributes": {
+    "friendly_name": "EX30"
+   }
+  },
+  "notify.ex30": {
+   "state": "unknown",
+   "age_min": 5,
+   "attributes": {
+    "friendly_name": "EX30"
+   }
+  }
+ }
+}

@@ -1909,7 +1909,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_cstotal_ex30_charging_sessions_vehicle_chargedenergy",
-  "original_name": "EX30 Ladevorgänge: Energie [Fzg.]"
+  "original_name": "EX30 Ladevorgänge: Energie [Fzg.]",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
  },
  {
   "entity_id": "sensor.evcc_cstotal_ex30_charging_sessions_vehicle_cost",
@@ -1917,7 +1918,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_cstotal_ex30_charging_sessions_vehicle_cost",
-  "original_name": "EX30 Ladevorgänge: Kosten [Fzg.]"
+  "original_name": "EX30 Ladevorgänge: Kosten [Fzg.]",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
  },
  {
   "entity_id": "sensor.evcc_cstotal_ex30_charging_sessions_vehicle_chargeduration",
@@ -1925,7 +1927,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_cstotal_ex30_charging_sessions_vehicle_chargeduration",
-  "original_name": "EX30 Ladevorgänge: Dauer [Fzg.]"
+  "original_name": "EX30 Ladevorgänge: Dauer [Fzg.]",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
  },
  {
   "entity_id": "sensor.evcc_ex30_configvehicle_range",
@@ -1933,7 +1936,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_ex30_configvehicle_range",
-  "original_name": "EX30 Reichweite"
+  "original_name": "EX30 Reichweite",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
  },
  {
   "entity_id": "sensor.evcc_ex30_configvehicle_odometer",
@@ -1941,7 +1945,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_ex30_configvehicle_odometer",
-  "original_name": "EX30 Kilometerstand"
+  "original_name": "EX30 Kilometerstand",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
  },
  {
   "entity_id": "sensor.evcc_ex30_configvehicle_soc",
@@ -1949,7 +1954,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_ex30_configvehicle_soc",
-  "original_name": "EX30 Ladestand"
+  "original_name": "EX30 Ladestand",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
  },
  {
   "entity_id": "sensor.evcc_ex30_configvehicle_limitsoc",
@@ -1957,7 +1963,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_ex30_configvehicle_limitsoc",
-  "original_name": "EX30 Ladelimit"
+  "original_name": "EX30 Ladelimit",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
  },
  {
   "entity_id": "sensor.evcc_cstotal_id7_charging_sessions_vehicle_chargedenergy",
@@ -1965,7 +1972,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_cstotal_id7_charging_sessions_vehicle_chargedenergy",
-  "original_name": "id7 Ladevorgänge: Energie [Fzg.]"
+  "original_name": "id7 Ladevorgänge: Energie [Fzg.]",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
  },
  {
   "entity_id": "sensor.evcc_cstotal_id7_charging_sessions_vehicle_cost",
@@ -1973,7 +1981,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_cstotal_id7_charging_sessions_vehicle_cost",
-  "original_name": "id7 Ladevorgänge: Kosten [Fzg.]"
+  "original_name": "id7 Ladevorgänge: Kosten [Fzg.]",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
  },
  {
   "entity_id": "sensor.evcc_cstotal_id7_charging_sessions_vehicle_chargeduration",
@@ -1981,7 +1990,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_cstotal_id7_charging_sessions_vehicle_chargeduration",
-  "original_name": "id7 Ladevorgänge: Dauer [Fzg.]"
+  "original_name": "id7 Ladevorgänge: Dauer [Fzg.]",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
  },
  {
   "entity_id": "sensor.evcc_id7_configvehicle_range",
@@ -1989,7 +1999,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_id7_configvehicle_range",
-  "original_name": "id7 Reichweite"
+  "original_name": "id7 Reichweite",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
  },
  {
   "entity_id": "sensor.evcc_id7_configvehicle_odometer",
@@ -1997,7 +2008,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_id7_configvehicle_odometer",
-  "original_name": "id7 Kilometerstand"
+  "original_name": "id7 Kilometerstand",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
  },
  {
   "entity_id": "sensor.evcc_id7_configvehicle_soc",
@@ -2005,7 +2017,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_id7_configvehicle_soc",
-  "original_name": "id7 Ladestand"
+  "original_name": "id7 Ladestand",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
  },
  {
   "entity_id": "sensor.evcc_id7_configvehicle_limitsoc",
@@ -2013,7 +2026,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_id7_configvehicle_limitsoc",
-  "original_name": "id7 Ladelimit"
+  "original_name": "id7 Ladelimit",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
  },
  {
   "entity_id": "sensor.evcc_garage_circuits_power",
@@ -2613,7 +2627,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_ex30_repeating_plan_2",
-  "original_name": "EX30 Ladeplan 2 (wiederholend)"
+  "original_name": "EX30 Ladeplan 2 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
  },
  {
   "entity_id": "switch.evcc_ex30_repeating_plan_3",
@@ -2621,7 +2636,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_ex30_repeating_plan_3",
-  "original_name": "EX30 Ladeplan 3 (wiederholend)"
+  "original_name": "EX30 Ladeplan 3 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
  },
  {
   "entity_id": "switch.evcc_ex30_repeating_plan_4",
@@ -2629,7 +2645,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_ex30_repeating_plan_4",
-  "original_name": "EX30 Ladeplan 4 (wiederholend)"
+  "original_name": "EX30 Ladeplan 4 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
  },
  {
   "entity_id": "switch.evcc_ex30_repeating_plan_5",
@@ -2637,7 +2654,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": "integration",
   "unique_id": "evcc_intg.evcc_ex30_repeating_plan_5",
-  "original_name": "EX30 Ladeplan 5 (wiederholend)"
+  "original_name": "EX30 Ladeplan 5 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
  },
  {
   "entity_id": "switch.evcc_ex30_repeating_plan_6",
@@ -2645,7 +2663,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": "integration",
   "unique_id": "evcc_intg.evcc_ex30_repeating_plan_6",
-  "original_name": "EX30 Ladeplan 6 (wiederholend)"
+  "original_name": "EX30 Ladeplan 6 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
  },
  {
   "entity_id": "switch.evcc_ex30_repeating_plan_7",
@@ -2653,7 +2672,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": "integration",
   "unique_id": "evcc_intg.evcc_ex30_repeating_plan_7",
-  "original_name": "EX30 Ladeplan 7 (wiederholend)"
+  "original_name": "EX30 Ladeplan 7 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
  },
  {
   "entity_id": "switch.evcc_ex30_repeating_plan_8",
@@ -2661,7 +2681,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": "integration",
   "unique_id": "evcc_intg.evcc_ex30_repeating_plan_8",
-  "original_name": "EX30 Ladeplan 8 (wiederholend)"
+  "original_name": "EX30 Ladeplan 8 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
  },
  {
   "entity_id": "switch.evcc_ex30_repeating_plan_9",
@@ -2669,7 +2690,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": "integration",
   "unique_id": "evcc_intg.evcc_ex30_repeating_plan_9",
-  "original_name": "EX30 Ladeplan 9 (wiederholend)"
+  "original_name": "EX30 Ladeplan 9 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
  },
  {
   "entity_id": "switch.evcc_ex30_repeating_plan_10",
@@ -2677,7 +2699,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": "integration",
   "unique_id": "evcc_intg.evcc_ex30_repeating_plan_10",
-  "original_name": "EX30 Ladeplan 10 (wiederholend)"
+  "original_name": "EX30 Ladeplan 10 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
  },
  {
   "entity_id": "switch.evcc_id7_repeating_plan_2",
@@ -2685,7 +2708,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_id7_repeating_plan_2",
-  "original_name": "id7 Ladeplan 2 (wiederholend)"
+  "original_name": "id7 Ladeplan 2 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
  },
  {
   "entity_id": "switch.evcc_id7_repeating_plan_3",
@@ -2693,7 +2717,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_id7_repeating_plan_3",
-  "original_name": "id7 Ladeplan 3 (wiederholend)"
+  "original_name": "id7 Ladeplan 3 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
  },
  {
   "entity_id": "switch.evcc_id7_repeating_plan_4",
@@ -2701,7 +2726,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": null,
   "unique_id": "evcc_intg.evcc_id7_repeating_plan_4",
-  "original_name": "id7 Ladeplan 4 (wiederholend)"
+  "original_name": "id7 Ladeplan 4 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
  },
  {
   "entity_id": "switch.evcc_id7_repeating_plan_5",
@@ -2709,7 +2735,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": "integration",
   "unique_id": "evcc_intg.evcc_id7_repeating_plan_5",
-  "original_name": "id7 Ladeplan 5 (wiederholend)"
+  "original_name": "id7 Ladeplan 5 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
  },
  {
   "entity_id": "switch.evcc_id7_repeating_plan_6",
@@ -2717,7 +2744,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": "integration",
   "unique_id": "evcc_intg.evcc_id7_repeating_plan_6",
-  "original_name": "id7 Ladeplan 6 (wiederholend)"
+  "original_name": "id7 Ladeplan 6 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
  },
  {
   "entity_id": "switch.evcc_id7_repeating_plan_7",
@@ -2725,7 +2753,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": "integration",
   "unique_id": "evcc_intg.evcc_id7_repeating_plan_7",
-  "original_name": "id7 Ladeplan 7 (wiederholend)"
+  "original_name": "id7 Ladeplan 7 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
  },
  {
   "entity_id": "switch.evcc_id7_repeating_plan_8",
@@ -2733,7 +2762,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": "integration",
   "unique_id": "evcc_intg.evcc_id7_repeating_plan_8",
-  "original_name": "id7 Ladeplan 8 (wiederholend)"
+  "original_name": "id7 Ladeplan 8 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
  },
  {
   "entity_id": "switch.evcc_id7_repeating_plan_9",
@@ -2741,7 +2771,8 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": "integration",
   "unique_id": "evcc_intg.evcc_id7_repeating_plan_9",
-  "original_name": "id7 Ladeplan 9 (wiederholend)"
+  "original_name": "id7 Ladeplan 9 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
  },
  {
   "entity_id": "switch.evcc_id7_repeating_plan_10",
@@ -2749,6 +2780,7 @@
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
   "disabled_by": "integration",
   "unique_id": "evcc_intg.evcc_id7_repeating_plan_10",
-  "original_name": "id7 Ladeplan 10 (wiederholend)"
+  "original_name": "id7 Ladeplan 10 (wiederholend)",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
  }
 ]

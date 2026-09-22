@@ -62,6 +62,73 @@ export const styles = {
         margin-right: 8px; white-space: nowrap;
       }
 
+      .vehicle-lp { font-size: .85em; color: var(--secondary-text-color); margin-right: 8px; white-space: nowrap; }
+      .vehicle-hint { font-size: .8rem; line-height: 1.4; color: var(--secondary-text-color); margin-bottom: 12px; }
+      .vehicle-block [data-more-info] { cursor: pointer; }
+      .vehicle-graphic { margin: 0 0 10px; color: var(--primary-text-color); }
+      .vehicle-graphic svg { display: block; width: 100%; max-width: 360px; height: auto; margin: 0 auto; overflow: visible; }
+      .vg-body   { fill: color-mix(in srgb, currentColor 7%, transparent); stroke: currentColor; stroke-width: 2.5; stroke-linejoin: round; }
+      .vg-window { fill: color-mix(in srgb, currentColor 16%, transparent); stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }
+      .vg-seam   { stroke: currentColor; stroke-width: 1.2; opacity: .45; }
+      .vg-tyre   { fill: var(--card-background-color, #fff); stroke: currentColor; stroke-width: 3; }
+      .vg-hub    { fill: none; stroke: currentColor; stroke-width: 1.5; opacity: .7; }
+      .vg-spoke  { stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; opacity: .7; }
+      .vg-port   { fill: var(--card-background-color, #fff); stroke: currentColor; stroke-width: 1.5; }
+      .vg-lamp   { fill: currentColor; opacity: .25; }
+      .vg-ground, .vg-road { stroke: var(--divider-color, #9ca3af); stroke-width: 2; stroke-linecap: round; fill: none; }
+      .vg-battery      { fill: color-mix(in srgb, currentColor 10%, transparent); stroke: currentColor; stroke-width: 1.2; }
+      .vg-battery-fill { fill: var(--evcc-blue); }
+      .vg-battery-fill.low      { fill: var(--evcc-amber); }
+      .vg-battery-fill.charging { fill: var(--evcc-green); animation: soc-pulse 2s ease-in-out infinite; }
+      .vg-bolt   { fill: #fff; stroke: rgba(0,0,0,.35); stroke-width: .6; }
+      .vg-plug   { fill: var(--evcc-blue); stroke: var(--card-background-color, #fff); stroke-width: 1.5; }
+      .vg-badge circle { fill: var(--evcc-green); stroke: var(--card-background-color, #fff); stroke-width: 2; }
+      [data-vehicle-state="charging"] .vg-plug { fill: var(--evcc-green); }
+      .vg-charger rect { fill: color-mix(in srgb, currentColor 7%, transparent); stroke: currentColor; stroke-width: 2; }
+      .vg-charger .vg-charger-light { fill: var(--evcc-blue); stroke: none; }
+      .vg-cable  { fill: none; stroke: var(--evcc-blue); stroke-width: 3; stroke-linecap: round; }
+      .vg-cable-flow { fill: none; stroke: #fff; stroke-width: 1.5; stroke-linecap: round; stroke-dasharray: 3 9; opacity: .9; animation: vg-flow 1s linear infinite; }
+      [data-vehicle-state="connected"] .vg-port, [data-vehicle-state="charging"] .vg-port { fill: var(--evcc-blue); }
+      [data-vehicle-state="charging"] .vg-cable, [data-vehicle-state="charging"] .vg-charger .vg-charger-light { stroke: var(--evcc-green); fill: var(--evcc-green); }
+      [data-vehicle-state="charging"] .vg-cable { fill: none; }
+      [data-vehicle-state="charging"] .vg-port  { fill: var(--evcc-green); }
+      [data-vehicle-state="parked"] .vg-car { opacity: .8; }
+      [data-vehicle-state="driving"] .vg-lamp-front { fill: var(--evcc-bolt); opacity: 1; }
+      [data-vehicle-state="driving"] .vg-lamp-rear  { fill: var(--error-color, #db4437); opacity: .9; }
+      [data-vehicle-state="driving"] .vg-wheel { animation: vg-spin .9s linear infinite; }
+      [data-vehicle-state="driving"] .vg-car   { animation: vg-bounce .45s ease-in-out infinite alternate; }
+      .vg-road { stroke-dasharray: 14 12; animation: vg-road .5s linear infinite; }
+      .vg-wind { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; opacity: .35; animation: vg-wind .8s ease-in-out infinite alternate; }
+      @keyframes vg-spin   { to { transform: rotate(360deg); } }
+      @keyframes vg-bounce { to { transform: translateY(-1px); } }
+      @keyframes vg-road   { to { stroke-dashoffset: 26; } }
+      @keyframes vg-wind   { from { transform: translateX(6px); opacity: .15; } to { transform: translateX(-4px); opacity: .45; } }
+      @keyframes vg-flow   { to { stroke-dashoffset: -12; } }
+      @media (prefers-reduced-motion: reduce) {
+        .vg-wheel, .vg-car, .vg-road, .vg-wind, .vg-cable-flow, .vg-battery-fill.charging { animation: none !important; }
+      }
+      .vehicle-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+      .vehicle-chip {
+        display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px;
+        font-size: .72rem; font-weight: 600; color: var(--secondary-text-color);
+        border: 1px solid var(--divider-color, #4b5563);
+      }
+      .vehicle-chip svg { flex: 0 0 13px; }
+      .vehicle-chip.ok    { color: var(--evcc-green); border-color: color-mix(in srgb, var(--evcc-green) 50%, transparent); background: color-mix(in srgb, var(--evcc-green) 10%, transparent); }
+      .vehicle-chip.warn  { color: var(--evcc-amber); border-color: color-mix(in srgb, var(--evcc-amber) 50%, transparent); background: color-mix(in srgb, var(--evcc-amber) 10%, transparent); }
+      .vehicle-chip.alert { color: var(--error-color, #db4437); border-color: color-mix(in srgb, var(--error-color, #db4437) 50%, transparent); background: color-mix(in srgb, var(--error-color, #db4437) 10%, transparent); }
+      .vehicle-details { border-top: 1px solid var(--divider-color, #e5e7eb); margin-top: 10px; padding-top: 10px; }
+      .vehicle-details .session-title { margin-bottom: 0; }
+      .vehicle-details-toggle {
+        display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0;
+        background: none; border: none; color: var(--secondary-text-color); cursor: pointer; font: inherit;
+      }
+      .vehicle-detail-list { margin-top: 6px; }
+      .vehicle-detail { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: .85rem; border-bottom: 1px solid var(--divider-color, #e5e7eb); }
+      .vehicle-detail:last-child { border-bottom: none; }
+      .vehicle-detail-label { color: var(--secondary-text-color); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .vehicle-detail-value { font-weight: 600; white-space: nowrap; }
+
       .mode-row { display: flex; gap: 6px; margin-bottom: 12px; }
       .mode-row.has-sub { margin-bottom: 6px; }
       .alwayscharge-row { margin-bottom: 12px; }

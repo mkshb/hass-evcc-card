@@ -73,7 +73,11 @@ All charge points and site entities are **automatically discovered** via the HA 
 <a href="#repeatplan"><img src="images/repeatplan-dark.png" width="200"></a>
 <a href="#repeatplan"><img src="images/repeatplan-light.png" width="200"></a>
 </td>
-<td></td><td></td>
+<td>
+<a href="#vehicle"><img src="images/vehicle-dark.png" width="200"></a>
+<a href="#vehicle"><img src="images/vehicle-light.png" width="200"></a>
+</td>
+<td></td>
 </tr>
 </table>
 
@@ -178,13 +182,17 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan`, `repeatplan`, `priority`, `debug` |
+| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan`, `repeatplan`, `vehicle`, `priority`, `debug` |
 | `title` | `string` | *(auto)* | Replaces the default card header |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language |
 | `size` | `string` | *(auto)* | Fixed card scale: `small`, `medium` or `large`. When unset, the card auto-scales to its container width |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
 | `repeating_plan_vehicles` | `list` | *(all)* | Limit the `repeatplan` mode to specific vehicles |
+| `vehicles` | `list` | *(all)* | Limit the `vehicle` mode to specific vehicles, by the name ha-evcc uses in their entity ids (e.g. `ex30`) |
+| `vehicle_graphic` | `string` | `show` | `vehicle` mode: `hide` leaves out the picture of the vehicle |
+| `vehicle_images` | `map` | *(none)* | `vehicle` mode: a picture of the real car per vehicle, picked from Home Assistant's media library in the visual editor. In YAML a media item (`media-source://...`), a path Home Assistant serves (`/local/ex30.png`) or an `http(s)` address. See [Your own car in the picture](#your-own-car-in-the-picture) |
+| `vehicle_devices` | `map` | *(auto)* | `vehicle` mode: the Home Assistant device of a vehicle's own integration, per vehicle, e.g. `{ ex30: <device id> }`. The card finds the device by itself; set a device id to override it, `none` to leave one vehicle without, or `vehicle_devices: false` to switch the link off |
 | `plan_loadpoint_index` | `map` | *(auto)* | **YAML only** — Override the evcc loadpoint index (1-based) used for the plan preview, e.g. `{ openwb: 1, wp: 2 }`. Only needed if the auto-detected order does not match evcc |
 | `no_pv` | `list` | *(none)* | Treat specific charge points as having **no PV system**, mirroring evcc's own mode logic: **Min+PV** is hidden and **PV** is replaced by a single **Smart** mode when a dynamic tariff is configured (otherwise only **Off** / **Now** remain). See [Charge modes](#charge-modes) below |
 | `disabled_loadpoints` | `string` | `hide` | How to treat charge points disabled in the evcc configuration (ha-evcc 2026.8.8+): `hide` removes them from the card, `dim` shows them grayed out with a "Disabled" badge, `show` keeps the previous behavior |
@@ -195,7 +203,7 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 | `stats_period` | `string` | *(see note)* | Statistics period: `month`, `year`, `total`, `none`. Unconfigured, the `stats` mode opens on the most recent month and the footer under `site`/`grid`/`flow` summarises everything; `none` hides that footer. The older values `30d`, `365d` and `thisYear` still work |
 | `prefix` | `string` | *(auto)* | Entity prefix, auto-detected from ha-evcc. With more than one ha-evcc entry the visual editor offers the instance to use; the first entry is the default and needs no `prefix` |
 
-> **Invalid values are rejected.** `mode`, `size`, `disabled_loadpoints` and `stats_period` only accept the values listed above, and `prefix`, `language` and `loadpoints` have to be non-empty. A dashboard carrying something else shows the Home Assistant error card naming the option, instead of quietly falling back to another view.
+> **Invalid values are rejected.** `mode`, `size`, `disabled_loadpoints` and `stats_period` only accept the values listed above, and `prefix`, `language`, `loadpoints` and `vehicles` have to be non-empty, `vehicle_graphic` is `show` or `hide`, `vehicle_images` is a map of image paths, and `vehicle_devices` is `false` or a map. A dashboard carrying something else shows the Home Assistant error card naming the option, instead of quietly falling back to another view.
 
 ---
 
@@ -443,6 +451,73 @@ Repeating charge plans per vehicle - evcc's weekly departure schedules:
 > **Note:** Repeating plans can only be **created and edited in evcc itself** - the card only switches them on or off (an info icon in the header points this out). Requires the repeating plan entities from **ha-evcc 2026.6.1+** (`repeating_plan_*`); on older integration versions the entities do not exist yet and the mode shows an empty state.
 
 <img src="images/repeatplan-dark.png" width="400"> <img src="images/repeatplan-light.png" width="400">
+
+---
+
+### `vehicle`
+
+One block per vehicle evcc knows, whether it is plugged in or not:
+
+- A schematic picture of the vehicle that follows what it is doing: **parked**, **driving** (wheels turning, the road running), **connected** (a charger with the cable plugged in) and **charging** (energy running through the cable). The battery in the floor shows the charge level
+- Charge level with the vehicle's limit as a marker, range and odometer
+- The charge point the vehicle is connected to, and whether it is charging
+- The charge plan evcc is working on for that charge point (read only)
+- The vehicle's repeating plans with their on/off toggles
+- Energy, cost and charging time over all sessions of the vehicle
+
+While a vehicle is connected, charge level, range and odometer come from the charge point, which evcc refreshes far more often; unplugged, the vehicle's own sensors take over. A click on a value opens the entity it was read from.
+
+#### Your own car in the picture
+
+The drawn car can be replaced by a picture of the real one. Upload the image to Home Assistant's media library (**Media** > **My media**), then open the visual editor of the card: every vehicle has a **Picture from the media library** field that opens Home Assistant's media browser, narrowed to images. In YAML:
+
+```yaml
+type: custom:evcc-card
+mode: vehicle
+vehicle_images:
+  ex30: media-source://media_source/local/ex30.png   # from the media library
+  id7: /local/id7.png                                # or a file in the www folder
+```
+
+An item of the media library has no address of its own; the card asks Home Assistant for a signed one, once, and again before it expires.
+
+- Best is a side view with a **transparent background** (PNG or WebP), cropped close to the car, rear end on the left: the charger and its cable stand on that side
+- The scene around the car stays and keeps following the state: ground or running road, wind lines, charger and cable, and a bolt badge while charging. A photo has no wheels to turn and no floor to look into, so the charge level is left to the bar underneath
+- A picture that does not load makes way for the drawing. If the vehicle's integration offers an image entity on its device, the card uses that without any configuration; a configured picture wins
+- Accepted are media items (`media-source://...`), paths Home Assistant serves (`/local/...`, `/api/image/serve/...`) and `http(s)` addresses, nothing else
+
+#### Data from the vehicle's own integration
+
+Most cars have an integration of their own in Home Assistant, and it knows things evcc does not: lock, doors and windows, warnings, location, service intervals. The card adds them without any configuration:
+
+- It looks for a device whose name or model contains the vehicle's evcc title and which carries a battery level and a distance. The companion app of a car, which registers a device of the same name, does not qualify
+- The entities of that device are sorted by domain, device class and unit, so this works for any brand. Lock, open doors or lids, raised warnings and the location become chips; thirty warning flags are a single "No warnings" chip while all is well
+- Charge level, range and odometer of the device join the evcc values. Unplugged, the value that changed last wins, so a vehicle evcc cannot reach still shows its charge level. The tooltip of a value tells its age
+- The picture and the badge learn what evcc cannot know: that the vehicle is driving, or charging somewhere else. This is read off device classes (`running`, `moving`, `battery_charging`, `plug`) and off status sensors by the options they offer (`charging`, `connected` / `disconnected`), not off names. At its own charge points evcc leads. Without such a device, a vehicle that is not at a charge point is just "not connected"
+- Everything else the device reports (capacity, service, consumption) sits in a list that is folded away by default
+
+The visual editor shows the device it found per vehicle and lets you pick another one. In YAML:
+
+```yaml
+type: custom:evcc-card
+mode: vehicle
+vehicle_devices:
+  ex30: 4f2c0a1b9d...     # device id, overrides the search
+  id7: none               # this vehicle stays without a device
+```
+
+`vehicle_devices: false` switches the link off for the whole card. The card only reads these entities, it does not lock or start anything.
+
+```yaml
+type: custom:evcc-card
+mode: vehicle
+vehicles:
+  - ex30
+```
+
+> **Note:** The values of an unplugged vehicle need the **extended vehicle data** option of ha-evcc, and the vehicle sensors (`configvehicle_*`) are disabled by default in Home Assistant. Without them the block stays and says what is missing. A vehicle evcc cannot reach reports no charge level; the card shows a hint instead of 0 %.
+
+<img src="images/vehicle-dark.png" width="400"> <img src="images/vehicle-light.png" width="400">
 
 ---
 

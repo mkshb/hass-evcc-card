@@ -1,5 +1,5 @@
 /* hass-evcc-card. Built from src/ with Rollup; edit the sources, not this file. */
-const EVCC_CARD_VERSION = "0.8.2";
+const EVCC_CARD_VERSION = "0.9.0";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -121,6 +121,28 @@ const FEATURES = [
   { suffix: "battery_grid_charge_limit",  domain: "number",        type: "slider",      lp: false },
 ];
 
+// Entities ha-evcc creates per vehicle, independent of any loadpoint:
+// <domain>.<prefix><vehicle>_<suffix>, the vehicle part being the slug of the
+// vehicle title in evcc. They are kept apart from FEATURES because that list
+// sorts an entity into a loadpoint or the site, and a vehicle is neither. The
+// configvehicle_* sensors only exist with the extended vehicle data switched on
+// in the integration, and are disabled in the registry by default.
+const VEHICLE_FEATURES = [
+  { key: "soc",       suffix: "configvehicle_soc",      domain: "sensor" },
+  { key: "range",     suffix: "configvehicle_range",    domain: "sensor" },
+  { key: "odometer",  suffix: "configvehicle_odometer", domain: "sensor" },
+  { key: "limit_soc", suffix: "configvehicle_limitsoc", domain: "sensor" },
+];
+
+// Session totals per vehicle sit under their own infix:
+// sensor.<prefix>cstotal_<vehicle>_<suffix>
+const VEHICLE_SESSION_INFIX = "cstotal_";
+const VEHICLE_SESSION_FEATURES = [
+  { key: "sessions_energy",   suffix: "charging_sessions_vehicle_chargedenergy",  domain: "sensor" },
+  { key: "sessions_duration", suffix: "charging_sessions_vehicle_chargeduration", domain: "sensor" },
+  { key: "sessions_cost",     suffix: "charging_sessions_vehicle_cost",           domain: "sensor" },
+];
+
 // Icon for the "smart" mode. Used twice: for the native 'smart' mode of evcc
 // PR 32490, and for the "pv relabelled as Smart" pseudo-mode that older evcc
 // versions need when PV is hidden but a dynamic tariff exists (Mode.vue).
@@ -178,6 +200,7 @@ const CARD_SIZES = {
   site2:       7,   // legacy alias of grid
   stats:      10,
   battery:     7,
+  vehicle:     8,
   debug:      20,
 };
 
@@ -193,11 +216,12 @@ const CARD_SIZE_FOOTER  = { site: 1, flow: 1, grid: 1, site2: 1 };
 // former name of `grid` and stays valid so dashboards carrying it keep working.
 const CARD_MODES = [
   "loadpoint", "compact", "plan", "repeatplan", "priority",
-  "site", "flow", "grid", "site2", "stats", "battery", "debug",
+  "site", "flow", "grid", "site2", "stats", "battery", "vehicle", "debug",
 ];
 const CARD_SIZE_OPTIONS        = ["small", "medium", "large"];
 const DISABLED_LOADPOINT_MODES = ["hide", "dim", "show"];
 const STATS_PERIOD_OPTIONS     = Object.keys(STATS_PERIOD_ALIASES);
+const VEHICLE_GRAPHIC_OPTIONS  = ["show", "hide"];
 
 // The `loadpoints` option as a list, or null when it is not set. A single name
 // is shorthand for a list of one. Every reader of the option goes through here,
@@ -207,6 +231,30 @@ function loadpointFilter(config) {
   const raw = config?.loadpoints;
   if (raw === undefined || raw === null) return null;
   return Array.isArray(raw) ? raw : [raw];
+}
+
+// The `vehicles` option of the vehicle mode, read the same way: a list of
+// vehicle slugs, a single slug as shorthand, null when not set.
+function vehicleFilter(config) {
+  const raw = config?.vehicles;
+  if (raw === undefined || raw === null) return null;
+  return Array.isArray(raw) ? raw : [raw];
+}
+
+// A picture of the real vehicle, per vehicle: an item of Home Assistant's media
+// library (media-source://..., what the media picker in the editor writes), a
+// path Home Assistant serves (/local/..., /api/image/serve/...) or an http(s)
+// address. Nothing else, so a dashboard YAML cannot smuggle another scheme into
+// the card.
+const MEDIA_SOURCE_PREFIX = "media-source://";
+function isMediaSourceId(value) {
+  return typeof value === "string" && /^media-source:\/\/\S+$/.test(value.trim());
+}
+function isVehicleImageUrl(value) {
+  return typeof value === "string" && /^(\/(?!\/)|https?:\/\/)\S+$/.test(value.trim());
+}
+function isVehicleImage(value) {
+  return isMediaSourceId(value) || isVehicleImageUrl(value);
 }
 
 // Home Assistant expects setConfig() to throw on a configuration the card cannot
@@ -225,6 +273,7 @@ function validateCardConfig(config) {
   oneOf("size",                CARD_SIZE_OPTIONS);
   oneOf("disabled_loadpoints", DISABLED_LOADPOINT_MODES);
   oneOf("stats_period",        STATS_PERIOD_OPTIONS);
+  oneOf("vehicle_graphic",     VEHICLE_GRAPHIC_OPTIONS);
 
   for (const key of ["prefix", "language"]) {
     const v = c[key];
@@ -237,6 +286,26 @@ function validateCardConfig(config) {
   const list = loadpointFilter(c);
   if (list && (!list.length || list.some(lp => typeof lp !== "string" || !lp.trim()))) {
     throw new Error("evcc-card: loadpoints has to be a loadpoint name or a list of names");
+  }
+
+  const vehicles = vehicleFilter(c);
+  if (vehicles && (!vehicles.length || vehicles.some(v => typeof v !== "string" || !v.trim()))) {
+    throw new Error("evcc-card: vehicles has to be a vehicle name or a list of names");
+  }
+
+  const images = c.vehicle_images;
+  if (images !== undefined && images !== null) {
+    const ok = typeof images === "object" && !Array.isArray(images) && Object.values(images).every(isVehicleImage);
+    if (!ok) throw new Error("evcc-card: vehicle_images has to be a map of vehicle name to a media item (media-source://...), an image path (/local/...) or an http(s) address");
+  }
+
+  // vehicle_devices: false switches the device link off, a map names the device
+  // per vehicle ("none" for a vehicle that is to stay without one).
+  const links = c.vehicle_devices;
+  if (links !== undefined && links !== null && links !== false) {
+    const ok = typeof links === "object" && !Array.isArray(links)
+      && Object.values(links).every(v => v === false || (typeof v === "string" && v.trim()));
+    if (!ok) throw new Error("evcc-card: vehicle_devices has to be false or a map of vehicle name to device id or \"none\"");
   }
 }
 
@@ -253,6 +322,7 @@ function validateCardConfig(config) {
 const RENDER_ATTRS = [
   "options", "min", "max", "step", "unit_of_measurement", "device_class",
   "title", "loadpoint_title", "vehicle", "soc", "time", "weekdays",
+  "state_class", "source_type", "entity_picture",
 ];
 
 // Settings the user can drop from the loadpoint/compact card via
@@ -453,6 +523,60 @@ function discoverEntities(hass, prefix = "evcc_") {
   }
 
   return { loadpoints, site, meters };
+}
+
+// The vehicles ha-evcc knows, keyed by the slug it puts into their entity ids
+// (slugify of the vehicle title in evcc). A vehicle shows up here as soon as one
+// of its own entities exists: the configvehicle_* sensors, a repeating plan
+// switch or the session totals. None of them depends on a loadpoint, so an
+// unplugged vehicle stays in the list. Per vehicle: the VEHICLE_FEATURES and
+// VEHICLE_SESSION_FEATURES keys with their entity ids, plus `repeating_plans`,
+// the plan switches in plan order.
+const REPEATING_PLAN_RE = /^(.+)_repeating_plan_(\d+)$/;
+function discoverVehicles(hass, prefix = "evcc_") {
+  const vehicles = {};
+  const foreign  = installedPrefixes(hass).filter(p => p.length > prefix.length && p.startsWith(prefix));
+  const entry    = slug => (vehicles[slug] ??= { repeating_plans: [] });
+
+  for (const entityId of Object.keys(hass.states)) {
+    const dotIdx = entityId.indexOf(".");
+    if (dotIdx < 0) continue;
+    const domain = entityId.slice(0, dotIdx);
+    const slug   = entityId.slice(dotIdx + 1);
+    if (!slug.startsWith(prefix)) continue;
+    if (foreign.some(p => slug.startsWith(p))) continue;
+    const rest = slug.slice(prefix.length);
+
+    if (domain === "switch") {
+      const m = rest.match(REPEATING_PLAN_RE);
+      if (m) entry(m[1]).repeating_plans.push({ n: parseInt(m[2], 10), entityId });
+      continue;
+    }
+
+    const session = rest.startsWith(VEHICLE_SESSION_INFIX);
+    const feats   = session ? VEHICLE_SESSION_FEATURES : VEHICLE_FEATURES;
+    const name    = session ? rest.slice(VEHICLE_SESSION_INFIX.length) : rest;
+    for (const feat of feats) {
+      if (feat.domain !== domain || !name.endsWith("_" + feat.suffix)) continue;
+      entry(name.slice(0, name.length - feat.suffix.length - 1))[feat.key] = entityId;
+      break;
+    }
+  }
+
+  for (const v of Object.values(vehicles)) {
+    v.repeating_plans = v.repeating_plans.sort((a, b) => a.n - b.n).map(p => p.entityId);
+  }
+  return vehicles;
+}
+
+// The discovered vehicles narrowed by the card's `vehicles` option, compared
+// without case like `repeating_plan_vehicles`; without the option every
+// discovered vehicle is in.
+function selectVehicles(vehicles, config) {
+  const filter = vehicleFilter(config);
+  if (!filter) return vehicles;
+  const allowed = new Set(filter.map(v => String(v).toLowerCase()));
+  return Object.fromEntries(Object.entries(vehicles).filter(([slug]) => allowed.has(slug.toLowerCase())));
 }
 
 // The prefixes of every ha-evcc installation, without a round trip: HA mirrors
@@ -1935,6 +2059,101 @@ const socControl = {
   },
 };
 
+// The vehicle as a picture: one schematic side view that changes with what the
+// vehicle is doing. Drawn by hand as inline SVG, a few hundred bytes, coloured
+// through the card's CSS variables so it follows the theme. The traction
+// battery in the floor carries the charge level.
+//
+//   parked     the car alone, at rest
+//   driving    wheels turning, the road running underneath, no charger
+//   connected  a charger behind the car, the cable plugged in
+//   charging   the same with energy running through the cable and a bolt on the battery
+//
+// With a picture of the real car (`vehicle_images`, or an image entity of the
+// vehicle's integration) the drawing of the car gives way to it and the scene
+// around it stays: ground, road and wind, charger and cable, and a bolt badge
+// in place of the one on the battery. A photo has no wheels to turn and no
+// floor to look into, so the charge level is left to the bar underneath.
+//
+// Geometry (320 wide, the empty strip above the roof cut off by the viewBox):
+// the car faces right, wheels at x 92 and 228, ground at y 97, the charge port
+// on the rear wing, the charger at the left edge. Every moving part is animated in CSS (styles.js) and stands still under
+// prefers-reduced-motion.
+const BODY    = "M40,80 L40,60 Q40,52 50,49 L74,32 Q80,27 90,27 L168,27 Q178,27 186,33 L214,50 L266,56 Q284,59 284,72 L284,80 L250,80 A22,22 0 0 0 206,80 L114,80 A22,22 0 0 0 70,80 Z";
+const WINDOWS = "M86,34 L80,48 L128,48 L128,34 Z M135,34 L135,48 L203,48 L183,35.5 Q181,34 177,34 Z";
+const CABLE   = "M21,54 C36,54 28,84 42,76 C50,71 46,62 53,60";
+const BOLT    = "M162,60 L154,69 L159,69 L157,76 L166,66 L161,66 Z";
+
+const BATTERY = { x: 120, y: 62, w: 80, h: 12 };
+
+function wheel(cx) {
+  return `
+    <g class="vg-wheel" style="transform-origin:${cx}px 80px">
+      <circle cx="${cx}" cy="80" r="16" class="vg-tyre"/>
+      <circle cx="${cx}" cy="80" r="6.5" class="vg-hub"/>
+      <path d="M${cx},66 V73 M${cx},87 V94 M${cx - 14},80 H${cx - 7} M${cx + 7},80 H${cx + 14}" class="vg-spoke"/>
+    </g>`;
+}
+
+// Where the photo sits: standing on the ground line and pushed against the left
+// of its box, so that its rear end meets the cable whatever its proportions.
+const PHOTO = { x: 46, y: 20, w: 252, h: 78 };
+
+const VEHICLE_STATES = ["parked", "driving", "connected", "charging"];
+
+// Vehicle picture. Methods are mixed into EvccCard.prototype.
+const vehicleGraphic = {
+  // `soc` in percent or null when nobody knows it; `label` is what a screen
+  // reader gets instead of the drawing; `image` is { source, url } of a picture
+  // of the real car, or null.
+  _renderVehicleGraphic(state, soc, label, image = null) {
+    const level   = soc === null ? 0 : Math.max(0, Math.min(100, soc));
+    const fillW   = Math.round(BATTERY.w * level) / 100;
+    const tone    = state === "charging" ? "charging" : level < 20 ? "low" : "";
+    const plugged = state === "connected" || state === "charging";
+
+    const charger = plugged ? `
+      <g class="vg-charger">
+        <rect x="7" y="40" width="14" height="57" rx="3"/>
+        <rect x="10" y="45" width="8" height="6" rx="1.5" class="vg-charger-light"/>
+      </g>
+      <path d="${CABLE}" class="vg-cable"/>
+      ${state === "charging" ? `<path d="${CABLE}" class="vg-cable-flow"/>` : ""}` : "";
+
+    const motion = state === "driving" ? `
+      <path d="M4,52 H26 M10,62 H30 M2,72 H24" class="vg-wind"/>
+      <path d="M0,97 H320" class="vg-road"/>` : `<path d="M0,97 H320" class="vg-ground"/>`;
+
+    return `
+      <div class="vehicle-graphic" data-vehicle-state="${state}">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 18 320 86" role="img" aria-label="${escAttr(label)}">
+          ${motion}
+          ${charger}
+          ${image ? `
+          <g class="vg-car">
+            <image class="vg-photo" href="${escAttr(image.url)}" data-vehicle-image="${escAttr(image.source)}"
+                   x="${PHOTO.x}" y="${PHOTO.y}" width="${PHOTO.w}" height="${PHOTO.h}" preserveAspectRatio="xMinYMax meet"/>
+          </g>
+          ${plugged ? `<circle cx="53" cy="60" r="3.5" class="vg-plug"/>` : ""}
+          ${state === "charging" ? `<g class="vg-badge"><circle cx="262" cy="34" r="11"/><path d="${BOLT}" transform="translate(102,-34)" class="vg-bolt"/></g>` : ""}` : `
+          <g class="vg-car">
+            <path d="${BODY}" class="vg-body"/>
+            <path d="${WINDOWS}" class="vg-window"/>
+            <path d="M131.5,33 V80" class="vg-seam"/>
+            <rect x="268" y="60" width="12" height="5" rx="2.5" class="vg-lamp vg-lamp-front"/>
+            <rect x="40" y="57" width="5" height="9" rx="2" class="vg-lamp vg-lamp-rear"/>
+            <circle cx="55" cy="60" r="3" class="vg-port"/>
+            <rect x="${BATTERY.x}" y="${BATTERY.y}" width="${BATTERY.w}" height="${BATTERY.h}" rx="3" class="vg-battery"/>
+            ${soc === null ? "" : `<rect x="${BATTERY.x}" y="${BATTERY.y}" width="${fillW}" height="${BATTERY.h}" rx="3" class="vg-battery-fill ${tone}"/>`}
+            ${state === "charging" ? `<path d="${BOLT}" class="vg-bolt"/>` : ""}
+            ${wheel(92)}
+            ${wheel(228)}
+          </g>`}
+        </svg>
+      </div>`;
+  },
+};
+
 // Charge plan block with preview chart, plan mode and repeating plans. Methods are mixed into EvccCard.prototype.
 const planningView = {
   _renderPlanBlock(lpName, ents, force = false) {
@@ -2356,24 +2575,13 @@ const planningView = {
       const m = entityId.match(re);
       if (!m) continue;
       const slug = m[1];
-      const n    = parseInt(m[2], 10);
-      const st   = states[entityId];
-      if (!st || st.state === "unavailable" || st.state === "unknown") continue;
-      const a = st.attributes || {};
-      // Only render plans that actually carry schedule data.
-      if (!Array.isArray(a.weekdays) && a.time == null) continue;
+      const plan = this._readRepeatingPlan(entityId, parseInt(m[2], 10));
+      if (!plan) continue;
 
       if (!groups[slug]) {
         groups[slug] = { slug, vehicleName: this._vehicleNameForSlug(slug), plans: [] };
       }
-      groups[slug].plans.push({
-        n,
-        entityId,
-        active:   st.state === "on",
-        weekdays: Array.isArray(a.weekdays) ? a.weekdays.map(Number) : [],
-        time:     a.time ?? null,
-        soc:      a.soc ?? null,
-      });
+      groups[slug].plans.push(plan);
     }
 
     let result = Object.values(groups)
@@ -2389,6 +2597,24 @@ const planningView = {
     }
 
     return result;
+  },
+
+  // One repeating plan switch as the row the plan list renders, or null when
+  // the switch carries no schedule: ha-evcc creates the switches up front, the
+  // ones without a plan in evcc stay unavailable.
+  _readRepeatingPlan(entityId, n) {
+    const st = this._hass.states[entityId];
+    if (!st || st.state === "unavailable" || st.state === "unknown") return null;
+    const a = st.attributes || {};
+    if (!Array.isArray(a.weekdays) && a.time == null) return null;
+    return {
+      n,
+      entityId,
+      active:   st.state === "on",
+      weekdays: Array.isArray(a.weekdays) ? a.weekdays.map(Number) : [],
+      time:     a.time ?? null,
+      soc:      a.soc ?? null,
+    };
   },
 
   _vehicleNameForSlug(slug) {
@@ -4603,6 +4829,573 @@ const batteryView = {
   },
 };
 
+// What Home Assistant knows about a vehicle beyond ha-evcc: the device of the
+// vehicle's own integration and the entities on it. Nothing in here is specific
+// to one brand. A device is recognised by what it carries (a traction battery
+// level and a distance), its entities are sorted by domain, device class and
+// unit, and only where those leave a choice (three distances on one device) by
+// words in the translation key and the entity id, which stay the same in every
+// UI language. Everything is read from hass.devices and hass.entities, the
+// registries the frontend already holds, so linking a vehicle costs no call.
+
+const norm = s => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const domainOf = entityId => entityId.slice(0, entityId.indexOf("."));
+
+// Words that tell entities of the same kind apart.
+const HINTS = {
+  range:      /range|reichweite|distance_to_empty|autonom|remaining_distance/,
+  notRange:   /service|wartung|maintenance|inspection|trip|oil/,
+  odometer:   /odometer|kilometerstand|mileage|milage/,
+  trip:       /trip|fahrtstrecke|journey/,
+  auxBattery: /12v|12_v|aux|starter|low_voltage/,
+  target:     /target|soll|charge_limit|limit/,
+  capacity:   /capacity|kapazit/,
+};
+
+// The entities of a device, enabled and visible, each with what the sorting
+// below looks at.
+function deviceEntities(hass, deviceId) {
+  const out = [];
+  for (const ent of Object.values(hass.entities || {})) {
+    if (ent.device_id !== deviceId || ent.hidden) continue;
+    const st = hass.states?.[ent.entity_id];
+    if (!st) continue;
+    const a = st.attributes || {};
+    out.push({
+      entityId:    ent.entity_id,
+      domain:      domainOf(ent.entity_id),
+      deviceClass: a.device_class ?? null,
+      unit:        a.unit_of_measurement ?? null,
+      stateClass:  a.state_class ?? null,
+      sourceType:  a.source_type ?? null,
+      options:     Array.isArray(a.options) ? a.options : [],
+      hint:        `${ent.translation_key ?? ""} ${ent.entity_id.slice(ent.entity_id.indexOf(".") + 1)}`.toLowerCase(),
+      state:       st.state,
+    });
+  }
+  return out;
+}
+
+const isDistance = e => e.domain === "sensor" && (e.deviceClass === "distance" || e.unit === "km" || e.unit === "mi");
+const isLevel    = e => e.domain === "sensor" && e.unit === "%" && e.deviceClass === "battery" && !HINTS.auxBattery.test(e.hint);
+
+// Sort the entities of a vehicle device into what the card shows:
+//   roles     one entity each: soc, range, odometer, capacity, target_soc, lock, location, image,
+//             and what the vehicle is doing: driving, charging, plugged
+//   openings  doors, windows, lids
+//   problems  warning flags
+//   actions   buttons
+//   details   every other sensor and binary sensor
+function classifyVehicleDevice(hass, deviceId) {
+  const ents  = deviceEntities(hass, deviceId);
+  const roles = {};
+  const take  = (role, found) => { if (found && !roles[role]) roles[role] = found.entityId; };
+
+  take("soc", ents.find(isLevel));
+
+  const distances = ents.filter(isDistance);
+  take("odometer", distances.find(e => HINTS.odometer.test(e.hint))
+    // No telling name: the counter that only ever rises and is no trip meter,
+    // the highest one if there are several.
+    ?? distances.filter(e => e.stateClass === "total_increasing" && !HINTS.trip.test(e.hint))
+         .sort((a, b) => (parseFloat(b.state) || 0) - (parseFloat(a.state) || 0))[0]);
+  const ranges = distances.filter(e => e.entityId !== roles.odometer && e.stateClass !== "total_increasing" && !HINTS.notRange.test(e.hint));
+  take("range", ranges.find(e => HINTS.range.test(e.hint)) ?? (ranges.length === 1 ? ranges[0] : null));
+
+  take("capacity", ents.find(e => e.domain === "sensor" && (e.deviceClass === "energy_storage" || (e.unit === "kWh" && HINTS.capacity.test(e.hint)))));
+  take("target_soc", ents.find(e => e.domain === "sensor" && e.unit === "%" && e.entityId !== roles.soc && HINTS.target.test(e.hint)));
+  take("image", ents.find(e => e.domain === "image"));
+  take("lock", ents.find(e => e.domain === "lock"));
+  take("location", ents.find(e => e.domain === "device_tracker" && e.sourceType === "gps") ?? ents.find(e => e.domain === "device_tracker"));
+
+  // What the vehicle is doing. A binary sensor says it through its device class,
+  // a status sensor through the options it can take, which are keys and not
+  // translated: one that can be "charging" is the charge status, one that can
+  // be "connected" and "disconnected" is the plug.
+  const binary = cls => ents.find(e => e.domain === "binary_sensor" && cls.includes(e.deviceClass));
+  const status = (...opts) => ents.find(e => e.domain === "sensor" && opts.every(o => e.options.includes(o)));
+  take("driving",  binary(["running", "moving"]));
+  take("charging", binary(["battery_charging"]) ?? status("charging"));
+  take("plugged",  binary(["plug"]) ?? status("connected", "disconnected"));
+
+  // The status entities stay in the details: the picture sums them up, it does
+  // not replace "charge status: done".
+  const STATUS   = ["driving", "charging", "plugged"];
+  const used     = new Set(Object.entries(roles).filter(([role]) => !STATUS.includes(role)).map(([, id]) => id));
+  const openings = ents.filter(e => e.domain === "binary_sensor" && ["door", "window", "opening", "garage_door"].includes(e.deviceClass));
+  const problems = ents.filter(e => e.domain === "binary_sensor" && e.deviceClass === "problem");
+  const actions  = ents.filter(e => e.domain === "button");
+  const grouped  = new Set([...openings, ...problems].map(e => e.entityId));
+  const details  = ents.filter(e => (e.domain === "sensor" || e.domain === "binary_sensor") && !used.has(e.entityId) && !grouped.has(e.entityId));
+
+  const ids = list => list.map(e => e.entityId).sort();
+  return { roles, openings: ids(openings), problems: ids(problems), actions: ids(actions), details: ids(details) };
+}
+
+// The device that belongs to an evcc vehicle. It has to be a vehicle, which the
+// card reads off what it carries, a battery level in percent and a distance,
+// and its name or model has to contain the vehicle's evcc title or the slug
+// ha-evcc made of it. Both conditions together keep short names honest: "id7"
+// is part of many device names, but hardly of another car's. The companion app
+// of a car registers a device of the same name with a tracker and nothing else,
+// and drops out on the first condition. Several matches: the one with the most
+// entities, the integration rather than a helper built on top of it.
+function findVehicleDevice(hass, slug, title = null) {
+  const wanted = [...new Set([norm(slug), norm(title)])].filter(w => w.length >= 2);
+  if (!wanted.length) return null;
+
+  const count = {};
+  for (const ent of Object.values(hass.entities || {})) {
+    if (ent.device_id) count[ent.device_id] = (count[ent.device_id] || 0) + 1;
+  }
+
+  let best = null;
+  for (const dev of Object.values(hass.devices || {})) {
+    if ((dev.identifiers || []).some(([domain]) => domain === "evcc_intg")) continue;
+    const names = [dev.name_by_user, dev.name, dev.model].map(norm).filter(Boolean);
+    if (!names.some(n => wanted.some(w => n.includes(w)))) continue;
+    const ents = deviceEntities(hass, dev.id);
+    if (!ents.some(isLevel) || !ents.some(isDistance)) continue;
+    if (!best || (count[dev.id] || 0) > (count[best] || 0)) best = dev.id;
+  }
+  return best;
+}
+
+// Every device the editor can offer for a vehicle, the ones that look like a
+// vehicle first. The rest stays selectable: an integration that reports no
+// distance at all is still a vehicle if its owner says so.
+function listVehicleDevices(hass) {
+  // One pass over the registry instead of one per device: an installation has
+  // hundreds of devices and thousands of entities.
+  const byDevice = {};
+  for (const ent of Object.values(hass.entities || {})) {
+    if (!ent.device_id || ent.hidden || !hass.states?.[ent.entity_id]) continue;
+    const a = hass.states[ent.entity_id].attributes || {};
+    (byDevice[ent.device_id] ??= []).push({
+      domain: domainOf(ent.entity_id), deviceClass: a.device_class ?? null, unit: a.unit_of_measurement ?? null,
+      hint: `${ent.translation_key ?? ""} ${ent.entity_id}`.toLowerCase(),
+    });
+  }
+  return Object.values(hass.devices || {})
+    .filter(dev => byDevice[dev.id] && !(dev.identifiers || []).some(([domain]) => domain === "evcc_intg"))
+    .map(dev => ({ id: dev.id, name: dev.name_by_user || dev.name || dev.id,
+                   vehicleLike: byDevice[dev.id].some(isLevel) && byDevice[dev.id].some(isDistance) }))
+    .sort((a, b) => (b.vehicleLike - a.vehicleLike) || a.name.localeCompare(b.name));
+}
+
+// What a linked vehicle is doing, as far as its own integration tells:
+// "charging", "driving", "connected" or "parked". A vehicle that charges is not
+// driving, whatever the engine flag says, and a plugged one that does not charge
+// is connected. Unknown states count as "no".
+function vehicleDeviceState(hass, roles = {}) {
+  const is = (role, ...values) => values.includes(hass.states?.[roles[role]]?.state);
+  if (is("charging", "on", "charging")) return "charging";
+  if (is("driving", "on"))              return "driving";
+  if (is("plugged", "on", "connected")) return "connected";
+  return "parked";
+}
+
+// `vehicle_devices` decides per vehicle: a device id overrides the search,
+// "none" switches the link off for that vehicle, and `vehicle_devices: false`
+// switches it off for the card. Returns the device id or null.
+function resolveVehicleDevice(hass, config, slug, title = null) {
+  const opt = config?.vehicle_devices;
+  if (opt === false) return null;
+  const chosen = opt && typeof opt === "object" ? opt[slug] : undefined;
+  if (chosen === "none" || chosen === false) return null;
+  if (typeof chosen === "string" && chosen) return hass.devices?.[chosen] ? chosen : null;
+  return findVehicleDevice(hass, slug, title);
+}
+
+// The title evcc gave a vehicle, from the device ha-evcc creates for it
+// ("evcc - Fahrzeug EX30 [evcc]"). The words around it follow the language of
+// the integration, so the title is located by the slug instead, underscores
+// standing for whatever slugify replaced: "blue_e_golf" finds "blue e-Golf".
+function evccVehicleTitle(hass, slug, vehicle) {
+  const probe = vehicle && Object.values(vehicle).find(v => typeof v === "string");
+  const ids   = [probe, ...(vehicle?.repeating_plans || [])].filter(Boolean);
+  for (const entityId of ids) {
+    const dev = hass.devices?.[hass.entities?.[entityId]?.device_id];
+    if (!dev) continue;
+    if (dev.name_by_user) return dev.name_by_user;
+    const pattern = slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/_/g, "[^a-z0-9]+");
+    const m = String(dev.name ?? "").match(new RegExp(pattern, "i"));
+    if (m) return m[0];
+  }
+  return null;
+}
+
+const ICON_BATTERY  = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg>`;
+const ICON_RANGE    = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M11.5 0L9 8H11V16H13V8H15L11.5 0M3 18V20H21V18L11.5 16L3 18Z"/></svg>`;
+const ICON_ODOMETER = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M12,16A3,3 0 0,1 9,13C9,11.88 9.61,10.9 10.5,10.39L20.21,4.77L14.68,14.35C14.18,15.33 13.17,16 12,16M12,3C13.81,3 15.5,3.5 16.97,4.32L14.87,5.53C14,5.19 13,5 12,5A8,8 0 0,0 4,13C4,15.21 4.89,17.21 6.34,18.65H6.35C6.74,19.04 6.74,19.67 6.35,20.06C5.96,20.45 5.32,20.45 4.93,20.07V20.07C3.12,18.26 2,15.76 2,13A10,10 0 0,1 12,3M22,13C22,15.76 20.88,18.26 19.07,20.07V20.07C18.68,20.45 18.05,20.45 17.66,20.06C17.27,19.67 17.27,19.04 17.66,18.65V18.65C19.11,17.2 20,15.21 20,13C20,12 19.81,11 19.46,10.1L20.67,8C21.5,9.5 22,11.18 22,13Z"/></svg>`;
+
+const ICON_LOCK     = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z"/></svg>`;
+const ICON_UNLOCK   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6C4.89,22 4,21.1 4,20V10A2,2 0 0,1 6,8H15V6A3,3 0 0,0 12,3A3,3 0 0,0 9,6H7A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,17A2,2 0 0,0 14,15A2,2 0 0,0 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17Z"/></svg>`;
+const ICON_DOOR     = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M19,14H16V16H19V14M22,21H3V11L11,3H21A1,1 0 0,1 22,4V21M11.83,5L5.83,11H20V5H11.83Z"/></svg>`;
+const ICON_PIN      = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M12,11.5A2.5,2.5 0 0,1 9.5,9A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,9A2.5,2.5 0 0,1 12,11.5M12,2A7,7 0 0,0 5,9C5,14.25 12,22 12,22C12,22 19,14.25 19,9A7,7 0 0,0 12,2Z"/></svg>`;
+const ICON_WARN     = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M13,14H11V10H13M13,18H11V16H13M1,21H23L12,2L1,21Z"/></svg>`;
+const ICON_CHECK    = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/></svg>`;
+
+const NO_VALUE = new Set(["unknown", "unavailable", ""]);
+// How many open doors or warnings get a chip of their own before the rest is summed up.
+const MAX_CHIPS = 4;
+
+// Vehicle mode: one block per vehicle evcc knows, plugged in or not. Methods are mixed into EvccCard.prototype.
+const vehicleView = {
+  _renderVehicleMode(loadpoints) {
+    const all      = discoverVehicles(this._hass, this._getPrefix());
+    const vehicles = selectVehicles(all, this._config);
+    const slugs    = Object.keys(vehicles).sort();
+    if (slugs.length === 0) return this._renderNoVehicles(all);
+
+    const links = this._vehicleLinks();
+    return slugs.map(slug => this._renderVehicle(slug, vehicles[slug],
+      this._vehicleLoadpoint(slug, loadpoints), slugs.length === 1, links[slug] ?? null)).join("");
+  },
+
+  // Which Home Assistant device belongs to which vehicle, and the entities on
+  // it. The search walks both registries, and the render key asks for the
+  // entity list on every hass update, so the answer is kept until one of the
+  // registries, the config or the set of evcc entities changes.
+  _vehicleLinks() {
+    const hass = this._hass;
+    if (!hass) return {};
+    const c = this._vehicleLinkCache;
+    const stateCount = Object.keys(hass.states).length;
+    if (c && c.entities === hass.entities && c.devices === hass.devices && c.config === this._config
+        && c.prefix === this._getPrefix() && c.stateCount === stateCount) return c.links;
+
+    const links = {};
+    const vehicles = selectVehicles(discoverVehicles(hass, this._getPrefix()), this._config);
+    for (const [slug, vehicle] of Object.entries(vehicles)) {
+      const deviceId = resolveVehicleDevice(hass, this._config, slug, evccVehicleTitle(hass, slug, vehicle));
+      if (!deviceId) continue;
+      const entityIds = Object.values(hass.entities || {}).filter(e => e.device_id === deviceId).map(e => e.entity_id);
+      links[slug] = { deviceId, entityIds };
+    }
+    this._vehicleLinkCache = { entities: hass.entities, devices: hass.devices, config: this._config,
+                               prefix: this._getPrefix(), stateCount, links };
+    return links;
+  },
+
+  // Entities outside the evcc prefix whose changes have to reach the card.
+  _vehicleLinkedIds() {
+    return Object.values(this._vehicleLinks()).flatMap(l => l.entityIds);
+  },
+
+  // The loadpoint a vehicle is assigned to right now. ha-evcc describes the
+  // vehicle of a loadpoint in the `vehicle` attribute of its vehicle select, and
+  // the `id` in there is the slug the vehicle's own entity ids are built from.
+  _vehicleLoadpoint(slug, loadpoints) {
+    for (const [lpName, ents] of Object.entries(loadpoints)) {
+      if (!ents.vehicle_name) continue;
+      const vehicle = this._hass.states[ents.vehicle_name]?.attributes?.vehicle;
+      if (vehicle?.id !== slug) continue;
+      return {
+        lpName, ents,
+        title:     vehicle.name && vehicle.name !== "null" ? vehicle.name : null,
+        connected: ents.connected ? isOn(this._hass, ents.connected) : false,
+        charging:  ents.charging  ? isOn(this._hass, ents.charging)  : false,
+      };
+    }
+    return null;
+  },
+
+  // A value can exist three times. While the vehicle is connected it is read
+  // from the loadpoint: evcc polls a charging vehicle far more often than a
+  // parked one, and the loadpoint falls back to the charger's own reading.
+  // Unplugged, the vehicle's evcc sensor and the one of its own integration are
+  // left, and the one that changed last wins. `unknown` and `unavailable` are
+  // the normal state of a sleeping vehicle, not an error, and read as "no
+  // value"; so does anything not above `min`, because evcc reports a charge
+  // level of 0 for a vehicle it cannot reach instead of saying it does not know.
+  _vehicleValue({ vehicle, device, lp, lpKey, min = -Infinity }) {
+    const read = entityId => {
+      const st = entityId && this._hass.states[entityId];
+      if (!st) return null;
+      const v = parseFloat(st.state);
+      return isNaN(v) || !(v > min) ? null : { value: v, entityId, updated: Date.parse(st.last_updated) || 0 };
+    };
+    const fromLp = lp?.connected ? read(lp.ents[lpKey]) : null;
+    if (fromLp) return fromLp;
+    return [read(vehicle), read(device)].filter(Boolean).sort((a, b) => b.updated - a.updated)[0] ?? null;
+  },
+
+  // "2 hours ago" in the card's language, for the tooltip of a value. The state
+  // of a parked car does not change, so an old value is no stale value and gets
+  // no warning colour; the age is there for whoever wonders.
+  _vehicleAge(updated) {
+    if (!updated) return "";
+    const min = Math.max(0, Math.round((Date.now() - updated) / 60000));
+    const lang = this._config.language || this._hass?.language || "en";
+    let text;
+    try {
+      const rtf = new Intl.RelativeTimeFormat(lang, { numeric: "auto" });
+      text = min < 60 ? rtf.format(-min, "minute") : min < 2880 ? rtf.format(-Math.round(min / 60), "hour") : rtf.format(-Math.round(min / 1440), "day");
+    } catch (e) { return ""; }
+    return this._t("vehicleUpdated", { val: text });
+  },
+
+  _renderVehicle(slug, vehicle, lp, single, link) {
+    const title = (single && this._config.title) || lp?.title
+      || evccVehicleTitle(this._hass, slug, vehicle) || this._vehicleNameForSlug(slug);
+    const dev   = link ? classifyVehicleDevice(this._hass, link.deviceId) : null;
+    const roles = dev?.roles ?? {};
+
+    const soc      = this._vehicleValue({ vehicle: vehicle.soc,       device: roles.soc,        lp, lpKey: "vehicle_soc", min: 0 });
+    const range    = this._vehicleValue({ vehicle: vehicle.range,     device: roles.range,      lp, lpKey: "vehicle_range" });
+    const odometer = this._vehicleValue({ vehicle: vehicle.odometer,  device: roles.odometer,   lp, lpKey: "vehicle_odometer" });
+    // evcc reports a limit of 0 for a vehicle that has none.
+    const limit    = this._vehicleValue({ vehicle: vehicle.limit_soc, device: roles.target_soc, lp, lpKey: "effective_limit_soc", min: 0 });
+    const limitSoc = limit ? limit.value : null;
+
+    // What the vehicle is doing. evcc knows about its own loadpoints and leads
+    // there; everything else (driving, charging somewhere else) only the
+    // vehicle's integration can tell. Without one, a vehicle that is not at a
+    // loadpoint is simply "not connected": the card does not claim it is parked.
+    const state = lp?.charging ? "charging" : lp?.connected ? "connected"
+                : dev ? vehicleDeviceState(this._hass, roles) : "parked";
+    const statusClass = state === "charging" ? "charging" : state === "connected" ? "connected" : "ready";
+    const statusLabel = state === "charging" ? this._t("charging")
+                      : state === "connected" ? this._t("connected")
+                      : state === "driving"   ? this._t("vehicleDriving")
+                      : dev ? this._t("vehicleParked") : this._t("vehicleNotConnected");
+    const lpTitle = lp?.connected ? this._loadpointTitle(lp.lpName, lp.ents) : null;
+
+    const value = (v, icon, text) => v
+      ? `<span data-more-info="${escAttr(v.entityId)}" title="${escAttr(this._vehicleAge(v.updated))}">${icon} ${text}</span>` : "";
+    const km = v => `${Math.round(v.value)} ${escHtml(unitStr(this._hass, v.entityId) || "km")}`;
+
+    const socHtml = soc ? `
+      <div class="soc-track" style="background:${socTrackBg(0, limitSoc ?? 100)}">
+        <div class="soc-fill ${state === "charging" ? "charging" : ""}"
+             style="width:${Math.min(soc.value, 100)}%;background:${socFillGradient(soc.value, 0, limitSoc ?? 100)}"></div>
+        ${limitSoc !== null ? `<div class="soc-limit-marker" style="left:${Math.min(limitSoc, 100)}%"></div>` : ""}
+      </div>` : "";
+
+    const hasVehicleData = VEHICLE_FEATURES.some(f => vehicle[f.key]) || !!dev;
+
+    return `
+      <div class="loadpoint vehicle-block" data-vehicle="${escAttr(slug)}">
+        <div class="lp-header">
+          <span class="lp-name">${escHtml(title)}</span>
+          ${lpTitle ? `<span class="vehicle-lp" title="${this._t("vehicleAtLoadpoint")}">${escHtml(lpTitle)}</span>` : ""}
+          <span class="lp-badge ${statusClass}">${statusLabel}</span>
+        </div>
+        ${this._config.vehicle_graphic === "hide" ? "" : this._renderVehicleGraphic(state, soc ? soc.value : null, `${title}: ${statusLabel}`, this._vehicleImage(slug, roles))}
+        ${(soc || range || odometer) ? `
+        <div class="soc-section">
+          <div class="soc-label-row">
+            ${value(soc, ICON_BATTERY, soc ? `${Math.round(soc.value)} %` : "")}
+            ${value(range, ICON_RANGE, range ? km(range) : "")}
+            ${value(odometer, ICON_ODOMETER, odometer ? km(odometer) : "")}
+          </div>
+          ${socHtml}
+        </div>` : ""}
+        ${!hasVehicleData ? `<div class="vehicle-hint">${this._t("vehicleExtDataHint")}</div>`
+          : !(soc || range || odometer) ? `<div class="vehicle-hint">${this._t("vehicleNoData")}</div>` : ""}
+        ${dev ? this._renderVehicleChips(dev) : ""}
+        ${this._renderVehiclePlan(lp)}
+        ${this._renderVehicleRepeatPlans(vehicle)}
+        ${this._renderVehicleTotals(vehicle)}
+        ${dev ? this._renderVehicleDetails(slug, dev) : ""}
+      </div>`;
+  },
+
+  // The picture of the real car: the configured one, else what the vehicle's
+  // integration offers as an image entity. Returns { source, url } or null;
+  // `source` is what was configured and `url` what the browser can load. One
+  // that failed to load is not tried again, the drawing takes over.
+  _vehicleImage(slug, roles) {
+    const configured = this._config.vehicle_images?.[slug];
+    const fromEntity = roles.image ? this._hass.states[roles.image]?.attributes?.entity_picture : null;
+    const source = [configured, fromEntity].find(v => isMediaSourceId(v) || isVehicleImageUrl(v))?.trim() ?? null;
+    if (!source || this._vehicleImageFailed[source]) return null;
+    const url = isMediaSourceId(source) ? this._vehicleMediaUrl(source) : source;
+    return url ? { source, url } : null;
+  },
+
+  // An item of the media library has no address of its own: Home Assistant
+  // hands out a signed one on request, valid for a day. It is asked for once
+  // and again after half that time, never on a plain re-render; until the
+  // answer is there the drawing stands in.
+  _vehicleMediaUrl(source) {
+    const HALF_LIFE = 12 * 3600 * 1000;
+    const hit = this._vehicleMedia[source];
+    if (hit?.url && Date.now() - hit.ts < HALF_LIFE) return hit.url;
+    if (!hit?.pending) {
+      this._vehicleMedia[source] = { ...hit, pending: true };
+      this._hass.callWS({ type: "media_source/resolve_media", media_content_id: source })
+        .then(res => {
+          if (!res?.url) throw new Error("no url");
+          this._vehicleMedia[source] = { url: res.url, ts: Date.now() };
+        })
+        .catch(() => {
+          delete this._vehicleMedia[source];
+          this._vehicleImageFailed[source] = true;
+        })
+        .finally(() => { if (this._hass && this.isConnected) this._render(); });
+    }
+    return hit?.url ?? null;   // an address about to expire still beats the drawing
+  },
+
+  // The name Home Assistant shows for an entity inside its device ("Tür vorne
+  // links", without the device name in front).
+  _vehicleEntityName(entityId) {
+    return this._hass.entities?.[entityId]?.name
+      || entityId.slice(entityId.indexOf(".") + 1).replace(/_/g, " ");
+  },
+
+  // A state the way Home Assistant words it (translated enum options, zone
+  // names, units); the raw state on a frontend too old to offer that.
+  _vehicleStateText(entityId) {
+    const st = this._hass.states[entityId];
+    if (!st || NO_VALUE.has(st.state)) return null;
+    if (typeof this._hass.formatEntityState === "function") return this._hass.formatEntityState(st);
+    const n    = Number(st.state);
+    const unit = unitStr(this._hass, entityId);
+    const text = st.state.trim() !== "" && !isNaN(n) ? String(Math.round(n * 10) / 10) : st.state;
+    return unit ? `${text} ${unit}` : text;
+  },
+
+  // Lock, location, doors and warnings at a glance. Thirty warning flags are
+  // one chip while all is well, and a chip each for the ones that are raised;
+  // a flag the car does not report (`unknown`) is no warning.
+  _renderVehicleChips(dev) {
+    const chip = (cls, icon, text, entityId = null, hint = "") =>
+      `<span class="vehicle-chip ${cls}"${entityId ? ` data-more-info="${escAttr(entityId)}"` : ""}${hint ? ` title="${escAttr(hint)}"` : ""}>${icon} ${escHtml(text)}</span>`;
+    const chips = [];
+
+    const lock = dev.roles.lock && this._hass.states[dev.roles.lock];
+    if (lock && !NO_VALUE.has(lock.state)) {
+      const locked = lock.state === "locked";
+      chips.push(chip(locked ? "ok" : "warn", locked ? ICON_LOCK : ICON_UNLOCK,
+        locked ? this._t("vehicleLocked") : this._t("vehicleUnlocked"), dev.roles.lock));
+    }
+
+    const group = (ids, okText, icon, cls) => {
+      const raised = ids.filter(id => isOn(this._hass, id));
+      if (!ids.length) return;
+      if (!raised.length) { chips.push(chip("ok", ICON_CHECK, okText)); return; }
+      raised.slice(0, MAX_CHIPS).forEach(id => chips.push(chip(cls, icon, this._vehicleEntityName(id), id)));
+      if (raised.length > MAX_CHIPS) {
+        chips.push(chip(cls, icon, `+${raised.length - MAX_CHIPS}`, null, raised.slice(MAX_CHIPS).map(id => this._vehicleEntityName(id)).join(", ")));
+      }
+    };
+    group(dev.openings, this._t("vehicleAllClosed"),  ICON_DOOR, "warn");
+    group(dev.problems, this._t("vehicleNoWarnings"), ICON_WARN, "alert");
+
+    const loc = dev.roles.location && this._hass.states[dev.roles.location];
+    if (loc && !NO_VALUE.has(loc.state)) {
+      const text = typeof this._hass.formatEntityState === "function" ? this._hass.formatEntityState(loc)
+        : loc.state === "home" ? this._t("vehicleAtHome") : loc.state === "not_home" ? this._t("vehicleAway") : loc.state;
+      chips.push(chip("", ICON_PIN, text, dev.roles.location));
+    }
+    return chips.length ? `<div class="vehicle-chips">${chips.join("")}</div>` : "";
+  },
+
+  // Everything else the device reports, folded away by default.
+  _renderVehicleDetails(slug, dev) {
+    const ids  = [dev.roles.capacity, dev.roles.target_soc, ...dev.details].filter(Boolean);
+    const rows = ids.map(id => {
+      const text = this._vehicleStateText(id);
+      return text === null ? "" : `
+        <div class="vehicle-detail" data-more-info="${escAttr(id)}">
+          <span class="vehicle-detail-label">${escHtml(this._vehicleEntityName(id))}</span>
+          <span class="vehicle-detail-value">${escHtml(text)}</span>
+        </div>`;
+    }).filter(Boolean);
+    if (!rows.length) return "";
+    const open = !!this._vehicleDetailsOpen?.[slug];
+    return `
+      <div class="vehicle-details">
+        <button class="vehicle-details-toggle" data-vehicle-details="${escAttr(slug)}" aria-expanded="${open}">
+          <span class="session-title">${this._t("vehicleDetails")}</span>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="${open
+            ? "M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
+            : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"}"/></svg>
+        </button>
+        <div class="vehicle-detail-list"${open ? "" : " hidden"}>${rows.join("")}</div>
+      </div>`;
+  },
+
+  // The plan evcc is working on, read only. It hangs on the loadpoint, so there
+  // is nothing to show for a vehicle that is parked somewhere else.
+  _renderVehiclePlan(lp) {
+    if (!lp?.connected || this._isHeatingLoadpoint(lp.ents)) return "";
+    const ents = lp.ents;
+    const time = ents.effective_plan_time ? stateVal(this._hass, ents.effective_plan_time) : null;
+    const when = time ? new Date(time) : null;
+    if (!when || isNaN(when.getTime())) return "";
+
+    const active = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
+    const soc    = ents.effective_plan_soc ? parseFloat(stateVal(this._hass, ents.effective_plan_soc)) : NaN;
+    const whenStr = when.toLocaleString(this._config.language || this._hass?.language || "en", {
+      weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+    });
+    return `
+      <div class="plan-block vehicle-plan">
+        <div class="plan-header">
+          <span class="session-title">${this._t("chargePlan")}</span>
+          <span class="plan-badge ${active ? "active" : "planned"}">${active ? this._t("chargingByPlan") : this._t("planned")}</span>
+        </div>
+        <div class="session-grid">
+          <div class="session-item"><span class="si-label">${this._t("finishBy")}</span><span class="si-value">${escHtml(whenStr)}</span></div>
+          ${soc > 0 ? `<div class="session-item"><span class="si-label">${this._t("targetSoc")}</span><span class="si-value">${Math.round(soc)} %</span></div>` : ""}
+        </div>
+      </div>`;
+  },
+
+  _renderVehicleRepeatPlans(vehicle) {
+    const re    = /_repeating_plan_(\d+)$/;
+    const plans = vehicle.repeating_plans
+      .map(entityId => this._readRepeatingPlan(entityId, parseInt(entityId.match(re)[1], 10)))
+      .filter(Boolean);
+    return plans.length ? this._renderRepeatPlansBlock({ plans }) : "";
+  },
+
+  // Everything the vehicle ever charged, from the session totals of ha-evcc.
+  _renderVehicleTotals(vehicle) {
+    const num = entityId => {
+      if (!entityId) return null;
+      const v = parseFloat(stateVal(this._hass, entityId));
+      return isNaN(v) ? null : v;
+    };
+    const energy   = num(vehicle.sessions_energy);
+    const cost     = num(vehicle.sessions_cost);
+    const duration = num(vehicle.sessions_duration);
+    if (energy === null && cost === null && duration === null) return "";
+
+    const item = (entityId, label, text) => `
+      <div class="session-item" data-more-info="${escAttr(entityId)}">
+        <span class="si-label">${label}</span><span class="si-value">${text}</span>
+      </div>`;
+    const costUnit = unitStr(this._hass, vehicle.sessions_cost) || "€";
+    return `
+      <div class="session-block vehicle-totals">
+        <div class="session-title">${this._t("vehicleTotals")}</div>
+        <div class="session-grid">
+          ${energy   !== null ? item(vehicle.sessions_energy,   this._t("energy"), `${Math.round(energy)} kWh`) : ""}
+          ${cost     !== null ? item(vehicle.sessions_cost,     this._t("cost"), `${cost.toFixed(2)} ${escHtml(costUnit)}`) : ""}
+          ${duration !== null ? item(vehicle.sessions_duration, this._t("vehicleChargeDuration"), `${Math.round(duration / 3600)} h`) : ""}
+        </div>
+      </div>`;
+  },
+
+  _renderNoVehicles(allVehicles = {}) {
+    const available = Object.keys(allVehicles);
+    const hint = available.length > 0
+      ? `<p>${this._t("availableVehicles", { list: `<code>${available.map(escHtml).join(", ")}</code>` })}</p>`
+      : "";
+    return `
+      <div class="empty">
+        <p>${this._t("noVehicles")}</p>
+        ${hint}
+      </div>`;
+  },
+};
+
 // Debug mode: expected entities, config dump, debug report. Methods are mixed into EvccCard.prototype.
 const debugView = {
   _expectedLpSuffixes() {
@@ -5039,6 +5832,24 @@ const listeners = {
       el.addEventListener("click", (e) => {
         if (e.target.closest("[data-more-info]")) return;
         this._toggleSite();
+      });
+    });
+
+    // A vehicle picture that does not load (wrong path, file gone) makes way
+    // for the drawing instead of leaving a hole. Keyed by what was configured,
+    // not by the signed address a media item resolves to.
+    this.shadowRoot.querySelectorAll("[data-vehicle-image]").forEach(img => {
+      img.addEventListener("error", () => {
+        this._vehicleImageFailed[img.dataset.vehicleImage] = true;
+        this._render();
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("[data-vehicle-details]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const slug = btn.dataset.vehicleDetails;
+        this._vehicleDetailsOpen[slug] = !this._vehicleDetailsOpen[slug];
+        this._render();
       });
     });
 
@@ -5618,6 +6429,73 @@ const styles = {
         font-size: .85em; color: var(--secondary-text-color);
         margin-right: 8px; white-space: nowrap;
       }
+
+      .vehicle-lp { font-size: .85em; color: var(--secondary-text-color); margin-right: 8px; white-space: nowrap; }
+      .vehicle-hint { font-size: .8rem; line-height: 1.4; color: var(--secondary-text-color); margin-bottom: 12px; }
+      .vehicle-block [data-more-info] { cursor: pointer; }
+      .vehicle-graphic { margin: 0 0 10px; color: var(--primary-text-color); }
+      .vehicle-graphic svg { display: block; width: 100%; max-width: 360px; height: auto; margin: 0 auto; overflow: visible; }
+      .vg-body   { fill: color-mix(in srgb, currentColor 7%, transparent); stroke: currentColor; stroke-width: 2.5; stroke-linejoin: round; }
+      .vg-window { fill: color-mix(in srgb, currentColor 16%, transparent); stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }
+      .vg-seam   { stroke: currentColor; stroke-width: 1.2; opacity: .45; }
+      .vg-tyre   { fill: var(--card-background-color, #fff); stroke: currentColor; stroke-width: 3; }
+      .vg-hub    { fill: none; stroke: currentColor; stroke-width: 1.5; opacity: .7; }
+      .vg-spoke  { stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; opacity: .7; }
+      .vg-port   { fill: var(--card-background-color, #fff); stroke: currentColor; stroke-width: 1.5; }
+      .vg-lamp   { fill: currentColor; opacity: .25; }
+      .vg-ground, .vg-road { stroke: var(--divider-color, #9ca3af); stroke-width: 2; stroke-linecap: round; fill: none; }
+      .vg-battery      { fill: color-mix(in srgb, currentColor 10%, transparent); stroke: currentColor; stroke-width: 1.2; }
+      .vg-battery-fill { fill: var(--evcc-blue); }
+      .vg-battery-fill.low      { fill: var(--evcc-amber); }
+      .vg-battery-fill.charging { fill: var(--evcc-green); animation: soc-pulse 2s ease-in-out infinite; }
+      .vg-bolt   { fill: #fff; stroke: rgba(0,0,0,.35); stroke-width: .6; }
+      .vg-plug   { fill: var(--evcc-blue); stroke: var(--card-background-color, #fff); stroke-width: 1.5; }
+      .vg-badge circle { fill: var(--evcc-green); stroke: var(--card-background-color, #fff); stroke-width: 2; }
+      [data-vehicle-state="charging"] .vg-plug { fill: var(--evcc-green); }
+      .vg-charger rect { fill: color-mix(in srgb, currentColor 7%, transparent); stroke: currentColor; stroke-width: 2; }
+      .vg-charger .vg-charger-light { fill: var(--evcc-blue); stroke: none; }
+      .vg-cable  { fill: none; stroke: var(--evcc-blue); stroke-width: 3; stroke-linecap: round; }
+      .vg-cable-flow { fill: none; stroke: #fff; stroke-width: 1.5; stroke-linecap: round; stroke-dasharray: 3 9; opacity: .9; animation: vg-flow 1s linear infinite; }
+      [data-vehicle-state="connected"] .vg-port, [data-vehicle-state="charging"] .vg-port { fill: var(--evcc-blue); }
+      [data-vehicle-state="charging"] .vg-cable, [data-vehicle-state="charging"] .vg-charger .vg-charger-light { stroke: var(--evcc-green); fill: var(--evcc-green); }
+      [data-vehicle-state="charging"] .vg-cable { fill: none; }
+      [data-vehicle-state="charging"] .vg-port  { fill: var(--evcc-green); }
+      [data-vehicle-state="parked"] .vg-car { opacity: .8; }
+      [data-vehicle-state="driving"] .vg-lamp-front { fill: var(--evcc-bolt); opacity: 1; }
+      [data-vehicle-state="driving"] .vg-lamp-rear  { fill: var(--error-color, #db4437); opacity: .9; }
+      [data-vehicle-state="driving"] .vg-wheel { animation: vg-spin .9s linear infinite; }
+      [data-vehicle-state="driving"] .vg-car   { animation: vg-bounce .45s ease-in-out infinite alternate; }
+      .vg-road { stroke-dasharray: 14 12; animation: vg-road .5s linear infinite; }
+      .vg-wind { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; opacity: .35; animation: vg-wind .8s ease-in-out infinite alternate; }
+      @keyframes vg-spin   { to { transform: rotate(360deg); } }
+      @keyframes vg-bounce { to { transform: translateY(-1px); } }
+      @keyframes vg-road   { to { stroke-dashoffset: 26; } }
+      @keyframes vg-wind   { from { transform: translateX(6px); opacity: .15; } to { transform: translateX(-4px); opacity: .45; } }
+      @keyframes vg-flow   { to { stroke-dashoffset: -12; } }
+      @media (prefers-reduced-motion: reduce) {
+        .vg-wheel, .vg-car, .vg-road, .vg-wind, .vg-cable-flow, .vg-battery-fill.charging { animation: none !important; }
+      }
+      .vehicle-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+      .vehicle-chip {
+        display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px;
+        font-size: .72rem; font-weight: 600; color: var(--secondary-text-color);
+        border: 1px solid var(--divider-color, #4b5563);
+      }
+      .vehicle-chip svg { flex: 0 0 13px; }
+      .vehicle-chip.ok    { color: var(--evcc-green); border-color: color-mix(in srgb, var(--evcc-green) 50%, transparent); background: color-mix(in srgb, var(--evcc-green) 10%, transparent); }
+      .vehicle-chip.warn  { color: var(--evcc-amber); border-color: color-mix(in srgb, var(--evcc-amber) 50%, transparent); background: color-mix(in srgb, var(--evcc-amber) 10%, transparent); }
+      .vehicle-chip.alert { color: var(--error-color, #db4437); border-color: color-mix(in srgb, var(--error-color, #db4437) 50%, transparent); background: color-mix(in srgb, var(--error-color, #db4437) 10%, transparent); }
+      .vehicle-details { border-top: 1px solid var(--divider-color, #e5e7eb); margin-top: 10px; padding-top: 10px; }
+      .vehicle-details .session-title { margin-bottom: 0; }
+      .vehicle-details-toggle {
+        display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0;
+        background: none; border: none; color: var(--secondary-text-color); cursor: pointer; font: inherit;
+      }
+      .vehicle-detail-list { margin-top: 6px; }
+      .vehicle-detail { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: .85rem; border-bottom: 1px solid var(--divider-color, #e5e7eb); }
+      .vehicle-detail:last-child { border-bottom: none; }
+      .vehicle-detail-label { color: var(--secondary-text-color); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .vehicle-detail-value { font-weight: 600; white-space: nowrap; }
 
       .mode-row { display: flex; gap: 6px; margin-bottom: 12px; }
       .mode-row.has-sub { margin-bottom: 6px; }
@@ -6264,6 +7142,9 @@ class EvccCard extends HTMLElement {
 
     this._siteTableExpanded = undefined; // undefined = use config default
     this._currentBlockExpanded = {};
+    this._vehicleDetailsOpen = {};     // vehicle slug -> detail list unfolded
+    this._vehicleImageFailed = {};     // configured picture -> true once it failed to load
+    this._vehicleMedia = {};           // media-source id -> { url, ts } signed address from HA
     this._detectedPrefix = null;
     this._cachedEntities   = null;  // { loadpoints, site } — invalidated when entity IDs change
     this._cachedEntityIdKey = null; // sorted join of evcc entity IDs + prefix
@@ -6429,10 +7310,14 @@ class EvccCard extends HTMLElement {
       this._evccIds       = Object.keys(hass.states).filter(id => id.split(".")[1]?.startsWith(prefix));
     }
 
+    // The vehicle mode also shows entities of the vehicles' own integrations,
+    // which carry no evcc prefix.
+    const ids = this._config.mode === "vehicle" ? this._evccIds.concat(this._vehicleLinkedIds()) : this._evccIds;
+
     const lang = this._config.language || (hass.language ?? "en");
     // \u001f (unit separator) keeps attribute values from colliding with the
     // key's own delimiters; a title or an option may contain anything else.
-    return lang + "|" + this._evccIds.map(id => {
+    return lang + "|" + ids.map(id => {
       const s = hass.states[id];
       if (!s) return `${id}=`;
       let part = `${id}=${s.state}`;
@@ -6646,6 +7531,8 @@ class EvccCard extends HTMLElement {
             ? this._renderDebugBlock(loadpoints, site, meters)
             : this._config.mode === "battery"
             ? this._renderBatteryBlock(site)
+            : this._config.mode === "vehicle"
+            ? this._renderVehicleMode(lpEnabled)
             : this._config.mode === "site"
               ? this._renderSiteBlock(site, loadpoints)
               : this._config.mode === "flow"
@@ -6734,7 +7621,7 @@ class EvccCard extends HTMLElement {
 
 // Mode views, components and shared behaviour are plain objects of methods
 // (no framework): mix them into the prototype, refusing silent overrides.
-const mixins = [actions, evccApi, loadpointView, socControl, planningView, priorityView, siteView, flowView, gridView, statisticsLegacy, statisticsView, batteryView, debugView, listeners, styles];
+const mixins = [actions, evccApi, loadpointView, socControl, planningView, priorityView, siteView, flowView, gridView, statisticsLegacy, statisticsView, batteryView, vehicleView, vehicleGraphic, debugView, listeners, styles];
 for (const m of mixins) {
   for (const key of Object.keys(m)) {
     if (key in EvccCard.prototype) throw new Error(`evcc-card: duplicate method ${key}`);
@@ -6849,9 +7736,8 @@ class EvccCardEditor extends HTMLElement {
     `).join("");
   }
 
-  _vehicleCheckboxes(type, selected) {
-    const slugs = this._availableVehicleSlugs;
-    if (slugs.length === 0) return `<div class="hint">${this._t("editorNoVehiclesFound")}</div>`;
+  _vehicleCheckboxes(type, selected, slugs = this._availableVehicleSlugs, emptyKey = "editorNoVehiclesFound") {
+    if (slugs.length === 0) return `<div class="hint">${this._t(emptyKey)}</div>`;
     return slugs.map(slug => {
       const label = String(slug).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
       return `
@@ -6860,6 +7746,74 @@ class EvccCardEditor extends HTMLElement {
         <span>${this._esc(label)}</span>
       </label>`;
     }).join("");
+  }
+
+  // One device select per vehicle. The first option is what the card does on
+  // its own and names the device it found, so nobody has to pick what is
+  // already right; a choice is written to `vehicle_devices`, the automatic one
+  // removes the vehicle from it again.
+  _vehicleDeviceFields(vehicles) {
+    const slugs = Object.keys(vehicles).sort();
+    if (slugs.length === 0) return `<div class="hint">${this._t("editorVehiclesNoneFound")}</div>`;
+    const devices = listVehicleDevices(this._hass);
+    const chosen  = this._config.vehicle_devices && typeof this._config.vehicle_devices === "object" ? this._config.vehicle_devices : {};
+    const option  = (val, label, cur) => `<option value="${this._esc(val)}"${cur === val ? " selected" : ""}>${this._esc(label)}</option>`;
+
+    return slugs.map(slug => {
+      const title = evccVehicleTitle(this._hass, slug, vehicles[slug]) || slug;
+      const found = devices.find(d => d.id === findVehicleDevice(this._hass, slug, title));
+      const cur   = chosen[slug] === false ? "none" : (chosen[slug] || "");
+      const like  = devices.filter(d => d.vehicleLike);
+      const other = devices.filter(d => !d.vehicleLike);
+      return `
+        <label class="field-label" for="vehicle-device-${this._esc(slug)}">${this._esc(title)}</label>
+        <select id="vehicle-device-${this._esc(slug)}" class="ha-select" data-vehicle-device="${this._esc(slug)}">
+          ${option("", this._t("editorVehicleDeviceAuto", { val: found ? found.name : this._t("editorVehicleDeviceNotFound") }), cur)}
+          ${option("none", this._t("editorVehicleDeviceNone"), cur)}
+          ${like.length ? `<optgroup label="${this._esc(this._t("editorVehicleDeviceGroupVehicles"))}">${like.map(d => option(d.id, d.name, cur)).join("")}</optgroup>` : ""}
+          ${other.length ? `<optgroup label="${this._esc(this._t("editorVehicleDeviceGroupOther"))}">${other.map(d => option(d.id, d.name, cur)).join("")}</optgroup>` : ""}
+          ${cur && cur !== "none" && !devices.some(d => d.id === cur) ? option(cur, cur, cur) : ""}
+        </select>
+        <div class="vehicle-media" data-vehicle-media="${this._esc(slug)}"></div>
+        <input class="ha-input" type="text" data-vehicle-image="${this._esc(slug)}"
+               value="${this._esc(this._config.vehicle_images?.[slug] || "")}" placeholder="${this._esc(this._t("editorVehicleImagePlaceholder"))}">`;
+    }).join("");
+  }
+
+  // The picture of a vehicle is picked from Home Assistant's media library with
+  // HA's own media selector, narrowed to images. The element belongs to the HA
+  // frontend and is loaded on demand there, so it is created once it is defined;
+  // the text field underneath works without it and shows what was picked.
+  _mountVehicleMediaPickers() {
+    const slots = this.shadowRoot.querySelectorAll("[data-vehicle-media]");
+    if (!slots.length) return;
+    if (!customElements.get("ha-selector")) {
+      if (!this._waitingForSelector) {
+        this._waitingForSelector = true;
+        customElements.whenDefined("ha-selector").then(() => { this._waitingForSelector = false; this._render(); });
+      }
+      return;
+    }
+    slots.forEach(slot => {
+      const slug    = slot.dataset.vehicleMedia;
+      const current = this._config.vehicle_images?.[slug];
+      const picker  = document.createElement("ha-selector");
+      picker.hass     = this._hass;
+      picker.selector = { media: { accept: ["image/*"] } };
+      picker.label    = this._t("editorVehicleImagePick");
+      picker.value    = isMediaSourceId(current) ? { media_content_id: current, media_content_type: "image/*", metadata: {} } : undefined;
+      picker.addEventListener("value-changed", (e) => {
+        e.stopPropagation();
+        const id  = e.detail?.value?.media_content_id;
+        const map = { ...(this._config.vehicle_images || {}) };
+        if (isMediaSourceId(id)) map[slug] = id;
+        else delete map[slug];
+        this._config = { ...this._config, vehicle_images: Object.keys(map).length ? map : undefined };
+        this._fire();
+        this._render();
+      });
+      slot.appendChild(picker);
+    });
   }
 
   get _availableVehicleSlugs() {
@@ -6890,6 +7844,8 @@ class EvccCardEditor extends HTMLElement {
     const showStatsPeriod   = ["stats", "site", "flow", "grid"].includes(mode);
     const showVehicleFilter = mode === "repeatplan";
     const rplanVehicles     = Array.isArray(c.repeating_plan_vehicles) ? c.repeating_plan_vehicles : [];
+    const showVehicles      = mode === "vehicle";
+    const selVehicles       = vehicleFilter(c) || [];
     const instanceOptions   = this._instanceOptions();
 
     // `stats_period` has no implicit value: unconfigured, every mode follows its
@@ -6929,6 +7885,7 @@ class EvccCardEditor extends HTMLElement {
       grid:      this._t("editorTitlePlaceholderGrid"),
       stats:     this._t("editorTitlePlaceholderStats"),
       battery:   this._t("editorTitlePlaceholderBattery"),
+      vehicle:   this._t("editorTitlePlaceholderVehicle"),
     }[mode] || this._t("editorTitlePlaceholderLoadpoint");
 
     const modeDesc = {
@@ -6938,6 +7895,7 @@ class EvccCardEditor extends HTMLElement {
       flow:       this._t("editorModeDescFlow"),
       grid:       this._t("editorModeDescGrid"),
       battery:    this._t("editorModeDescBattery"),
+      vehicle:    this._t("editorModeDescVehicle"),
       stats:      this._t("editorModeDescStats"),
       plan:       this._t("editorModeDescPlan"),
       repeatplan: this._t("editorModeDescRepeatplan"),
@@ -6961,6 +7919,8 @@ class EvccCardEditor extends HTMLElement {
           box-sizing: border-box; font-family: inherit;
         }
         .ha-select:focus, .ha-input:focus { outline: none; border-color: var(--primary-color); }
+        .vehicle-media { margin-top: 6px; }
+        .vehicle-media:empty { display: none; }
         .cb-row { display: flex; align-items: center; gap: 8px; font-size: .875rem; cursor: pointer; padding: 4px 0; }
         .cb-row input[type="checkbox"] { accent-color: var(--primary-color); width: 16px; height: 16px; cursor: pointer; }
       </style>
@@ -6974,6 +7934,7 @@ class EvccCardEditor extends HTMLElement {
             ["flow",      this._t("editorModeFlow")],
             ["grid",      this._t("editorModeGrid")],
             ["battery",   this._t("editorModeBattery")],
+            ["vehicle",   this._t("editorModeVehicle")],
             ["stats",     this._t("editorModeStats")],
             ["plan",      this._t("editorModePlan")],
             ["repeatplan",this._t("editorModeRepeatplan")],
@@ -7041,6 +8002,25 @@ class EvccCardEditor extends HTMLElement {
           ${this._vehicleCheckboxes("repeating_plan_vehicles", rplanVehicles)}
         </div>
         ` : ""}
+        ${showVehicles ? `
+        <div class="field">
+          <div class="section-title">${this._t("editorVehicleFilterTitle")}</div>
+          <div class="hint">${this._t("editorVehicleFilterHint")}</div>
+          ${this._vehicleCheckboxes("vehicles", selVehicles, Object.keys(discoverVehicles(this._hass, this._getPrefix())).sort(), "editorVehiclesNoneFound")}
+        </div>
+        <div class="field">
+          <label class="field-label" for="vehicle_graphic">${this._t("editorVehicleGraphicLabel")}</label>
+          ${this._sel("vehicle_graphic", [
+            ["",     this._t("editorVehicleGraphicShow")],
+            ["hide", this._t("editorVehicleGraphicHide")],
+          ], c.vehicle_graphic === "hide" ? "hide" : "")}
+        </div>
+        <div class="field">
+          <div class="section-title">${this._t("editorVehicleDeviceTitle")}</div>
+          <div class="hint">${this._t("editorVehicleDeviceHint")}</div>
+          ${this._vehicleDeviceFields(discoverVehicles(this._hass, this._getPrefix()))}
+        </div>
+        ` : ""}
         ${showNoPlan ? `
         <div class="field">
           <div class="section-title">${this._t("editorNoPlanForTitle")}</div>
@@ -7095,7 +8075,7 @@ class EvccCardEditor extends HTMLElement {
   }
 
   _addListeners() {
-    ["mode", "language", "site_details", "charge_current_settings", "stats_period", "size", "disabled_loadpoints"].forEach(id => {
+    ["mode", "language", "site_details", "charge_current_settings", "stats_period", "size", "disabled_loadpoints", "vehicle_graphic"].forEach(id => {
       const el = this.shadowRoot.getElementById(id);
       if (!el) return;
       el.addEventListener("change", () => {
@@ -7116,13 +8096,37 @@ class EvccCardEditor extends HTMLElement {
         this._config = {
           ...this._config,
           prefix: isDefault ? undefined : chosen,
-          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined,
+          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined, vehicles: undefined, vehicle_devices: undefined, vehicle_images: undefined,
         };
         this._discoverLoadpoints();
         this._fire();
         this._render();
       });
     }
+
+    this.shadowRoot.querySelectorAll("[data-vehicle-device]").forEach(sel => {
+      sel.addEventListener("change", () => {
+        const map = { ...(this._config.vehicle_devices && typeof this._config.vehicle_devices === "object" ? this._config.vehicle_devices : {}) };
+        if (sel.value) map[sel.dataset.vehicleDevice] = sel.value;
+        else delete map[sel.dataset.vehicleDevice];
+        this._config = { ...this._config, vehicle_devices: Object.keys(map).length ? map : undefined };
+        this._fire();
+      });
+    });
+
+    this._mountVehicleMediaPickers();
+
+    // Written on change, not on every key: half a path is not a valid config.
+    this.shadowRoot.querySelectorAll("input[data-vehicle-image]").forEach(inp => {
+      inp.addEventListener("change", () => {
+        const map = { ...(this._config.vehicle_images || {}) };
+        const val = inp.value.trim();
+        if (val && isVehicleImage(val)) map[inp.dataset.vehicleImage] = val;
+        else { delete map[inp.dataset.vehicleImage]; if (val) inp.value = ""; }
+        this._config = { ...this._config, vehicle_images: Object.keys(map).length ? map : undefined };
+        this._fire();
+      });
+    });
 
     const titleEl = this.shadowRoot.getElementById("title");
     if (titleEl) {
