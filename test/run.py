@@ -704,6 +704,49 @@ def interactions(browser, port, t):
             "a key that matches nothing stays quiet", "; ".join(warnings)[:200])
     page.close()
 
+    # --- more-info on the header values (loadpoint and compact share the render) ---
+    t.group("interaction - more-info on the loadpoint values")
+    hook = "() => { window.__moreInfo = []; window.__card.addEventListener('hass-more-info', e => window.__moreInfo.push(e.detail.entityId)); }"
+    expected = {
+        ".power-value":                 "sensor.evcc_openwb_charge_power",
+        ".power-current":               "sensor.evcc_openwb_charge_currents_0",
+        ".vehicle-name":                "select.evcc_openwb_vehicle_name",
+        '[data-live-type="soc-pct"]':   "sensor.evcc_openwb_vehicle_soc",
+        ".lp-badge":                    "binary_sensor.evcc_openwb_charging",
+        ".lp-remaining":                "sensor.evcc_openwb_charge_remaining_duration",
+        ".session-item":                "sensor.evcc_openwb_session_energy",
+    }
+    for mode in ("loadpoint", "compact"):
+        page = new_page(browser, 480, 1600)
+        errors = open_card(page, port, config={"mode": mode, "loadpoints": ["openwb"]})
+        page.evaluate(hook)
+        for sel, entity in expected.items():
+            el = page.locator(in_card(sel)).first
+            if el.count() == 0:
+                t.fail(f"{mode}: {sel} is rendered", "not found"); continue
+            if mode == "compact" and sel == ".session-item":
+                page.locator(in_card('button.compact-tab[data-tab="3"]')).click(); page.wait_for_timeout(100)
+            attr = el.get_attribute("data-more-info")
+            if attr != entity:
+                t.fail(f"{mode}: {sel} carries the entity", f"data-more-info={attr}"); continue
+            page.evaluate("() => { window.__moreInfo = []; }")
+            el.click(force=True); page.wait_for_timeout(50)
+            fired = page.evaluate("window.__moreInfo")
+            t.check(fired == [entity], f"{mode}: a click on {sel} opens more-info of {entity}", json.dumps(fired))
+        # The slider values keep their own action: no more-info on the tap target of a slider.
+        t.check(page.locator(in_card("button.slider-val[data-more-info]")).count() == 0,
+                f"{mode}: the slider values open the input panel, not more-info")
+        t.check(not errors, f"{mode}: no console errors", "; ".join(errors)[:200])
+        page.close()
+
+    # Live updates of the power value and the SoC keep the attribute in place.
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+    page.evaluate("() => { const c = window.__card; c._updateLiveValues(); }")
+    kept = page.evaluate("""() => ['.power-value', '[data-live-type="soc-pct"]']
+        .map(s => window.__card.shadowRoot.querySelector(s)?.dataset.moreInfo)""")
+    t.check(all(kept), "a live update leaves the more-info attribute on the value", json.dumps(kept))
+    page.close()
 
 
 def editor(browser, port, t):

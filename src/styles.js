@@ -32,6 +32,10 @@ export const styles = {
       }
       .loadpoint:first-child { padding-top: 0; }
       .loadpoint:last-child { border-bottom: none; padding-bottom: 0; }
+      /* The header values of a loadpoint open more-info; the site rows and the
+         grid chips carry their own hover, this one covers the inline values. */
+      .loadpoint [data-more-info] { cursor: pointer; }
+      .loadpoint [data-more-info]:hover { opacity: .75; }
       .lp-header {
         display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
       }
