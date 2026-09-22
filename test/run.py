@@ -328,6 +328,55 @@ def renderkey(browser, port, t):
     page.wait_for_timeout(900)
     t.check(page.evaluate("window.__card._lastRenderKey !== null"), "a state change primes the render key")
 
+    # HA sets `hass` on every state change in the whole system. A change to a
+    # foreign entity must cost the card nothing beyond an identity check per
+    # evcc entity: the key is not built and nothing renders.
+    page.evaluate("""() => {
+      const c = window.__card, origKey = c._buildRenderKey.bind(c);
+      window.__keys = 0;
+      c._buildRenderKey = function (...a) { window.__keys++; return origKey(...a); };
+    }""")
+    page.evaluate("window.__renders = 0")
+    page.evaluate("""() => window.__push(st => {
+      st['sensor.foreign_temperature'] = { entity_id: 'sensor.foreign_temperature', state: '21.5', attributes: {} };
+    })""")
+    page.wait_for_timeout(500)
+    # The new entity moves the count, so this one update rebuilds the id list; the next does not.
+    page.evaluate("""() => window.__push(st => {
+      st['sensor.foreign_temperature'] = { ...st['sensor.foreign_temperature'], state: '22.0' };
+    })""")
+    page.wait_for_timeout(500)
+    keys_foreign = page.evaluate("window.__keys")
+    page.evaluate("window.__keys = 0; window.__renders = 0")
+    page.evaluate("""() => window.__push(st => {
+      st['sensor.foreign_temperature'] = { ...st['sensor.foreign_temperature'], state: '22.5' };
+    })""")
+    page.wait_for_timeout(500)
+    t.check(page.evaluate("window.__keys") == 0 and page.evaluate("window.__renders") == 0,
+            "a foreign entity change builds no key and renders nothing",
+            f"keys={page.evaluate('window.__keys')} renders={page.evaluate('window.__renders')} (first two updates: {keys_foreign} keys)")
+    page.evaluate("window.__keys = 0; window.__renders = 0")
+    page.evaluate("""() => window.__push(st => {
+      const id = 'sensor.evcc_openwb_charge_power';
+      st[id] = { ...st[id], state: '4343' };
+    })""")
+    page.wait_for_timeout(900)
+    t.check(page.evaluate("window.__keys") >= 1 and page.evaluate("window.__renders") == 1,
+            "an evcc entity change still builds the key and renders once",
+            f"keys={page.evaluate('window.__keys')} renders={page.evaluate('window.__renders')}")
+    # The same states table pushed again is no change either.
+    page.evaluate("window.__keys = 0; window.__renders = 0")
+    page.evaluate("() => { window.__card.hass = { ...window.__hass }; }")
+    page.wait_for_timeout(500)
+    t.check(page.evaluate("window.__keys") == 0, "the same states table pushed again builds no key", str(page.evaluate("window.__keys")))
+    # A language change without any state change has to get through.
+    page.evaluate("window.__keys = 0; window.__renders = 0")
+    page.evaluate("() => { window.__card.hass = { ...window.__hass, language: 'en' }; }")
+    page.wait_for_timeout(900)
+    t.check(page.evaluate("window.__renders") == 1, "a language change alone renders", str(page.evaluate("window.__renders")))
+    page.evaluate("() => { window.__card.hass = { ...window.__hass }; }")
+    page.wait_for_timeout(900)
+
     modes = lambda: page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.mode-btn')].map(x => x.dataset.value)")
     before = modes()
     page.evaluate("window.__renders = 0")
