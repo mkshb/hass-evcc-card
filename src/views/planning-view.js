@@ -208,7 +208,8 @@ export const planningView = {
     const ts = d.toISOString();
     // Cache-only read: serve the cached preview, prime one fetch if absent.
     // Never refetches on its own → an idle plan card makes zero backend calls.
-    const res = this._wsPlanPreviewCached({ loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts });
+    const res = this._wsPlanPreviewCached({ loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts,
+                                            settings: this._planSettingsKey(lpName) });
     if (!res) {
       return `<div class="plan-preview"><div class="plan-preview-loading">${this._t("planPreviewLoading")}</div></div>`;
     }

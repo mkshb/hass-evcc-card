@@ -1037,8 +1037,22 @@ const evccApi = {
     };
   },
 
+  // The key carries the plan settings on top of the request parameters: the
+  // static preview takes neither the precondition nor the continuous flag,
+  // evcc applies the vehicle's current settings itself, so a cached preview is
+  // only good for the settings it was computed with. Once HA reports a changed
+  // setting, the render path finds nothing under the new key and fetches.
   _planPreviewKey(opts) {
-    return "plan:" + JSON.stringify(this._planPreviewParams(opts));
+    return "plan:" + JSON.stringify(this._planPreviewParams(opts)) + "|" + (opts.settings ?? "");
+  },
+
+  // The plan settings of a loadpoint as HA reports them, for the preview key.
+  _planSettingsKey(lpName) {
+    const ents = this._cachedEntities?.loadpoints?.[lpName]
+      || discoverEntities(this._hass, this._getPrefix()).loadpoints[lpName] || {};
+    const pre  = ents.plan_strategy_precondition ? stateVal(this._hass, ents.plan_strategy_precondition) : "";
+    const cont = ents.plan_strategy_continuous   ? stateVal(this._hass, ents.plan_strategy_continuous)   : "";
+    return `${pre}|${cont}`;
   },
 
   // opts: { loadpoint:int, kind:"soc"|"energy", value, timestamp }  →
@@ -1103,7 +1117,7 @@ const evccApi = {
       const d = new Date(state.time);
       if (isNaN(d.getTime())) return;
       const ts = d.toISOString();
-      const opts = { loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts };
+      const opts = { loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts, settings: this._planSettingsKey(lpName) };
       const cacheKey = this._planPreviewKey(opts);
       // Drop previews for OTHER inputs of this loadpoint (bounds the cache), but
       // keep the current one — refetching what we already have wastes a backend call.
@@ -2705,7 +2719,8 @@ const planningView = {
     const ts = d.toISOString();
     // Cache-only read: serve the cached preview, prime one fetch if absent.
     // Never refetches on its own → an idle plan card makes zero backend calls.
-    const res = this._wsPlanPreviewCached({ loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts });
+    const res = this._wsPlanPreviewCached({ loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts,
+                                            settings: this._planSettingsKey(lpName) });
     if (!res) {
       return `<div class="plan-preview"><div class="plan-preview-loading">${this._t("planPreviewLoading")}</div></div>`;
     }

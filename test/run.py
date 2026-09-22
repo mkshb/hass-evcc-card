@@ -775,6 +775,21 @@ def interactions(browser, port, t):
     bars = page.locator(in_card(".plan-preview svg rect")).count()
     t.check(bars > 0 and page.locator(in_card(".plan-preview-value")).count() >= 2, "plan preview chart + duration/cost rendered", f"{bars} bars")
     page.locator("#host").screenshot(path=str(OUT / "plan-preview.png"))
+    # evcc computes the preview with the vehicle's current precondition, which
+    # the request does not carry. A changed setting reported by HA has to fetch
+    # the preview again and redraw the chart, without a page reload.
+    n0 = len([c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/plan_preview"])
+    page.evaluate("""() => { const st = { ...window.__hass.states }, id = 'select.evcc_openwb_plan_strategy_precondition';
+      st[id] = { ...st[id], state: '3600' }; window.__hass.states = st; window.__card.hass = { ...window.__hass, states: st }; }""")
+    page.wait_for_timeout(1500)
+    n1 = len([c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/plan_preview"])
+    t.check(n1 == n0 + 1, "a changed precondition fetches the preview again", f"{n0} -> {n1} plan_preview call(s)")
+    t.check(page.locator(in_card(".plan-preview svg rect")).count() > 0 and page.locator(in_card(".plan-preview-loading")).count() == 0,
+            "and the chart is drawn again from the new answer")
+    # The same setting again is no reason to fetch: the key holds the settings, not the render count.
+    page.evaluate("() => { window.__card._lastRenderKey = null; window.__card._render(); }"); page.wait_for_timeout(800)
+    n2 = len([c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/plan_preview"])
+    t.check(n2 == n1, "a render with unchanged settings fetches nothing", f"{n1} -> {n2}")
     page.close()
 
     # --- hide_settings + slider_steps ---------------------------------------------------
