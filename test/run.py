@@ -822,6 +822,30 @@ def interactions(browser, port, t):
     t.check(all(kept), "a live update leaves the more-info attribute on the value", json.dumps(kept))
     page.close()
 
+    # --- mode buttons mark the pressed one at once ---------------------------------
+    t.group("interaction - mode buttons")
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+    active = lambda: page.evaluate("window.__card.shadowRoot.querySelector('.mode-btn.active')?.dataset.value")
+    before = active()
+    # Synchronous click and read: no hass update, no render, no round trip in between.
+    now = page.evaluate("""() => { const c = window.__card;
+      c.shadowRoot.querySelector('button.mode-btn[data-value="now"]').click();
+      return c.shadowRoot.querySelector('.mode-btn.active')?.dataset.value; }""")
+    t.check(before != "now" and now == "now", "the pressed mode button is active before HA answers", f"{before} -> {now}")
+    page.wait_for_timeout(600)
+    t.check(active() == "now", "and stays active once the state comes back", active())
+    # A failed service call gives the mark back to the previous button.
+    # The card holds its own copy of the hass object, so the stub goes there.
+    page.evaluate("() => { window.__card._hass.callService = () => Promise.reject(new Error('mock: refused')); }")
+    warnings = []
+    page.on("console", lambda m: warnings.append(m.text) if m.type == "warning" else None)
+    page.evaluate("""() => window.__card.shadowRoot.querySelector('button.mode-btn[data-value="off"]').click()""")
+    page.wait_for_timeout(100)
+    t.check(active() == "now", "a refused call reverts to the previous mode button", active())
+    t.check(any("select_option failed" in w for w in warnings), "and says so in the console", "; ".join(warnings)[:120])
+    page.close()
+
 
 def editor(browser, port, t):
     """The visual editor writes the whole card config on every change.

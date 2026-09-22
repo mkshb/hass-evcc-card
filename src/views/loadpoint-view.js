@@ -608,9 +608,12 @@ export const loadpointView = {
       });
     });
 
+    // The mode buttons mark the pressed one at once. The real state comes back
+    // through evcc, ha-evcc and HA, which takes up to a few seconds while the
+    // button would look as if the tap had not landed; a failed call reverts.
     this.shadowRoot.querySelectorAll("button.mode-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        this._setSelectOption(btn.dataset.entity, btn.dataset.value);
+        this._pressGroupButton(btn, ".mode-row", ".mode-btn");
       });
     });
 
@@ -627,14 +630,29 @@ export const loadpointView = {
 
     this.shadowRoot.querySelectorAll("button.phase-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        this._setSelectOption(btn.dataset.entity, btn.dataset.value);
-        const group = btn.closest(".phase-btn-group");
-        if (group) {
-          group.querySelectorAll(".phase-btn").forEach(b => b.classList.remove("active"));
-          btn.classList.add("active");
-        }
+        this._pressGroupButton(btn, ".phase-btn-group", ".phase-btn");
       });
     });
+  },
+
+  // One button of a group writes its value to the select entity and shows as
+  // active right away; the previous button gets the mark back when the service
+  // call fails. The next render draws the state HA reports.
+  _pressGroupButton(btn, groupSel, buttonSel) {
+    const group = btn.closest(groupSel);
+    const was   = group?.querySelector(`${buttonSel}.active`);
+    if (group) {
+      group.querySelectorAll(buttonSel).forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+    }
+    const call = this._setSelectOption(btn.dataset.entity, btn.dataset.value);
+    call?.catch?.((e) => {
+      console.warn("[evcc-card] select_option failed:", e?.message || e);
+      if (!btn.isConnected) return;
+      btn.classList.remove("active");
+      if (was?.isConnected) was.classList.add("active");
+    });
+    return call;
   },
 };
 
