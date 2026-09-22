@@ -5561,10 +5561,9 @@ const listeners = {
   },
 };
 
-// Card stylesheet, attached to EvccCard.prototype.
-const styles = {
-  _styles() {
-    return `
+// Card stylesheet. The CSS itself is one constant string with nothing per
+// instance in it, so every card on the page shares one parsed sheet.
+const CSS = `
       :host {
         display: block;
         --evcc-green:  var(--success-color,  #22c55e);
@@ -6245,8 +6244,45 @@ const styles = {
         color: white;
         border-color: transparent;
       }
-    `;
+`;
+
+// _render() replaces the shadow root's innerHTML on every update, and a <style>
+// element in there is parsed again each time: around 680 lines of CSS, up to
+// every 300 ms and once per card on the dashboard. A constructed CSSStyleSheet
+// is parsed once per page and adopted by every shadow root, where it survives
+// each innerHTML replacement. null where the browser cannot construct one.
+let sharedSheet;
+function sharedStyleSheet() {
+  if (sharedSheet !== undefined) return sharedSheet;
+  try {
+    sharedSheet = new CSSStyleSheet();
+    sharedSheet.replaceSync(CSS);
+  } catch {
+    sharedSheet = null;
   }
+  return sharedSheet;
+}
+
+// Attached to EvccCard.prototype.
+const styles = {
+  _styles() {
+    return CSS;
+  },
+
+  // Adopts the shared sheet on this card's shadow root, once, and returns the
+  // markup _render() has to inline: nothing when the sheet is adopted, the
+  // <style> element as before when constructed sheets are not supported.
+  _styleTag() {
+    const root  = this.shadowRoot;
+    const sheet = sharedStyleSheet();
+    if (sheet && root && Array.isArray(root.adoptedStyleSheets)) {
+      if (!root.adoptedStyleSheets.includes(sheet)) {
+        root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+      }
+      return "";
+    }
+    return `<style>${CSS}</style>`;
+  },
 };
 
 class EvccCard extends HTMLElement {
@@ -6683,7 +6719,7 @@ class EvccCard extends HTMLElement {
       && Object.keys(lpEnabled).length === 0;
 
     this.shadowRoot.innerHTML = `
-      <style>${this._styles()}</style>
+      ${this._styleTag()}
       <div class="evcc-scale-wrap"${this._config.size ? ` data-size="${this._config.size}"` : ""}><ha-card>
         <div class="card-content">
         ${this._config.mode === "debug"

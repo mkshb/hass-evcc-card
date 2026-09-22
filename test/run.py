@@ -159,6 +159,31 @@ def render_smoke(browser, port, t):
                 t.check(page.locator(in_card(".stats-chart-loading")).count() == 0, "stats: no loading placeholder left")
             page.close()
 
+    # The stylesheet is parsed once per page and adopted by every card, so a
+    # render carries no <style> element and two cards share the same sheet.
+    t.group("render - one shared stylesheet")
+    page = new_page(browser, 480, 1200)
+    errors = open_card(page, port, mode="loadpoint")
+    sheets = page.evaluate("""() => {
+      const a = window.__card, root = a.shadowRoot;
+      const b = document.createElement('evcc-card');
+      b.setConfig({ mode: 'site' }); document.getElementById('host').appendChild(b); b.hass = window.__hass;
+      return new Promise(res => setTimeout(() => res({
+        adopted: root.adoptedStyleSheets.length,
+        inline:  root.querySelectorAll('style').length,
+        shared:  b.shadowRoot.adoptedStyleSheets[0] === root.adoptedStyleSheets[0],
+        rules:   root.adoptedStyleSheets[0]?.cssRules.length ?? 0,
+        styled:  getComputedStyle(root.querySelector('.card-content')).paddingLeft,
+      }), 600));
+    }""")
+    t.check(sheets["adopted"] == 1 and sheets["inline"] == 0, "a rendered card adopts one sheet and inlines no <style>", json.dumps(sheets))
+    t.check(sheets["shared"] and sheets["rules"] > 100, "a second card shares the same parsed sheet", json.dumps(sheets))
+    t.check(sheets["styled"] == "16px" and not errors, "the adopted sheet styles the card", json.dumps(sheets))
+    # A re-render keeps the one sheet, it is not adopted twice.
+    page.evaluate("() => { const c = window.__card; c._lastRenderKey = null; c._render(); c._render(); }")
+    t.check(page.evaluate("window.__card.shadowRoot.adoptedStyleSheets.length") == 1, "re-renders keep a single adopted sheet")
+    page.close()
+
 
 
 def stats_fallback(browser, port, t):

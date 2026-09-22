@@ -455,7 +455,7 @@ export class EvccCard extends HTMLElement {
       && Object.keys(lpEnabled).length === 0;
 
     this.shadowRoot.innerHTML = `
-      <style>${this._styles()}</style>
+      ${this._styleTag()}
       <div class="evcc-scale-wrap"${this._config.size ? ` data-size="${this._config.size}"` : ""}><ha-card>
         <div class="card-content">
         ${this._config.mode === "debug"
