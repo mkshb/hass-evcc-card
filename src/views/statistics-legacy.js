@@ -110,7 +110,7 @@ export const statisticsLegacy = {
   },
 
   _computeDailyDeltas(stats, days, solarStats = [], liveKwh = null, liveSolarKwh = null) {
-    const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
+    const lang = this._statsLang();
     const now = new Date();
     const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`; };
     const byKey = {};
@@ -137,7 +137,7 @@ export const statisticsLegacy = {
   },
 
   _computeMonthlyDeltas(stats, count, solarStats = []) {
-    const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
+    const lang = this._statsLang();
     const now = new Date();
     const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}`; };
     const byKey = {};
@@ -161,7 +161,7 @@ export const statisticsLegacy = {
   },
 
   _computeThisYearMonthly(stats, solarStats = []) {
-    const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
+    const lang = this._statsLang();
     const now  = new Date();
     const year = now.getFullYear();
     const toKey = d => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}`; };
@@ -339,7 +339,7 @@ export const statisticsLegacy = {
       ? `<div class="stats-no-data">${this._t("statsNoData")} <a class="stats-no-data-link" href="https://github.com/mkshb/hass-evcc-card#enabling-stat-periods" target="_blank" rel="noopener">📖 ${this._t("statsNoDataLink")}</a></div>`
       : "";
 
-    const lang = (this._config?.language || this._hass?.language || "de").split("-")[0];
+    const lang = this._statsLang();
     const solarHint = (this._solarDataPoints != null && this._solarDataPoints < 3)
       ? `<div class="stats-solar-hint">${this._t("solarHint", { n: this._solarDataPoints })}</div>`
       : "";

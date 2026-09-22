@@ -1773,6 +1773,25 @@ def keyboard(browser, port, t):
     page.evaluate("() => { const c = window.__card; c.hass = { ...window.__hass, language: undefined, locale: {} }; c._lastRenderKey = null; c._render(); }")
     page.wait_for_timeout(200)
     t.check(label() == "Off", "without a language from HA the card falls back to English", label())
+    page.close()
+
+    # The chart labels of the statistics follow the same rule: the year scope
+    # prints month names, and without a language from HA they are English.
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="stats")
+    months = lambda: page.evaluate("""() => { const c = window.__card; c._statsScope = 'year'; c._lastRenderKey = null; c._render();
+        return [...c.shadowRoot.querySelectorAll('.evcc-chart-wrap text')].map(t => t.textContent.trim()); }""")
+    de = months()
+    t.check("Dez" in de or "Mär" in de, "stats: with hass.language de the month labels are German", json.dumps(de)[:120])
+    page.evaluate("() => { const c = window.__card; c.hass = { ...window.__hass, language: undefined, locale: {} }; }")
+    page.wait_for_timeout(200)
+    en = months()
+    t.check(("Dec" in en or "Mar" in en) and "Dez" not in en, "stats: without a language from HA the month labels are English", json.dumps(en)[:120])
+    t.check(page.evaluate("window.__card._statsLang()") == "en", "stats: _statsLang() falls back to en")
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="loadpoint")
     ed = page.evaluate("""async () => {
       const ed = document.createElement('evcc-card-editor'); ed.setConfig({ mode: 'loadpoint' });
       ed.hass = { ...window.__hass, language: undefined, locale: {} }; document.body.appendChild(ed);

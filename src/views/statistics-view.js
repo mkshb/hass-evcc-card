@@ -17,7 +17,9 @@ export const statisticsView = {
     return evccDate(raw);
   },
 
-  _statsLang() { return (this._config?.language || this._hass?.language || "de").split("-")[0]; },
+  // The locale of the chart labels: the configured language, else the one from
+  // HA, else English, the reference locale, like every other text of the card.
+  _statsLang() { return (this._config?.language || this._hass?.language || "en").split("-")[0]; },
 
   // Earliest/latest session date — bounds the month/year stepper.
   _sessionRange(sessions) {
