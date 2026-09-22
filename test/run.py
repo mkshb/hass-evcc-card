@@ -903,6 +903,28 @@ def interactions(browser, port, t):
     t.check(any("select_option failed" in w for w in warnings), "and says so in the console", "; ".join(warnings)[:120])
     page.close()
 
+    # Before HA answers, a render for some other value must not take the mark
+    # away again: the pressed mode has to be what the template draws until the
+    # state moves, on every control with an optimistic mark.
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"})
+    page.evaluate("""() => { const c = window.__card;
+      c._hass.callService = (d, s, data) => { window.__hass.serviceCalls.push({ domain: d, service: s, data }); return Promise.resolve(); };
+      window.__push = (mut) => { const st = { ...window.__hass.states }; mut(st); window.__hass.states = st; c.hass = { ...window.__hass, states: st }; }; }""")
+    page.locator(in_card('button.mode-btn[data-value="now"]')).click()
+    page.locator(in_card('button.phase-btn[data-value="1"]')).click()
+    page.evaluate("""() => window.__push(st => { const id = 'sensor.evcc_openwb_charge_power'; st[id] = { ...st[id], state: '9.9' }; })""")
+    page.wait_for_timeout(600)
+    r = page.evaluate("""() => { const r = window.__card.shadowRoot; return {
+      mode: r.querySelector('.mode-btn.active')?.dataset.value, phase: r.querySelector('.phase-btn.active')?.dataset.value }; }""")
+    t.check(r["mode"] == "now" and r["phase"] == "1", "a render before HA answers keeps the pressed mode and phase", json.dumps(r))
+    # HA reports something other than the old state: that wins over the mark.
+    page.evaluate("""() => window.__push(st => { const id = 'select.evcc_openwb_mode'; st[id] = { ...st[id], state: 'off' }; })""")
+    page.wait_for_timeout(600)
+    t.check(page.evaluate("window.__card.shadowRoot.querySelector('.mode-btn.active')?.dataset.value") == "off",
+            "a state HA reports overrides the optimistic mark")
+    page.close()
+
     # --- a focused input holds every render back ------------------------------------
     t.group("interaction - inputs hold the render")
     page = new_page(browser, 480, 1600)

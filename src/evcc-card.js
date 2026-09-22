@@ -35,6 +35,7 @@ export class EvccCard extends HTMLElement {
     this._sliderEditPanel = null;
     this._inputFocused  = null;   // focused select or date input, see _inputBusy()
     this._readIds       = null;   // entity ids the last render read, see _render()
+    this._expected      = {};     // entity id -> value written, not yet reported back (actions.js)
     this._renderTimer   = null;
     this._lastRenderKey = null;
     this._countdownInterval = null;
@@ -458,8 +459,15 @@ export class EvccCard extends HTMLElement {
     // still loading) leaves the previous set in place.
     const real  = this._hass;
     const reads = new Set();
+    // The same proxy hands out the value the card just wrote for an entity HA
+    // has not answered for yet (_expectedState), so every view draws the
+    // pressed mode or the flipped toggle without knowing about it.
     this._hass = { ...real, states: new Proxy(real.states, {
-      get: (t, k) => { if (typeof k === "string") reads.add(k); return t[k]; },
+      get: (t, k) => {
+        if (typeof k !== "string") return t[k];
+        reads.add(k);
+        return this._expectedState(k, t[k]);
+      },
     }) };
     let done = false;
     try {
