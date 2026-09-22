@@ -32,6 +32,7 @@ export class EvccCard extends HTMLElement {
     this._pendingRender = false;
     this._sliderEditing = false;   // direct-input panel open (defers re-renders like a drag)
     this._sliderEditPanel = null;
+    this._inputFocused  = null;   // focused select or date input, see _inputBusy()
     this._renderTimer   = null;
     this._lastRenderKey = null;
     this._countdownInterval = null;
@@ -113,8 +114,10 @@ export class EvccCard extends HTMLElement {
     this._seenStates = null;
     for (const k of Object.keys(this._planPreviewDebounce)) clearTimeout(this._planPreviewDebounce[k]);
     this._planPreviewDebounce = {};
-    // An open direct-input panel would keep hass updates deferred after re-mount.
+    // An open direct-input panel or a focused input would keep hass updates
+    // deferred after re-mount; a detached element gets no blur.
     this._pendingRender = false;
+    this._inputFocused  = null;
     this._closeSliderEdit();
     // Drop the on-demand WS caches. Capabilities and entry_id are kept on
     // purpose: they do not change while the page lives, and re-probing them on
@@ -165,7 +168,7 @@ export class EvccCard extends HTMLElement {
 
     this._syncIntegrationInstance();
 
-    if (this._isDragging || this._sliderEditing) {
+    if (this._inputBusy()) {
       this._pendingRender = true;
       this._updateLiveValues();
       return;
@@ -402,17 +405,31 @@ export class EvccCard extends HTMLElement {
     return val;
   }
 
+  // True while the user is in the middle of something the DOM must not be
+  // replaced under: a slider drag, an open direct-input panel, a priority drag,
+  // or a focused select or date input (an open dropdown or picker would close,
+  // a half-typed time would be gone). The end of each interaction runs the
+  // render that was deferred meanwhile.
+  _inputBusy() {
+    return !!(this._isDragging || this._sliderEditing || this._priorityDragging || this._inputFocused);
+  }
+
+  // The focus guard for selects and date inputs, set by the shared listener in
+  // listeners.js; lifted on change (the choice is made) and on blur.
+  _holdInput(el)    { this._inputFocused = el; }
+  _releaseInput(el) {
+    if (this._inputFocused !== el && this._inputFocused?.isConnected) return;
+    this._inputFocused = null;
+    if (this._pendingRender) { this._pendingRender = false; this._render(); }
+  }
+
   _render() {
     if (!this._hass) return;
-    // A priority drag holds live DOM references (row, placeholder, captured
-    // handle). Replacing the shadow DOM now would orphan it and leave
-    // _isDragging stuck. Defer; _priorityDragEnd re-renders.
-    if (this._priorityDragging) { this._pendingRender = true; return; }
-    // A full re-render replaces the shadow DOM, so an open direct-input panel is
-    // gone afterwards; clear the flag or hass updates would stay deferred.
-    this._sliderEditing   = false;
-    this._sliderEditPanel = null;
-    this._dropSliderEditOutside();
+    // Whoever asks for the render, the hass setter, a WebSocket result, a plan
+    // reset or a tab: nothing replaces the DOM under the user's hands. The
+    // interaction that holds it renders when it ends (pointerup, panel close,
+    // drag end, blur).
+    if (this._inputBusy()) { this._pendingRender = true; return; }
     if (!this._translationsReady) {
       if (!this.shadowRoot.firstChild) {
         this.shadowRoot.innerHTML = `

@@ -846,6 +846,49 @@ def interactions(browser, port, t):
     t.check(any("select_option failed" in w for w in warnings), "and says so in the console", "; ".join(warnings)[:120])
     page.close()
 
+    # --- a focused input holds every render back ------------------------------------
+    t.group("interaction - inputs hold the render")
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+    # The render is asked for directly, the way a WebSocket result or a plan
+    # reset does, so the guard has to sit in _render() itself.
+    same_after_render = lambda sel: page.evaluate("""(sel) => { const c = window.__card, before = c.shadowRoot.querySelector(sel);
+        c._lastRenderKey = null; c._render();
+        return { same: before === c.shadowRoot.querySelector(sel), pending: c._pendingRender }; }""", sel)
+    page.locator(in_card("input.plan-time-input")).first.focus()
+    r = same_after_render("input.plan-time-input")
+    t.check(r["same"] and r["pending"], "a focused time input keeps its element through a render", json.dumps(r))
+    page.evaluate("() => window.__card.shadowRoot.querySelector('input.plan-time-input').blur()")
+    page.wait_for_timeout(50)
+    r2 = page.evaluate("""() => { const c = window.__card; return { pending: c._pendingRender, focused: c._inputFocused }; }""")
+    t.check(not r2["pending"] and r2["focused"] is None, "blur runs the deferred render and lifts the guard", json.dumps(r2))
+    sel = page.locator(in_card("select.plan-vehicle-select")).first
+    if sel.count():
+        sel.focus()
+        r = same_after_render("select.plan-vehicle-select")
+        t.check(r["same"] and r["pending"], "a focused vehicle select keeps its element through a render", json.dumps(r))
+        page.evaluate("""() => { const s = window.__card.shadowRoot.querySelector('select.plan-vehicle-select');
+            s.dispatchEvent(new Event('change', { bubbles: true })); }""")
+        page.wait_for_timeout(700)
+        t.check(page.evaluate("!window.__card._pendingRender && !window.__card._inputFocused"),
+                "a change lifts the guard and the deferred render runs")
+    else:
+        t.fail("a focused vehicle select keeps its element through a render", "no vehicle select rendered")
+    # A slider drag holds a direct render too, not only the hass setter.
+    rng = page.locator(in_card('input[data-entity="number.evcc_openwb_limit_soc"]'))
+    box = rng.bounding_box()
+    page.mouse.move(box["x"] + 10, box["y"] + box["height"] / 2); page.mouse.down()
+    r = same_after_render('input[data-entity="number.evcc_openwb_limit_soc"]')
+    page.mouse.up(); page.wait_for_timeout(100)
+    t.check(r["same"] and r["pending"], "a slider drag keeps its element through a direct render", json.dumps(r))
+    t.check(page.evaluate("!window.__card._pendingRender && !window.__card._isDragging"), "pointerup runs the deferred render")
+    # A re-mount with the guard still set must not stay deferred: detach clears it.
+    page.locator(in_card("input.plan-time-input")).first.focus()
+    page.evaluate("""() => { const c = window.__card, host = c.parentNode; host.removeChild(c); host.appendChild(c); }""")
+    page.wait_for_timeout(500)
+    t.check(page.evaluate("!window.__card._inputFocused && !window.__card._pendingRender"), "a re-mount clears the guard")
+    page.close()
+
 
 def editor(browser, port, t):
     """The visual editor writes the whole card config on every change.

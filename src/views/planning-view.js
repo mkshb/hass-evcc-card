@@ -595,13 +595,6 @@ export const planningView = {
     });
 
     this.shadowRoot.querySelectorAll("select.plan-vehicle-select").forEach(sel => {
-      sel.addEventListener("focus", () => {
-        this._pendingRender = false;
-      });
-      sel.addEventListener("blur", () => {
-        this._isDragging = false;
-        if (this._pendingRender) { this._pendingRender = false; this._render(); }
-      });
       sel.addEventListener("change", () => {
         const lpName = sel.dataset.lp;
         const eid    = sel.dataset.entity;

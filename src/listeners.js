@@ -60,6 +60,16 @@ export const listeners = {
       });
     });
 
+    // A focused select or date input holds every render back, see _inputBusy():
+    // replacing the DOM would close an open dropdown or picker and wipe a
+    // half-typed time. Registered before the views' own handlers, so a change
+    // handler that renders finds the guard already lifted.
+    this.shadowRoot.querySelectorAll("select, input[type=datetime-local]").forEach(el => {
+      el.addEventListener("focus",  () => this._holdInput(el));
+      el.addEventListener("change", () => this._releaseInput(el));
+      el.addEventListener("blur",   () => this._releaseInput(el));
+    });
+
     this._attachLoadpointListeners();
     this._attachSliderListeners();
     this._attachPlanListeners();
