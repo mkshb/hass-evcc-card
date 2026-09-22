@@ -425,4 +425,189 @@ export const socControl = {
         </div>
       </div>`;
   },
+
+  // Listeners of the sliders: the battery boost range with its direct input,
+  // the clear button of the smart cost limits, every other range (drag,
+  // keyboard, write-back) and the tap target that opens the direct input.
+  // Called by _attachListeners() after every render.
+  _attachSliderListeners() {
+    this.shadowRoot.querySelectorAll("input[data-boost-entity]").forEach(input => {
+      input.addEventListener("pointerdown", () => { this._isDragging = true; this._pendingRender = false; });
+      input.addEventListener("input", () => {
+        const val     = parseInt(input.value, 10);
+        const display = input.nextElementSibling;
+        if (!display) return;
+        display.textContent = val === 100 ? this._t("toggleOff") : val === 0 ? `0 % (${this._t("fullDischarge")})` : `${val} %`;
+      });
+      input.addEventListener("pointerup",  () => this._boostCommit(input));
+      input.addEventListener("blur",       () => this._boostCommit(input));
+    });
+
+    // Direct input for battery boost: the range already carries the option
+    // list, so apply just moves the range and reuses _boostCommit.
+    this.shadowRoot.querySelectorAll("button.boost-val[data-boost-edit]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (btn.classList.contains("editing")) { this._closeSliderEdit(); return; }
+        const input = btn.previousElementSibling;
+        this._openSliderEdit(btn, {
+          unit:    "%",
+          value:   parseInt(input?.value, 10),
+          format:  v => v === 100 ? this._t("toggleOff") : v === 0 ? `0 % (${this._t("fullDischarge")})` : `${v} %`,
+          onApply: () => this._boostCommit(input),
+        });
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.smart-cost-clear-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._pressButton(btn.dataset.entity);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("input[type=range]:not(.plan-soc-range):not([data-boost-entity])").forEach(input => {
+      input.addEventListener("pointerdown", () => {
+        this._isDragging    = true;
+        this._pendingRender = false;
+      });
+      input.addEventListener("input", () => {
+        const span = input.nextElementSibling;
+        if (span) span.textContent = `${this._sliderValueFor(input)} ${displayUnit(this._hass, input.dataset.entity)}`;
+      });
+      input.addEventListener("pointerup", () => {
+        this._isDragging = false;
+        const domain   = input.dataset.domain;
+        const entityId = input.dataset.entity;
+        this._sliderWrite(entityId, domain, domain === "select" ? this._sliderValueFor(input) : parseFloat(input.value));
+        if (this._pendingRender) { this._pendingRender = false; this._render(); }
+      });
+      input.addEventListener("blur", () => {
+        if (this._isDragging) {
+          this._isDragging = false;
+          if (this._pendingRender) { this._pendingRender = false; this._render(); }
+        }
+      });
+      // Keyboard changes (arrows, Home/End, PageUp/Down) never went through
+      // pointerup, so they updated the label but were never written to HA.
+      // The value at the first keydown is the reference (key repeat fires
+      // keydown again, keyup once): a key that moved nothing, e.g. at a bound
+      // of the range, causes no write.
+      const NAV_KEYS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"];
+      let keyStart = null;
+      input.addEventListener("keydown", (e) => {
+        if (NAV_KEYS.includes(e.key) && keyStart === null) keyStart = input.value;
+      });
+      input.addEventListener("keyup", (e) => {
+        if (!NAV_KEYS.includes(e.key)) return;
+        const unchanged = keyStart !== null && keyStart === input.value;
+        keyStart = null;
+        if (unchanged) return;
+        const domain   = input.dataset.domain;
+        const entityId = input.dataset.entity;
+        this._sliderWrite(entityId, domain, domain === "select" ? this._sliderValueFor(input) : parseFloat(input.value));
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.slider-val[data-slider-edit]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (btn.classList.contains("editing")) this._closeSliderEdit();
+        else this._openSliderEdit(btn);
+      });
+    });
+  },
 };
+
+// Sliders, the direct-input panel and the charge settings block.
+// Part of the card stylesheet, see src/styles.js.
+export const sliderCss = `
+      .sliders { margin-bottom: 10px; }
+      .slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: .83rem; flex-wrap: wrap; }
+      .slider-row label { flex: 0 0 auto; min-width: 70px; white-space: nowrap; color: var(--secondary-text-color); }
+      .slider-control { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 120px; }
+      .slider-control input { flex: 1; min-width: 0; accent-color: var(--primary-color); }
+      .slider-val { flex-shrink: 0; min-width: 52px; text-align: right; font-size: .8rem; }
+      /* The value is a tap target: same look as before, but a thumb-sized hit
+         area (padding + negative margin keeps the row height unchanged). */
+      button.slider-val {
+        background: none; border: none; font-family: inherit; color: inherit; cursor: pointer;
+        padding: 8px 6px; margin: -8px -6px; border-radius: 6px; line-height: 1.2;
+        text-decoration: underline dotted; text-decoration-color: var(--secondary-text-color, #888);
+        text-underline-offset: 3px; touch-action: manipulation;
+      }
+      button.slider-val:hover, button.slider-val.editing { color: var(--primary-color); text-decoration-color: currentColor; }
+      button.slider-val:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+      /* Direct-input panel: full-width row under the slider, every control ≥44px. */
+      .slider-edit { flex: 0 0 100%; display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; }
+      .slider-edit-btn {
+        flex: 0 0 auto; min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center;
+        border: 1px solid var(--divider-color, #555); border-radius: 8px; cursor: pointer; font-family: inherit;
+        background: var(--secondary-background-color, rgba(127,127,127,0.12)); color: var(--primary-text-color);
+        font-size: 1.3rem; line-height: 1; padding: 0; touch-action: manipulation; user-select: none;
+      }
+      .slider-edit-btn:active { filter: brightness(0.9); }
+      .slider-edit-ok     { color: var(--evcc-green); font-weight: 700; }
+      .slider-edit-cancel { color: var(--secondary-text-color); }
+      .slider-edit-field {
+        flex: 1 1 80px; min-width: 64px; min-height: 44px; display: flex; align-items: center; box-sizing: border-box;
+        border: 1px solid var(--divider-color, #555); border-radius: 8px; padding: 0 10px;
+        background: var(--card-background-color, #fff);
+      }
+      .slider-edit-field:focus-within { border-color: var(--primary-color); }
+      .slider-edit-input {
+        flex: 1; min-width: 0; width: 100%; border: none; background: none; outline: none;
+        font-family: inherit; font-size: 1.15rem; color: var(--primary-text-color); text-align: right; padding: 0;
+      }
+      .slider-edit-unit { flex: 0 0 auto; margin-left: 6px; font-size: .9rem; color: var(--secondary-text-color); white-space: nowrap; }
+      /* Narrow cards (≈300 px): 4 × 40 px buttons + 4 gaps + a 64 px field still fit the content box. */
+      @container (max-width: 340px) {
+        .slider-edit { gap: 6px; }
+        .slider-edit-btn { min-width: 40px; }
+        .slider-edit-field { flex-basis: 64px; min-width: 64px; padding: 0 8px; }
+      }
+      .smart-active-hint { font-size: .75rem; color: var(--evcc-green); margin-top: -4px; margin-bottom: 8px; }
+      .smart-cost-clear-row { display: flex; justify-content: flex-end; margin-top: 6px; margin-bottom: 2px; }
+      .smart-cost-clear-btn { background: none; border: 1px solid var(--divider-color, #555); border-radius: 4px; cursor: pointer; font-size: .75rem; color: var(--secondary-text-color); padding: 3px 8px; font-family: inherit; transition: border-color .15s, color .15s; }
+      .smart-cost-clear-btn:hover { border-color: var(--evcc-red); color: var(--evcc-red); }
+      .smart-cost-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .72rem; color: var(--secondary-text-color); white-space: nowrap; background: none; border: none; padding: 0; cursor: pointer; font-family: inherit; }
+      .smart-cost-chip:hover { color: var(--primary-color); }
+      .smart-cost-chip.active { color: var(--evcc-green); }
+      .smart-cost-chip.active:hover { color: var(--evcc-green); filter: brightness(1.2); }
+      .settings-divider { border: none; border-top: 1px solid var(--divider-color, #e5e7eb); margin: 8px 0; }
+      @keyframes smart-cost-pulse { 0%,100% { background: transparent; } 40% { background: color-mix(in srgb, var(--primary-color) 15%, transparent); } }
+      .smart-cost-highlight { border-radius: 6px; animation: smart-cost-pulse 1.5s ease; }
+
+      .current-block {
+        border-top: 1px solid var(--divider-color, #333);
+        margin-top: 10px; padding-top: 10px; margin-bottom: 10px;
+      }
+      .block-title-row {
+        display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
+      }
+      .block-title {
+        font-size: .7rem; font-weight: 600; text-transform: uppercase;
+        letter-spacing: .08em; color: var(--secondary-text-color);
+      }
+      .current-toggle-btn {
+        background: transparent; border: none; border-radius: 50%;
+        color: var(--secondary-text-color); cursor: pointer;
+        padding: 3px; display: flex; align-items: center; justify-content: center;
+        transition: color .15s, background .15s; margin: -3px;
+      }
+      .current-toggle-btn:hover {
+        color: var(--primary-color);
+        background: var(--secondary-background-color, rgba(0,0,0,.06));
+      }
+      .current-toggle-btn.active { color: var(--primary-color); }
+      .current-block-body[hidden] { display: none; }
+
+      .selects { margin-bottom: 10px; }
+      .select-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; flex-wrap: wrap; gap: 4px; }
+      .phase-btn-group { display: flex; gap: 4px; }
+      button.phase-btn {
+        padding: 3px 10px; border-radius: 999px; border: 1px solid var(--divider-color);
+        background: transparent; color: var(--secondary-text-color);
+        cursor: pointer; font-size: .75rem; font-weight: 600; transition: all .15s; white-space: nowrap;
+      }
+      button.phase-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+`;

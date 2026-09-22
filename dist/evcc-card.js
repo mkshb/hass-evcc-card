@@ -1516,7 +1516,226 @@ const loadpointView = {
       </div>
     `;
   },
+
+  // Listeners of the loadpoint and compact views: the charge settings toggle
+  // and the jump to the smart cost limit, the compact tabs, the boost chip,
+  // the mode buttons, the entity toggles and the phase buttons. Called by
+  // _attachListeners() after every render.
+  _attachLoadpointListeners() {
+    this.shadowRoot.querySelectorAll("[data-lp-current-toggle]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const lpName   = btn.dataset.lpCurrentToggle;
+        // Same fallback as the render: with `charge_current_settings: expanded`
+        // the block starts open, so the first click must collapse it.
+        const expanded = this._currentBlockExpanded[lpName]
+          ?? (this._config.charge_current_settings === "expanded");
+        this._currentBlockExpanded[lpName] = !expanded;
+
+        const block = this.shadowRoot.querySelector(`[data-lp-current="${lpName}"]`);
+        if (!block) return;
+        const body = block.querySelector(".current-block-body");
+        if (body) {
+          if (!expanded) body.removeAttribute("hidden");
+          else body.setAttribute("hidden", "");
+        }
+        btn.classList.toggle("active", !expanded);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("[data-lp-smart-cost-open]").forEach(chip => {
+      chip.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const lpName = chip.dataset.lpSmartCostOpen;
+        const block  = this.shadowRoot.querySelector(`[data-lp-current="${lpName}"]`);
+        if (!block) return;
+        const body = block.querySelector(".current-block-body");
+        if (body) body.removeAttribute("hidden");
+        this._currentBlockExpanded[lpName] = true;
+        const toggleBtn = block.querySelector("[data-lp-current-toggle]");
+        if (toggleBtn) toggleBtn.classList.add("active");
+        const section = block.querySelector(`[data-lp-smart-cost-section="${lpName}"]`);
+        if (section) {
+          section.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          section.classList.add("smart-cost-highlight");
+          setTimeout(() => section.classList.remove("smart-cost-highlight"), 1500);
+        }
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.compact-tab").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const lpName   = btn.dataset.lp;
+        const tabIdx   = parseInt(btn.dataset.tab);
+        this._tabState[lpName] = tabIdx;
+
+        const block = btn.closest("[data-lp-compact]");
+        block.querySelectorAll("button.compact-tab").forEach((b, i) =>
+          b.classList.toggle("active", i === tabIdx));
+        block.querySelectorAll(".compact-panel").forEach((p, i) =>
+          i === tabIdx ? p.removeAttribute("hidden") : p.setAttribute("hidden", ""));
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.boost-activate-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const on = btn.dataset.on === "true";
+        this._toggleEntity("switch", btn.dataset.entity, on);
+        btn.classList.toggle("on", !on);
+        btn.dataset.on = String(!on);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.mode-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._setSelectOption(btn.dataset.entity, btn.dataset.value);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.toggle").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const on     = btn.dataset.on === "true";
+        const domain = btn.dataset.domain;
+        this._toggleEntity(domain, btn.dataset.entity, on);
+        btn.classList.toggle("on", !on);
+        btn.dataset.on = String(!on);
+        if (btn.dataset.lp) this._requestPlanPreview(btn.dataset.lp);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.phase-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._setSelectOption(btn.dataset.entity, btn.dataset.value);
+        const group = btn.closest(".phase-btn-group");
+        if (group) {
+          group.querySelectorAll(".phase-btn").forEach(b => b.classList.remove("active"));
+          btn.classList.add("active");
+        }
+      });
+    });
+  },
 };
+
+// Loadpoint and compact modes: header, badges, action chips, mode row, vehicle
+// and power row, the entity toggles and the session block.
+// Part of the card stylesheet, see src/styles.js.
+const loadpointCss = `
+      .loadpoint {
+        padding: 12px 0;
+        border-bottom: 1px solid var(--divider-color, #e5e7eb);
+        margin-bottom: 0;
+      }
+      .loadpoint:first-child { padding-top: 0; }
+      .loadpoint:last-child { border-bottom: none; padding-bottom: 0; }
+      /* The header values of a loadpoint open more-info; the site rows and the
+         grid chips carry their own hover, this one covers the inline values. */
+      .loadpoint [data-more-info] { cursor: pointer; }
+      .loadpoint [data-more-info]:hover { opacity: .75; }
+      .lp-header {
+        display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+      }
+      .lp-name { font-size: 1rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px; }
+      .lp-badge {
+        font-size: .75rem; font-weight: 600; padding: 2px 10px;
+        border-radius: 999px; border: 1px solid currentColor;
+      }
+      .lp-badge.charging  { color: var(--evcc-green);  background: color-mix(in srgb, var(--evcc-green)  15%, transparent); }
+      .lp-badge.connected { color: var(--evcc-blue);   background: color-mix(in srgb, var(--evcc-blue)   15%, transparent); }
+      .lp-badge.ready     { color: var(--evcc-gray);   background: color-mix(in srgb, var(--evcc-gray)   15%, transparent); }
+      .lp-badge.disabled  { color: var(--evcc-gray);   background: color-mix(in srgb, var(--evcc-gray)   15%, transparent); }
+      .loadpoint.lp-disabled { opacity: 0.55; }
+      .lp-action-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+      .lp-action-chip {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 3px 8px; border-radius: 999px;
+        font-size: .72rem; font-weight: 600;
+        border: 1px solid var(--divider-color, #4b5563);
+        color: var(--primary-text-color);
+      }
+      .lp-action-chip svg { width: 14px; height: 14px; flex: 0 0 14px; }
+      .lp-action-chip.phase { color: var(--evcc-bolt, #ffae00); border-color: color-mix(in srgb, var(--evcc-bolt, #ffae00) 50%, transparent); background: color-mix(in srgb, var(--evcc-bolt, #ffae00) 10%, transparent); }
+      .lp-action-chip.pv    { color: var(--evcc-green, #0a0);  border-color: color-mix(in srgb, var(--evcc-green, #0a0)  50%, transparent); background: color-mix(in srgb, var(--evcc-green, #0a0)  10%, transparent); }
+      .lp-action-chip.vehicle { color: var(--info-color, #2196f3); border-color: color-mix(in srgb, var(--info-color, #2196f3) 50%, transparent); background: color-mix(in srgb, var(--info-color, #2196f3) 10%, transparent); }
+      .lp-remaining {
+        font-size: .85em; color: var(--secondary-text-color);
+        margin-right: 8px; white-space: nowrap;
+      }
+
+      .mode-row { display: flex; gap: 6px; margin-bottom: 12px; }
+      .mode-row.has-sub { margin-bottom: 6px; }
+      .alwayscharge-row { margin-bottom: 12px; }
+      .mode-btn {
+        flex: 1; display: flex; flex-direction: column; align-items: center;
+        gap: 2px; padding: 8px 2px; min-width: 0;
+        border: 1px solid var(--divider-color, #e5e7eb); border-radius: 8px;
+        background: transparent; color: var(--secondary-text-color);
+        cursor: pointer; font-size: .7rem; transition: all .15s; overflow: hidden;
+      }
+      .mode-btn:hover { border-color: var(--primary-color); }
+      .mode-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+      .mode-icon { display: flex; align-items: center; justify-content: center; line-height: 1; min-height: 20px; }
+      .mode-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+      .soc-section { margin-bottom: 12px; }
+      .soc-label-row {
+        display: flex; justify-content: space-between;
+        font-size: .85rem; margin-bottom: 6px; color: var(--secondary-text-color);
+      }
+      .vehicle-name { font-weight: 500; color: var(--primary-text-color); }
+      .smart-cost-row { display: flex; justify-content: flex-end; margin-top: 4px; }
+      .boost-activate-row { display: flex; justify-content: flex-start; margin-top: 6px; margin-bottom: 2px; }
+      .boost-activate-btn {
+        display: inline-flex; align-items: center; gap: 4px;
+        background: none; border: 1px solid var(--divider-color, #555);
+        border-radius: 4px; cursor: pointer;
+        font-size: .75rem; color: var(--secondary-text-color);
+        padding: 3px 8px; font-family: inherit;
+        transition: border-color .15s, color .15s, background .15s;
+      }
+      .boost-activate-btn:hover { border-color: var(--evcc-bolt, #ffae00); color: var(--evcc-bolt, #ffae00); }
+      .boost-activate-btn.on { color: var(--evcc-bolt, #ffae00); border-color: var(--evcc-bolt, #ffae00); background: rgba(255,174,0,0.08); }
+      .soc-track {
+        position: relative; height: 8px;
+        background: var(--divider-color, #e5e7eb); border-radius: 4px; overflow: visible;
+      }
+      @keyframes soc-pulse {
+        0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; }
+      }
+      .soc-fill { height: 100%; border-radius: 4px; transition: width .4s ease; }
+      .soc-fill.charging { animation: soc-pulse 1.4s ease-in-out infinite; }
+      .soc-limit-marker {
+        position: absolute; top: -3px; width: 3px; height: 14px;
+        background: #22c55e; border-radius: 2px; transform: translateX(-50%);
+      }
+      .soc-min-marker {
+        position: absolute; top: -3px; width: 3px; height: 14px;
+        background: #f59e0b; border-radius: 2px; transform: translateX(-50%);
+      }
+
+      .power-row { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 12px; color: var(--secondary-text-color); flex-wrap: wrap; }
+      .power-row.charging { color: #22c55e; }
+      .power-value { font-size: 1.6rem; font-weight: 700; }
+      .power-sep { font-size: .8rem; color: var(--secondary-text-color); align-self: flex-end; padding-bottom: .2rem; }
+      .power-current { font-size: .82rem; align-self: flex-end; padding-bottom: .2rem; }
+      .power-phases  { font-size: .82rem; align-self: flex-end; padding-bottom: .2rem; }
+      .power-currents-hint { font-size: .72rem; color: var(--secondary-text-color, #757575); margin-top: 2px; opacity: .8; }
+
+      .toggles { margin-bottom: 10px; }
+      .toggle-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; flex-wrap: wrap; gap: 4px; }
+      button.toggle {
+        padding: 3px 14px; border-radius: 999px; border: 1px solid var(--divider-color);
+        background: transparent; color: var(--secondary-text-color);
+        cursor: pointer; font-size: .75rem; font-weight: 600; transition: all .15s;
+      }
+      button.toggle.on { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+
+      .session-block { border-top: 1px solid var(--divider-color, #e5e7eb); margin-top: 10px; padding-top: 10px; }
+      .session-title { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--secondary-text-color); margin-bottom: 8px; }
+      .session-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 6px; }
+      .session-item { display: flex; flex-direction: column; gap: 2px; }
+      .si-label { font-size: .7rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .05em; }
+      .si-value { font-size: .95rem; font-weight: 600; color: var(--primary-text-color); }
+`;
 
 // Sliders with direct-input panel, step override, write-back and battery boost. Methods are mixed into EvccCard.prototype.
 const socControl = {
@@ -1939,7 +2158,192 @@ const socControl = {
         </div>
       </div>`;
   },
+
+  // Listeners of the sliders: the battery boost range with its direct input,
+  // the clear button of the smart cost limits, every other range (drag,
+  // keyboard, write-back) and the tap target that opens the direct input.
+  // Called by _attachListeners() after every render.
+  _attachSliderListeners() {
+    this.shadowRoot.querySelectorAll("input[data-boost-entity]").forEach(input => {
+      input.addEventListener("pointerdown", () => { this._isDragging = true; this._pendingRender = false; });
+      input.addEventListener("input", () => {
+        const val     = parseInt(input.value, 10);
+        const display = input.nextElementSibling;
+        if (!display) return;
+        display.textContent = val === 100 ? this._t("toggleOff") : val === 0 ? `0 % (${this._t("fullDischarge")})` : `${val} %`;
+      });
+      input.addEventListener("pointerup",  () => this._boostCommit(input));
+      input.addEventListener("blur",       () => this._boostCommit(input));
+    });
+
+    // Direct input for battery boost: the range already carries the option
+    // list, so apply just moves the range and reuses _boostCommit.
+    this.shadowRoot.querySelectorAll("button.boost-val[data-boost-edit]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (btn.classList.contains("editing")) { this._closeSliderEdit(); return; }
+        const input = btn.previousElementSibling;
+        this._openSliderEdit(btn, {
+          unit:    "%",
+          value:   parseInt(input?.value, 10),
+          format:  v => v === 100 ? this._t("toggleOff") : v === 0 ? `0 % (${this._t("fullDischarge")})` : `${v} %`,
+          onApply: () => this._boostCommit(input),
+        });
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.smart-cost-clear-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._pressButton(btn.dataset.entity);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("input[type=range]:not(.plan-soc-range):not([data-boost-entity])").forEach(input => {
+      input.addEventListener("pointerdown", () => {
+        this._isDragging    = true;
+        this._pendingRender = false;
+      });
+      input.addEventListener("input", () => {
+        const span = input.nextElementSibling;
+        if (span) span.textContent = `${this._sliderValueFor(input)} ${displayUnit(this._hass, input.dataset.entity)}`;
+      });
+      input.addEventListener("pointerup", () => {
+        this._isDragging = false;
+        const domain   = input.dataset.domain;
+        const entityId = input.dataset.entity;
+        this._sliderWrite(entityId, domain, domain === "select" ? this._sliderValueFor(input) : parseFloat(input.value));
+        if (this._pendingRender) { this._pendingRender = false; this._render(); }
+      });
+      input.addEventListener("blur", () => {
+        if (this._isDragging) {
+          this._isDragging = false;
+          if (this._pendingRender) { this._pendingRender = false; this._render(); }
+        }
+      });
+      // Keyboard changes (arrows, Home/End, PageUp/Down) never went through
+      // pointerup, so they updated the label but were never written to HA.
+      // The value at the first keydown is the reference (key repeat fires
+      // keydown again, keyup once): a key that moved nothing, e.g. at a bound
+      // of the range, causes no write.
+      const NAV_KEYS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"];
+      let keyStart = null;
+      input.addEventListener("keydown", (e) => {
+        if (NAV_KEYS.includes(e.key) && keyStart === null) keyStart = input.value;
+      });
+      input.addEventListener("keyup", (e) => {
+        if (!NAV_KEYS.includes(e.key)) return;
+        const unchanged = keyStart !== null && keyStart === input.value;
+        keyStart = null;
+        if (unchanged) return;
+        const domain   = input.dataset.domain;
+        const entityId = input.dataset.entity;
+        this._sliderWrite(entityId, domain, domain === "select" ? this._sliderValueFor(input) : parseFloat(input.value));
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.slider-val[data-slider-edit]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (btn.classList.contains("editing")) this._closeSliderEdit();
+        else this._openSliderEdit(btn);
+      });
+    });
+  },
 };
+
+// Sliders, the direct-input panel and the charge settings block.
+// Part of the card stylesheet, see src/styles.js.
+const sliderCss = `
+      .sliders { margin-bottom: 10px; }
+      .slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: .83rem; flex-wrap: wrap; }
+      .slider-row label { flex: 0 0 auto; min-width: 70px; white-space: nowrap; color: var(--secondary-text-color); }
+      .slider-control { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 120px; }
+      .slider-control input { flex: 1; min-width: 0; accent-color: var(--primary-color); }
+      .slider-val { flex-shrink: 0; min-width: 52px; text-align: right; font-size: .8rem; }
+      /* The value is a tap target: same look as before, but a thumb-sized hit
+         area (padding + negative margin keeps the row height unchanged). */
+      button.slider-val {
+        background: none; border: none; font-family: inherit; color: inherit; cursor: pointer;
+        padding: 8px 6px; margin: -8px -6px; border-radius: 6px; line-height: 1.2;
+        text-decoration: underline dotted; text-decoration-color: var(--secondary-text-color, #888);
+        text-underline-offset: 3px; touch-action: manipulation;
+      }
+      button.slider-val:hover, button.slider-val.editing { color: var(--primary-color); text-decoration-color: currentColor; }
+      button.slider-val:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+      /* Direct-input panel: full-width row under the slider, every control ≥44px. */
+      .slider-edit { flex: 0 0 100%; display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; }
+      .slider-edit-btn {
+        flex: 0 0 auto; min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center;
+        border: 1px solid var(--divider-color, #555); border-radius: 8px; cursor: pointer; font-family: inherit;
+        background: var(--secondary-background-color, rgba(127,127,127,0.12)); color: var(--primary-text-color);
+        font-size: 1.3rem; line-height: 1; padding: 0; touch-action: manipulation; user-select: none;
+      }
+      .slider-edit-btn:active { filter: brightness(0.9); }
+      .slider-edit-ok     { color: var(--evcc-green); font-weight: 700; }
+      .slider-edit-cancel { color: var(--secondary-text-color); }
+      .slider-edit-field {
+        flex: 1 1 80px; min-width: 64px; min-height: 44px; display: flex; align-items: center; box-sizing: border-box;
+        border: 1px solid var(--divider-color, #555); border-radius: 8px; padding: 0 10px;
+        background: var(--card-background-color, #fff);
+      }
+      .slider-edit-field:focus-within { border-color: var(--primary-color); }
+      .slider-edit-input {
+        flex: 1; min-width: 0; width: 100%; border: none; background: none; outline: none;
+        font-family: inherit; font-size: 1.15rem; color: var(--primary-text-color); text-align: right; padding: 0;
+      }
+      .slider-edit-unit { flex: 0 0 auto; margin-left: 6px; font-size: .9rem; color: var(--secondary-text-color); white-space: nowrap; }
+      /* Narrow cards (≈300 px): 4 × 40 px buttons + 4 gaps + a 64 px field still fit the content box. */
+      @container (max-width: 340px) {
+        .slider-edit { gap: 6px; }
+        .slider-edit-btn { min-width: 40px; }
+        .slider-edit-field { flex-basis: 64px; min-width: 64px; padding: 0 8px; }
+      }
+      .smart-active-hint { font-size: .75rem; color: var(--evcc-green); margin-top: -4px; margin-bottom: 8px; }
+      .smart-cost-clear-row { display: flex; justify-content: flex-end; margin-top: 6px; margin-bottom: 2px; }
+      .smart-cost-clear-btn { background: none; border: 1px solid var(--divider-color, #555); border-radius: 4px; cursor: pointer; font-size: .75rem; color: var(--secondary-text-color); padding: 3px 8px; font-family: inherit; transition: border-color .15s, color .15s; }
+      .smart-cost-clear-btn:hover { border-color: var(--evcc-red); color: var(--evcc-red); }
+      .smart-cost-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .72rem; color: var(--secondary-text-color); white-space: nowrap; background: none; border: none; padding: 0; cursor: pointer; font-family: inherit; }
+      .smart-cost-chip:hover { color: var(--primary-color); }
+      .smart-cost-chip.active { color: var(--evcc-green); }
+      .smart-cost-chip.active:hover { color: var(--evcc-green); filter: brightness(1.2); }
+      .settings-divider { border: none; border-top: 1px solid var(--divider-color, #e5e7eb); margin: 8px 0; }
+      @keyframes smart-cost-pulse { 0%,100% { background: transparent; } 40% { background: color-mix(in srgb, var(--primary-color) 15%, transparent); } }
+      .smart-cost-highlight { border-radius: 6px; animation: smart-cost-pulse 1.5s ease; }
+
+      .current-block {
+        border-top: 1px solid var(--divider-color, #333);
+        margin-top: 10px; padding-top: 10px; margin-bottom: 10px;
+      }
+      .block-title-row {
+        display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
+      }
+      .block-title {
+        font-size: .7rem; font-weight: 600; text-transform: uppercase;
+        letter-spacing: .08em; color: var(--secondary-text-color);
+      }
+      .current-toggle-btn {
+        background: transparent; border: none; border-radius: 50%;
+        color: var(--secondary-text-color); cursor: pointer;
+        padding: 3px; display: flex; align-items: center; justify-content: center;
+        transition: color .15s, background .15s; margin: -3px;
+      }
+      .current-toggle-btn:hover {
+        color: var(--primary-color);
+        background: var(--secondary-background-color, rgba(0,0,0,.06));
+      }
+      .current-toggle-btn.active { color: var(--primary-color); }
+      .current-block-body[hidden] { display: none; }
+
+      .selects { margin-bottom: 10px; }
+      .select-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; flex-wrap: wrap; gap: 4px; }
+      .phase-btn-group { display: flex; gap: 4px; }
+      button.phase-btn {
+        padding: 3px 10px; border-radius: 999px; border: 1px solid var(--divider-color);
+        background: transparent; color: var(--secondary-text-color);
+        cursor: pointer; font-size: .75rem; font-weight: 600; transition: all .15s; white-space: nowrap;
+      }
+      button.phase-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+`;
 
 // Charge plan block with preview chart, plan mode and repeating plans. Methods are mixed into EvccCard.prototype.
 const planningView = {
@@ -2463,7 +2867,229 @@ const planningView = {
         </div>`;
     }).join("");
   },
+
+  // Listeners of the charge plan block: precondition, target slider with its
+  // direct input, time, vehicle, save and delete. Called by _attachListeners()
+  // after every render.
+  _attachPlanListeners() {
+    this.shadowRoot.querySelectorAll("select.plan-precondition-select").forEach(sel => {
+      sel.addEventListener("change", () => {
+        this._setSelectOption(sel.dataset.entity, sel.value);
+        if (sel.dataset.lp) this._requestPlanPreview(sel.dataset.lp);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("input.plan-soc-range").forEach(input => {
+      input.addEventListener("pointerdown", () => {
+        this._isDragging    = true;
+        this._pendingRender = false;
+      });
+      input.addEventListener("input", () => {
+        const lpName = input.dataset.lp;
+        const val    = parseInt(input.value, 10);
+        if (this._planState[lpName]) this._planState[lpName].soc = val;
+        const span = input.nextElementSibling;
+        if (span) span.textContent = `${val} %`;
+      });
+      input.addEventListener("pointerup", () => {
+        this._isDragging = false;
+        this._requestPlanPreview(input.dataset.lp);
+        if (this._pendingRender) { this._pendingRender = false; this._render(); }
+      });
+      input.addEventListener("blur", () => {
+        if (this._isDragging) {
+          this._isDragging = false;
+          if (this._pendingRender) { this._pendingRender = false; this._render(); }
+        }
+      });
+      // Keyboard changes update the state via "input" but never asked for a preview.
+      input.addEventListener("keyup", (e) => {
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(e.key)) {
+          this._requestPlanPreview(input.dataset.lp);
+        }
+      });
+    });
+
+    // Direct input for the plan target (local state, no entity behind it).
+    this.shadowRoot.querySelectorAll("button.plan-soc-val[data-plan-soc-edit]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (btn.classList.contains("editing")) { this._closeSliderEdit(); return; }
+        const input  = btn.previousElementSibling;
+        const lpName = input?.dataset.lp;
+        this._openSliderEdit(btn, {
+          unit:  "%",
+          value: parseInt(input?.value, 10),
+          onApply: (val) => {
+            if (this._planState[lpName]) this._planState[lpName].soc = val;
+            this._requestPlanPreview(lpName);
+          },
+        });
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("input.plan-time-input").forEach(input => {
+      input.addEventListener("change", () => {
+        const lpName = input.dataset.lp;
+        if (this._planState[lpName]) this._planState[lpName].time = input.value;
+        this._requestPlanPreview(lpName);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("select.plan-vehicle-select").forEach(sel => {
+      sel.addEventListener("focus", () => {
+        this._pendingRender = false;
+      });
+      sel.addEventListener("blur", () => {
+        this._isDragging = false;
+        if (this._pendingRender) { this._pendingRender = false; this._render(); }
+      });
+      sel.addEventListener("change", () => {
+        const lpName = sel.dataset.lp;
+        const eid    = sel.dataset.entity;
+        const val    = sel.value;
+        if (this._planState[lpName]) {
+          this._planState[lpName].vehicle = val;
+          this._planState[lpName].soc     = null;
+          this._planState[lpName].time    = null;
+        }
+        if (eid && this._hass) {
+          this._setSelectOption(eid, val);
+        }
+        this._requestPlanPreview(lpName);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.plan-btn.save").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const lpName  = btn.dataset.lp;
+        const state   = this._planState[lpName] || {};
+        const soc     = state.soc || 80;
+        const dtValue = state.time || "";
+
+        if (!dtValue) { alert(this._t("noTimeAlert")); return; }
+
+        const showError = (msg) => {
+          const block = btn.closest(".plan-block");
+          if (!block) return;
+          let errEl = block.querySelector(".plan-error");
+          if (!errEl) {
+            errEl = document.createElement("div");
+            errEl.className = "plan-error";
+            block.querySelector(".plan-actions")?.after(errEl);
+          }
+          errEl.textContent = msg;
+        };
+        const showSuccess = () => {
+          const block = btn.closest(".plan-block");
+          if (!block) return;
+          const errEl = block.querySelector(".plan-error");
+          if (errEl) errEl.remove();
+          const badge = block.querySelector(".plan-badge");
+          if (badge) { badge.textContent = this._t("planned"); badge.classList.remove("active"); badge.classList.add("planned"); }
+        };
+
+        const vehicleDbId = (state.vehicle && state.vehicle !== "null") ? state.vehicle : null;
+        const dt  = new Date(dtValue);
+        const pad = n => String(n).padStart(2, "0");
+        const startdate = `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())} ` +
+                          `${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`;
+
+        // Only a vehicle evcc knows can be planned from here: its plan is the SoC
+        // this block collects. A loadpoint plan is an energy target in kWh, which
+        // the card does not ask for yet, and ha-evcc would accept a call without
+        // one and do nothing, leaving a plan badge behind for a plan that does
+        // not exist. So say it instead of pretending.
+        const savePlan = async () => {
+          if (!vehicleDbId) { showError(`❌ ${this._t("planNeedsVehicle")}`); return; }
+          try {
+            await this._setVehiclePlan(vehicleDbId, soc, startdate);
+            window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } }));
+            showSuccess();
+          } catch(e) {
+            showError(`❌ ${e?.message || JSON.stringify(e) || "Unknown error"}`);
+          }
+        };
+        savePlan();
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("button.plan-btn.delete").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const lpName      = btn.dataset.lp;
+        const planSt      = this._planState[lpName] || {};
+        const vehicleDbId = (planSt.vehicle && planSt.vehicle !== "null") ? planSt.vehicle : null;
+        const block       = btn.closest(".plan-block");
+        const resetBadge  = () => {
+          const badge = block?.querySelector(".plan-badge");
+          if (badge) { badge.textContent = this._t("noPlan"); badge.classList.remove("active", "planned"); }
+        };
+        if (vehicleDbId) {
+          this._deleteVehiclePlan(vehicleDbId)
+            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } })); })
+            .catch(e => console.warn("[evcc-card] delete plan:", e));
+        } else {
+          // Deleting works without a kWh target, it only needs the evcc index.
+          const lpIdx = this._lpIndex(lpName);
+          if (lpIdx == null) { console.warn("[evcc-card] delete plan: no loadpoint index for", lpName); return; }
+          this._deleteLoadpointPlan(lpIdx)
+            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } })); })
+            .catch(e => console.warn("[evcc-card] delete plan:", e));
+        }
+      });
+    });
+  },
 };
+
+// Charge plan block, plan mode and repeating plans.
+// Part of the card stylesheet, see src/styles.js.
+const planCss = `
+      .plan-block { border-top: 1px solid var(--divider-color, #e5e7eb); margin-top: 10px; padding-top: 10px; }
+      .plan-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+      .plan-badge { font-size: .7rem; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--divider-color); color: var(--secondary-text-color); }
+      .plan-badge.planned { background: rgba(0, 120, 180, 0.3); color: #60aaff; }
+      .plan-badge.active  { background: color-mix(in srgb, var(--evcc-green) 15%, transparent); color: var(--evcc-green); border-color: var(--evcc-green); }
+      .plan-projection { display: flex; flex-direction: column; gap: 3px; font-size: .78rem; color: var(--secondary-text-color); margin-bottom: 10px; padding: 7px 10px; background: var(--secondary-background-color, rgba(0,0,0,.08)); border-radius: 6px; }
+      .plan-projection strong { color: var(--primary-text-color); }
+      .plan-inputs { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+      .plan-row { display: flex; align-items: center; gap: 8px; font-size: .83rem; flex-wrap: wrap; }
+      .plan-row label { flex: 0 0 auto; min-width: 60px; white-space: nowrap; color: var(--secondary-text-color); }
+      .plan-soc-control { display: flex; align-items: center; gap: 8px; flex: 1; }
+      .plan-soc-range { flex: 1; accent-color: var(--primary-color); }
+      .plan-soc-val { min-width: 42px; text-align: right; font-size: .8rem; }
+      input.plan-time-input { flex: 1; padding: 4px 8px; border: 1px solid var(--divider-color, #4b5563); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); font-size: .82rem; color-scheme: dark light; }
+      .plan-actions { display: flex; gap: 8px; }
+      .plan-btn { flex: 1; padding: 7px 10px; border-radius: 7px; border: 1px solid var(--divider-color); font-size: .8rem; font-weight: 600; cursor: pointer; transition: all .15s; background: transparent; color: var(--primary-text-color); }
+      .plan-btn.save { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+      .plan-btn.save:hover { filter: brightness(1.1); }
+      .plan-btn.delete { color: #ef4444; border-color: #ef444466; }
+      .plan-btn.delete:hover { background: #ef444422; }
+      select.plan-vehicle-select,
+      select.plan-precondition-select { flex: 1; padding: 4px 8px; border: 1px solid var(--divider-color, #4b5563); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); font-size: .82rem; }
+      .plan-row .toggle { margin-left: auto; }
+      .plan-error { margin-top: 8px; padding: 6px 10px; border-radius: 6px; background: #ef444422; color: #ef4444; font-size: .78rem; word-break: break-all; }
+      .plan-preview { margin: 10px 0 4px; }
+      .plan-preview-loading { text-align: center; padding: 12px; font-size: .78rem; color: var(--secondary-text-color); }
+      .plan-preview-error, .plan-preview-info { padding: 8px 10px; border-radius: 6px; background: var(--secondary-background-color, rgba(0,0,0,.08)); color: var(--secondary-text-color); font-size: .78rem; }
+      .plan-preview-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+      .plan-preview-left, .plan-preview-right { display: flex; flex-direction: column; }
+      .plan-preview-right { text-align: right; }
+      .plan-preview-label { font-size: .65rem; text-transform: uppercase; letter-spacing: .03em; color: var(--secondary-text-color); }
+      .plan-preview-value { font-size: .88rem; font-weight: 600; color: var(--evcc-green,#22c55e); }
+      .rplan-block .plan-header { justify-content: flex-start; gap: 6px; }
+      .rplan-hint { display: inline-flex; align-items: center; color: var(--secondary-text-color); cursor: help; }
+      .rplan-list { display: flex; flex-direction: column; gap: 8px; }
+      .rplan-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--divider-color); border-radius: 8px; }
+      .rplan-days { display: flex; gap: 3px; flex-wrap: wrap; }
+      .rplan-day { font-size: .68rem; font-weight: 600; line-height: 1; padding: 4px 5px; border-radius: 5px; min-width: 15px; text-align: center; background: var(--secondary-background-color, rgba(0,0,0,.08)); color: var(--secondary-text-color); border: 1px solid transparent; }
+      .rplan-day.on { background: var(--primary-color); color: #fff; }
+      .rplan-line { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      .rplan-info { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+      .rplan-field { display: inline-flex; align-items: baseline; gap: 5px; }
+      .rplan-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--secondary-text-color); }
+      .rplan-value { font-size: .9rem; font-weight: 600; }
+      .rplan-line .toggle { margin-left: auto; }
+`;
 
 // Priority mode with drag & drop ordering. Methods are mixed into EvccCard.prototype.
 const priorityView = {
@@ -2695,6 +3321,100 @@ const priorityView = {
     return partitionDisabledLoadpoints(this._hass, visible).enabled;
   },
 };
+
+// Priority mode.
+// Part of the card stylesheet, see src/styles.js.
+const priorityCss = `
+      .priority-mode { display: flex; flex-direction: column; gap: 12px; }
+      .priority-hint { font-size: .8rem; color: var(--secondary-text-color); }
+      .priority-list {
+        position: relative;
+        display: flex; flex-direction: column;
+        border: 1px solid var(--divider-color);
+        border-radius: 6px;
+        overflow: hidden;
+        background: var(--card-background-color);
+      }
+      .priority-row {
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 12px;
+        background: var(--card-background-color);
+        user-select: none;
+        border-bottom: 1px solid var(--divider-color);
+        transition: background .15s ease;
+      }
+      .priority-row:last-child { border-bottom: none; }
+      .priority-row.no-entity { opacity: .55; }
+      .priority-handle {
+        cursor: grab;
+        font-size: 1.2rem; line-height: 1;
+        color: var(--secondary-text-color);
+        touch-action: none;
+        padding: 4px 6px;
+        user-select: none;
+      }
+      .priority-handle:active { cursor: grabbing; }
+      .priority-row.no-entity .priority-handle { cursor: not-allowed; }
+      .priority-row.priority-dragging {
+        /* Out of the flow; left/right stretch it to the list width regardless
+           of box-sizing, so no inline width is needed. */
+        position: absolute; left: 0; right: 0; z-index: 5;
+        opacity: .92;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, .22);
+        background: var(--card-background-color);
+        border-bottom: none;
+        will-change: transform;
+      }
+      .priority-placeholder {
+        background: var(--divider-color);
+        opacity: .25;
+      }
+      .priority-name { flex: 1; font-weight: 500; }
+      .priority-target {
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        min-width: 2.5em;
+        text-align: right;
+      }
+      .priority-target.changed { color: var(--evcc-amber); }
+      .priority-was {
+        font-weight: 400;
+        color: var(--secondary-text-color);
+        margin-left: 4px;
+        font-size: .8em;
+      }
+      .priority-no-ent {
+        font-weight: 400;
+        font-size: .8em;
+        color: var(--secondary-text-color);
+      }
+      .priority-empty-note {
+        font-size: .8rem;
+        color: var(--secondary-text-color);
+        font-style: italic;
+      }
+      .priority-actions {
+        display: flex; gap: 8px; justify-content: flex-end;
+      }
+      .priority-btn {
+        padding: 6px 14px;
+        border-radius: 4px;
+        border: 1px solid var(--divider-color);
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+        cursor: pointer;
+        font: inherit;
+      }
+      .priority-btn:hover:not(:disabled) {
+        background: var(--secondary-background-color);
+      }
+      .priority-btn:disabled { opacity: .5; cursor: not-allowed; }
+      .priority-btn.apply:not(:disabled) {
+        background: var(--evcc-green);
+        color: white;
+        border-color: transparent;
+      }
+`;
 
 // Site mode. Methods are mixed into EvccCard.prototype.
 const siteView = {
@@ -3127,6 +3847,60 @@ const siteView = {
   },
 };
 
+// Site mode: the flow bar and the IN/OUT detail table, which the flow mode shares.
+// Part of the card stylesheet, see src/styles.js.
+const siteCss = `
+      .site-block { padding: 0; }
+      .site-table-hidden { display: none; }
+      .flow-wrap-clickable {
+        cursor: pointer;
+        border-radius: 6px;
+        transition: opacity .15s;
+      }
+      .flow-wrap-clickable:hover { opacity: 0.85; }
+
+      .flow-wrap {
+        margin-bottom: 18px;
+        padding: 0;
+      }
+      .flow-wrap svg {
+        overflow: visible;
+      }
+      .flow-overlay {
+        color: var(--primary-text-color, #212121);
+      }
+      .site-table { display: flex; flex-direction: column; }
+      .site-section-gap { border-top: 1px solid var(--divider-color, #333); margin: 10px 0 12px; }
+      .site-section-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--divider-color, #333); }
+      .site-section-title { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--secondary-text-color); }
+      .site-section-total { font-size: 1rem; font-weight: 700; }
+      .site-row { display: grid; grid-template-columns: 1.4rem 1fr auto; gap: 0 6px; align-items: center; padding: 5px 0; font-size: .78rem; }
+      .site-row-clickable { cursor: pointer; border-radius: 4px; }
+      .site-row-clickable:hover { background: var(--secondary-background-color, rgba(255,255,255,0.05)); }
+      .site-row-icon  { display: flex; align-items: center; justify-content: center; }
+      .site-row-label { display: flex; flex-direction: column; gap: 1px; }
+      .site-row-name  { font-size: .8rem; }
+      .site-row-sub   { font-size: .68rem; color: var(--secondary-text-color); }
+      .site-row-pw    { font-weight: 700; font-size: .82rem; min-width: 48px; text-align: right; }
+      .site-row-indent { padding-left: 1.2rem; position: relative; }
+      .site-row-indent::before {
+        content: "└";
+        position: absolute;
+        left: 0.15rem;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: .75rem;
+        color: var(--secondary-text-color);
+        opacity: 0.6;
+      }
+      .site-row-indent .site-row-icon { opacity: 0.7; }
+      .site-row-indent .site-row-name { font-size: .75rem; color: var(--secondary-text-color); }
+      .site-row-indent .site-row-pw   { font-size: .78rem; }
+      .site-pw-green  { color: #22c55e; }
+      .site-pw-blue   { color: #3b82f6; }
+      .site-pw-yellow { color: #facc15; }
+`;
+
 // Flow mode (Sankey). Methods are mixed into EvccCard.prototype.
 const flowView = {
   _renderFlowBlock(site, loadpoints = {}) {
@@ -3555,6 +4329,17 @@ const flowView = {
   },
 };
 
+// Flow mode: the Sankey graphic.
+// Part of the card stylesheet, see src/styles.js.
+const flowCss = `
+      .sankey-wrap { padding: 12px 0 8px; }
+      .sankey-wrap svg { overflow: visible; }
+      .sankey-node { opacity: 1; transition: opacity .15s; }
+      .sankey-node:hover { opacity: 0.7; }
+      .sankey-center-chevron { transition: opacity .15s; }
+      .sankey-wrap:hover .sankey-center-chevron { opacity: 0.7 !important; }
+`;
+
 // Grid mode (site2). Methods are mixed into EvccCard.prototype.
 const gridView = {
   _renderSiteBlock2(site, loadpoints = {}) {
@@ -3685,6 +4470,42 @@ const gridView = {
       </div>`;
   },
 };
+
+// Grid mode.
+// Part of the card stylesheet, see src/styles.js.
+const gridCss = `
+      .s2-net {
+        text-align: center; padding: 14px 0 16px;
+        border-bottom: 1px solid var(--divider-color, #333); margin-bottom: 14px;
+      }
+      .s2-net-label {
+        font-size: .6rem; font-weight: 700; letter-spacing: .1em;
+        text-transform: uppercase; color: var(--secondary-text-color); margin-bottom: 4px;
+      }
+      .s2-net-value { font-size: 2.2rem; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
+      .s2-net-status { font-size: .75rem; font-weight: 600; margin-top: 4px; }
+      .s2-pv-badge {
+        display: inline-flex; align-items: center; gap: 4px;
+        margin-top: 8px; background: rgba(34,197,94,0.12); color: #22c55e;
+        border-radius: 20px; padding: 3px 10px; font-size: .68rem; font-weight: 700;
+      }
+      .s2-section { margin-bottom: 12px; }
+      .s2-section-label {
+        font-size: .58rem; font-weight: 700; letter-spacing: .12em;
+        text-transform: uppercase; color: var(--secondary-text-color); opacity: .55; margin-bottom: 6px;
+      }
+      .s2-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+      .s2-chip {
+        display: inline-flex; align-items: center; gap: 5px;
+        background: var(--secondary-background-color, rgba(255,255,255,0.05));
+        border-radius: 20px; padding: 5px 11px; font-size: .72rem; font-weight: 600;
+        border: 1px solid var(--divider-color, #333);
+      }
+      .s2-chip-clickable { cursor: pointer; }
+      .s2-chip-clickable:hover { opacity: 0.75; }
+      .s2-chip-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+      .s2-chip-sub { font-size: .62rem; color: var(--secondary-text-color); font-weight: 400; }
+`;
 
 // Statistics from stat_* entities and the HA recorder (fallback without the ha-evcc sessions command). Methods are mixed into EvccCard.prototype.
 const statisticsLegacy = {
@@ -4474,7 +5295,207 @@ const statisticsView = {
     }
     return this._renderStatsBlockEntities();
   },
+
+  // Listeners of both statistics paths: the period, scope, metric and group
+  // tabs, the month and year steppers and the chart tooltip. Called by
+  // _attachListeners() after every render.
+  _attachStatsListeners() {
+    this.shadowRoot.querySelectorAll("button.stats-period-tab").forEach(btn => {
+      btn.addEventListener("click", () => {
+        // Sessions path: data-scope/-metric/-group. Legacy entity path: data-period.
+        if      (btn.dataset.scope)  this._statsScope  = btn.dataset.scope;
+        else if (btn.dataset.metric) this._statsMetric = btn.dataset.metric;
+        else if (btn.dataset.group)  this._statsGroup  = btn.dataset.group;
+        else                         this._statsPeriod = btn.dataset.period;
+        this._render();
+      });
+    });
+
+    // Two independent steppers: month (wraps 0-11) and year (sessions stats path).
+    this.shadowRoot.querySelectorAll("button[data-stats-step]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const dir = btn.dataset.statsStep === "next" ? 1 : -1;
+        const now = new Date();
+        if (btn.dataset.statsUnit === "year") {
+          this._statsYearSel = (this._statsYearSel ?? now.getFullYear()) + dir;
+        } else {
+          const m = (this._statsMonthSel ?? now.getMonth()) + dir;
+          this._statsMonthSel = (m + 12) % 12;
+        }
+        this._render();
+      });
+    });
+
+    const chartWrap = this.shadowRoot.querySelector(".evcc-chart-wrap");
+    if (chartWrap) {
+      const tooltip = chartWrap.querySelector(".evcc-chart-tooltip");
+      const dot = (color) => `<span class="ectt-dot" style="background:${color}"></span>`;
+      const barKey = (bar) => bar.dataset.idx != null ? "i" + bar.dataset.idx : (bar.dataset.label || "") + (bar.dataset.total || "");
+      const positionTooltip = (bar) => {
+        const barRect  = bar.getBoundingClientRect();
+        const wrapRect = chartWrap.getBoundingClientRect();
+        const rawLeft  = barRect.left - wrapRect.left + barRect.width / 2;
+        tooltip.hidden = false;
+        const ttW  = tooltip.getBoundingClientRect().width;
+        const left = Math.min(wrapRect.width - ttW / 2 - 4, Math.max(ttW / 2 + 4, rawLeft));
+        tooltip.style.left = `${left}px`;
+      };
+      const showTooltip = (bar) => {
+        // Sessions stacked chart: look the bucket up by index.
+        if (bar.dataset.idx != null && this._statsChartData) {
+          const { buckets, series, metric, currency } = this._statsChartData;
+          const b = buckets[+bar.dataset.idx];
+          if (!b || !(b.total > 0)) { tooltip.hidden = true; return; }
+          const mf = this._metricFmt(metric, currency);
+          const rows = series.filter(s => (b.seg[s.key] || 0) > 0)
+            .map(s => `<div class="ectt-row">${dot(s.color)}<span class="ectt-name">${escHtml(s.label)}</span><span class="ectt-val">${mf.fmt(b.seg[s.key])} ${mf.unit}</span></div>`).join("");
+          tooltip.innerHTML = `<div class="ectt-header">${escHtml(b.labelFull || b.labelStr)}</div>${rows}<div class="ectt-summary">${mf.fmt(b.total)} ${mf.unit} ${this._t("total")}</div>`;
+          positionTooltip(bar);
+          tooltip.dataset.activeBar = barKey(bar);
+          return;
+        }
+        // Legacy entity chart (solar/grid).
+        const total = bar.dataset.total;
+        if (!total) { tooltip.hidden = true; return; }
+        const solar = bar.dataset.solar ? parseFloat(bar.dataset.solar) : null;
+        const grid  = solar != null ? (parseFloat(total) - solar).toFixed(1) : null;
+        const solarColor = getComputedStyle(chartWrap).getPropertyValue("--evcc-green").trim() || "#22c55e";
+        const gridColor  = getComputedStyle(chartWrap).getPropertyValue("--primary-color").trim() || "#3b82f6";
+        tooltip.innerHTML =
+          `<div class="ectt-header">${escHtml(bar.dataset.label)}</div>` +
+          (solar != null ? `<div class="ectt-row">${dot(solarColor)}<span class="ectt-name">${this._t("solar")}</span><span class="ectt-val">${bar.dataset.solar} kWh</span></div>` : "") +
+          (grid  != null ? `<div class="ectt-row">${dot(gridColor)}<span class="ectt-name">${this._t("grid")}</span><span class="ectt-val">${grid} kWh</span></div>` : "") +
+          `<div class="ectt-summary">${total} kWh ${this._t("total")}</div>`;
+        positionTooltip(bar);
+        tooltip.dataset.activeBar = barKey(bar);
+      };
+      chartWrap.addEventListener("mouseover", (e) => {
+        const bar = e.target.closest(".evcc-bar");
+        if (bar) showTooltip(bar);
+      });
+      chartWrap.addEventListener("mouseout", (e) => {
+        if (e.target.closest(".evcc-bar")) tooltip.hidden = true;
+      });
+      chartWrap.addEventListener("click", (e) => {
+        const bar = e.target.closest(".evcc-bar");
+        if (bar) {
+          const key = barKey(bar);
+          if (!tooltip.hidden && tooltip.dataset.activeBar === key) {
+            tooltip.hidden = true;
+          } else {
+            showTooltip(bar);
+          }
+        } else {
+          tooltip.hidden = true;
+        }
+      });
+    }
+  },
 };
+
+// Both statistics paths: tabs, footer, KPI row, chart and tooltip.
+// Part of the card stylesheet, see src/styles.js.
+const statsCss = `
+      .stats-period-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+      .stats-period-tab {
+        padding: 2px 10px; border-radius: 999px;
+        border: 1px solid var(--divider-color, #e5e7eb);
+        background: transparent; color: var(--secondary-text-color);
+        cursor: pointer; font-size: .72rem; font-weight: 600; transition: all .15s;
+      }
+      .stats-period-tab.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+      .stats-period-tabs--small .stats-period-tab { font-size: .65rem; padding: 1px 8px; }
+
+      .stats-footer-wrap {
+        border-top: 1px solid var(--divider-color, #333);
+        margin-top: 12px; padding-top: 8px;
+      }
+      .stats-footer-wrap .stats-footer { border-top: none; margin-top: 6px; padding-top: 0; }
+
+      .stats-footer {
+        border-top: 1px solid var(--divider-color, #333);
+        margin-top: 12px; padding-top: 10px;
+      }
+      .sf-period {
+        font-size: .6rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 700;
+        color: var(--secondary-text-color); text-align: center; margin-bottom: 6px; opacity: 0.7;
+      }
+      .sf-items { display: flex; align-items: center; }
+      .sf-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+      .sf-val  { font-size: .82rem; font-weight: 700; }
+      .sf-lbl  { font-size: .58rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+      .sf-sep  { width: 1px; height: 28px; background: var(--divider-color, #333); flex-shrink: 0; }
+
+      .stats-no-data {
+        font-size: .76rem; color: var(--warning-color, #f4b942);
+        background: rgba(244,185,66,.08);
+        border: 1px solid var(--warning-color, #f4b942);
+        border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; line-height: 1.6;
+      }
+      .stats-no-data-link {
+        display: inline-block; margin-top: 4px; color: var(--primary-color);
+        text-decoration: none; font-weight: 600;
+      }
+      .stats-no-data-link:hover { text-decoration: underline; }
+
+      .stats-kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+      .stats-kpi {
+        background: var(--secondary-background-color, rgba(255,255,255,.05));
+        border-radius: 8px; padding: 10px 8px; text-align: center;
+        display: flex; flex-direction: column; gap: 3px;
+      }
+      .stats-kpi-val { font-size: 1.1rem; font-weight: 800; line-height: 1; }
+      .stats-kpi-lbl { font-size: .58rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+      .stats-chart-section { margin-top: 4px; }
+      .stats-stepper { display: flex; align-items: center; justify-content: center; }
+      .stats-step-btn {
+        border: 1px solid var(--divider-color, rgba(127,127,127,0.3)); background: transparent;
+        color: var(--primary-text-color); border-radius: 8px; width: 26px; height: 24px; line-height: 1;
+        font-size: 1rem; cursor: pointer; padding: 0;
+      }
+      .stats-step-btn:hover:not([disabled]) { background: var(--secondary-background-color, rgba(127,127,127,0.12)); }
+      .stats-step-btn[disabled] { opacity: 0.35; cursor: default; }
+      .stats-stepper { gap: 4px; }
+      .stats-step-label { text-align: center; font-weight: 600; font-size: 0.85rem; white-space: nowrap; overflow: hidden; }
+      .stats-step-label--month { width: 74px; }
+      .stats-step-label--year { width: 42px; }
+      .stats-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+      .stats-controls .stats-period-tabs { margin-bottom: 0; }
+      .stats-steppers { flex: 0 0 100%; display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-height: 26px; }
+      .stats-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; margin-top: 8px; font-size: 0.74rem; color: var(--secondary-text-color); }
+      .sl-item { display: inline-flex; align-items: center; gap: 5px; }
+      .sl-dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+      .evcc-chart-wrap { position: relative; margin-left: -16px; margin-right: 0; }
+      .evcc-chart-tooltip {
+        position: absolute; top: 0; transform: translateX(-50%);
+        background: var(--ha-card-background, var(--card-background-color, #1f2937));
+        border-radius: 8px; padding: 8px 12px;
+        font-size: 12px; line-height: 1.6; white-space: nowrap;
+        pointer-events: none; z-index: 10;
+        box-shadow: 0 4px 16px rgba(0,0,0,.35);
+      }
+      .ectt-header { font-weight: 700; margin-bottom: 4px; }
+      .ectt-row { display: flex; align-items: center; gap: 6px; }
+      .ectt-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+      .ectt-name { flex: 1; color: var(--primary-text-color); }
+      .ectt-val { font-weight: 600; margin-left: 12px; }
+      .ectt-summary { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--divider-color, #374151); font-weight: 700; }
+      .stats-chart-title {
+        font-size: .58rem; font-weight: 700; letter-spacing: .12em;
+        text-transform: uppercase; color: var(--secondary-text-color); opacity: .55; margin-bottom: 8px;
+      }
+      .stats-chart-loading {
+        height: 75px; display: flex; align-items: center; justify-content: center;
+        color: var(--secondary-text-color); font-size: .75rem; opacity: .5;
+      }
+      .stats-solar-hint {
+        font-size: .72rem; color: var(--secondary-text-color);
+        margin-top: 10px; padding: 6px 10px;
+        background: color-mix(in srgb, var(--evcc-green) 8%, transparent);
+        border: 1px solid color-mix(in srgb, var(--evcc-green) 25%, transparent);
+        border-radius: 6px; line-height: 1.4;
+      }
+`;
 
 // Battery mode. Methods are mixed into EvccCard.prototype.
 const batteryView = {
@@ -4607,7 +5628,65 @@ const batteryView = {
         ${tabUsage}
       </div>`;
   },
+
+  // Listeners of the battery view: the discharge toggle and the inline
+  // selects. Called by _attachListeners() after every render.
+  _attachBatteryListeners() {
+    this.shadowRoot.querySelectorAll("button.batt-discharge-toggle").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const on     = btn.dataset.on === "true";
+        const domain = btn.dataset.domain;
+        this._toggleEntity(domain, btn.dataset.entity, on);
+        btn.classList.toggle("on", !on);
+        btn.dataset.on = String(!on);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll(".batt-inline-select").forEach(sel => {
+      sel.addEventListener("change", () => {
+        this._setSelectOption(sel.dataset.entity, sel.value);
+      });
+      sel.addEventListener("click", e => e.stopPropagation());
+    });
+  },
 };
+
+// Battery mode.
+// Part of the card stylesheet, see src/styles.js.
+const batteryCss = `
+      .battery-block { padding: 0; }
+      .batt-main-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+      .batt-text-col { flex: 1; min-width: 0; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 12px; }
+      .batt-text-item { display: flex; gap: 8px; align-items: flex-start; }
+      .batt-text-icon { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }
+      .batt-text-title { font-size: .82rem; font-weight: 600; margin-bottom: 2px; }
+      .batt-text-desc  { font-size: .76rem; color: var(--secondary-text-color); line-height: 1.4; }
+      .batt-inline-select { color: var(--primary-color, #00b4d8); font-weight: 600; font-size: .76rem; font-family: inherit; background: transparent; border: none; border-bottom: 1px dotted var(--primary-color, #00b4d8); cursor: pointer; padding: 0 2px; outline: none; appearance: none; -webkit-appearance: none; }
+      .batt-visual-col { display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0; align-self: flex-start; }
+      .batt-marker-top { display: none; }
+      .batt-visual { display: flex; flex-direction: column; align-items: center; width: 56px; }
+      .batt-cap-tip { width: 22px; height: 5px; background: var(--divider-color, #555); border-radius: 3px 3px 0 0; margin-bottom: 1px; }
+      .batt-body { width: 56px; height: 130px; border: 2px solid var(--divider-color, #555); border-radius: 5px; overflow: hidden; display: flex; flex-direction: column; position: relative; }
+      .batt-zone { display: flex; align-items: center; justify-content: center; position: relative; z-index: 1; min-height: 20px; }
+      .batt-zone-car  { background: #22c55e18; }
+      .batt-zone-haus { background: #3b82f618; }
+      .batt-zone-icon { font-size: 1.2rem; }
+      .batt-divider-line { height: 2px; background: var(--divider-color, #555); flex-shrink: 0; z-index: 2; }
+      .batt-soc-overlay { position: absolute; bottom: 0; left: 0; right: 0; z-index: 0; border-radius: 0 0 3px 3px; transition: height .4s; opacity: 0.55; }
+      .batt-info-col { display: flex; flex-direction: column; gap: 2px; align-items: center; text-align: center; }
+      .batt-info-label { font-size: .7rem; color: var(--secondary-text-color); line-height: 1.2; }
+      .batt-info-pct   { font-size: 1.1rem; font-weight: 700; line-height: 1.1; }
+      .batt-info-kwh, .batt-info-power { font-size: .7rem; color: var(--secondary-text-color); line-height: 1.2; white-space: nowrap; }
+      .batt-discharge-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--divider-color, #333); font-size: .84rem; }
+      .batt-discharge-toggle { width: 42px; height: 24px; border-radius: 12px; border: none; background: var(--divider-color, #444); position: relative; cursor: pointer; flex-shrink: 0; transition: background .2s; }
+      .batt-discharge-toggle.on { background: var(--primary-color, #00b4d8); }
+      .batt-toggle-knob { position: absolute; width: 18px; height: 18px; border-radius: 50%; background: white; top: 3px; left: 3px; transition: left .2s; }
+      .batt-discharge-toggle.on .batt-toggle-knob { left: 21px; }
+      @container (max-width: 420px) {
+        .batt-main-row { flex-direction: column; gap: 14px; }
+        .batt-visual-col { align-self: stretch; justify-content: flex-start; }
+      }
+`;
 
 // Debug mode: expected entities, config dump, debug report. Methods are mixed into EvccCard.prototype.
 const debugView = {
@@ -4996,67 +6075,10 @@ const debugView = {
     out.push(`</details>`);
     return out.join("\n");
   },
-};
 
-// Non-native click targets: everything the card wires a click handler to that
-// is not a <button>, <input>, <select> or <a> and so gets no keyboard support
-// from the browser. They are made focusable and get the button role here,
-// once per render, instead of every view remembering to do it.
-const NON_NATIVE_CLICKABLES = "[data-more-info], [data-action], [data-lp-current-toggle], [data-lp-smart-cost-open]";
-const NATIVE = "button, input, select, textarea, a[href]";
-
-// Event delegation for the whole card. Methods are mixed into EvccCard.prototype.
-const listeners = {
-  _attachListeners() {
-    // Keyboard activation for the button-role elements: Enter and Space click
-    // them, as a native button would. Bound to the shadow root once; the root
-    // survives every innerHTML replacement, the elements inside do not.
-    if (!this._keyboardBound) {
-      this._keyboardBound = true;
-      this.shadowRoot.addEventListener("keydown", (e) => {
-        if (e.key !== "Enter" && e.key !== " ") return;
-        const el = e.target?.closest?.('[role="button"]');
-        if (!el || el.matches(NATIVE)) return;
-        e.preventDefault();
-        // dispatched rather than el.click(): SVG elements (the flow nodes) have no click()
-        el.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true }));
-      });
-    }
-    this.shadowRoot.querySelectorAll(NON_NATIVE_CLICKABLES).forEach(el => {
-      if (el.matches(NATIVE)) return;
-      if (!el.hasAttribute("role"))     el.setAttribute("role", "button");
-      if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "0");
-    });
-
-    this.shadowRoot.querySelectorAll("[data-more-info]").forEach(el => {
-      el.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.dispatchEvent(new CustomEvent("hass-more-info", {
-          detail: { entityId: el.dataset.moreInfo }, bubbles: true, composed: true,
-        }));
-      });
-    });
-
-    // The site and flow views fold their detail table on a click on the flow
-    // graphic. A click on a node inside it opens more-info instead: that handler
-    // above stops propagation, and the check here keeps the two apart even when
-    // the click lands on a node that has no more-info listener attached.
-    this.shadowRoot.querySelectorAll('[data-action="toggle-site"]').forEach(el => {
-      el.addEventListener("click", (e) => {
-        if (e.target.closest("[data-more-info]")) return;
-        this._toggleSite();
-      });
-    });
-
-    this.shadowRoot.querySelectorAll('[data-action="open-debug"]').forEach(btn => {
-      btn.addEventListener("click", () => {
-        this._origConfig = { ...this._config };
-        this._config = { ...this._config, mode: "debug" };
-        this._lastRenderKey = null;
-        this._render();
-      });
-    });
-
+  // Listeners of the debug view: the report copy button and the mask toggle.
+  // Called by _attachListeners() after every render.
+  _attachDebugListeners() {
     const copyBtn = this.shadowRoot.querySelector(".debug-copy-btn");
     if (copyBtn) {
       copyBtn.addEventListener("click", async () => {
@@ -5104,973 +6126,12 @@ const listeners = {
         this._render();
       });
     }
-
-    this.shadowRoot.querySelectorAll("[data-lp-current-toggle]").forEach(btn => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const lpName   = btn.dataset.lpCurrentToggle;
-        // Same fallback as the render: with `charge_current_settings: expanded`
-        // the block starts open, so the first click must collapse it.
-        const expanded = this._currentBlockExpanded[lpName]
-          ?? (this._config.charge_current_settings === "expanded");
-        this._currentBlockExpanded[lpName] = !expanded;
-
-        const block = this.shadowRoot.querySelector(`[data-lp-current="${lpName}"]`);
-        if (!block) return;
-        const body = block.querySelector(".current-block-body");
-        if (body) {
-          if (!expanded) body.removeAttribute("hidden");
-          else body.setAttribute("hidden", "");
-        }
-        btn.classList.toggle("active", !expanded);
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("[data-lp-smart-cost-open]").forEach(chip => {
-      chip.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const lpName = chip.dataset.lpSmartCostOpen;
-        const block  = this.shadowRoot.querySelector(`[data-lp-current="${lpName}"]`);
-        if (!block) return;
-        const body = block.querySelector(".current-block-body");
-        if (body) body.removeAttribute("hidden");
-        this._currentBlockExpanded[lpName] = true;
-        const toggleBtn = block.querySelector("[data-lp-current-toggle]");
-        if (toggleBtn) toggleBtn.classList.add("active");
-        const section = block.querySelector(`[data-lp-smart-cost-section="${lpName}"]`);
-        if (section) {
-          section.scrollIntoView({ behavior: "smooth", block: "nearest" });
-          section.classList.add("smart-cost-highlight");
-          setTimeout(() => section.classList.remove("smart-cost-highlight"), 1500);
-        }
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("button.compact-tab").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const lpName   = btn.dataset.lp;
-        const tabIdx   = parseInt(btn.dataset.tab);
-        this._tabState[lpName] = tabIdx;
-
-        const block = btn.closest("[data-lp-compact]");
-        block.querySelectorAll("button.compact-tab").forEach((b, i) =>
-          b.classList.toggle("active", i === tabIdx));
-        block.querySelectorAll(".compact-panel").forEach((p, i) =>
-          i === tabIdx ? p.removeAttribute("hidden") : p.setAttribute("hidden", ""));
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("button.stats-period-tab").forEach(btn => {
-      btn.addEventListener("click", () => {
-        // Sessions path: data-scope/-metric/-group. Legacy entity path: data-period.
-        if      (btn.dataset.scope)  this._statsScope  = btn.dataset.scope;
-        else if (btn.dataset.metric) this._statsMetric = btn.dataset.metric;
-        else if (btn.dataset.group)  this._statsGroup  = btn.dataset.group;
-        else                         this._statsPeriod = btn.dataset.period;
-        this._render();
-      });
-    });
-
-    // Two independent steppers: month (wraps 0-11) and year (sessions stats path).
-    this.shadowRoot.querySelectorAll("button[data-stats-step]").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const dir = btn.dataset.statsStep === "next" ? 1 : -1;
-        const now = new Date();
-        if (btn.dataset.statsUnit === "year") {
-          this._statsYearSel = (this._statsYearSel ?? now.getFullYear()) + dir;
-        } else {
-          const m = (this._statsMonthSel ?? now.getMonth()) + dir;
-          this._statsMonthSel = (m + 12) % 12;
-        }
-        this._render();
-      });
-    });
-
-    const chartWrap = this.shadowRoot.querySelector(".evcc-chart-wrap");
-    if (chartWrap) {
-      const tooltip = chartWrap.querySelector(".evcc-chart-tooltip");
-      const dot = (color) => `<span class="ectt-dot" style="background:${color}"></span>`;
-      const barKey = (bar) => bar.dataset.idx != null ? "i" + bar.dataset.idx : (bar.dataset.label || "") + (bar.dataset.total || "");
-      const positionTooltip = (bar) => {
-        const barRect  = bar.getBoundingClientRect();
-        const wrapRect = chartWrap.getBoundingClientRect();
-        const rawLeft  = barRect.left - wrapRect.left + barRect.width / 2;
-        tooltip.hidden = false;
-        const ttW  = tooltip.getBoundingClientRect().width;
-        const left = Math.min(wrapRect.width - ttW / 2 - 4, Math.max(ttW / 2 + 4, rawLeft));
-        tooltip.style.left = `${left}px`;
-      };
-      const showTooltip = (bar) => {
-        // Sessions stacked chart: look the bucket up by index.
-        if (bar.dataset.idx != null && this._statsChartData) {
-          const { buckets, series, metric, currency } = this._statsChartData;
-          const b = buckets[+bar.dataset.idx];
-          if (!b || !(b.total > 0)) { tooltip.hidden = true; return; }
-          const mf = this._metricFmt(metric, currency);
-          const rows = series.filter(s => (b.seg[s.key] || 0) > 0)
-            .map(s => `<div class="ectt-row">${dot(s.color)}<span class="ectt-name">${escHtml(s.label)}</span><span class="ectt-val">${mf.fmt(b.seg[s.key])} ${mf.unit}</span></div>`).join("");
-          tooltip.innerHTML = `<div class="ectt-header">${escHtml(b.labelFull || b.labelStr)}</div>${rows}<div class="ectt-summary">${mf.fmt(b.total)} ${mf.unit} ${this._t("total")}</div>`;
-          positionTooltip(bar);
-          tooltip.dataset.activeBar = barKey(bar);
-          return;
-        }
-        // Legacy entity chart (solar/grid).
-        const total = bar.dataset.total;
-        if (!total) { tooltip.hidden = true; return; }
-        const solar = bar.dataset.solar ? parseFloat(bar.dataset.solar) : null;
-        const grid  = solar != null ? (parseFloat(total) - solar).toFixed(1) : null;
-        const solarColor = getComputedStyle(chartWrap).getPropertyValue("--evcc-green").trim() || "#22c55e";
-        const gridColor  = getComputedStyle(chartWrap).getPropertyValue("--primary-color").trim() || "#3b82f6";
-        tooltip.innerHTML =
-          `<div class="ectt-header">${escHtml(bar.dataset.label)}</div>` +
-          (solar != null ? `<div class="ectt-row">${dot(solarColor)}<span class="ectt-name">${this._t("solar")}</span><span class="ectt-val">${bar.dataset.solar} kWh</span></div>` : "") +
-          (grid  != null ? `<div class="ectt-row">${dot(gridColor)}<span class="ectt-name">${this._t("grid")}</span><span class="ectt-val">${grid} kWh</span></div>` : "") +
-          `<div class="ectt-summary">${total} kWh ${this._t("total")}</div>`;
-        positionTooltip(bar);
-        tooltip.dataset.activeBar = barKey(bar);
-      };
-      chartWrap.addEventListener("mouseover", (e) => {
-        const bar = e.target.closest(".evcc-bar");
-        if (bar) showTooltip(bar);
-      });
-      chartWrap.addEventListener("mouseout", (e) => {
-        if (e.target.closest(".evcc-bar")) tooltip.hidden = true;
-      });
-      chartWrap.addEventListener("click", (e) => {
-        const bar = e.target.closest(".evcc-bar");
-        if (bar) {
-          const key = barKey(bar);
-          if (!tooltip.hidden && tooltip.dataset.activeBar === key) {
-            tooltip.hidden = true;
-          } else {
-            showTooltip(bar);
-          }
-        } else {
-          tooltip.hidden = true;
-        }
-      });
-    }
-
-    this.shadowRoot.querySelectorAll("button.batt-discharge-toggle").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const on     = btn.dataset.on === "true";
-        const domain = btn.dataset.domain;
-        this._toggleEntity(domain, btn.dataset.entity, on);
-        btn.classList.toggle("on", !on);
-        btn.dataset.on = String(!on);
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("button.boost-activate-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const on = btn.dataset.on === "true";
-        this._toggleEntity("switch", btn.dataset.entity, on);
-        btn.classList.toggle("on", !on);
-        btn.dataset.on = String(!on);
-      });
-    });
-
-    this.shadowRoot.querySelectorAll(".batt-inline-select").forEach(sel => {
-      sel.addEventListener("change", () => {
-        this._setSelectOption(sel.dataset.entity, sel.value);
-      });
-      sel.addEventListener("click", e => e.stopPropagation());
-    });
-
-    this.shadowRoot.querySelectorAll("button.mode-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        this._setSelectOption(btn.dataset.entity, btn.dataset.value);
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("button.toggle").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const on     = btn.dataset.on === "true";
-        const domain = btn.dataset.domain;
-        this._toggleEntity(domain, btn.dataset.entity, on);
-        btn.classList.toggle("on", !on);
-        btn.dataset.on = String(!on);
-        if (btn.dataset.lp) this._requestPlanPreview(btn.dataset.lp);
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("select.plan-precondition-select").forEach(sel => {
-      sel.addEventListener("change", () => {
-        this._setSelectOption(sel.dataset.entity, sel.value);
-        if (sel.dataset.lp) this._requestPlanPreview(sel.dataset.lp);
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("button.phase-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        this._setSelectOption(btn.dataset.entity, btn.dataset.value);
-        const group = btn.closest(".phase-btn-group");
-        if (group) {
-          group.querySelectorAll(".phase-btn").forEach(b => b.classList.remove("active"));
-          btn.classList.add("active");
-        }
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("input[data-boost-entity]").forEach(input => {
-      input.addEventListener("pointerdown", () => { this._isDragging = true; this._pendingRender = false; });
-      input.addEventListener("input", () => {
-        const val     = parseInt(input.value, 10);
-        const display = input.nextElementSibling;
-        if (!display) return;
-        display.textContent = val === 100 ? this._t("toggleOff") : val === 0 ? `0 % (${this._t("fullDischarge")})` : `${val} %`;
-      });
-      input.addEventListener("pointerup",  () => this._boostCommit(input));
-      input.addEventListener("blur",       () => this._boostCommit(input));
-    });
-
-    // Direct input for battery boost: the range already carries the option
-    // list, so apply just moves the range and reuses _boostCommit.
-    this.shadowRoot.querySelectorAll("button.boost-val[data-boost-edit]").forEach(btn => {
-      btn.addEventListener("click", (e) => {
-        e.preventDefault();
-        if (btn.classList.contains("editing")) { this._closeSliderEdit(); return; }
-        const input = btn.previousElementSibling;
-        this._openSliderEdit(btn, {
-          unit:    "%",
-          value:   parseInt(input?.value, 10),
-          format:  v => v === 100 ? this._t("toggleOff") : v === 0 ? `0 % (${this._t("fullDischarge")})` : `${v} %`,
-          onApply: () => this._boostCommit(input),
-        });
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("input.plan-soc-range").forEach(input => {
-      input.addEventListener("pointerdown", () => {
-        this._isDragging    = true;
-        this._pendingRender = false;
-      });
-      input.addEventListener("input", () => {
-        const lpName = input.dataset.lp;
-        const val    = parseInt(input.value, 10);
-        if (this._planState[lpName]) this._planState[lpName].soc = val;
-        const span = input.nextElementSibling;
-        if (span) span.textContent = `${val} %`;
-      });
-      input.addEventListener("pointerup", () => {
-        this._isDragging = false;
-        this._requestPlanPreview(input.dataset.lp);
-        if (this._pendingRender) { this._pendingRender = false; this._render(); }
-      });
-      input.addEventListener("blur", () => {
-        if (this._isDragging) {
-          this._isDragging = false;
-          if (this._pendingRender) { this._pendingRender = false; this._render(); }
-        }
-      });
-      // Keyboard changes update the state via "input" but never asked for a preview.
-      input.addEventListener("keyup", (e) => {
-        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(e.key)) {
-          this._requestPlanPreview(input.dataset.lp);
-        }
-      });
-    });
-
-    // Direct input for the plan target (local state, no entity behind it).
-    this.shadowRoot.querySelectorAll("button.plan-soc-val[data-plan-soc-edit]").forEach(btn => {
-      btn.addEventListener("click", (e) => {
-        e.preventDefault();
-        if (btn.classList.contains("editing")) { this._closeSliderEdit(); return; }
-        const input  = btn.previousElementSibling;
-        const lpName = input?.dataset.lp;
-        this._openSliderEdit(btn, {
-          unit:  "%",
-          value: parseInt(input?.value, 10),
-          onApply: (val) => {
-            if (this._planState[lpName]) this._planState[lpName].soc = val;
-            this._requestPlanPreview(lpName);
-          },
-        });
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("input.plan-time-input").forEach(input => {
-      input.addEventListener("change", () => {
-        const lpName = input.dataset.lp;
-        if (this._planState[lpName]) this._planState[lpName].time = input.value;
-        this._requestPlanPreview(lpName);
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("select.plan-vehicle-select").forEach(sel => {
-      sel.addEventListener("focus", () => {
-        this._pendingRender = false;
-      });
-      sel.addEventListener("blur", () => {
-        this._isDragging = false;
-        if (this._pendingRender) { this._pendingRender = false; this._render(); }
-      });
-      sel.addEventListener("change", () => {
-        const lpName = sel.dataset.lp;
-        const eid    = sel.dataset.entity;
-        const val    = sel.value;
-        if (this._planState[lpName]) {
-          this._planState[lpName].vehicle = val;
-          this._planState[lpName].soc     = null;
-          this._planState[lpName].time    = null;
-        }
-        if (eid && this._hass) {
-          this._setSelectOption(eid, val);
-        }
-        this._requestPlanPreview(lpName);
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("button.plan-btn.save").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const lpName  = btn.dataset.lp;
-        const state   = this._planState[lpName] || {};
-        const soc     = state.soc || 80;
-        const dtValue = state.time || "";
-
-        if (!dtValue) { alert(this._t("noTimeAlert")); return; }
-
-        const showError = (msg) => {
-          const block = btn.closest(".plan-block");
-          if (!block) return;
-          let errEl = block.querySelector(".plan-error");
-          if (!errEl) {
-            errEl = document.createElement("div");
-            errEl.className = "plan-error";
-            block.querySelector(".plan-actions")?.after(errEl);
-          }
-          errEl.textContent = msg;
-        };
-        const showSuccess = () => {
-          const block = btn.closest(".plan-block");
-          if (!block) return;
-          const errEl = block.querySelector(".plan-error");
-          if (errEl) errEl.remove();
-          const badge = block.querySelector(".plan-badge");
-          if (badge) { badge.textContent = this._t("planned"); badge.classList.remove("active"); badge.classList.add("planned"); }
-        };
-
-        const vehicleDbId = (state.vehicle && state.vehicle !== "null") ? state.vehicle : null;
-        const dt  = new Date(dtValue);
-        const pad = n => String(n).padStart(2, "0");
-        const startdate = `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())} ` +
-                          `${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`;
-
-        // Only a vehicle evcc knows can be planned from here: its plan is the SoC
-        // this block collects. A loadpoint plan is an energy target in kWh, which
-        // the card does not ask for yet, and ha-evcc would accept a call without
-        // one and do nothing, leaving a plan badge behind for a plan that does
-        // not exist. So say it instead of pretending.
-        const savePlan = async () => {
-          if (!vehicleDbId) { showError(`❌ ${this._t("planNeedsVehicle")}`); return; }
-          try {
-            await this._setVehiclePlan(vehicleDbId, soc, startdate);
-            window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } }));
-            showSuccess();
-          } catch(e) {
-            showError(`❌ ${e?.message || JSON.stringify(e) || "Unknown error"}`);
-          }
-        };
-        savePlan();
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("button.plan-btn.delete").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const lpName      = btn.dataset.lp;
-        const planSt      = this._planState[lpName] || {};
-        const vehicleDbId = (planSt.vehicle && planSt.vehicle !== "null") ? planSt.vehicle : null;
-        const block       = btn.closest(".plan-block");
-        const resetBadge  = () => {
-          const badge = block?.querySelector(".plan-badge");
-          if (badge) { badge.textContent = this._t("noPlan"); badge.classList.remove("active", "planned"); }
-        };
-        if (vehicleDbId) {
-          this._deleteVehiclePlan(vehicleDbId)
-            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } })); })
-            .catch(e => console.warn("[evcc-card] delete plan:", e));
-        } else {
-          // Deleting works without a kWh target, it only needs the evcc index.
-          const lpIdx = this._lpIndex(lpName);
-          if (lpIdx == null) { console.warn("[evcc-card] delete plan: no loadpoint index for", lpName); return; }
-          this._deleteLoadpointPlan(lpIdx)
-            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } })); })
-            .catch(e => console.warn("[evcc-card] delete plan:", e));
-        }
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("button.smart-cost-clear-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        this._pressButton(btn.dataset.entity);
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("input[type=range]:not(.plan-soc-range):not([data-boost-entity])").forEach(input => {
-      input.addEventListener("pointerdown", () => {
-        this._isDragging    = true;
-        this._pendingRender = false;
-      });
-      input.addEventListener("input", () => {
-        const span = input.nextElementSibling;
-        if (span) span.textContent = `${this._sliderValueFor(input)} ${displayUnit(this._hass, input.dataset.entity)}`;
-      });
-      input.addEventListener("pointerup", () => {
-        this._isDragging = false;
-        const domain   = input.dataset.domain;
-        const entityId = input.dataset.entity;
-        this._sliderWrite(entityId, domain, domain === "select" ? this._sliderValueFor(input) : parseFloat(input.value));
-        if (this._pendingRender) { this._pendingRender = false; this._render(); }
-      });
-      input.addEventListener("blur", () => {
-        if (this._isDragging) {
-          this._isDragging = false;
-          if (this._pendingRender) { this._pendingRender = false; this._render(); }
-        }
-      });
-      // Keyboard changes (arrows, Home/End, PageUp/Down) never went through
-      // pointerup, so they updated the label but were never written to HA.
-      // The value at the first keydown is the reference (key repeat fires
-      // keydown again, keyup once): a key that moved nothing, e.g. at a bound
-      // of the range, causes no write.
-      const NAV_KEYS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"];
-      let keyStart = null;
-      input.addEventListener("keydown", (e) => {
-        if (NAV_KEYS.includes(e.key) && keyStart === null) keyStart = input.value;
-      });
-      input.addEventListener("keyup", (e) => {
-        if (!NAV_KEYS.includes(e.key)) return;
-        const unchanged = keyStart !== null && keyStart === input.value;
-        keyStart = null;
-        if (unchanged) return;
-        const domain   = input.dataset.domain;
-        const entityId = input.dataset.entity;
-        this._sliderWrite(entityId, domain, domain === "select" ? this._sliderValueFor(input) : parseFloat(input.value));
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("button.slider-val[data-slider-edit]").forEach(btn => {
-      btn.addEventListener("click", (e) => {
-        e.preventDefault();
-        if (btn.classList.contains("editing")) this._closeSliderEdit();
-        else this._openSliderEdit(btn);
-      });
-    });
-
-    this._attachPriorityListeners();
   },
 };
 
-// Card stylesheet. The CSS itself is one constant string with nothing per
-// instance in it, so every card on the page shares one parsed sheet.
-const CSS = `
-      :host {
-        display: block;
-        --evcc-green:  var(--success-color,  #22c55e);
-        --evcc-red:    var(--error-color,    #ef4444);
-        --evcc-amber:  var(--warning-color,  #f59e0b);
-        --evcc-blue:   #3b82f6;
-        --evcc-orange: #f97316;
-        --evcc-yellow: #eab308;
-        --evcc-gray:   var(--disabled-color, #6b7280);
-        --evcc-bolt:   #facc15;
-      }
-      .evcc-scale-wrap { container-type: inline-size; }
-      @container (min-width: 450px) { .evcc-scale-wrap:not([data-size]) { zoom: 1.15; } }
-      @container (min-width: 650px) { .evcc-scale-wrap:not([data-size]) { zoom: 1.3;  } }
-      .evcc-scale-wrap[data-size="small"]  { zoom: 1.0;  }
-      .evcc-scale-wrap[data-size="medium"] { zoom: 1.15; }
-      .evcc-scale-wrap[data-size="large"]  { zoom: 1.30; }
-      ha-card {
-        color: var(--primary-text-color);
-        font-family: var(--paper-font-body1_-_font-family, sans-serif);
-      }
-      .card-content { padding: 12px 16px 16px; }
-
-      .loadpoint {
-        padding: 12px 0;
-        border-bottom: 1px solid var(--divider-color, #e5e7eb);
-        margin-bottom: 0;
-      }
-      .loadpoint:first-child { padding-top: 0; }
-      .loadpoint:last-child { border-bottom: none; padding-bottom: 0; }
-      /* The header values of a loadpoint open more-info; the site rows and the
-         grid chips carry their own hover, this one covers the inline values. */
-      .loadpoint [data-more-info] { cursor: pointer; }
-      .loadpoint [data-more-info]:hover { opacity: .75; }
-      .lp-header {
-        display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
-      }
-      .lp-name { font-size: 1rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px; }
-      .lp-badge {
-        font-size: .75rem; font-weight: 600; padding: 2px 10px;
-        border-radius: 999px; border: 1px solid currentColor;
-      }
-      .lp-badge.charging  { color: var(--evcc-green);  background: color-mix(in srgb, var(--evcc-green)  15%, transparent); }
-      .lp-badge.connected { color: var(--evcc-blue);   background: color-mix(in srgb, var(--evcc-blue)   15%, transparent); }
-      .lp-badge.ready     { color: var(--evcc-gray);   background: color-mix(in srgb, var(--evcc-gray)   15%, transparent); }
-      .lp-badge.disabled  { color: var(--evcc-gray);   background: color-mix(in srgb, var(--evcc-gray)   15%, transparent); }
-      .loadpoint.lp-disabled { opacity: 0.55; }
-      .lp-action-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
-      .lp-action-chip {
-        display: inline-flex; align-items: center; gap: 4px;
-        padding: 3px 8px; border-radius: 999px;
-        font-size: .72rem; font-weight: 600;
-        border: 1px solid var(--divider-color, #4b5563);
-        color: var(--primary-text-color);
-      }
-      .lp-action-chip svg { width: 14px; height: 14px; flex: 0 0 14px; }
-      .lp-action-chip.phase { color: var(--evcc-bolt, #ffae00); border-color: color-mix(in srgb, var(--evcc-bolt, #ffae00) 50%, transparent); background: color-mix(in srgb, var(--evcc-bolt, #ffae00) 10%, transparent); }
-      .lp-action-chip.pv    { color: var(--evcc-green, #0a0);  border-color: color-mix(in srgb, var(--evcc-green, #0a0)  50%, transparent); background: color-mix(in srgb, var(--evcc-green, #0a0)  10%, transparent); }
-      .lp-action-chip.vehicle { color: var(--info-color, #2196f3); border-color: color-mix(in srgb, var(--info-color, #2196f3) 50%, transparent); background: color-mix(in srgb, var(--info-color, #2196f3) 10%, transparent); }
-      .lp-remaining {
-        font-size: .85em; color: var(--secondary-text-color);
-        margin-right: 8px; white-space: nowrap;
-      }
-
-      .mode-row { display: flex; gap: 6px; margin-bottom: 12px; }
-      .mode-row.has-sub { margin-bottom: 6px; }
-      .alwayscharge-row { margin-bottom: 12px; }
-      .mode-btn {
-        flex: 1; display: flex; flex-direction: column; align-items: center;
-        gap: 2px; padding: 8px 2px; min-width: 0;
-        border: 1px solid var(--divider-color, #e5e7eb); border-radius: 8px;
-        background: transparent; color: var(--secondary-text-color);
-        cursor: pointer; font-size: .7rem; transition: all .15s; overflow: hidden;
-      }
-      .mode-btn:hover { border-color: var(--primary-color); }
-      .mode-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
-      .mode-icon { display: flex; align-items: center; justify-content: center; line-height: 1; min-height: 20px; }
-      .mode-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-      .soc-section { margin-bottom: 12px; }
-      .soc-label-row {
-        display: flex; justify-content: space-between;
-        font-size: .85rem; margin-bottom: 6px; color: var(--secondary-text-color);
-      }
-      .vehicle-name { font-weight: 500; color: var(--primary-text-color); }
-      .smart-cost-row { display: flex; justify-content: flex-end; margin-top: 4px; }
-      .boost-activate-row { display: flex; justify-content: flex-start; margin-top: 6px; margin-bottom: 2px; }
-      .boost-activate-btn {
-        display: inline-flex; align-items: center; gap: 4px;
-        background: none; border: 1px solid var(--divider-color, #555);
-        border-radius: 4px; cursor: pointer;
-        font-size: .75rem; color: var(--secondary-text-color);
-        padding: 3px 8px; font-family: inherit;
-        transition: border-color .15s, color .15s, background .15s;
-      }
-      .boost-activate-btn:hover { border-color: var(--evcc-bolt, #ffae00); color: var(--evcc-bolt, #ffae00); }
-      .boost-activate-btn.on { color: var(--evcc-bolt, #ffae00); border-color: var(--evcc-bolt, #ffae00); background: rgba(255,174,0,0.08); }
-      .soc-track {
-        position: relative; height: 8px;
-        background: var(--divider-color, #e5e7eb); border-radius: 4px; overflow: visible;
-      }
-      @keyframes soc-pulse {
-        0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; }
-      }
-      .soc-fill { height: 100%; border-radius: 4px; transition: width .4s ease; }
-      .soc-fill.charging { animation: soc-pulse 1.4s ease-in-out infinite; }
-      .soc-limit-marker {
-        position: absolute; top: -3px; width: 3px; height: 14px;
-        background: #22c55e; border-radius: 2px; transform: translateX(-50%);
-      }
-      .soc-min-marker {
-        position: absolute; top: -3px; width: 3px; height: 14px;
-        background: #f59e0b; border-radius: 2px; transform: translateX(-50%);
-      }
-
-      .power-row { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 12px; color: var(--secondary-text-color); flex-wrap: wrap; }
-      .power-row.charging { color: #22c55e; }
-      .power-value { font-size: 1.6rem; font-weight: 700; }
-      .power-sep { font-size: .8rem; color: var(--secondary-text-color); align-self: flex-end; padding-bottom: .2rem; }
-      .power-current { font-size: .82rem; align-self: flex-end; padding-bottom: .2rem; }
-      .power-phases  { font-size: .82rem; align-self: flex-end; padding-bottom: .2rem; }
-      .power-currents-hint { font-size: .72rem; color: var(--secondary-text-color, #757575); margin-top: 2px; opacity: .8; }
-
-      .sliders { margin-bottom: 10px; }
-      .slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: .83rem; flex-wrap: wrap; }
-      .slider-row label { flex: 0 0 auto; min-width: 70px; white-space: nowrap; color: var(--secondary-text-color); }
-      .slider-control { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 120px; }
-      .slider-control input { flex: 1; min-width: 0; accent-color: var(--primary-color); }
-      .slider-val { flex-shrink: 0; min-width: 52px; text-align: right; font-size: .8rem; }
-      /* The value is a tap target: same look as before, but a thumb-sized hit
-         area (padding + negative margin keeps the row height unchanged). */
-      button.slider-val {
-        background: none; border: none; font-family: inherit; color: inherit; cursor: pointer;
-        padding: 8px 6px; margin: -8px -6px; border-radius: 6px; line-height: 1.2;
-        text-decoration: underline dotted; text-decoration-color: var(--secondary-text-color, #888);
-        text-underline-offset: 3px; touch-action: manipulation;
-      }
-      button.slider-val:hover, button.slider-val.editing { color: var(--primary-color); text-decoration-color: currentColor; }
-      button.slider-val:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
-      /* Direct-input panel: full-width row under the slider, every control ≥44px. */
-      .slider-edit { flex: 0 0 100%; display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; }
-      .slider-edit-btn {
-        flex: 0 0 auto; min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center;
-        border: 1px solid var(--divider-color, #555); border-radius: 8px; cursor: pointer; font-family: inherit;
-        background: var(--secondary-background-color, rgba(127,127,127,0.12)); color: var(--primary-text-color);
-        font-size: 1.3rem; line-height: 1; padding: 0; touch-action: manipulation; user-select: none;
-      }
-      .slider-edit-btn:active { filter: brightness(0.9); }
-      .slider-edit-ok     { color: var(--evcc-green); font-weight: 700; }
-      .slider-edit-cancel { color: var(--secondary-text-color); }
-      .slider-edit-field {
-        flex: 1 1 80px; min-width: 64px; min-height: 44px; display: flex; align-items: center; box-sizing: border-box;
-        border: 1px solid var(--divider-color, #555); border-radius: 8px; padding: 0 10px;
-        background: var(--card-background-color, #fff);
-      }
-      .slider-edit-field:focus-within { border-color: var(--primary-color); }
-      .slider-edit-input {
-        flex: 1; min-width: 0; width: 100%; border: none; background: none; outline: none;
-        font-family: inherit; font-size: 1.15rem; color: var(--primary-text-color); text-align: right; padding: 0;
-      }
-      .slider-edit-unit { flex: 0 0 auto; margin-left: 6px; font-size: .9rem; color: var(--secondary-text-color); white-space: nowrap; }
-      /* Narrow cards (≈300 px): 4 × 40 px buttons + 4 gaps + a 64 px field still fit the content box. */
-      @container (max-width: 340px) {
-        .slider-edit { gap: 6px; }
-        .slider-edit-btn { min-width: 40px; }
-        .slider-edit-field { flex-basis: 64px; min-width: 64px; padding: 0 8px; }
-      }
-      .smart-active-hint { font-size: .75rem; color: var(--evcc-green); margin-top: -4px; margin-bottom: 8px; }
-      .smart-cost-clear-row { display: flex; justify-content: flex-end; margin-top: 6px; margin-bottom: 2px; }
-      .smart-cost-clear-btn { background: none; border: 1px solid var(--divider-color, #555); border-radius: 4px; cursor: pointer; font-size: .75rem; color: var(--secondary-text-color); padding: 3px 8px; font-family: inherit; transition: border-color .15s, color .15s; }
-      .smart-cost-clear-btn:hover { border-color: var(--evcc-red); color: var(--evcc-red); }
-      .smart-cost-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .72rem; color: var(--secondary-text-color); white-space: nowrap; background: none; border: none; padding: 0; cursor: pointer; font-family: inherit; }
-      .smart-cost-chip:hover { color: var(--primary-color); }
-      .smart-cost-chip.active { color: var(--evcc-green); }
-      .smart-cost-chip.active:hover { color: var(--evcc-green); filter: brightness(1.2); }
-      .settings-divider { border: none; border-top: 1px solid var(--divider-color, #e5e7eb); margin: 8px 0; }
-      @keyframes smart-cost-pulse { 0%,100% { background: transparent; } 40% { background: color-mix(in srgb, var(--primary-color) 15%, transparent); } }
-      .smart-cost-highlight { border-radius: 6px; animation: smart-cost-pulse 1.5s ease; }
-
-      .toggles { margin-bottom: 10px; }
-      .toggle-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; flex-wrap: wrap; gap: 4px; }
-      button.toggle {
-        padding: 3px 14px; border-radius: 999px; border: 1px solid var(--divider-color);
-        background: transparent; color: var(--secondary-text-color);
-        cursor: pointer; font-size: .75rem; font-weight: 600; transition: all .15s;
-      }
-      button.toggle.on { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
-
-      .current-block {
-        border-top: 1px solid var(--divider-color, #333);
-        margin-top: 10px; padding-top: 10px; margin-bottom: 10px;
-      }
-      .block-title-row {
-        display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
-      }
-      .block-title {
-        font-size: .7rem; font-weight: 600; text-transform: uppercase;
-        letter-spacing: .08em; color: var(--secondary-text-color);
-      }
-      .current-toggle-btn {
-        background: transparent; border: none; border-radius: 50%;
-        color: var(--secondary-text-color); cursor: pointer;
-        padding: 3px; display: flex; align-items: center; justify-content: center;
-        transition: color .15s, background .15s; margin: -3px;
-      }
-      .current-toggle-btn:hover {
-        color: var(--primary-color);
-        background: var(--secondary-background-color, rgba(0,0,0,.06));
-      }
-      .current-toggle-btn.active { color: var(--primary-color); }
-      .current-block-body[hidden] { display: none; }
-
-      .selects { margin-bottom: 10px; }
-      .select-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; flex-wrap: wrap; gap: 4px; }
-      .phase-btn-group { display: flex; gap: 4px; }
-      button.phase-btn {
-        padding: 3px 10px; border-radius: 999px; border: 1px solid var(--divider-color);
-        background: transparent; color: var(--secondary-text-color);
-        cursor: pointer; font-size: .75rem; font-weight: 600; transition: all .15s; white-space: nowrap;
-      }
-      button.phase-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
-
-      .site-block { padding: 0; }
-      .site-table-hidden { display: none; }
-      .flow-wrap-clickable {
-        cursor: pointer;
-        border-radius: 6px;
-        transition: opacity .15s;
-      }
-      .flow-wrap-clickable:hover { opacity: 0.85; }
-
-      .flow-wrap {
-        margin-bottom: 18px;
-        padding: 0;
-      }
-      .flow-wrap svg {
-        overflow: visible;
-      }
-      .flow-overlay {
-        color: var(--primary-text-color, #212121);
-      }
-      .site-table { display: flex; flex-direction: column; }
-      .site-section-gap { border-top: 1px solid var(--divider-color, #333); margin: 10px 0 12px; }
-      .site-section-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--divider-color, #333); }
-      .site-section-title { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--secondary-text-color); }
-      .site-section-total { font-size: 1rem; font-weight: 700; }
-      .site-row { display: grid; grid-template-columns: 1.4rem 1fr auto; gap: 0 6px; align-items: center; padding: 5px 0; font-size: .78rem; }
-      .site-row-clickable { cursor: pointer; border-radius: 4px; }
-      .site-row-clickable:hover { background: var(--secondary-background-color, rgba(255,255,255,0.05)); }
-      .site-row-icon  { display: flex; align-items: center; justify-content: center; }
-      .site-row-label { display: flex; flex-direction: column; gap: 1px; }
-      .site-row-name  { font-size: .8rem; }
-      .site-row-sub   { font-size: .68rem; color: var(--secondary-text-color); }
-      .site-row-pw    { font-weight: 700; font-size: .82rem; min-width: 48px; text-align: right; }
-      .site-row-indent { padding-left: 1.2rem; position: relative; }
-      .site-row-indent::before {
-        content: "└";
-        position: absolute;
-        left: 0.15rem;
-        top: 50%;
-        transform: translateY(-50%);
-        font-size: .75rem;
-        color: var(--secondary-text-color);
-        opacity: 0.6;
-      }
-      .site-row-indent .site-row-icon { opacity: 0.7; }
-      .site-row-indent .site-row-name { font-size: .75rem; color: var(--secondary-text-color); }
-      .site-row-indent .site-row-pw   { font-size: .78rem; }
-      .site-pw-green  { color: #22c55e; }
-      .site-pw-blue   { color: #3b82f6; }
-      .site-pw-yellow { color: #facc15; }
-
-      .sankey-wrap { padding: 12px 0 8px; }
-      .sankey-wrap svg { overflow: visible; }
-      .sankey-node { opacity: 1; transition: opacity .15s; }
-      .sankey-node:hover { opacity: 0.7; }
-      .sankey-center-chevron { transition: opacity .15s; }
-      .sankey-wrap:hover .sankey-center-chevron { opacity: 0.7 !important; }
-
-      .s2-net {
-        text-align: center; padding: 14px 0 16px;
-        border-bottom: 1px solid var(--divider-color, #333); margin-bottom: 14px;
-      }
-      .s2-net-label {
-        font-size: .6rem; font-weight: 700; letter-spacing: .1em;
-        text-transform: uppercase; color: var(--secondary-text-color); margin-bottom: 4px;
-      }
-      .s2-net-value { font-size: 2.2rem; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
-      .s2-net-status { font-size: .75rem; font-weight: 600; margin-top: 4px; }
-      .s2-pv-badge {
-        display: inline-flex; align-items: center; gap: 4px;
-        margin-top: 8px; background: rgba(34,197,94,0.12); color: #22c55e;
-        border-radius: 20px; padding: 3px 10px; font-size: .68rem; font-weight: 700;
-      }
-      .s2-section { margin-bottom: 12px; }
-      .s2-section-label {
-        font-size: .58rem; font-weight: 700; letter-spacing: .12em;
-        text-transform: uppercase; color: var(--secondary-text-color); opacity: .55; margin-bottom: 6px;
-      }
-      .s2-chips { display: flex; gap: 6px; flex-wrap: wrap; }
-      .s2-chip {
-        display: inline-flex; align-items: center; gap: 5px;
-        background: var(--secondary-background-color, rgba(255,255,255,0.05));
-        border-radius: 20px; padding: 5px 11px; font-size: .72rem; font-weight: 600;
-        border: 1px solid var(--divider-color, #333);
-      }
-      .s2-chip-clickable { cursor: pointer; }
-      .s2-chip-clickable:hover { opacity: 0.75; }
-      .s2-chip-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-      .s2-chip-sub { font-size: .62rem; color: var(--secondary-text-color); font-weight: 400; }
-
-      .stats-period-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
-      .stats-period-tab {
-        padding: 2px 10px; border-radius: 999px;
-        border: 1px solid var(--divider-color, #e5e7eb);
-        background: transparent; color: var(--secondary-text-color);
-        cursor: pointer; font-size: .72rem; font-weight: 600; transition: all .15s;
-      }
-      .stats-period-tab.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
-      .stats-period-tabs--small .stats-period-tab { font-size: .65rem; padding: 1px 8px; }
-
-      .stats-footer-wrap {
-        border-top: 1px solid var(--divider-color, #333);
-        margin-top: 12px; padding-top: 8px;
-      }
-      .stats-footer-wrap .stats-footer { border-top: none; margin-top: 6px; padding-top: 0; }
-
-      .stats-footer {
-        border-top: 1px solid var(--divider-color, #333);
-        margin-top: 12px; padding-top: 10px;
-      }
-      .sf-period {
-        font-size: .6rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 700;
-        color: var(--secondary-text-color); text-align: center; margin-bottom: 6px; opacity: 0.7;
-      }
-      .sf-items { display: flex; align-items: center; }
-      .sf-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; }
-      .sf-val  { font-size: .82rem; font-weight: 700; }
-      .sf-lbl  { font-size: .58rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
-      .sf-sep  { width: 1px; height: 28px; background: var(--divider-color, #333); flex-shrink: 0; }
-
-      .stats-no-data {
-        font-size: .76rem; color: var(--warning-color, #f4b942);
-        background: rgba(244,185,66,.08);
-        border: 1px solid var(--warning-color, #f4b942);
-        border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; line-height: 1.6;
-      }
-      .stats-no-data-link {
-        display: inline-block; margin-top: 4px; color: var(--primary-color);
-        text-decoration: none; font-weight: 600;
-      }
-      .stats-no-data-link:hover { text-decoration: underline; }
-
-      .stats-kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
-      .stats-kpi {
-        background: var(--secondary-background-color, rgba(255,255,255,.05));
-        border-radius: 8px; padding: 10px 8px; text-align: center;
-        display: flex; flex-direction: column; gap: 3px;
-      }
-      .stats-kpi-val { font-size: 1.1rem; font-weight: 800; line-height: 1; }
-      .stats-kpi-lbl { font-size: .58rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
-      .stats-chart-section { margin-top: 4px; }
-      .stats-stepper { display: flex; align-items: center; justify-content: center; }
-      .stats-step-btn {
-        border: 1px solid var(--divider-color, rgba(127,127,127,0.3)); background: transparent;
-        color: var(--primary-text-color); border-radius: 8px; width: 26px; height: 24px; line-height: 1;
-        font-size: 1rem; cursor: pointer; padding: 0;
-      }
-      .stats-step-btn:hover:not([disabled]) { background: var(--secondary-background-color, rgba(127,127,127,0.12)); }
-      .stats-step-btn[disabled] { opacity: 0.35; cursor: default; }
-      .stats-stepper { gap: 4px; }
-      .stats-step-label { text-align: center; font-weight: 600; font-size: 0.85rem; white-space: nowrap; overflow: hidden; }
-      .stats-step-label--month { width: 74px; }
-      .stats-step-label--year { width: 42px; }
-      .stats-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
-      .stats-controls .stats-period-tabs { margin-bottom: 0; }
-      .stats-steppers { flex: 0 0 100%; display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-height: 26px; }
-      .stats-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; margin-top: 8px; font-size: 0.74rem; color: var(--secondary-text-color); }
-      .sl-item { display: inline-flex; align-items: center; gap: 5px; }
-      .sl-dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
-      .evcc-chart-wrap { position: relative; margin-left: -16px; margin-right: 0; }
-      .evcc-chart-tooltip {
-        position: absolute; top: 0; transform: translateX(-50%);
-        background: var(--ha-card-background, var(--card-background-color, #1f2937));
-        border-radius: 8px; padding: 8px 12px;
-        font-size: 12px; line-height: 1.6; white-space: nowrap;
-        pointer-events: none; z-index: 10;
-        box-shadow: 0 4px 16px rgba(0,0,0,.35);
-      }
-      .ectt-header { font-weight: 700; margin-bottom: 4px; }
-      .ectt-row { display: flex; align-items: center; gap: 6px; }
-      .ectt-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-      .ectt-name { flex: 1; color: var(--primary-text-color); }
-      .ectt-val { font-weight: 600; margin-left: 12px; }
-      .ectt-summary { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--divider-color, #374151); font-weight: 700; }
-      .stats-chart-title {
-        font-size: .58rem; font-weight: 700; letter-spacing: .12em;
-        text-transform: uppercase; color: var(--secondary-text-color); opacity: .55; margin-bottom: 8px;
-      }
-      .stats-chart-loading {
-        height: 75px; display: flex; align-items: center; justify-content: center;
-        color: var(--secondary-text-color); font-size: .75rem; opacity: .5;
-      }
-      .stats-solar-hint {
-        font-size: .72rem; color: var(--secondary-text-color);
-        margin-top: 10px; padding: 6px 10px;
-        background: color-mix(in srgb, var(--evcc-green) 8%, transparent);
-        border: 1px solid color-mix(in srgb, var(--evcc-green) 25%, transparent);
-        border-radius: 6px; line-height: 1.4;
-      }
-
-      .battery-block { padding: 0; }
-      .batt-main-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
-      .batt-text-col { flex: 1; min-width: 0; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 12px; }
-      .batt-text-item { display: flex; gap: 8px; align-items: flex-start; }
-      .batt-text-icon { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }
-      .batt-text-title { font-size: .82rem; font-weight: 600; margin-bottom: 2px; }
-      .batt-text-desc  { font-size: .76rem; color: var(--secondary-text-color); line-height: 1.4; }
-      .batt-inline-select { color: var(--primary-color, #00b4d8); font-weight: 600; font-size: .76rem; font-family: inherit; background: transparent; border: none; border-bottom: 1px dotted var(--primary-color, #00b4d8); cursor: pointer; padding: 0 2px; outline: none; appearance: none; -webkit-appearance: none; }
-      .batt-visual-col { display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0; align-self: flex-start; }
-      .batt-marker-top { display: none; }
-      .batt-visual { display: flex; flex-direction: column; align-items: center; width: 56px; }
-      .batt-cap-tip { width: 22px; height: 5px; background: var(--divider-color, #555); border-radius: 3px 3px 0 0; margin-bottom: 1px; }
-      .batt-body { width: 56px; height: 130px; border: 2px solid var(--divider-color, #555); border-radius: 5px; overflow: hidden; display: flex; flex-direction: column; position: relative; }
-      .batt-zone { display: flex; align-items: center; justify-content: center; position: relative; z-index: 1; min-height: 20px; }
-      .batt-zone-car  { background: #22c55e18; }
-      .batt-zone-haus { background: #3b82f618; }
-      .batt-zone-icon { font-size: 1.2rem; }
-      .batt-divider-line { height: 2px; background: var(--divider-color, #555); flex-shrink: 0; z-index: 2; }
-      .batt-soc-overlay { position: absolute; bottom: 0; left: 0; right: 0; z-index: 0; border-radius: 0 0 3px 3px; transition: height .4s; opacity: 0.55; }
-      .batt-info-col { display: flex; flex-direction: column; gap: 2px; align-items: center; text-align: center; }
-      .batt-info-label { font-size: .7rem; color: var(--secondary-text-color); line-height: 1.2; }
-      .batt-info-pct   { font-size: 1.1rem; font-weight: 700; line-height: 1.1; }
-      .batt-info-kwh, .batt-info-power { font-size: .7rem; color: var(--secondary-text-color); line-height: 1.2; white-space: nowrap; }
-      .batt-discharge-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--divider-color, #333); font-size: .84rem; }
-      .batt-discharge-toggle { width: 42px; height: 24px; border-radius: 12px; border: none; background: var(--divider-color, #444); position: relative; cursor: pointer; flex-shrink: 0; transition: background .2s; }
-      .batt-discharge-toggle.on { background: var(--primary-color, #00b4d8); }
-      .batt-toggle-knob { position: absolute; width: 18px; height: 18px; border-radius: 50%; background: white; top: 3px; left: 3px; transition: left .2s; }
-      .batt-discharge-toggle.on .batt-toggle-knob { left: 21px; }
-      @container (max-width: 420px) {
-        .batt-main-row { flex-direction: column; gap: 14px; }
-        .batt-visual-col { align-self: stretch; justify-content: flex-start; }
-      }
-
-      .session-block { border-top: 1px solid var(--divider-color, #e5e7eb); margin-top: 10px; padding-top: 10px; }
-      .session-title { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--secondary-text-color); margin-bottom: 8px; }
-      .session-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 6px; }
-      .session-item { display: flex; flex-direction: column; gap: 2px; }
-      .si-label { font-size: .7rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .05em; }
-      .si-value { font-size: .95rem; font-weight: 600; color: var(--primary-text-color); }
-
-      .plan-block { border-top: 1px solid var(--divider-color, #e5e7eb); margin-top: 10px; padding-top: 10px; }
-      .plan-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-      .plan-badge { font-size: .7rem; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--divider-color); color: var(--secondary-text-color); }
-      .plan-badge.planned { background: rgba(0, 120, 180, 0.3); color: #60aaff; }
-      .plan-badge.active  { background: color-mix(in srgb, var(--evcc-green) 15%, transparent); color: var(--evcc-green); border-color: var(--evcc-green); }
-      .plan-projection { display: flex; flex-direction: column; gap: 3px; font-size: .78rem; color: var(--secondary-text-color); margin-bottom: 10px; padding: 7px 10px; background: var(--secondary-background-color, rgba(0,0,0,.08)); border-radius: 6px; }
-      .plan-projection strong { color: var(--primary-text-color); }
-      .plan-inputs { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
-      .plan-row { display: flex; align-items: center; gap: 8px; font-size: .83rem; flex-wrap: wrap; }
-      .plan-row label { flex: 0 0 auto; min-width: 60px; white-space: nowrap; color: var(--secondary-text-color); }
-      .plan-soc-control { display: flex; align-items: center; gap: 8px; flex: 1; }
-      .plan-soc-range { flex: 1; accent-color: var(--primary-color); }
-      .plan-soc-val { min-width: 42px; text-align: right; font-size: .8rem; }
-      input.plan-time-input { flex: 1; padding: 4px 8px; border: 1px solid var(--divider-color, #4b5563); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); font-size: .82rem; color-scheme: dark light; }
-      .plan-actions { display: flex; gap: 8px; }
-      .plan-btn { flex: 1; padding: 7px 10px; border-radius: 7px; border: 1px solid var(--divider-color); font-size: .8rem; font-weight: 600; cursor: pointer; transition: all .15s; background: transparent; color: var(--primary-text-color); }
-      .plan-btn.save { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
-      .plan-btn.save:hover { filter: brightness(1.1); }
-      .plan-btn.delete { color: #ef4444; border-color: #ef444466; }
-      .plan-btn.delete:hover { background: #ef444422; }
-      select.plan-vehicle-select,
-      select.plan-precondition-select { flex: 1; padding: 4px 8px; border: 1px solid var(--divider-color, #4b5563); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); font-size: .82rem; }
-      .plan-row .toggle { margin-left: auto; }
-      .plan-error { margin-top: 8px; padding: 6px 10px; border-radius: 6px; background: #ef444422; color: #ef4444; font-size: .78rem; word-break: break-all; }
-      .plan-preview { margin: 10px 0 4px; }
-      .plan-preview-loading { text-align: center; padding: 12px; font-size: .78rem; color: var(--secondary-text-color); }
-      .plan-preview-error, .plan-preview-info { padding: 8px 10px; border-radius: 6px; background: var(--secondary-background-color, rgba(0,0,0,.08)); color: var(--secondary-text-color); font-size: .78rem; }
-      .plan-preview-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
-      .plan-preview-left, .plan-preview-right { display: flex; flex-direction: column; }
-      .plan-preview-right { text-align: right; }
-      .plan-preview-label { font-size: .65rem; text-transform: uppercase; letter-spacing: .03em; color: var(--secondary-text-color); }
-      .plan-preview-value { font-size: .88rem; font-weight: 600; color: var(--evcc-green,#22c55e); }
-      .rplan-block .plan-header { justify-content: flex-start; gap: 6px; }
-      .rplan-hint { display: inline-flex; align-items: center; color: var(--secondary-text-color); cursor: help; }
-      .rplan-list { display: flex; flex-direction: column; gap: 8px; }
-      .rplan-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--divider-color); border-radius: 8px; }
-      .rplan-days { display: flex; gap: 3px; flex-wrap: wrap; }
-      .rplan-day { font-size: .68rem; font-weight: 600; line-height: 1; padding: 4px 5px; border-radius: 5px; min-width: 15px; text-align: center; background: var(--secondary-background-color, rgba(0,0,0,.08)); color: var(--secondary-text-color); border: 1px solid transparent; }
-      .rplan-day.on { background: var(--primary-color); color: #fff; }
-      .rplan-line { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-      .rplan-info { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
-      .rplan-field { display: inline-flex; align-items: baseline; gap: 5px; }
-      .rplan-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--secondary-text-color); }
-      .rplan-value { font-size: .9rem; font-weight: 600; }
-      .rplan-line .toggle { margin-left: auto; }
-
-      .empty { text-align: center; padding: 24px; color: var(--secondary-text-color); font-size: .9rem; line-height: 1.8; }
-      .empty code { background: var(--code-editor-background-color, #1e1e1e); color: var(--primary-color); padding: 1px 6px; border-radius: 4px; font-size: .82rem; }
-      .empty-debug-hint { margin-top: 12px; font-size: .82rem; }
-      button.debug-link {
-        background: transparent; border: 1px solid var(--divider-color, #4b5563);
-        color: var(--primary-color); border-radius: 6px;
-        padding: 3px 10px; margin-left: 4px; cursor: pointer; font: inherit;
-      }
-      button.debug-link:hover { background: color-mix(in srgb, var(--primary-color) 10%, transparent); }
-
+// Debug mode.
+// Part of the card stylesheet, see src/styles.js.
+const debugCss = `
       .debug { font-size: .85rem; color: var(--primary-text-color); }
       .debug code { background: color-mix(in srgb, var(--primary-text-color) 8%, transparent); padding: 1px 5px; border-radius: 4px; font-size: .78rem; word-break: break-word; }
       .debug-header {
@@ -6154,97 +6215,123 @@ const CSS = `
       .compact-panel[hidden] { display: none; }
       .compact-panel .plan-block,
       .compact-panel .session-block { border-top: none; margin-top: 0; padding-top: 0; }
-
-      .priority-mode { display: flex; flex-direction: column; gap: 12px; }
-      .priority-hint { font-size: .8rem; color: var(--secondary-text-color); }
-      .priority-list {
-        position: relative;
-        display: flex; flex-direction: column;
-        border: 1px solid var(--divider-color);
-        border-radius: 6px;
-        overflow: hidden;
-        background: var(--card-background-color);
-      }
-      .priority-row {
-        display: flex; align-items: center; gap: 10px;
-        padding: 10px 12px;
-        background: var(--card-background-color);
-        user-select: none;
-        border-bottom: 1px solid var(--divider-color);
-        transition: background .15s ease;
-      }
-      .priority-row:last-child { border-bottom: none; }
-      .priority-row.no-entity { opacity: .55; }
-      .priority-handle {
-        cursor: grab;
-        font-size: 1.2rem; line-height: 1;
-        color: var(--secondary-text-color);
-        touch-action: none;
-        padding: 4px 6px;
-        user-select: none;
-      }
-      .priority-handle:active { cursor: grabbing; }
-      .priority-row.no-entity .priority-handle { cursor: not-allowed; }
-      .priority-row.priority-dragging {
-        /* Out of the flow; left/right stretch it to the list width regardless
-           of box-sizing, so no inline width is needed. */
-        position: absolute; left: 0; right: 0; z-index: 5;
-        opacity: .92;
-        box-shadow: 0 4px 14px rgba(0, 0, 0, .22);
-        background: var(--card-background-color);
-        border-bottom: none;
-        will-change: transform;
-      }
-      .priority-placeholder {
-        background: var(--divider-color);
-        opacity: .25;
-      }
-      .priority-name { flex: 1; font-weight: 500; }
-      .priority-target {
-        font-variant-numeric: tabular-nums;
-        font-weight: 600;
-        min-width: 2.5em;
-        text-align: right;
-      }
-      .priority-target.changed { color: var(--evcc-amber); }
-      .priority-was {
-        font-weight: 400;
-        color: var(--secondary-text-color);
-        margin-left: 4px;
-        font-size: .8em;
-      }
-      .priority-no-ent {
-        font-weight: 400;
-        font-size: .8em;
-        color: var(--secondary-text-color);
-      }
-      .priority-empty-note {
-        font-size: .8rem;
-        color: var(--secondary-text-color);
-        font-style: italic;
-      }
-      .priority-actions {
-        display: flex; gap: 8px; justify-content: flex-end;
-      }
-      .priority-btn {
-        padding: 6px 14px;
-        border-radius: 4px;
-        border: 1px solid var(--divider-color);
-        background: var(--card-background-color);
-        color: var(--primary-text-color);
-        cursor: pointer;
-        font: inherit;
-      }
-      .priority-btn:hover:not(:disabled) {
-        background: var(--secondary-background-color);
-      }
-      .priority-btn:disabled { opacity: .5; cursor: not-allowed; }
-      .priority-btn.apply:not(:disabled) {
-        background: var(--evcc-green);
-        color: white;
-        border-color: transparent;
-      }
 `;
+
+// Non-native click targets: everything the card wires a click handler to that
+// is not a <button>, <input>, <select> or <a> and so gets no keyboard support
+// from the browser. They are made focusable and get the button role here,
+// once per render, instead of every view remembering to do it.
+const NON_NATIVE_CLICKABLES = "[data-more-info], [data-action], [data-lp-current-toggle], [data-lp-smart-cost-open]";
+const NATIVE = "button, input, select, textarea, a[href]";
+
+// The listeners every view shares: keyboard activation, more-info, the site
+// table toggle and the jump into the debug view. Everything a single view owns
+// is attached by that view's _attach<Name>Listeners(), called at the end. Methods
+// are mixed into EvccCard.prototype.
+const listeners = {
+  _attachListeners() {
+    // Keyboard activation for the button-role elements: Enter and Space click
+    // them, as a native button would. Bound to the shadow root once; the root
+    // survives every innerHTML replacement, the elements inside do not.
+    if (!this._keyboardBound) {
+      this._keyboardBound = true;
+      this.shadowRoot.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        const el = e.target?.closest?.('[role="button"]');
+        if (!el || el.matches(NATIVE)) return;
+        e.preventDefault();
+        // dispatched rather than el.click(): SVG elements (the flow nodes) have no click()
+        el.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true }));
+      });
+    }
+    this.shadowRoot.querySelectorAll(NON_NATIVE_CLICKABLES).forEach(el => {
+      if (el.matches(NATIVE)) return;
+      if (!el.hasAttribute("role"))     el.setAttribute("role", "button");
+      if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "0");
+    });
+
+    this.shadowRoot.querySelectorAll("[data-more-info]").forEach(el => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.dispatchEvent(new CustomEvent("hass-more-info", {
+          detail: { entityId: el.dataset.moreInfo }, bubbles: true, composed: true,
+        }));
+      });
+    });
+
+    // The site and flow views fold their detail table on a click on the flow
+    // graphic. A click on a node inside it opens more-info instead: that handler
+    // above stops propagation, and the check here keeps the two apart even when
+    // the click lands on a node that has no more-info listener attached.
+    this.shadowRoot.querySelectorAll('[data-action="toggle-site"]').forEach(el => {
+      el.addEventListener("click", (e) => {
+        if (e.target.closest("[data-more-info]")) return;
+        this._toggleSite();
+      });
+    });
+
+    this.shadowRoot.querySelectorAll('[data-action="open-debug"]').forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._origConfig = { ...this._config };
+        this._config = { ...this._config, mode: "debug" };
+        this._lastRenderKey = null;
+        this._render();
+      });
+    });
+
+    this._attachLoadpointListeners();
+    this._attachSliderListeners();
+    this._attachPlanListeners();
+    this._attachStatsListeners();
+    this._attachBatteryListeners();
+    this._attachDebugListeners();
+    this._attachPriorityListeners();
+  },
+};
+
+// The card stylesheet. What every mode needs sits here; each view exports the
+// CSS of its own markup, and the pieces are joined in this order into one
+// constant string with nothing per instance in it, so every card on the page
+// shares one parsed sheet.
+const baseCss = `
+      :host {
+        display: block;
+        --evcc-green:  var(--success-color,  #22c55e);
+        --evcc-red:    var(--error-color,    #ef4444);
+        --evcc-amber:  var(--warning-color,  #f59e0b);
+        --evcc-blue:   #3b82f6;
+        --evcc-orange: #f97316;
+        --evcc-yellow: #eab308;
+        --evcc-gray:   var(--disabled-color, #6b7280);
+        --evcc-bolt:   #facc15;
+      }
+      .evcc-scale-wrap { container-type: inline-size; }
+      @container (min-width: 450px) { .evcc-scale-wrap:not([data-size]) { zoom: 1.15; } }
+      @container (min-width: 650px) { .evcc-scale-wrap:not([data-size]) { zoom: 1.3;  } }
+      .evcc-scale-wrap[data-size="small"]  { zoom: 1.0;  }
+      .evcc-scale-wrap[data-size="medium"] { zoom: 1.15; }
+      .evcc-scale-wrap[data-size="large"]  { zoom: 1.30; }
+      ha-card {
+        color: var(--primary-text-color);
+        font-family: var(--paper-font-body1_-_font-family, sans-serif);
+      }
+      .card-content { padding: 12px 16px 16px; }
+
+      .empty { text-align: center; padding: 24px; color: var(--secondary-text-color); font-size: .9rem; line-height: 1.8; }
+      .empty code { background: var(--code-editor-background-color, #1e1e1e); color: var(--primary-color); padding: 1px 6px; border-radius: 4px; font-size: .82rem; }
+      .empty-debug-hint { margin-top: 12px; font-size: .82rem; }
+      button.debug-link {
+        background: transparent; border: 1px solid var(--divider-color, #4b5563);
+        color: var(--primary-color); border-radius: 6px;
+        padding: 3px 10px; margin-left: 4px; cursor: pointer; font: inherit;
+      }
+      button.debug-link:hover { background: color-mix(in srgb, var(--primary-color) 10%, transparent); }
+`;
+
+const CSS = [
+  baseCss, loadpointCss, sliderCss, siteCss, flowCss, gridCss,
+  statsCss, batteryCss, planCss, debugCss, priorityCss,
+].join("\n");
 
 // _render() replaces the shadow root's innerHTML on every update, and a <style>
 // element in there is parsed again each time: around 680 lines of CSS, up to

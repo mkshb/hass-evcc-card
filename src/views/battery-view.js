@@ -132,4 +132,62 @@ export const batteryView = {
         ${tabUsage}
       </div>`;
   },
+
+  // Listeners of the battery view: the discharge toggle and the inline
+  // selects. Called by _attachListeners() after every render.
+  _attachBatteryListeners() {
+    this.shadowRoot.querySelectorAll("button.batt-discharge-toggle").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const on     = btn.dataset.on === "true";
+        const domain = btn.dataset.domain;
+        this._toggleEntity(domain, btn.dataset.entity, on);
+        btn.classList.toggle("on", !on);
+        btn.dataset.on = String(!on);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll(".batt-inline-select").forEach(sel => {
+      sel.addEventListener("change", () => {
+        this._setSelectOption(sel.dataset.entity, sel.value);
+      });
+      sel.addEventListener("click", e => e.stopPropagation());
+    });
+  },
 };
+
+// Battery mode.
+// Part of the card stylesheet, see src/styles.js.
+export const batteryCss = `
+      .battery-block { padding: 0; }
+      .batt-main-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+      .batt-text-col { flex: 1; min-width: 0; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 12px; }
+      .batt-text-item { display: flex; gap: 8px; align-items: flex-start; }
+      .batt-text-icon { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }
+      .batt-text-title { font-size: .82rem; font-weight: 600; margin-bottom: 2px; }
+      .batt-text-desc  { font-size: .76rem; color: var(--secondary-text-color); line-height: 1.4; }
+      .batt-inline-select { color: var(--primary-color, #00b4d8); font-weight: 600; font-size: .76rem; font-family: inherit; background: transparent; border: none; border-bottom: 1px dotted var(--primary-color, #00b4d8); cursor: pointer; padding: 0 2px; outline: none; appearance: none; -webkit-appearance: none; }
+      .batt-visual-col { display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0; align-self: flex-start; }
+      .batt-marker-top { display: none; }
+      .batt-visual { display: flex; flex-direction: column; align-items: center; width: 56px; }
+      .batt-cap-tip { width: 22px; height: 5px; background: var(--divider-color, #555); border-radius: 3px 3px 0 0; margin-bottom: 1px; }
+      .batt-body { width: 56px; height: 130px; border: 2px solid var(--divider-color, #555); border-radius: 5px; overflow: hidden; display: flex; flex-direction: column; position: relative; }
+      .batt-zone { display: flex; align-items: center; justify-content: center; position: relative; z-index: 1; min-height: 20px; }
+      .batt-zone-car  { background: #22c55e18; }
+      .batt-zone-haus { background: #3b82f618; }
+      .batt-zone-icon { font-size: 1.2rem; }
+      .batt-divider-line { height: 2px; background: var(--divider-color, #555); flex-shrink: 0; z-index: 2; }
+      .batt-soc-overlay { position: absolute; bottom: 0; left: 0; right: 0; z-index: 0; border-radius: 0 0 3px 3px; transition: height .4s; opacity: 0.55; }
+      .batt-info-col { display: flex; flex-direction: column; gap: 2px; align-items: center; text-align: center; }
+      .batt-info-label { font-size: .7rem; color: var(--secondary-text-color); line-height: 1.2; }
+      .batt-info-pct   { font-size: 1.1rem; font-weight: 700; line-height: 1.1; }
+      .batt-info-kwh, .batt-info-power { font-size: .7rem; color: var(--secondary-text-color); line-height: 1.2; white-space: nowrap; }
+      .batt-discharge-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--divider-color, #333); font-size: .84rem; }
+      .batt-discharge-toggle { width: 42px; height: 24px; border-radius: 12px; border: none; background: var(--divider-color, #444); position: relative; cursor: pointer; flex-shrink: 0; transition: background .2s; }
+      .batt-discharge-toggle.on { background: var(--primary-color, #00b4d8); }
+      .batt-toggle-knob { position: absolute; width: 18px; height: 18px; border-radius: 50%; background: white; top: 3px; left: 3px; transition: left .2s; }
+      .batt-discharge-toggle.on .batt-toggle-knob { left: 21px; }
+      @container (max-width: 420px) {
+        .batt-main-row { flex-direction: column; gap: 14px; }
+        .batt-visual-col { align-self: stretch; justify-content: flex-start; }
+      }
+`;

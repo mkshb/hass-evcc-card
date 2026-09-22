@@ -429,3 +429,14 @@ export const flowView = {
     if (shift > 0) for (const n of nodes) n.labelY -= shift;
   },
 };
+
+// Flow mode: the Sankey graphic.
+// Part of the card stylesheet, see src/styles.js.
+export const flowCss = `
+      .sankey-wrap { padding: 12px 0 8px; }
+      .sankey-wrap svg { overflow: visible; }
+      .sankey-node { opacity: 1; transition: opacity .15s; }
+      .sankey-node:hover { opacity: 0.7; }
+      .sankey-center-chevron { transition: opacity .15s; }
+      .sankey-wrap:hover .sankey-center-chevron { opacity: 0.7 !important; }
+`;

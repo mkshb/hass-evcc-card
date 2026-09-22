@@ -432,3 +432,57 @@ export const siteView = {
       </div>`;
   },
 };
+
+// Site mode: the flow bar and the IN/OUT detail table, which the flow mode shares.
+// Part of the card stylesheet, see src/styles.js.
+export const siteCss = `
+      .site-block { padding: 0; }
+      .site-table-hidden { display: none; }
+      .flow-wrap-clickable {
+        cursor: pointer;
+        border-radius: 6px;
+        transition: opacity .15s;
+      }
+      .flow-wrap-clickable:hover { opacity: 0.85; }
+
+      .flow-wrap {
+        margin-bottom: 18px;
+        padding: 0;
+      }
+      .flow-wrap svg {
+        overflow: visible;
+      }
+      .flow-overlay {
+        color: var(--primary-text-color, #212121);
+      }
+      .site-table { display: flex; flex-direction: column; }
+      .site-section-gap { border-top: 1px solid var(--divider-color, #333); margin: 10px 0 12px; }
+      .site-section-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--divider-color, #333); }
+      .site-section-title { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--secondary-text-color); }
+      .site-section-total { font-size: 1rem; font-weight: 700; }
+      .site-row { display: grid; grid-template-columns: 1.4rem 1fr auto; gap: 0 6px; align-items: center; padding: 5px 0; font-size: .78rem; }
+      .site-row-clickable { cursor: pointer; border-radius: 4px; }
+      .site-row-clickable:hover { background: var(--secondary-background-color, rgba(255,255,255,0.05)); }
+      .site-row-icon  { display: flex; align-items: center; justify-content: center; }
+      .site-row-label { display: flex; flex-direction: column; gap: 1px; }
+      .site-row-name  { font-size: .8rem; }
+      .site-row-sub   { font-size: .68rem; color: var(--secondary-text-color); }
+      .site-row-pw    { font-weight: 700; font-size: .82rem; min-width: 48px; text-align: right; }
+      .site-row-indent { padding-left: 1.2rem; position: relative; }
+      .site-row-indent::before {
+        content: "└";
+        position: absolute;
+        left: 0.15rem;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: .75rem;
+        color: var(--secondary-text-color);
+        opacity: 0.6;
+      }
+      .site-row-indent .site-row-icon { opacity: 0.7; }
+      .site-row-indent .site-row-name { font-size: .75rem; color: var(--secondary-text-color); }
+      .site-row-indent .site-row-pw   { font-size: .78rem; }
+      .site-pw-green  { color: #22c55e; }
+      .site-pw-blue   { color: #3b82f6; }
+      .site-pw-yellow { color: #facc15; }
+`;
