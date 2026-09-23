@@ -1148,6 +1148,9 @@ def contracts(browser, port, t):
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"})
     last = lambda: svc(page)[-1]
     exp  = lambda domain, service, data: {"domain": domain, "service": service, "data": data}
+    # the plan services name the ha-evcc instance the card shows (config_entry_id),
+    # so a plan never lands on another evcc when two instances are configured
+    entry = json.loads((ROOT / "test/fixtures/entity_registry.json").read_text(encoding="utf-8"))[0]["config_entry_id"]
 
     # releasing a slider writes through the same path as the arrow keys
     def drag_to_end(sel):
@@ -1197,7 +1200,7 @@ def contracts(browser, port, t):
     page.locator(in_card(".slider-edit-input")).fill("80"); page.locator(in_card("[data-edit-ok]")).click()
     page.locator(in_card("input.plan-time-input")).fill("2026-09-19T07:00"); page.wait_for_timeout(300)
     page.locator(in_card("button.plan-btn.save")).click(); page.wait_for_timeout(400)
-    t.check(last() == exp("evcc_intg", "set_vehicle_plan", {"vehicle": "db:18", "soc": 80, "startdate": "2026-09-19 07:00:00"}),
+    t.check(last() == exp("evcc_intg", "set_vehicle_plan", {"vehicle": "db:18", "soc": 80, "startdate": "2026-09-19 07:00:00", "config_entry_id": entry}),
             "set plan → evcc_intg.set_vehicle_plan {vehicle, soc, startdate}", json.dumps(last()))
     page.close()
 
@@ -1206,7 +1209,7 @@ def contracts(browser, port, t):
     open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]}, set={"binary_sensor.evcc_openwb_plan_active": "on"})
     t.check(page.locator(in_card("button.plan-btn.delete")).count() == 1, "delete button shown while a plan is active")
     page.locator(in_card("button.plan-btn.delete")).click(); page.wait_for_timeout(300)
-    t.check(last() == exp("evcc_intg", "del_vehicle_plan", {"vehicle": "db:18"}), "delete plan → evcc_intg.del_vehicle_plan", json.dumps(last()))
+    t.check(last() == exp("evcc_intg", "del_vehicle_plan", {"vehicle": "db:18", "config_entry_id": entry}), "delete plan → evcc_intg.del_vehicle_plan", json.dumps(last()))
     page.close()
 
     # A guest vehicle (vehicle select on "null") has no plan of its own: evcc plans
@@ -1228,7 +1231,7 @@ def contracts(browser, port, t):
             "guest vehicle: the plan preview asks for kind energy with the kWh target", json.dumps(previews[-1:]))
     page.locator(in_card("button.plan-btn.save")).click(); page.wait_for_timeout(400)
     badge = page.locator(in_card(".plan-badge.planned")).count()
-    t.check(last() == exp("evcc_intg", "set_loadpoint_plan", {"loadpoint": 1, "energy": 25, "startdate": "2026-09-19 07:00:00"})
+    t.check(last() == exp("evcc_intg", "set_loadpoint_plan", {"loadpoint": 1, "energy": 25, "startdate": "2026-09-19 07:00:00", "config_entry_id": entry})
             and label == "25 kWh" and badge == 1,
             "guest vehicle: set plan → evcc_intg.set_loadpoint_plan {loadpoint, energy, startdate}",
             f"{json.dumps(last())} label={label!r} badge={badge}")
@@ -1249,7 +1252,7 @@ def contracts(browser, port, t):
     t.check(last()["service"] == "set_loadpoint_plan" and last()["data"]["loadpoint"] == 1,
             "vehicle without SoC: set plan → evcc_intg.set_loadpoint_plan", json.dumps(last()))
     page.locator(in_card("button.plan-btn.delete")).click(); page.wait_for_timeout(300)
-    t.check(last() == exp("evcc_intg", "del_loadpoint_plan", {"loadpoint": 1}),
+    t.check(last() == exp("evcc_intg", "del_loadpoint_plan", {"loadpoint": 1, "config_entry_id": entry}),
             "vehicle without SoC: delete plan → evcc_intg.del_loadpoint_plan", json.dumps(last()))
     page.close()
 
@@ -1302,7 +1305,7 @@ def contracts(browser, port, t):
     open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]},
               set={"select.evcc_openwb_vehicle_name": "null", "binary_sensor.evcc_openwb_plan_active": "on"})
     page.locator(in_card("button.plan-btn.delete")).click(); page.wait_for_timeout(300)
-    t.check(last() == exp("evcc_intg", "del_loadpoint_plan", {"loadpoint": 1}),
+    t.check(last() == exp("evcc_intg", "del_loadpoint_plan", {"loadpoint": 1, "config_entry_id": entry}),
             "guest vehicle: delete plan → evcc_intg.del_loadpoint_plan with the loadpoint index", json.dumps(last()))
     page.close()
 

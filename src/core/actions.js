@@ -66,13 +66,22 @@ export const actions = {
   // drops a call whose `loadpoint`/`energy` is not an integer inside set_plan(),
   // without an error and with an empty response, so a caller that cannot supply
   // both must not call at all instead of reporting a plan that evcc never got.
+  // The services serve every ha-evcc instance; `config_entry_id` names the one
+  // this card shows. Without it ha-evcc picks the instance set up last, so with
+  // two instances a plan could land on the wrong evcc. A version that does not
+  // know the field ignores it (no schema).
+
+  _planService(service, data) {
+    const payload = this._entryId ? { ...data, config_entry_id: this._entryId } : data;
+    return this._hass.callService("evcc_intg", service, payload);
+  },
 
   _setVehiclePlan(vehicle, soc, startdate) {
-    return this._hass.callService("evcc_intg", "set_vehicle_plan", { vehicle, soc, startdate });
+    return this._planService("set_vehicle_plan", { vehicle, soc, startdate });
   },
 
   _setLoadpointPlan(loadpointIndex, energy, startdate) {
-    return this._hass.callService("evcc_intg", "set_loadpoint_plan", {
+    return this._planService("set_loadpoint_plan", {
       loadpoint: Math.round(loadpointIndex),
       energy:    Math.round(energy),
       startdate,
@@ -80,11 +89,11 @@ export const actions = {
   },
 
   _deleteVehiclePlan(vehicle) {
-    return this._hass.callService("evcc_intg", "del_vehicle_plan", { vehicle });
+    return this._planService("del_vehicle_plan", { vehicle });
   },
 
   _deleteLoadpointPlan(loadpointIndex) {
-    return this._hass.callService("evcc_intg", "del_loadpoint_plan", {
+    return this._planService("del_loadpoint_plan", {
       loadpoint: Math.round(loadpointIndex),
     });
   },

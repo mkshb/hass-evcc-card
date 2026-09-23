@@ -440,6 +440,8 @@ Minimalist charge plan view:
 
 > **Vehicles without a state of charge:** the card decides like evcc. A vehicle that reports a SoC and has a known capacity is planned with a target in percent on the vehicle. A guest vehicle, or a vehicle that reports no SoC, is planned on the charge point with an energy target in kWh (1 kWh up to the vehicle's capacity, or 100 kWh when evcc knows none); the live preview then works in kWh as well. Like evcc, the loadpoint then shows the energy charged instead of a SoC, and an energy limit (**Limit**, `limit_energy`) in place of the SoC sliders; `hide_settings: [limit_soc]` hides that limit too.
 
+> **Two ha-evcc instances:** the card names its own instance (`config_entry_id`) in every plan call. ha-evcc registers its plan services once for all instances; a version that does not know the field sends the plan to the instance that was set up last, so with two instances a plan can land on the other evcc until ha-evcc supports it.
+
 <img src="images/plan-dark.png" width="400"> <img src="images/plan-light.png" width="400">
 
 ---
