@@ -47,6 +47,7 @@ const FEATURES = [
   { suffix: "phases_active",       domain: "sensor",        type: "info",          lp: true  },
 
   { suffix: "effective_plan_soc",      domain: "sensor", type: "info", lp: true },
+  { suffix: "plan_energy",             domain: "sensor", type: "info", lp: true },
   { suffix: "effective_plan_time",     domain: "sensor", type: "info", lp: true },
   { suffix: "plan_projected_start",    domain: "sensor", type: "info", lp: true },
   { suffix: "plan_projected_end",      domain: "sensor", type: "info", lp: true },
@@ -1153,8 +1154,9 @@ const evccApi = {
 
   // Debounced plan preview fetch — called after SOC/time/vehicle changes.
   _requestPlanPreview(lpName) {
-    const state = this._planState[lpName];
-    if (!state || !state.soc || !state.time || !this._hasCmd("plan_preview")) return;
+    const state  = this._planState[lpName];
+    const target = this._planTarget(state);
+    if (!target || !state.time || !this._hasCmd("plan_preview")) return;
     const lpIdx = this._lpIndex(lpName);
     if (lpIdx == null) return;
 
@@ -1164,7 +1166,7 @@ const evccApi = {
       const d = new Date(state.time);
       if (isNaN(d.getTime())) return;
       const ts = d.toISOString();
-      const opts = { loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts, settings: this._planSettingsKey(lpName) };
+      const opts = { loadpoint: lpIdx, kind: target.kind, value: target.value, timestamp: ts, settings: this._planSettingsKey(lpName) };
       const cacheKey = this._planPreviewKey(opts);
       // Drop previews for OTHER inputs of this loadpoint (bounds the cache), but
       // keep the current one — refetching what we already have wastes a backend call.
@@ -1489,6 +1491,21 @@ const loadpointView = {
       </div>`;
   },
 
+  // evcc's socBasedCharging (UI uiLoadpoints.ts): an assigned vehicle that
+  // reports a SoC (no "Offline" feature), or any SoC above zero. Otherwise
+  // evcc works in kWh: energy charged, an energy limit, a plan in kWh.
+  // Heating loadpoints keep their temperature view, and without the vehicle
+  // select there is nothing to decide on.
+  _socBasedCharging(ents) {
+    if (!ents.vehicle_name || this._isHeatingLoadpoint(ents)) return true;
+    const vehicleId = stateVal(this._hass, ents.vehicle_name);
+    const known     = !!vehicleId && !["null", "unknown", "unavailable"].includes(vehicleId);
+    const origin    = known ? (this._hass.states[ents.vehicle_name]?.attributes?.vehicle?.originObject ?? {}) : {};
+    const hasSoc    = known && !(origin.features ?? []).includes("Offline");
+    const soc       = ents.vehicle_soc ? parseFloat(stateVal(this._hass, ents.vehicle_soc)) : NaN;
+    return hasSoc || soc > 0;
+  },
+
   _renderVehicleInfo(ents, charging = false, lpName = "") {
     if (!ents.vehicle_soc && !ents.vehicle_name) return "";
     const vehicleAttrs = ents.vehicle_name
@@ -1504,9 +1521,16 @@ const loadpointView = {
 
     if (!ents.vehicle_soc && !validName) return "";
 
-    const soc   = ents.vehicle_soc ? parseFloat(stateVal(this._hass, ents.vehicle_soc)) || 0 : null;
-    const range = ents.vehicle_range
+    // Without a SoC evcc shows the energy charged instead, on a bar that runs up
+    // to the plan or the energy limit (Vehicles/Soc.vue); the SoC markers go.
+    const socBased = this._socBasedCharging(ents);
+    const soc   = socBased && ents.vehicle_soc ? parseFloat(stateVal(this._hass, ents.vehicle_soc)) || 0 : null;
+    const range = socBased && ents.vehicle_range
       ? Math.round(parseFloat(stateVal(this._hass, ents.vehicle_range))) : null;
+    const kwh     = id => { const v = id ? parseFloat(stateVal(this._hass, id)) : NaN; return v > 0 ? v : 0; };
+    const charged = socBased ? null : kwh(ents.charged_energy || ents.session_energy);
+    const energyLimit = kwh(ents.limit_energy);
+    const energyMax   = Math.max(kwh(ents.plan_energy), energyLimit, charged ?? 0);
     const limit  = ents.limit_soc ? parseFloat(stateVal(this._hass, ents.limit_soc))  : null;
     const minSoc = ents.min_soc   ? parseFloat(stateVal(this._hass, ents.min_soc))    : null;
     const fillBg  = soc !== null ? socFillGradient(soc, minSoc ?? 0, limit ?? 100) : "var(--evcc-blue)";
@@ -1548,6 +1572,7 @@ const loadpointView = {
         <div class="soc-label-row">
           ${validName ? `<span class="vehicle-name"${moreInfo(ents.vehicle_name)}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M5,11L6.5,6.5H17.5L19,11M17.5,16A1.5,1.5 0 0,1 16,14.5A1.5,1.5 0 0,1 17.5,13A1.5,1.5 0 0,1 19,14.5A1.5,1.5 0 0,1 17.5,16M6.5,16A1.5,1.5 0 0,1 5,14.5A1.5,1.5 0 0,1 6.5,13A1.5,1.5 0 0,1 8,14.5A1.5,1.5 0 0,1 6.5,16M18.92,6C18.72,5.42 18.16,5 17.5,5H6.5C5.84,5 5.28,5.42 5.08,6L3,12V20A1,1 0 0,0 4,21H5A1,1 0 0,0 6,20V19H18V20A1,1 0 0,0 19,21H20A1,1 0 0,0 21,20V12L18.92,6Z"/></svg> ${escHtml(validName)}</span>` : ""}
           ${soc !== null ? `<span data-live-entity="${ents.vehicle_soc}" data-live-type="soc-pct"${moreInfo(ents.vehicle_soc)}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${escHtml(unitStr(this._hass, ents.vehicle_soc))}</span>` : ""}
+          ${charged !== null ? `<span${moreInfo(ents.charged_energy || ents.session_energy)}>${this._t("charged")} ${fmtNum(charged, 1)} kWh</span>` : ""}
           ${range !== null ? `<span${moreInfo(ents.vehicle_range)}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M11.5 0L9 8H11V16H13V8H15L11.5 0M3 18V20H21V18L11.5 16L3 18Z"/></svg> ${range} km</span>` : ""}
         </div>
         ${soc !== null ? `
@@ -1558,6 +1583,12 @@ const loadpointView = {
                style="width:${soc}%;background:${fillBg}"></div>
           ${minSoc !== null ? `<div class="soc-min-marker"   style="left:${Math.min(minSoc,100)}%"></div>` : ""}
           ${limit  !== null ? `<div class="soc-limit-marker" style="left:${Math.min(limit,100)}%"></div>`  : ""}
+        </div>` : ""}
+        ${charged !== null ? `
+        <div class="soc-track energy-track">
+          <div class="soc-fill ${charging ? 'charging' : ''}"
+               style="width:${energyMax ? Math.min(100, charged / energyMax * 100) : 100}%;background:var(--evcc-blue)"></div>
+          ${energyLimit > 0 && energyLimit < energyMax ? `<div class="soc-limit-marker" style="left:${energyLimit / energyMax * 100}%"></div>` : ""}
         </div>` : ""}
         ${boostChip ? `<div class="boost-activate-row">${boostChip}</div>` : ""}
         ${smartChip ? `<div class="smart-cost-row">${smartChip}</div>` : ""}
@@ -1981,14 +2012,19 @@ const socControl = {
     // Heating loadpoints expose limit/min as a target temperature (°C), not a SoC,
     // so relabel the sliders accordingly (value/unit already come from the entity).
     const heating = this._isHeatingLoadpoint(ents);
-    const SLIDER_FEATURES = [
+    // Without a SoC evcc limits the session by energy instead (LimitEnergySelect,
+    // 0 = none) and has no min SoC to offer; `hide_settings: [limit_soc]` hides
+    // that limit as well.
+    const SLIDER_FEATURES = this._socBasedCharging(ents) ? [
       { key: "limit_soc",   label: this._t(heating ? "targetTemp" : "targetSoc") },
       { key: "min_soc",     label: this._t(heating ? "minTemp"    : "minSoc")    },
+    ] : [
+      { key: "limit_energy", hideKey: "limit_soc", label: this._t("limitEnergy"), zero: this._t("limitEnergyNone") },
     ];
 
     const rows = SLIDER_FEATURES
-      .filter(({ key }) => ents[key] && !this._isSettingHidden(key))
-      .map(({ key, label }) => this._sliderRow(ents[key], label));
+      .filter(({ key, hideKey }) => ents[key] && !this._isSettingHidden(hideKey ?? key))
+      .map(({ key, label, zero }) => this._sliderRow(ents[key], label, zero ?? null));
 
     return rows.length ? `<div class="sliders">${rows.join("")}</div>` : "";
   },
@@ -2612,7 +2648,17 @@ const planningView = {
     const vehicleAttr        = vehicleAttrs.vehicle ?? null;
 
     if (!this._planState[lpName]) {
-      this._planState[lpName] = { soc: null, time: null, vehicle: null };
+      this._planState[lpName] = { soc: null, energy: null, kind: null, time: null, vehicle: null };
+    }
+    // evcc plans a vehicle with a SoC and a capacity in percent, everything
+    // else (guest vehicle, a vehicle without SoC) on the loadpoint in kWh.
+    const kind      = this._planKind(ents);
+    const maxEnergy = this._planMaxEnergy(ents);
+    const planState = this._planState[lpName];
+    if (planState.kind !== kind) { planState.kind = kind; planState.energy = null; }
+    if (kind === "energy" && planState.energy == null) {
+      const planned = ents.plan_energy ? parseFloat(stateVal(this._hass, ents.plan_energy)) : NaN;
+      planState.energy = Math.min(maxEnergy, planned > 0 ? Math.round(planned) : 10);
     }
 
     if (this._planState[lpName].soc == null) {
@@ -2759,13 +2805,19 @@ const planningView = {
                    value="${defaultDt}" data-lp="${escAttr(lpName)}" />
           </div>
           <div class="plan-row">
-            <label>${this._t("targetSoc")}</label>
+            <label>${this._t(kind === "energy" ? "planTargetEnergy" : "targetSoc")}</label>
             <div class="plan-soc-control">
-              <input type="range" class="plan-soc-range"
+              ${kind === "energy" ? `
+              <input type="range" class="plan-soc-range" data-kind="energy"
+                     min="1" max="${maxEnergy}" step="1" value="${planState.energy}"
+                     data-lp="${escAttr(lpName)}" />
+              <button type="button" class="slider-val plan-soc-val" data-plan-soc-edit
+                      title="${this._t("sliderEditHint")}">${planState.energy} kWh</button>` : `
+              <input type="range" class="plan-soc-range" data-kind="soc"
                      min="20" max="100" step="5" value="${defaultSoc}"
                      data-lp="${escAttr(lpName)}" />
               <button type="button" class="slider-val plan-soc-val" data-plan-soc-edit
-                      title="${this._t("sliderEditHint")}">${defaultSoc} %</button>
+                      title="${this._t("sliderEditHint")}">${defaultSoc} %</button>`}
             </div>
           </div>
           ${contHtml}
@@ -2782,11 +2834,42 @@ const planningView = {
     `;
   },
 
+  // "soc" or "energy", the way evcc decides it (socBasedPlanning in core and in
+  // the UI's uiLoadpoints.ts): an assigned vehicle that reports a SoC (no
+  // "Offline" feature, or a SoC above zero) and has a capacity is planned in
+  // percent, anything else on the loadpoint in kWh. The static preview refuses
+  // the other kind, so this has to match evcc exactly.
+  _planKind(ents) {
+    const vehicleId = ents.vehicle_name ? stateVal(this._hass, ents.vehicle_name) : null;
+    const vehicle   = vehicleId && vehicleId !== "null"
+      ? (this._hass.states[ents.vehicle_name]?.attributes?.vehicle ?? null) : null;
+    const capacity  = parseFloat(vehicle?.capacity ?? vehicle?.originObject?.capacity ?? 0) || 0;
+    return this._socBasedCharging(ents) && capacity > 0 ? "soc" : "energy";
+  },
+
+  // Upper end of the kWh target: the vehicle's capacity when evcc knows it, as
+  // in evcc's own plan dialog, else 100 kWh.
+  _planMaxEnergy(ents) {
+    const vehicleId = ents.vehicle_name ? stateVal(this._hass, ents.vehicle_name) : null;
+    const vehicle   = vehicleId && vehicleId !== "null"
+      ? (this._hass.states[ents.vehicle_name]?.attributes?.vehicle ?? null) : null;
+    const capacity  = parseFloat(vehicle?.capacity ?? vehicle?.originObject?.capacity ?? 0) || 0;
+    return capacity > 0 ? Math.ceil(capacity) : 100;
+  },
+
+  // The target the plan block collects: { kind, value } or null while unset.
+  _planTarget(state) {
+    if (!state) return null;
+    const value = state.kind === "energy" ? state.energy : state.soc;
+    return value ? { kind: state.kind === "energy" ? "energy" : "soc", value } : null;
+  },
+
   // Plan preview: shows charging slot chart + summary when SOC and time are set.
   _renderPlanPreview(lpName) {
     if (!this._hasCmd("plan_preview")) return "";
     const state = this._planState[lpName];
-    if (!state || !state.soc || !state.time) return "";
+    const target = this._planTarget(state);
+    if (!target || !state.time) return "";
     const lpIdx = this._lpIndex(lpName);
     if (lpIdx == null) return "";
 
@@ -2795,7 +2878,7 @@ const planningView = {
     const ts = d.toISOString();
     // Cache-only read: serve the cached preview, prime one fetch if absent.
     // Never refetches on its own → an idle plan card makes zero backend calls.
-    const res = this._wsPlanPreviewCached({ loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts,
+    const res = this._wsPlanPreviewCached({ loadpoint: lpIdx, kind: target.kind, value: target.value, timestamp: ts,
                                             settings: this._planSettingsKey(lpName) });
     if (!res) {
       return `<div class="plan-preview"><div class="plan-preview-loading">${this._t("planPreviewLoading")}</div></div>`;
@@ -3129,10 +3212,11 @@ const planningView = {
       });
       input.addEventListener("input", () => {
         const lpName = input.dataset.lp;
+        const energy = input.dataset.kind === "energy";
         const val    = parseInt(input.value, 10);
-        if (this._planState[lpName]) this._planState[lpName].soc = val;
+        if (this._planState[lpName]) this._planState[lpName][energy ? "energy" : "soc"] = val;
         const span = input.nextElementSibling;
-        if (span) span.textContent = `${val} %`;
+        if (span) span.textContent = `${val} ${energy ? "kWh" : "%"}`;
       });
       input.addEventListener("pointerup", () => {
         this._isDragging = false;
@@ -3160,11 +3244,12 @@ const planningView = {
         if (btn.classList.contains("editing")) { this._closeSliderEdit(); return; }
         const input  = btn.previousElementSibling;
         const lpName = input?.dataset.lp;
+        const energy = input?.dataset.kind === "energy";
         this._openSliderEdit(btn, {
-          unit:  "%",
+          unit:  energy ? "kWh" : "%",
           value: parseInt(input?.value, 10),
           onApply: (val) => {
-            if (this._planState[lpName]) this._planState[lpName].soc = val;
+            if (this._planState[lpName]) this._planState[lpName][energy ? "energy" : "soc"] = val;
             this._requestPlanPreview(lpName);
           },
         });
@@ -3200,7 +3285,7 @@ const planningView = {
       btn.addEventListener("click", () => {
         const lpName  = btn.dataset.lp;
         const state   = this._planState[lpName] || {};
-        const soc     = state.soc || 80;
+        const target  = this._planTarget(state);
         const dtValue = state.time || "";
 
         if (!dtValue) { alert(this._t("noTimeAlert")); return; }
@@ -3231,15 +3316,19 @@ const planningView = {
         const startdate = `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())} ` +
                           `${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`;
 
-        // Only a vehicle evcc knows can be planned from here: its plan is the SoC
-        // this block collects. A loadpoint plan is an energy target in kWh, which
-        // the card does not ask for yet, and ha-evcc would accept a call without
-        // one and do nothing, leaving a plan badge behind for a plan that does
-        // not exist. So say it instead of pretending.
+        // A SoC target goes to the vehicle, a kWh target to the loadpoint by its
+        // evcc index. ha-evcc takes a call it cannot use without an error and
+        // does nothing (set_plan() drops a loadpoint or energy that is not an
+        // integer), so a missing index or vehicle is said here instead of
+        // leaving a plan badge behind for a plan evcc never received.
+        const lpIdx = this._lpIndex(lpName);
         const savePlan = async () => {
-          if (!vehicleDbId) { showError(`❌ ${this._t("planNeedsVehicle")}`); return; }
+          if (!target) return;
+          if (target.kind === "soc" && !vehicleDbId) { showError(`❌ ${this._t("planNoTarget")}`); return; }
+          if (target.kind === "energy" && lpIdx == null) { showError(`❌ ${this._t("planNoTarget")}`); return; }
           try {
-            await this._setVehiclePlan(vehicleDbId, soc, startdate);
+            if (target.kind === "soc") await this._setVehiclePlan(vehicleDbId, target.value, startdate);
+            else                       await this._setLoadpointPlan(lpIdx, target.value, startdate);
             window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } }));
             showSuccess();
           } catch(e) {
@@ -3254,7 +3343,8 @@ const planningView = {
       btn.addEventListener("click", () => {
         const lpName      = btn.dataset.lp;
         const planSt      = this._planState[lpName] || {};
-        const vehicleDbId = (planSt.vehicle && planSt.vehicle !== "null") ? planSt.vehicle : null;
+        // A kWh plan lives on the loadpoint, a SoC plan on the vehicle.
+        const vehicleDbId = planSt.kind !== "energy" && planSt.vehicle && planSt.vehicle !== "null" ? planSt.vehicle : null;
         const block       = btn.closest(".plan-block");
         const resetBadge  = () => {
           const badge = block?.querySelector(".plan-badge");

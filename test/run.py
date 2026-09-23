@@ -1209,23 +1209,48 @@ def contracts(browser, port, t):
     t.check(last() == exp("evcc_intg", "del_vehicle_plan", {"vehicle": "db:18"}), "delete plan → evcc_intg.del_vehicle_plan", json.dumps(last()))
     page.close()
 
-    # A guest vehicle (vehicle select on "null") has no plan of its own, and a
-    # loadpoint plan is an energy target in kWh, which this block does not collect.
-    # ha-evcc takes such a call and does nothing with it (set_plan() drops a
-    # loadpoint or energy that is not an integer, without an error), so the card
-    # must refuse it rather than report a plan that evcc never received.
+    # A guest vehicle (vehicle select on "null") has no plan of its own: evcc plans
+    # it on the loadpoint with an energy target in kWh. ha-evcc's set_plan() only
+    # takes integers for the loadpoint index and the energy and drops anything
+    # else without an error, so the payload has to be exactly this.
     page = new_page(browser, 480, 1800)
     open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]}, set={"select.evcc_openwb_vehicle_name": "null"})
+    rng = page.evaluate("""(() => { const r = window.__card.shadowRoot.querySelector('input.plan-soc-range');
+        return r ? [r.dataset.kind, r.min, r.max, r.step].join(' ') : null; })()""")
+    t.check(rng == "energy 1 100 1", "guest vehicle: the plan target is in kWh, 1 to 100 in steps of 1", repr(rng))
     page.locator(in_card("button.plan-soc-val")).click()
-    page.locator(in_card(".slider-edit-input")).fill("80"); page.locator(in_card("[data-edit-ok]")).click()
+    page.locator(in_card(".slider-edit-input")).fill("25"); page.locator(in_card("[data-edit-ok]")).click()
     page.locator(in_card("input.plan-time-input")).fill("2026-09-19T07:00"); page.wait_for_timeout(300)
-    before = len(svc(page))
+    label = page.locator(in_card("button.plan-soc-val")).inner_text().strip()
+    page.wait_for_timeout(800)   # 500 ms preview debounce
+    previews = [c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/plan_preview"]
+    t.check(bool(previews) and previews[-1]["kind"] == "energy" and str(previews[-1]["value"]) == "25",
+            "guest vehicle: the plan preview asks for kind energy with the kWh target", json.dumps(previews[-1:]))
     page.locator(in_card("button.plan-btn.save")).click(); page.wait_for_timeout(400)
-    err   = page.locator(in_card(".plan-error")).inner_text() if page.locator(in_card(".plan-error")).count() else ""
     badge = page.locator(in_card(".plan-badge.planned")).count()
-    t.check(len(svc(page)) == before and "SoC" in err and badge == 0,
-            "guest vehicle: set plan → no service call, error instead of a plan badge",
-            f"calls+{len(svc(page)) - before} err={err!r} badge={badge}")
+    t.check(last() == exp("evcc_intg", "set_loadpoint_plan", {"loadpoint": 1, "energy": 25, "startdate": "2026-09-19 07:00:00"})
+            and label == "25 kWh" and badge == 1,
+            "guest vehicle: set plan → evcc_intg.set_loadpoint_plan {loadpoint, energy, startdate}",
+            f"{json.dumps(last())} label={label!r} badge={badge}")
+    page.close()
+
+    # A vehicle that reports no SoC (evcc feature "Offline") is planned in kWh as
+    # well, up to its capacity, and its plan lives on the loadpoint too.
+    offline = {"select.evcc_openwb_vehicle_name": {"vehicle": {"capacity": 69, "evccName": "db:18", "id": "ex30", "name": "EX30",
+               "originObject": {"capacity": 69, "features": ["Offline"], "title": "EX30"}}}}
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]}, attrs=offline,
+              set={"sensor.evcc_openwb_vehicle_soc": "0", "binary_sensor.evcc_openwb_plan_active": "on"})
+    rng = page.evaluate("""(() => { const r = window.__card.shadowRoot.querySelector('input.plan-soc-range');
+        return r ? [r.dataset.kind, r.max].join(' ') : null; })()""")
+    t.check(rng == "energy 69", "vehicle without SoC: the plan target is in kWh up to its capacity", repr(rng))
+    page.locator(in_card("input.plan-time-input")).fill("2026-09-19T07:00"); page.wait_for_timeout(300)
+    page.locator(in_card("button.plan-btn.save")).click(); page.wait_for_timeout(400)
+    t.check(last()["service"] == "set_loadpoint_plan" and last()["data"]["loadpoint"] == 1,
+            "vehicle without SoC: set plan → evcc_intg.set_loadpoint_plan", json.dumps(last()))
+    page.locator(in_card("button.plan-btn.delete")).click(); page.wait_for_timeout(300)
+    t.check(last() == exp("evcc_intg", "del_loadpoint_plan", {"loadpoint": 1}),
+            "vehicle without SoC: delete plan → evcc_intg.del_loadpoint_plan", json.dumps(last()))
     page.close()
 
     # ha-evcc's "null" is no vehicle assigned: with a car plugged in that is evcc's
@@ -1236,9 +1261,29 @@ def contracts(browser, port, t):
     name = lambda page: page.evaluate("""(() => { const n = window.__card.shadowRoot.querySelector('.vehicle-name');
         return n ? n.textContent.trim() : null; })()""")
     page = new_page(browser, 480, 1800)
-    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]}, set={"select.evcc_openwb_vehicle_name": "null"})
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]},
+              set={"select.evcc_openwb_vehicle_name": "null", "sensor.evcc_openwb_vehicle_soc": "0"})
     t.check(name(page) == "Gastfahrzeug" and picked(page) == "null=Gastfahrzeug",
             "guest vehicle: header and vehicle select read Gastfahrzeug", f"{name(page)!r} {picked(page)!r}")
+    # Without a SoC evcc shows the energy charged and an energy limit (Vehicles/
+    # Soc.vue, LimitEnergySelect): no SoC, no SoC markers, no SoC sliders.
+    head = page.evaluate("""(() => { const r = window.__card.shadowRoot;
+        return { row: r.querySelector('.soc-label-row')?.textContent.replace(/\\s+/g, ' ').trim(),
+                 socMarkers: r.querySelectorAll('.soc-min-marker').length,
+                 energyBar: r.querySelectorAll('.energy-track').length,
+                 sliders: [...r.querySelectorAll('.sliders .slider-row')].map(x => x.querySelector('label').textContent.trim()
+                          + '=' + x.querySelector('.slider-val').textContent.trim()) }; })()""")
+    t.check("%" not in head["row"] and "Geladen 2.8 kWh" in head["row"] and head["socMarkers"] == 0 and head["energyBar"] == 1
+            and head["sliders"] == ["Ladelimit=keins"],
+            "guest vehicle: energy charged instead of a SoC, the energy limit instead of the SoC sliders", json.dumps(head))
+    page.screenshot(path=str(OUT / "guest-vehicle.png"))
+    page.close()
+    # a SoC above zero (a charger that reads it) keeps the SoC view, as in evcc
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]}, set={"select.evcc_openwb_vehicle_name": "null"})
+    row = page.evaluate("window.__card.shadowRoot.querySelector('.soc-label-row')?.textContent.replace(/\\s+/g, ' ').trim()")
+    t.check("56 %" in (row or "") and page.locator(in_card(".energy-track")).count() == 0,
+            "guest vehicle with a SoC from the charger: the SoC view stays", repr(row))
     page.close()
     page = new_page(browser, 480, 1800)
     open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]},

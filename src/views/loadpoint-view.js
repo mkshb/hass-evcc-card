@@ -1,6 +1,6 @@
 import { SMART_MODE_ICON, CHARGE_MODES } from "../core/constants.js";
 import { stateVal, attr, unitStr, isOn } from "../utils/state.js";
-import { fmtRemainingDuration, fmtCountdownFromISO, fmtCountdownFromTimestamp, socFillGradient, socTrackBg } from "../utils/format.js";
+import { fmtNum, fmtRemainingDuration, fmtCountdownFromISO, fmtCountdownFromTimestamp, socFillGradient, socTrackBg } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
 
 // A value that maps onto one ha-evcc entity opens that entity's more-info
@@ -313,6 +313,21 @@ export const loadpointView = {
       </div>`;
   },
 
+  // evcc's socBasedCharging (UI uiLoadpoints.ts): an assigned vehicle that
+  // reports a SoC (no "Offline" feature), or any SoC above zero. Otherwise
+  // evcc works in kWh: energy charged, an energy limit, a plan in kWh.
+  // Heating loadpoints keep their temperature view, and without the vehicle
+  // select there is nothing to decide on.
+  _socBasedCharging(ents) {
+    if (!ents.vehicle_name || this._isHeatingLoadpoint(ents)) return true;
+    const vehicleId = stateVal(this._hass, ents.vehicle_name);
+    const known     = !!vehicleId && !["null", "unknown", "unavailable"].includes(vehicleId);
+    const origin    = known ? (this._hass.states[ents.vehicle_name]?.attributes?.vehicle?.originObject ?? {}) : {};
+    const hasSoc    = known && !(origin.features ?? []).includes("Offline");
+    const soc       = ents.vehicle_soc ? parseFloat(stateVal(this._hass, ents.vehicle_soc)) : NaN;
+    return hasSoc || soc > 0;
+  },
+
   _renderVehicleInfo(ents, charging = false, lpName = "") {
     if (!ents.vehicle_soc && !ents.vehicle_name) return "";
     const vehicleAttrs = ents.vehicle_name
@@ -328,9 +343,16 @@ export const loadpointView = {
 
     if (!ents.vehicle_soc && !validName) return "";
 
-    const soc   = ents.vehicle_soc ? parseFloat(stateVal(this._hass, ents.vehicle_soc)) || 0 : null;
-    const range = ents.vehicle_range
+    // Without a SoC evcc shows the energy charged instead, on a bar that runs up
+    // to the plan or the energy limit (Vehicles/Soc.vue); the SoC markers go.
+    const socBased = this._socBasedCharging(ents);
+    const soc   = socBased && ents.vehicle_soc ? parseFloat(stateVal(this._hass, ents.vehicle_soc)) || 0 : null;
+    const range = socBased && ents.vehicle_range
       ? Math.round(parseFloat(stateVal(this._hass, ents.vehicle_range))) : null;
+    const kwh     = id => { const v = id ? parseFloat(stateVal(this._hass, id)) : NaN; return v > 0 ? v : 0; };
+    const charged = socBased ? null : kwh(ents.charged_energy || ents.session_energy);
+    const energyLimit = kwh(ents.limit_energy);
+    const energyMax   = Math.max(kwh(ents.plan_energy), energyLimit, charged ?? 0);
     const limit  = ents.limit_soc ? parseFloat(stateVal(this._hass, ents.limit_soc))  : null;
     const minSoc = ents.min_soc   ? parseFloat(stateVal(this._hass, ents.min_soc))    : null;
     const fillBg  = soc !== null ? socFillGradient(soc, minSoc ?? 0, limit ?? 100) : "var(--evcc-blue)";
@@ -372,6 +394,7 @@ export const loadpointView = {
         <div class="soc-label-row">
           ${validName ? `<span class="vehicle-name"${moreInfo(ents.vehicle_name)}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M5,11L6.5,6.5H17.5L19,11M17.5,16A1.5,1.5 0 0,1 16,14.5A1.5,1.5 0 0,1 17.5,13A1.5,1.5 0 0,1 19,14.5A1.5,1.5 0 0,1 17.5,16M6.5,16A1.5,1.5 0 0,1 5,14.5A1.5,1.5 0 0,1 6.5,13A1.5,1.5 0 0,1 8,14.5A1.5,1.5 0 0,1 6.5,16M18.92,6C18.72,5.42 18.16,5 17.5,5H6.5C5.84,5 5.28,5.42 5.08,6L3,12V20A1,1 0 0,0 4,21H5A1,1 0 0,0 6,20V19H18V20A1,1 0 0,0 19,21H20A1,1 0 0,0 21,20V12L18.92,6Z"/></svg> ${escHtml(validName)}</span>` : ""}
           ${soc !== null ? `<span data-live-entity="${ents.vehicle_soc}" data-live-type="soc-pct"${moreInfo(ents.vehicle_soc)}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg> ${Math.round(soc)} ${escHtml(unitStr(this._hass, ents.vehicle_soc))}</span>` : ""}
+          ${charged !== null ? `<span${moreInfo(ents.charged_energy || ents.session_energy)}>${this._t("charged")} ${fmtNum(charged, 1)} kWh</span>` : ""}
           ${range !== null ? `<span${moreInfo(ents.vehicle_range)}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M11.5 0L9 8H11V16H13V8H15L11.5 0M3 18V20H21V18L11.5 16L3 18Z"/></svg> ${range} km</span>` : ""}
         </div>
         ${soc !== null ? `
@@ -382,6 +405,12 @@ export const loadpointView = {
                style="width:${soc}%;background:${fillBg}"></div>
           ${minSoc !== null ? `<div class="soc-min-marker"   style="left:${Math.min(minSoc,100)}%"></div>` : ""}
           ${limit  !== null ? `<div class="soc-limit-marker" style="left:${Math.min(limit,100)}%"></div>`  : ""}
+        </div>` : ""}
+        ${charged !== null ? `
+        <div class="soc-track energy-track">
+          <div class="soc-fill ${charging ? 'charging' : ''}"
+               style="width:${energyMax ? Math.min(100, charged / energyMax * 100) : 100}%;background:var(--evcc-blue)"></div>
+          ${energyLimit > 0 && energyLimit < energyMax ? `<div class="soc-limit-marker" style="left:${energyLimit / energyMax * 100}%"></div>` : ""}
         </div>` : ""}
         ${boostChip ? `<div class="boost-activate-row">${boostChip}</div>` : ""}
         ${smartChip ? `<div class="smart-cost-row">${smartChip}</div>` : ""}
