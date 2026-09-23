@@ -25,7 +25,10 @@ export const planningView = {
 
     const vehicleEntityId    = ents.vehicle_name || null;
     const vehicleAttrs       = vehicleEntityId ? (this._hass.states[vehicleEntityId]?.attributes ?? {}) : {};
-    const allOptions         = (vehicleAttrs.options ?? []).filter(o => o !== "null");
+    // "null" is ha-evcc's "no vehicle assigned": the guest vehicle while a car is
+    // plugged in, no vehicle otherwise (evcc's Vehicles/Title.vue).
+    const allOptions         = vehicleAttrs.options ?? [];
+    const connected          = !!ents.connected && isOn(this._hass, ents.connected);
     const vehicleAttr        = vehicleAttrs.vehicle ?? null;
 
     if (!this._planState[lpName]) {
@@ -68,6 +71,10 @@ export const planningView = {
 
     const dbIdToName = {};
     allOptions.forEach(id => {
+      if (id === "null") {
+        dbIdToName[id] = this._t(connected ? "vehicleGuest" : "vehicleNone");
+        return;
+      }
       if (id === currentVehicleId && vehicleAttr?.name && vehicleAttr.name !== "null") {
         dbIdToName[id] = vehicleAttr.name;
         return;
@@ -77,7 +84,7 @@ export const planningView = {
       dbIdToName[id] = translated || id;
     });
 
-    if (currentVehicleId && currentVehicleId !== "null") {
+    if (allOptions.includes(currentVehicleId)) {
       if (this._planState[lpName].vehicle && this._planState[lpName].vehicle !== currentVehicleId) {
         this._planState[lpName].soc  = null;
         this._planState[lpName].time = null;
@@ -86,7 +93,7 @@ export const planningView = {
     }
     const defaultVehicle = this._planState[lpName].vehicle;
 
-    const vehicleSelectHtml = allOptions.length > 0 ? `
+    const vehicleSelectHtml = allOptions.some(id => id !== "null") ? `
       <div class="plan-row">
         <label>${this._t("vehicle")}</label>
         <select class="plan-vehicle-select" data-lp="${escAttr(lpName)}" data-entity="${vehicleEntityId ?? ""}">

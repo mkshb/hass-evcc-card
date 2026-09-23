@@ -36,6 +36,8 @@
   "statistics": "Statistiques",
   "homeBattery": "Batterie domestique",
   "vehicle": "Véhicule",
+  "vehicleGuest": "Véhicule invité",
+  "vehicleNone": "Pas de véhicule",
   "finishBy": "Terminer avant",
   "setPlan": "💾 Définir le plan",
   "deletePlan": "🗑 Supprimer le plan",

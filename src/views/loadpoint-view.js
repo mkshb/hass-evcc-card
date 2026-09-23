@@ -317,8 +317,14 @@ export const loadpointView = {
     if (!ents.vehicle_soc && !ents.vehicle_name) return "";
     const vehicleAttrs = ents.vehicle_name
       ? (this._hass.states[ents.vehicle_name]?.attributes ?? {}) : {};
-    const vehicleName  = vehicleAttrs.vehicle?.name || null;
-    const validName    = vehicleName && vehicleName !== "null" ? vehicleName : null;
+    // No vehicle assigned ("null") while a car is plugged in is evcc's guest
+    // vehicle, and evcc names it so (Vehicles/Title.vue). A vehicle attribute
+    // left over from before does not name it.
+    const unassigned   = !!ents.vehicle_name && stateVal(this._hass, ents.vehicle_name) === "null";
+    const vehicleName  = unassigned ? null : vehicleAttrs.vehicle?.name || null;
+    const guest        = unassigned && !!ents.connected && isOn(this._hass, ents.connected);
+    const validName    = vehicleName && vehicleName !== "null" ? vehicleName
+                       : guest ? this._t("vehicleGuest") : null;
 
     if (!ents.vehicle_soc && !validName) return "";
 

@@ -36,6 +36,8 @@
   "statistics": "Statistike",
   "homeBattery": "Kućna baterija",
   "vehicle": "Vozilo",
+  "vehicleGuest": "Gost vozilo",
+  "vehicleNone": "Nema vozila",
   "finishBy": "Završiti do",
   "setPlan": "💾 Postavi plan",
   "deletePlan": "🗑 Obriši plan",

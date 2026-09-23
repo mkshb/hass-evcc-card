@@ -426,7 +426,7 @@ The selected tab is remembered per charge point across re-renders.
 
 Minimalist charge plan view:
 
-- Vehicle selector
+- Vehicle selector, including evcc's **Guest vehicle** (no vehicle assigned while a car is plugged in; **No vehicle** when nothing is plugged in). The loadpoint header names the guest vehicle as well
 - Target time picker
 - Target SoC slider (tap the value to type it, see [Slider settings](#slider-settings))
 - **Live preview** - as soon as a target SoC and time are set, a chart previews the planned charging window over the upcoming tariff/forecast, with the expected duration, charging power and the average price or CO₂ of the plan (ha-evcc 2026.6.x+). It updates while you drag and is debounced and cached so it never floods evcc

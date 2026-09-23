@@ -1187,6 +1187,9 @@ def contracts(browser, port, t):
     page.locator(in_card("select.plan-vehicle-select")).select_option("db:38"); page.wait_for_timeout(400)
     t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_openwb_vehicle_name", "option": "db:38"}),
             "vehicle select → select.select_option vehicle_name=db:38", json.dumps(last()))
+    page.locator(in_card("select.plan-vehicle-select")).select_option("null"); page.wait_for_timeout(400)
+    t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_openwb_vehicle_name", "option": "null"}),
+            "vehicle select: guest vehicle → select.select_option vehicle_name=null", json.dumps(last()))
     page.locator(in_card("select.plan-vehicle-select")).select_option("db:18"); page.wait_for_timeout(400)
 
     # plan save: vehicle db:18, soc via panel, time via the datetime-local input
@@ -1223,6 +1226,29 @@ def contracts(browser, port, t):
     t.check(len(svc(page)) == before and "SoC" in err and badge == 0,
             "guest vehicle: set plan → no service call, error instead of a plan badge",
             f"calls+{len(svc(page)) - before} err={err!r} badge={badge}")
+    page.close()
+
+    # ha-evcc's "null" is no vehicle assigned: with a car plugged in that is evcc's
+    # guest vehicle, named so in the header and picked in the vehicle select;
+    # unplugged it reads "no vehicle" and the header carries no name.
+    picked = lambda page: page.evaluate("""(() => { const s = window.__card.shadowRoot.querySelector('select.plan-vehicle-select');
+        return s ? s.value + '=' + s.selectedOptions[0].textContent.trim() : null; })()""")
+    name = lambda page: page.evaluate("""(() => { const n = window.__card.shadowRoot.querySelector('.vehicle-name');
+        return n ? n.textContent.trim() : null; })()""")
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]}, set={"select.evcc_openwb_vehicle_name": "null"})
+    t.check(name(page) == "Gastfahrzeug" and picked(page) == "null=Gastfahrzeug",
+            "guest vehicle: header and vehicle select read Gastfahrzeug", f"{name(page)!r} {picked(page)!r}")
+    page.close()
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]},
+              set={"select.evcc_openwb_vehicle_name": "null", "binary_sensor.evcc_openwb_connected": "off"})
+    t.check(picked(page) == "null=Kein Fahrzeug", "no car plugged in: the vehicle select reads Kein Fahrzeug", repr(picked(page)))
+    page.close()
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]},
+              set={"select.evcc_openwb_vehicle_name": "null", "binary_sensor.evcc_openwb_connected": "off"})
+    t.check(name(page) is None, "no car plugged in: no vehicle name in the header", repr(name(page)))
     page.close()
 
     # Deleting needs no kWh target, only the 1-based evcc loadpoint index, which the
