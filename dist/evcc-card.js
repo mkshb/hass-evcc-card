@@ -742,6 +742,22 @@ function evccDate(v) {
   return null;
 }
 
+// A duration in seconds as the card shows it everywhere: "41 min", "21 h 1 min",
+// "2 d 3 h". Seconds only below a minute, a zero part is left out ("1 h").
+// Empty for a value that is not a non-negative number.
+function fmtDuration(seconds) {
+  const sec = seconds == null || seconds === "" ? NaN : Number(seconds);
+  if (!Number.isFinite(sec) || sec < 0) return "";
+  if (sec < 60) return `${Math.round(sec)} s`;
+  const totalMin = Math.round(sec / 60);
+  const d = Math.floor(totalMin / 1440);
+  const h = Math.floor((totalMin % 1440) / 60);
+  const m = totalMin % 60;
+  if (d > 0) return h > 0 ? `${d} d ${h} h` : `${d} d`;
+  if (h > 0) return m > 0 ? `${h} h ${m} min` : `${h} h`;
+  return `${m} min`;
+}
+
 function fmtRemainingDuration(hass, entityId) {
   if (!entityId || !hass) return "";
   const raw = parseFloat(stateVal(hass, entityId));
@@ -750,11 +766,8 @@ function fmtRemainingDuration(hass, entityId) {
   const seconds = unit.startsWith("min") ? raw * 60
                 : unit.startsWith("h")   ? raw * 3600
                                          : raw;
-  const totalMin = Math.round(seconds / 60);
-  if (totalMin <= 0) return "";
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return h > 0 ? `${h}h ${m}min` : `${m}min`;
+  if (Math.round(seconds / 60) <= 0) return "";
+  return fmtDuration(seconds);
 }
 
 function fmtCountdownFromISO(iso) {
@@ -2923,11 +2936,8 @@ const planningView = {
   },
 
   _renderPlanPreviewSummary(preview, unit) {
-    const dur = preview.duration ?? 0;
-    const m = Math.floor(dur / 60);
-    const s = dur % 60;
-    const durStr = `${m}:${String(s).padStart(2, "0")} min`;
-    const powerKw = ((preview.power ?? 0) / 1000).toFixed(1).replace(".", ",");
+    const durStr  = fmtDuration(preview.duration ?? 0);
+    const powerKw = fmtNum((preview.power ?? 0) / 1000, 1);
 
     // Average cost/emission from plan slots
     const planSlots = preview.plan || [];

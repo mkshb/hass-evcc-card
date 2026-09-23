@@ -774,6 +774,9 @@ def interactions(browser, port, t):
             "plan target change requests plan_preview {loadpoint, kind, value, timestamp}", json.dumps(calls[-1:]))
     bars = page.locator(in_card(".plan-preview svg rect")).count()
     t.check(bars > 0 and page.locator(in_card(".plan-preview-value")).count() >= 2, "plan preview chart + duration/cost rendered", f"{bars} bars")
+    # the fixture's 5477 s at 11000 W, in hours and minutes rather than m:ss
+    dur = page.locator(in_card(".plan-preview-left .plan-preview-value")).inner_text().strip()
+    t.check(dur == "1 h 31 min @ 11 kW", "plan preview duration reads in hours and minutes, no m:ss", dur)
     page.locator("#host").screenshot(path=str(OUT / "plan-preview.png"))
     # evcc computes the preview with the vehicle's current precondition, which
     # the request does not carry. A changed setting reported by HA has to fetch

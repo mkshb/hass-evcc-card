@@ -1,6 +1,6 @@
 import { discoverEntities } from "../core/entity-discovery.js";
 import { stateVal, isOn } from "../utils/state.js";
-import { evccDate } from "../utils/format.js";
+import { evccDate, fmtDuration, fmtNum } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
 
 // Charge plan block with preview chart, plan mode and repeating plans. Methods are mixed into EvccCard.prototype.
@@ -362,11 +362,8 @@ export const planningView = {
   },
 
   _renderPlanPreviewSummary(preview, unit) {
-    const dur = preview.duration ?? 0;
-    const m = Math.floor(dur / 60);
-    const s = dur % 60;
-    const durStr = `${m}:${String(s).padStart(2, "0")} min`;
-    const powerKw = ((preview.power ?? 0) / 1000).toFixed(1).replace(".", ",");
+    const durStr  = fmtDuration(preview.duration ?? 0);
+    const powerKw = fmtNum((preview.power ?? 0) / 1000, 1);
 
     // Average cost/emission from plan slots
     const planSlots = preview.plan || [];

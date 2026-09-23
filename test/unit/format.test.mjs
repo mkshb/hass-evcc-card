@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  stepDecimals, fmtNum, evccDate, fmtRemainingDuration,
+  stepDecimals, fmtNum, evccDate, fmtDuration, fmtRemainingDuration,
   fmtCountdownFromISO, fmtCountdownFromTimestamp, socFillGradient, socTrackBg,
 } from "../../src/utils/format.js";
 
@@ -77,14 +77,35 @@ test("evccDate returns null instead of an Invalid Date", () => {
   }
 });
 
+// --- fmtDuration -------------------------------------------------------------
+
+test("fmtDuration names the largest units and drops the seconds above a minute", () => {
+  assert.equal(fmtDuration(0), "0 s");
+  assert.equal(fmtDuration(59), "59 s");
+  assert.equal(fmtDuration(41 * 60), "41 min");
+  assert.equal(fmtDuration(41 * 60 + 29), "41 min", "seconds round to the minute");
+  assert.equal(fmtDuration(60 * 60), "1 h", "a zero part is left out");
+  assert.equal(fmtDuration(21 * 3600 + 60), "21 h 1 min");
+  assert.equal(fmtDuration(75684), "21 h 1 min", "the demo preview: 1261:24 min");
+  assert.equal(fmtDuration(26 * 3600), "1 d 2 h");
+  assert.equal(fmtDuration(2 * 86400 + 3 * 3600 + 40 * 60), "2 d 3 h", "minutes go above a day");
+  assert.equal(fmtDuration(7 * 86400), "7 d");
+});
+
+test("fmtDuration stays empty for what is not a duration", () => {
+  for (const bad of [-1, NaN, null, undefined, "abc", Infinity]) {
+    assert.equal(fmtDuration(bad), "", String(bad));
+  }
+});
+
 // --- fmtRemainingDuration ----------------------------------------------------
 
 test("fmtRemainingDuration converts by the entity's unit", () => {
-  assert.equal(fmtRemainingDuration(hassWith(90, "min"), "sensor.x"), "1h 30min");
-  assert.equal(fmtRemainingDuration(hassWith(45, "min"), "sensor.x"), "45min");
-  assert.equal(fmtRemainingDuration(hassWith(1.5, "h"), "sensor.x"), "1h 30min");
-  assert.equal(fmtRemainingDuration(hassWith(3600, "s"), "sensor.x"), "1h 0min");
-  assert.equal(fmtRemainingDuration(hassWith(600, null), "sensor.x"), "10min", "no unit means seconds");
+  assert.equal(fmtRemainingDuration(hassWith(90, "min"), "sensor.x"), "1 h 30 min");
+  assert.equal(fmtRemainingDuration(hassWith(45, "min"), "sensor.x"), "45 min");
+  assert.equal(fmtRemainingDuration(hassWith(1.5, "h"), "sensor.x"), "1 h 30 min");
+  assert.equal(fmtRemainingDuration(hassWith(3600, "s"), "sensor.x"), "1 h");
+  assert.equal(fmtRemainingDuration(hassWith(600, null), "sensor.x"), "10 min", "no unit means seconds");
 });
 
 test("fmtRemainingDuration stays empty for nothing worth showing", () => {
