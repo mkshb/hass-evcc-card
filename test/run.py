@@ -1496,14 +1496,14 @@ def discovery(browser, port, t):
             "heating loadpoint: temperature label, no charge plan block", str(labels))
     # evcc labels a continuous device Normal / Smart / Boost (chargeModeLabel.ts)
     mode_labels = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.mode-btn')].map(b => b.dataset.value + '=' + b.querySelector('.mode-label').textContent.trim())")
-    t.check(mode_labels == ["off=Normal", "smart=Intelligent", "now=Boost"],
+    t.check(mode_labels == ["off=Normal", "smart=Smart", "now=Boost"],
             "heating loadpoint: the modes read Normal / Smart / Boost", str(mode_labels))
     page.close()
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
     mode_labels = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.mode-btn')].map(b => b.dataset.value + '=' + b.querySelector('.mode-label').textContent.trim())")
-    t.check(mode_labels == ["off=Aus", "smart=Intelligent", "now=Sofort"],
-            "charge point: the modes keep Off / Smart / Now", str(mode_labels))
+    t.check(mode_labels == ["off=Aus", "smart=Smart", "now=Schnell"],
+            "charge point: the modes keep Off / Smart / Fast", str(mode_labels))
     page.close()
 
     # The fixture carries the whole plan entity set for the heating loadpoint, but
