@@ -433,11 +433,11 @@ def renderkey(browser, port, t):
     page.evaluate("window.__renders = 0")
     page.evaluate("""() => window.__push(st => {
       const id = 'select.evcc_openwb_mode';
-      st[id] = { ...st[id], attributes: { ...st[id].attributes, options: ['off', 'smart', 'now'] } };
+      st[id] = { ...st[id], state: 'pv', attributes: { ...st[id].attributes, options: ['off', 'pv', 'minpv', 'now'] } };
     })""")
     page.wait_for_timeout(900)
     t.check(page.evaluate("window.__renders") >= 1, "changed select options trigger a render", str(page.evaluate("window.__renders")))
-    t.check(modes() != before and "smart" in modes(), "the mode buttons follow the new options", f"{before} -> {modes()}")
+    t.check(modes() != before and "minpv" in modes(), "the mode buttons follow the new options", f"{before} -> {modes()}")
 
     slider_max = lambda: page.evaluate("""(() => { const el = window.__card.shadowRoot
         .querySelector("input[data-entity='number.evcc_openwb_limit_soc']"); return el ? el.max : null; })()""")
@@ -1166,6 +1166,9 @@ def contracts(browser, port, t):
     page.locator(in_card('button.phase-btn[data-value="3"]')).click(); page.wait_for_timeout(400)
     t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_openwb_phases_configured", "option": "3"}),
             "phase button → select.select_option phases_configured=3", json.dumps(last()))
+    page.locator(in_card('.alwayscharge-row button.ac-btn[data-value="once"]')).click(); page.wait_for_timeout(400)
+    t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_openwb_always_charge", "option": "once"}),
+            "always charge button → select.select_option always_charge=once", json.dumps(last()))
     page.locator(in_card('button.smart-cost-clear-btn[data-entity="button.evcc_openwb_smart_cost_limit"]')).click()
     t.check(last() == exp("button", "press", {"entity_id": "button.evcc_openwb_smart_cost_limit"}),
             "clear limit → button.press smart_cost_limit", json.dumps(last()))
@@ -1253,22 +1256,60 @@ def contracts(browser, port, t):
 def tariff_modes(browser, port, t):
     """no_pv mode sets and the co2 tariff variant.
 
-    A loadpoint without solar mirrors evcc's Mode.vue: the PV modes disappear,
-    and if a dynamic tariff is available 'pv' is relabelled as the smart mode.
+    A loadpoint without solar mirrors evcc's Mode.vue: the smart mode stays only
+    while a dynamic tariff is available. On the legacy mode set of evcc before
+    0.316 the PV modes disappear and 'pv' is relabelled as the smart mode.
     Which tariff sensor decides that depends on whether evcc runs on prices or
     on a co2 signal, which the card reads from the smart cost limit's unit.
     """
     t.group("tariff - no_pv mode sets")
     modes = lambda page: page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.mode-btn')].map(b => b.dataset.value)")
+    # The fixture is evcc 0.316 with its real 'smart' mode; the legacy set of
+    # older evcc versions is put on the entity per case.
+    legacy = {"select.evcc_openwb_mode": {"options": ["off", "pv", "minpv", "now"]}}
 
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
-    t.check(modes(page) == ["off", "pv", "minpv", "now"], "with solar: the full mode set", str(modes(page)))
+    t.check(modes(page) == ["off", "smart", "now"], "with solar: the mode set as offered", str(modes(page)))
+    # the always-charge companion sits under the buttons while the mode is smart ...
+    ac = lambda: page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.alwayscharge-row .ac-btn')].map(b => b.dataset.value + (b.classList.contains('active') ? '*' : ''))")
+    t.check(ac() == ["off*", "on", "once"], "smart mode: the always-charge row with its three options", str(ac()))
+    # ... and goes with the entity ha-evcc marks unavailable in any other mode
+    page.evaluate("""() => {
+      const st = { ...window.__hass.states };
+      st['select.evcc_openwb_mode'] = { ...st['select.evcc_openwb_mode'], state: 'now' };
+      st['select.evcc_openwb_always_charge'] = { ...st['select.evcc_openwb_always_charge'], state: 'unavailable' };
+      window.__hass.states = st;
+      window.__card.hass = { ...window.__hass, states: st };
+    }""")
+    page.wait_for_timeout(900)
+    t.check(ac() == [], "another mode: the always-charge row is gone", str(ac()))
+    page.close()
+
+    # a real smart mode + no_pv: Mode.vue keeps Smart while a tariff is available and drops it otherwise
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]},
+              set={"select.evcc_openwb_mode": "off"})
+    got = modes(page)
+    t.check(got == ["off", "smart", "now"], "no_pv with a price tariff: the offered smart mode stays", str(got))
+    page.close()
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]},
+              set={"sensor.evcc_tariff_grid": "unknown", "select.evcc_openwb_mode": "off"})
+    got = modes(page)
+    t.check(got == ["off", "now"], "no_pv without a tariff: the smart mode is dropped", str(got))
+    page.close()
+
+    t.group("tariff - no_pv on the legacy mode set")
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]}, attrs=legacy, set={"select.evcc_openwb_mode": "pv"})
+    t.check(modes(page) == ["off", "pv", "minpv", "now"], "with solar: the full legacy set", str(modes(page)))
     page.close()
 
     # no_pv + a valid price tariff → [off, smart, now]; 'pv' carries the smart label
     page = new_page(browser, 480, 1400)
-    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]})
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]},
+              attrs=legacy, set={"select.evcc_openwb_mode": "pv"})
     got = modes(page)
     t.check(got == ["off", "pv", "now"], "no_pv with a price tariff: minpv is dropped", str(got))
     smart_label = page.evaluate("window.__card._t('modeSmart')")
@@ -1279,7 +1320,7 @@ def tariff_modes(browser, port, t):
     # no_pv without any tariff → [off, now]
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]},
-              set={"sensor.evcc_tariff_grid": "unknown", "select.evcc_openwb_mode": "off"})
+              attrs=legacy, set={"sensor.evcc_tariff_grid": "unknown", "select.evcc_openwb_mode": "off"})
     got = modes(page)
     t.check(got == ["off", "now"], "no_pv without a tariff: no smart mode either", str(got))
     page.close()
@@ -1287,7 +1328,7 @@ def tariff_modes(browser, port, t):
     t.group("tariff - co2 signal instead of prices")
     # The unit on the smart cost limit is what tells the card to read tariff_co2
     # rather than tariff_grid; with a valid co2 value the smart mode comes back.
-    co2_attrs = {"number.evcc_openwb_smart_cost_limit": {"unit_of_measurement": "g/kWh"}}
+    co2_attrs = {"number.evcc_openwb_smart_cost_limit": {"unit_of_measurement": "g/kWh"}, **legacy}
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]},
               attrs=co2_attrs, tariff="co2",

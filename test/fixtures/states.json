@@ -584,6 +584,21 @@
   "last_updated": "2026-09-17T17:24:20.163248+00:00",
   "state": "0"
  },
+ "select.evcc_openwb_always_charge": {
+  "attributes": {
+   "friendly_name": "openWB Mit min. laden ♾️",
+   "icon": "mdi:sync",
+   "options": [
+    "off",
+    "on",
+    "once"
+   ]
+  },
+  "entity_id": "select.evcc_openwb_always_charge",
+  "last_changed": "2026-09-22T18:30:00.000000+00:00",
+  "last_updated": "2026-09-22T18:30:00.000000+00:00",
+  "state": "off"
+ },
  "select.evcc_openwb_battery_boost_limit": {
   "attributes": {
    "friendly_name": "openWB Schnell aus Hausbatterie laden Limit",
@@ -794,15 +809,14 @@
    "icon": "mdi:state-machine",
    "options": [
     "off",
-    "pv",
-    "minpv",
+    "smart",
     "now"
    ]
   },
   "entity_id": "select.evcc_openwb_mode",
-  "last_changed": "2026-09-17T17:24:20.163544+00:00",
-  "last_updated": "2026-09-17T17:24:20.163544+00:00",
-  "state": "pv"
+  "last_changed": "2026-09-22T18:30:00.000000+00:00",
+  "last_updated": "2026-09-22T18:30:00.000000+00:00",
+  "state": "smart"
  },
  "select.evcc_openwb_phases_configured": {
   "attributes": {
@@ -1042,15 +1056,14 @@
    "icon": "mdi:state-machine",
    "options": [
     "off",
-    "pv",
-    "minpv",
+    "smart",
     "now"
    ]
   },
   "entity_id": "select.evcc_wp_mode",
-  "last_changed": "2026-09-17T17:24:20.165719+00:00",
-  "last_updated": "2026-09-17T17:24:20.165719+00:00",
-  "state": "pv"
+  "last_changed": "2026-09-22T18:30:00.000000+00:00",
+  "last_updated": "2026-09-22T18:30:00.000000+00:00",
+  "state": "smart"
  },
  "select.evcc_wp_phases_configured": {
   "attributes": {

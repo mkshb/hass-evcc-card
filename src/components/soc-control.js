@@ -603,11 +603,11 @@ export const sliderCss = `
 
       .selects { margin-bottom: 10px; }
       .select-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; flex-wrap: wrap; gap: 4px; }
-      .phase-btn-group { display: flex; gap: 4px; }
-      button.phase-btn {
+      .phase-btn-group, .pill-btn-group { display: flex; gap: 4px; }
+      button.phase-btn, button.pill-btn {
         padding: 3px 10px; border-radius: 999px; border: 1px solid var(--divider-color);
         background: transparent; color: var(--secondary-text-color);
         cursor: pointer; font-size: .75rem; font-weight: 600; transition: all .15s; white-space: nowrap;
       }
-      button.phase-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+      button.phase-btn.active, button.pill-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
 `;

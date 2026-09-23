@@ -231,15 +231,17 @@ export const loadpointView = {
     // depend on whether a dynamic tariff is available (smartCostAvailable). The
     // ha-evcc integration exposes no such flag, so we proxy it via a valid
     // tariff sensor value (same signal used by the smart-cost block below).
-    // Obsolete once evcc offers a real 'smart' mode, hence the hasSmart guard.
+    // With a real 'smart' mode only the [Off, Now] case is left to do; before
+    // that, 'pv' stands in for it.
     let hidden    = [];
     let pvAsSmart = false;
-    if (hidePv && !hasSmart) {
+    if (hidePv) {
       const isCo2     = (attr(this._hass, ents.smart_cost_limit, "unit_of_measurement") ?? "") === "g/kWh";
       const tariffId  = `sensor.${this._getPrefix()}${isCo2 ? "tariff_co2" : "tariff_grid"}`;
       const smartCost = !isNaN(parseFloat(this._hass.states[tariffId]?.state ?? "NaN"));
-      if (smartCost) { hidden = ["minpv"];        pvAsSmart = true; }  // [Off, Smart, Now]
-      else           { hidden = ["pv", "minpv"]; }                     // [Off, Now]
+      if (hasSmart)        { if (!smartCost) hidden = ["smart"]; }   // [Off, Smart, Now] or [Off, Now]
+      else if (smartCost)  { hidden = ["minpv"]; pvAsSmart = true; } // [Off, Smart, Now]
+      else                 { hidden = ["pv", "minpv"]; }             // [Off, Now]
     }
 
     const buttons = Object.entries(CHARGE_MODES)
@@ -285,7 +287,7 @@ export const loadpointView = {
       "once": this._t("alwaysChargeOnce"),
     };
     const buttons = options.map(opt => `
-        <button class="phase-btn ${opt === current ? "active" : ""}"
+        <button class="pill-btn ac-btn ${opt === current ? "active" : ""}"
                 data-entity="${entityId}" data-value="${escAttr(opt)}">
           ${LABELS[opt] ?? escHtml(opt)}
         </button>`).join("");
@@ -299,7 +301,7 @@ export const loadpointView = {
     return `
       <div class="select-row alwayscharge-row">
         <span${hint ? ` title="${escAttr(hint)}"` : ""}>${this._t("alwaysCharge")}</span>
-        <div class="phase-btn-group">${buttons}</div>
+        <div class="pill-btn-group">${buttons}</div>
       </div>`;
   },
 
@@ -631,6 +633,12 @@ export const loadpointView = {
     this._fresh("button.phase-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         this._pressGroupButton(btn, ".phase-btn-group", ".phase-btn");
+      });
+    });
+
+    this._fresh("button.ac-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._pressGroupButton(btn, ".pill-btn-group", ".ac-btn");
       });
     });
   },
