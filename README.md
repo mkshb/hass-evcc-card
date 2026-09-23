@@ -224,6 +224,8 @@ The card renders the modes the ha-evcc mode entity offers, so it follows whateve
 
 evcc 0.316 replaced the **PV** mode with **Smart** and turned **Min+PV** into the **Always charge** setting of the Smart mode: charge without interruption at least at the minimum current, either permanently (**On**) or for the running session only (**Once**). ha-evcc 2026.8.3 or newer detects this on startup, so after updating evcc, reload the ha-evcc integration once (or restart Home Assistant) for the new modes to appear. Switch devices (a heat pump with SG-Ready, a heating rod) get no Always charge row, as in evcc itself.
 
+**Heating loadpoints** carry evcc's own labels: **Normal** / **Smart** / **Boost** instead of Off / Smart / Now.
+
 The **`no_pv`** option mirrors evcc's mode logic for a charge point without a PV system, where the Smart mode depends on a dynamic electricity tariff:
 
 | Situation | Modes shown |

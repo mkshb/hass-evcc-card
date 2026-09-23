@@ -11,6 +11,8 @@
   "modeMinPV": "Min+PV",
   "modeNow": "Snel",
   "modeSmart": "Slim",
+  "modeNormal": "Normaal",
+  "modeBoost": "Boost",
   "modeAuto": "Auto",
   "alwaysCharge": "Altijd laden",
   "alwaysChargeOff": "Uit",

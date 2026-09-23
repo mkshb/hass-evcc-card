@@ -244,6 +244,13 @@ export const loadpointView = {
       else                 { hidden = ["pv", "minpv"]; }             // [Off, Now]
     }
 
+    // evcc labels the modes of a continuously running device (a heat pump)
+    // Normal / Smart / Boost instead of Off / Smart / Now (chargeModeLabel.ts,
+    // chargerFeatureContinuous). ha-evcc exposes no such flag, the heating
+    // marker is the closest signal it has.
+    const heating = this._isHeatingLoadpoint(ents);
+    const HEATING_LABELS = { off: "modeNormal", now: "modeBoost" };
+
     const buttons = Object.entries(CHARGE_MODES)
       .filter(([val]) => {
         if (val === current)      return true;
@@ -254,7 +261,8 @@ export const loadpointView = {
       .map(([val, cfg]) => {
         const isSmart = pvAsSmart && val === "pv";
         const icon    = isSmart ? SMART_MODE_ICON : cfg.icon;
-        const label   = isSmart ? this._t("modeSmart") : this._t(cfg.tKey);
+        const tKey    = isSmart ? "modeSmart" : (heating && HEATING_LABELS[val]) || cfg.tKey;
+        const label   = this._t(tKey);
         return `
       <button class="mode-btn ${current === val ? "active" : ""}"
               data-entity="${ents.mode}" data-value="${val}">

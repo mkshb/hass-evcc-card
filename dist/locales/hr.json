@@ -11,6 +11,8 @@
   "modeMinPV": "Min+Solarno",
   "modeNow": "Sad",
   "modeSmart": "Pametno",
+  "modeNormal": "Normalno",
+  "modeBoost": "Boost",
   "modeAuto": "Auto",
   "alwaysCharge": "Uvijek puni",
   "alwaysChargeOff": "Isključeno",
