@@ -433,11 +433,11 @@ def renderkey(browser, port, t):
     page.evaluate("window.__renders = 0")
     page.evaluate("""() => window.__push(st => {
       const id = 'select.evcc_openwb_mode';
-      st[id] = { ...st[id], attributes: { ...st[id].attributes, options: ['off', 'smart', 'now'] } };
+      st[id] = { ...st[id], state: 'pv', attributes: { ...st[id].attributes, options: ['off', 'pv', 'minpv', 'now'] } };
     })""")
     page.wait_for_timeout(900)
     t.check(page.evaluate("window.__renders") >= 1, "changed select options trigger a render", str(page.evaluate("window.__renders")))
-    t.check(modes() != before and "smart" in modes(), "the mode buttons follow the new options", f"{before} -> {modes()}")
+    t.check(modes() != before and "minpv" in modes(), "the mode buttons follow the new options", f"{before} -> {modes()}")
 
     slider_max = lambda: page.evaluate("""(() => { const el = window.__card.shadowRoot
         .querySelector("input[data-entity='number.evcc_openwb_limit_soc']"); return el ? el.max : null; })()""")
@@ -774,6 +774,9 @@ def interactions(browser, port, t):
             "plan target change requests plan_preview {loadpoint, kind, value, timestamp}", json.dumps(calls[-1:]))
     bars = page.locator(in_card(".plan-preview svg rect")).count()
     t.check(bars > 0 and page.locator(in_card(".plan-preview-value")).count() >= 2, "plan preview chart + duration/cost rendered", f"{bars} bars")
+    # the fixture's 5477 s at 11000 W, in hours and minutes rather than m:ss
+    dur = page.locator(in_card(".plan-preview-left .plan-preview-value")).inner_text().strip()
+    t.check(dur == "1 h 31 min @ 11 kW", "plan preview duration reads in hours and minutes, no m:ss", dur)
     page.locator("#host").screenshot(path=str(OUT / "plan-preview.png"))
     # evcc computes the preview with the vehicle's current precondition, which
     # the request does not carry. A changed setting reported by HA has to fetch
@@ -1145,6 +1148,9 @@ def contracts(browser, port, t):
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"})
     last = lambda: svc(page)[-1]
     exp  = lambda domain, service, data: {"domain": domain, "service": service, "data": data}
+    # the plan services name the ha-evcc instance the card shows (config_entry_id),
+    # so a plan never lands on another evcc when two instances are configured
+    entry = json.loads((ROOT / "test/fixtures/entity_registry.json").read_text(encoding="utf-8"))[0]["config_entry_id"]
 
     # releasing a slider writes through the same path as the arrow keys
     def drag_to_end(sel):
@@ -1166,6 +1172,9 @@ def contracts(browser, port, t):
     page.locator(in_card('button.phase-btn[data-value="3"]')).click(); page.wait_for_timeout(400)
     t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_openwb_phases_configured", "option": "3"}),
             "phase button → select.select_option phases_configured=3", json.dumps(last()))
+    page.locator(in_card('.alwayscharge-row button.ac-btn[data-value="once"]')).click(); page.wait_for_timeout(400)
+    t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_openwb_always_charge", "option": "once"}),
+            "always charge button → select.select_option always_charge=once", json.dumps(last()))
     page.locator(in_card('button.smart-cost-clear-btn[data-entity="button.evcc_openwb_smart_cost_limit"]')).click()
     t.check(last() == exp("button", "press", {"entity_id": "button.evcc_openwb_smart_cost_limit"}),
             "clear limit → button.press smart_cost_limit", json.dumps(last()))
@@ -1181,6 +1190,9 @@ def contracts(browser, port, t):
     page.locator(in_card("select.plan-vehicle-select")).select_option("db:38"); page.wait_for_timeout(400)
     t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_openwb_vehicle_name", "option": "db:38"}),
             "vehicle select → select.select_option vehicle_name=db:38", json.dumps(last()))
+    page.locator(in_card("select.plan-vehicle-select")).select_option("null"); page.wait_for_timeout(400)
+    t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_openwb_vehicle_name", "option": "null"}),
+            "vehicle select: guest vehicle → select.select_option vehicle_name=null", json.dumps(last()))
     page.locator(in_card("select.plan-vehicle-select")).select_option("db:18"); page.wait_for_timeout(400)
 
     # plan save: vehicle db:18, soc via panel, time via the datetime-local input
@@ -1188,7 +1200,7 @@ def contracts(browser, port, t):
     page.locator(in_card(".slider-edit-input")).fill("80"); page.locator(in_card("[data-edit-ok]")).click()
     page.locator(in_card("input.plan-time-input")).fill("2026-09-19T07:00"); page.wait_for_timeout(300)
     page.locator(in_card("button.plan-btn.save")).click(); page.wait_for_timeout(400)
-    t.check(last() == exp("evcc_intg", "set_vehicle_plan", {"vehicle": "db:18", "soc": 80, "startdate": "2026-09-19 07:00:00"}),
+    t.check(last() == exp("evcc_intg", "set_vehicle_plan", {"vehicle": "db:18", "soc": 80, "startdate": "2026-09-19 07:00:00", "config_entry_id": entry}),
             "set plan → evcc_intg.set_vehicle_plan {vehicle, soc, startdate}", json.dumps(last()))
     page.close()
 
@@ -1197,26 +1209,94 @@ def contracts(browser, port, t):
     open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]}, set={"binary_sensor.evcc_openwb_plan_active": "on"})
     t.check(page.locator(in_card("button.plan-btn.delete")).count() == 1, "delete button shown while a plan is active")
     page.locator(in_card("button.plan-btn.delete")).click(); page.wait_for_timeout(300)
-    t.check(last() == exp("evcc_intg", "del_vehicle_plan", {"vehicle": "db:18"}), "delete plan → evcc_intg.del_vehicle_plan", json.dumps(last()))
+    t.check(last() == exp("evcc_intg", "del_vehicle_plan", {"vehicle": "db:18", "config_entry_id": entry}), "delete plan → evcc_intg.del_vehicle_plan", json.dumps(last()))
     page.close()
 
-    # A guest vehicle (vehicle select on "null") has no plan of its own, and a
-    # loadpoint plan is an energy target in kWh, which this block does not collect.
-    # ha-evcc takes such a call and does nothing with it (set_plan() drops a
-    # loadpoint or energy that is not an integer, without an error), so the card
-    # must refuse it rather than report a plan that evcc never received.
+    # A guest vehicle (vehicle select on "null") has no plan of its own: evcc plans
+    # it on the loadpoint with an energy target in kWh. ha-evcc's set_plan() only
+    # takes integers for the loadpoint index and the energy and drops anything
+    # else without an error, so the payload has to be exactly this.
     page = new_page(browser, 480, 1800)
     open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]}, set={"select.evcc_openwb_vehicle_name": "null"})
+    rng = page.evaluate("""(() => { const r = window.__card.shadowRoot.querySelector('input.plan-soc-range');
+        return r ? [r.dataset.kind, r.min, r.max, r.step].join(' ') : null; })()""")
+    t.check(rng == "energy 1 100 1", "guest vehicle: the plan target is in kWh, 1 to 100 in steps of 1", repr(rng))
     page.locator(in_card("button.plan-soc-val")).click()
-    page.locator(in_card(".slider-edit-input")).fill("80"); page.locator(in_card("[data-edit-ok]")).click()
+    page.locator(in_card(".slider-edit-input")).fill("25"); page.locator(in_card("[data-edit-ok]")).click()
     page.locator(in_card("input.plan-time-input")).fill("2026-09-19T07:00"); page.wait_for_timeout(300)
-    before = len(svc(page))
+    label = page.locator(in_card("button.plan-soc-val")).inner_text().strip()
+    page.wait_for_timeout(800)   # 500 ms preview debounce
+    previews = [c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/plan_preview"]
+    t.check(bool(previews) and previews[-1]["kind"] == "energy" and str(previews[-1]["value"]) == "25",
+            "guest vehicle: the plan preview asks for kind energy with the kWh target", json.dumps(previews[-1:]))
     page.locator(in_card("button.plan-btn.save")).click(); page.wait_for_timeout(400)
-    err   = page.locator(in_card(".plan-error")).inner_text() if page.locator(in_card(".plan-error")).count() else ""
     badge = page.locator(in_card(".plan-badge.planned")).count()
-    t.check(len(svc(page)) == before and "SoC" in err and badge == 0,
-            "guest vehicle: set plan → no service call, error instead of a plan badge",
-            f"calls+{len(svc(page)) - before} err={err!r} badge={badge}")
+    t.check(last() == exp("evcc_intg", "set_loadpoint_plan", {"loadpoint": 1, "energy": 25, "startdate": "2026-09-19 07:00:00", "config_entry_id": entry})
+            and label == "25 kWh" and badge == 1,
+            "guest vehicle: set plan → evcc_intg.set_loadpoint_plan {loadpoint, energy, startdate}",
+            f"{json.dumps(last())} label={label!r} badge={badge}")
+    page.close()
+
+    # A vehicle that reports no SoC (evcc feature "Offline") is planned in kWh as
+    # well, up to its capacity, and its plan lives on the loadpoint too.
+    offline = {"select.evcc_openwb_vehicle_name": {"vehicle": {"capacity": 69, "evccName": "db:18", "id": "ex30", "name": "EX30",
+               "originObject": {"capacity": 69, "features": ["Offline"], "title": "EX30"}}}}
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]}, attrs=offline,
+              set={"sensor.evcc_openwb_vehicle_soc": "0", "binary_sensor.evcc_openwb_plan_active": "on"})
+    rng = page.evaluate("""(() => { const r = window.__card.shadowRoot.querySelector('input.plan-soc-range');
+        return r ? [r.dataset.kind, r.max].join(' ') : null; })()""")
+    t.check(rng == "energy 69", "vehicle without SoC: the plan target is in kWh up to its capacity", repr(rng))
+    page.locator(in_card("input.plan-time-input")).fill("2026-09-19T07:00"); page.wait_for_timeout(300)
+    page.locator(in_card("button.plan-btn.save")).click(); page.wait_for_timeout(400)
+    t.check(last()["service"] == "set_loadpoint_plan" and last()["data"]["loadpoint"] == 1,
+            "vehicle without SoC: set plan → evcc_intg.set_loadpoint_plan", json.dumps(last()))
+    page.locator(in_card("button.plan-btn.delete")).click(); page.wait_for_timeout(300)
+    t.check(last() == exp("evcc_intg", "del_loadpoint_plan", {"loadpoint": 1, "config_entry_id": entry}),
+            "vehicle without SoC: delete plan → evcc_intg.del_loadpoint_plan", json.dumps(last()))
+    page.close()
+
+    # ha-evcc's "null" is no vehicle assigned: with a car plugged in that is evcc's
+    # guest vehicle, named so in the header and picked in the vehicle select;
+    # unplugged it reads "no vehicle" and the header carries no name.
+    picked = lambda page: page.evaluate("""(() => { const s = window.__card.shadowRoot.querySelector('select.plan-vehicle-select');
+        return s ? s.value + '=' + s.selectedOptions[0].textContent.trim() : null; })()""")
+    name = lambda page: page.evaluate("""(() => { const n = window.__card.shadowRoot.querySelector('.vehicle-name');
+        return n ? n.textContent.trim() : null; })()""")
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]},
+              set={"select.evcc_openwb_vehicle_name": "null", "sensor.evcc_openwb_vehicle_soc": "0"})
+    t.check(name(page) == "Gastfahrzeug" and picked(page) == "null=Gastfahrzeug",
+            "guest vehicle: header and vehicle select read Gastfahrzeug", f"{name(page)!r} {picked(page)!r}")
+    # Without a SoC evcc shows the energy charged and an energy limit (Vehicles/
+    # Soc.vue, LimitEnergySelect): no SoC, no SoC markers, no SoC sliders.
+    head = page.evaluate("""(() => { const r = window.__card.shadowRoot;
+        return { row: r.querySelector('.soc-label-row')?.textContent.replace(/\\s+/g, ' ').trim(),
+                 socMarkers: r.querySelectorAll('.soc-min-marker').length,
+                 energyBar: r.querySelectorAll('.energy-track').length,
+                 sliders: [...r.querySelectorAll('.sliders .slider-row')].map(x => x.querySelector('label').textContent.trim()
+                          + '=' + x.querySelector('.slider-val').textContent.trim()) }; })()""")
+    t.check("%" not in head["row"] and "Geladen 2.8 kWh" in head["row"] and head["socMarkers"] == 0 and head["energyBar"] == 1
+            and head["sliders"] == ["Ladelimit=keins"],
+            "guest vehicle: energy charged instead of a SoC, the energy limit instead of the SoC sliders", json.dumps(head))
+    page.screenshot(path=str(OUT / "guest-vehicle.png"))
+    page.close()
+    # a SoC above zero (a charger that reads it) keeps the SoC view, as in evcc
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]}, set={"select.evcc_openwb_vehicle_name": "null"})
+    row = page.evaluate("window.__card.shadowRoot.querySelector('.soc-label-row')?.textContent.replace(/\\s+/g, ' ').trim()")
+    t.check("56 %" in (row or "") and page.locator(in_card(".energy-track")).count() == 0,
+            "guest vehicle with a SoC from the charger: the SoC view stays", repr(row))
+    page.close()
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]},
+              set={"select.evcc_openwb_vehicle_name": "null", "binary_sensor.evcc_openwb_connected": "off"})
+    t.check(picked(page) == "null=Kein Fahrzeug", "no car plugged in: the vehicle select reads Kein Fahrzeug", repr(picked(page)))
+    page.close()
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]},
+              set={"select.evcc_openwb_vehicle_name": "null", "binary_sensor.evcc_openwb_connected": "off"})
+    t.check(name(page) is None, "no car plugged in: no vehicle name in the header", repr(name(page)))
     page.close()
 
     # Deleting needs no kWh target, only the 1-based evcc loadpoint index, which the
@@ -1225,7 +1305,7 @@ def contracts(browser, port, t):
     open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]},
               set={"select.evcc_openwb_vehicle_name": "null", "binary_sensor.evcc_openwb_plan_active": "on"})
     page.locator(in_card("button.plan-btn.delete")).click(); page.wait_for_timeout(300)
-    t.check(last() == exp("evcc_intg", "del_loadpoint_plan", {"loadpoint": 1}),
+    t.check(last() == exp("evcc_intg", "del_loadpoint_plan", {"loadpoint": 1, "config_entry_id": entry}),
             "guest vehicle: delete plan → evcc_intg.del_loadpoint_plan with the loadpoint index", json.dumps(last()))
     page.close()
 
@@ -1253,22 +1333,60 @@ def contracts(browser, port, t):
 def tariff_modes(browser, port, t):
     """no_pv mode sets and the co2 tariff variant.
 
-    A loadpoint without solar mirrors evcc's Mode.vue: the PV modes disappear,
-    and if a dynamic tariff is available 'pv' is relabelled as the smart mode.
+    A loadpoint without solar mirrors evcc's Mode.vue: the smart mode stays only
+    while a dynamic tariff is available. On the legacy mode set of evcc before
+    0.316 the PV modes disappear and 'pv' is relabelled as the smart mode.
     Which tariff sensor decides that depends on whether evcc runs on prices or
     on a co2 signal, which the card reads from the smart cost limit's unit.
     """
     t.group("tariff - no_pv mode sets")
     modes = lambda page: page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.mode-btn')].map(b => b.dataset.value)")
+    # The fixture is evcc 0.316 with its real 'smart' mode; the legacy set of
+    # older evcc versions is put on the entity per case.
+    legacy = {"select.evcc_openwb_mode": {"options": ["off", "pv", "minpv", "now"]}}
 
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
-    t.check(modes(page) == ["off", "pv", "minpv", "now"], "with solar: the full mode set", str(modes(page)))
+    t.check(modes(page) == ["off", "smart", "now"], "with solar: the mode set as offered", str(modes(page)))
+    # the always-charge companion sits under the buttons while the mode is smart ...
+    ac = lambda: page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.alwayscharge-row .ac-btn')].map(b => b.dataset.value + (b.classList.contains('active') ? '*' : ''))")
+    t.check(ac() == ["off*", "on", "once"], "smart mode: the always-charge row with its three options", str(ac()))
+    # ... and goes with the entity ha-evcc marks unavailable in any other mode
+    page.evaluate("""() => {
+      const st = { ...window.__hass.states };
+      st['select.evcc_openwb_mode'] = { ...st['select.evcc_openwb_mode'], state: 'now' };
+      st['select.evcc_openwb_always_charge'] = { ...st['select.evcc_openwb_always_charge'], state: 'unavailable' };
+      window.__hass.states = st;
+      window.__card.hass = { ...window.__hass, states: st };
+    }""")
+    page.wait_for_timeout(900)
+    t.check(ac() == [], "another mode: the always-charge row is gone", str(ac()))
+    page.close()
+
+    # a real smart mode + no_pv: Mode.vue keeps Smart while a tariff is available and drops it otherwise
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]},
+              set={"select.evcc_openwb_mode": "off"})
+    got = modes(page)
+    t.check(got == ["off", "smart", "now"], "no_pv with a price tariff: the offered smart mode stays", str(got))
+    page.close()
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]},
+              set={"sensor.evcc_tariff_grid": "unknown", "select.evcc_openwb_mode": "off"})
+    got = modes(page)
+    t.check(got == ["off", "now"], "no_pv without a tariff: the smart mode is dropped", str(got))
+    page.close()
+
+    t.group("tariff - no_pv on the legacy mode set")
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]}, attrs=legacy, set={"select.evcc_openwb_mode": "pv"})
+    t.check(modes(page) == ["off", "pv", "minpv", "now"], "with solar: the full legacy set", str(modes(page)))
     page.close()
 
     # no_pv + a valid price tariff → [off, smart, now]; 'pv' carries the smart label
     page = new_page(browser, 480, 1400)
-    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]})
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]},
+              attrs=legacy, set={"select.evcc_openwb_mode": "pv"})
     got = modes(page)
     t.check(got == ["off", "pv", "now"], "no_pv with a price tariff: minpv is dropped", str(got))
     smart_label = page.evaluate("window.__card._t('modeSmart')")
@@ -1279,7 +1397,7 @@ def tariff_modes(browser, port, t):
     # no_pv without any tariff → [off, now]
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]},
-              set={"sensor.evcc_tariff_grid": "unknown", "select.evcc_openwb_mode": "off"})
+              attrs=legacy, set={"sensor.evcc_tariff_grid": "unknown", "select.evcc_openwb_mode": "off"})
     got = modes(page)
     t.check(got == ["off", "now"], "no_pv without a tariff: no smart mode either", str(got))
     page.close()
@@ -1287,7 +1405,7 @@ def tariff_modes(browser, port, t):
     t.group("tariff - co2 signal instead of prices")
     # The unit on the smart cost limit is what tells the card to read tariff_co2
     # rather than tariff_grid; with a valid co2 value the smart mode comes back.
-    co2_attrs = {"number.evcc_openwb_smart_cost_limit": {"unit_of_measurement": "g/kWh"}}
+    co2_attrs = {"number.evcc_openwb_smart_cost_limit": {"unit_of_measurement": "g/kWh"}, **legacy}
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]},
               attrs=co2_attrs, tariff="co2",
@@ -1453,6 +1571,16 @@ def discovery(browser, port, t):
     labels = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.slider-row label')].map(l => l.textContent.trim())")
     t.check("Ziel-Temperatur" in labels and page.locator(in_card(".plan-block")).count() == 0,
             "heating loadpoint: temperature label, no charge plan block", str(labels))
+    # evcc labels a continuous device Normal / Smart / Boost (chargeModeLabel.ts)
+    mode_labels = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.mode-btn')].map(b => b.dataset.value + '=' + b.querySelector('.mode-label').textContent.trim())")
+    t.check(mode_labels == ["off=Normal", "smart=Smart", "now=Boost"],
+            "heating loadpoint: the modes read Normal / Smart / Boost", str(mode_labels))
+    page.close()
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+    mode_labels = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.mode-btn')].map(b => b.dataset.value + '=' + b.querySelector('.mode-label').textContent.trim())")
+    t.check(mode_labels == ["off=Aus", "smart=Smart", "now=Schnell"],
+            "charge point: the modes keep Off / Smart / Fast", str(mode_labels))
     page.close()
 
     # The fixture carries the whole plan entity set for the heating loadpoint, but

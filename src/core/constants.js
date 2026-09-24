@@ -1,4 +1,4 @@
-export const EVCC_CARD_VERSION = "0.8.4";
+export const EVCC_CARD_VERSION = "0.8.5";
 
 export const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -46,6 +46,7 @@ export const FEATURES = [
   { suffix: "phases_active",       domain: "sensor",        type: "info",          lp: true  },
 
   { suffix: "effective_plan_soc",      domain: "sensor", type: "info", lp: true },
+  { suffix: "plan_energy",             domain: "sensor", type: "info", lp: true },
   { suffix: "effective_plan_time",     domain: "sensor", type: "info", lp: true },
   { suffix: "plan_projected_start",    domain: "sensor", type: "info", lp: true },
   { suffix: "plan_projected_end",      domain: "sensor", type: "info", lp: true },

@@ -440,6 +440,14 @@
   "original_name": "Batterie Modus (Auto-reset nach 60 sek)"
  },
  {
+  "entity_id": "select.evcc_openwb_always_charge",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_always_charge",
+  "original_name": "openWB Mit min. laden ♾️"
+ },
+ {
   "entity_id": "select.evcc_openwb_mode",
   "platform": "evcc_intg",
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",

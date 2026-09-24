@@ -10,14 +10,19 @@ export const socControl = {
     // Heating loadpoints expose limit/min as a target temperature (°C), not a SoC,
     // so relabel the sliders accordingly (value/unit already come from the entity).
     const heating = this._isHeatingLoadpoint(ents);
-    const SLIDER_FEATURES = [
+    // Without a SoC evcc limits the session by energy instead (LimitEnergySelect,
+    // 0 = none) and has no min SoC to offer; `hide_settings: [limit_soc]` hides
+    // that limit as well.
+    const SLIDER_FEATURES = this._socBasedCharging(ents) ? [
       { key: "limit_soc",   label: this._t(heating ? "targetTemp" : "targetSoc") },
       { key: "min_soc",     label: this._t(heating ? "minTemp"    : "minSoc")    },
+    ] : [
+      { key: "limit_energy", hideKey: "limit_soc", label: this._t("limitEnergy"), zero: this._t("limitEnergyNone") },
     ];
 
     const rows = SLIDER_FEATURES
-      .filter(({ key }) => ents[key] && !this._isSettingHidden(key))
-      .map(({ key, label }) => this._sliderRow(ents[key], label));
+      .filter(({ key, hideKey }) => ents[key] && !this._isSettingHidden(hideKey ?? key))
+      .map(({ key, label, zero }) => this._sliderRow(ents[key], label, zero ?? null));
 
     return rows.length ? `<div class="sliders">${rows.join("")}</div>` : "";
   },
@@ -603,11 +608,11 @@ export const sliderCss = `
 
       .selects { margin-bottom: 10px; }
       .select-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; flex-wrap: wrap; gap: 4px; }
-      .phase-btn-group { display: flex; gap: 4px; }
-      button.phase-btn {
+      .phase-btn-group, .pill-btn-group { display: flex; gap: 4px; }
+      button.phase-btn, button.pill-btn {
         padding: 3px 10px; border-radius: 999px; border: 1px solid var(--divider-color);
         background: transparent; color: var(--secondary-text-color);
         cursor: pointer; font-size: .75rem; font-weight: 600; transition: all .15s; white-space: nowrap;
       }
-      button.phase-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+      button.phase-btn.active, button.pill-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
 `;

@@ -68,9 +68,10 @@ def demo_loadpoints():
     return [(i + 1, lp["title"], slug(lp["title"])) for i, lp in enumerate(evcc_state()["loadpoints"])]
 
 
-# Known starting point: what cmd/demo.yaml ships with. The garage is the one the
-# round trip flips, so it starts off.
-DEMO_MODES = {"Carport": "pv", "Garage": "off", "Heat pump": "pv"}
+# Known starting point: what cmd/demo.yaml ships with ("pv" there, which evcc
+# 0.316 normalizes to "smart"). The garage is the one the round trip flips, so
+# it starts off.
+DEMO_MODES = {"Carport": "smart", "Garage": "off", "Heat pump": "smart"}
 
 
 def reset_demo():

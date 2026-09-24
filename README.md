@@ -186,7 +186,7 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
 | `repeating_plan_vehicles` | `list` | *(all)* | Limit the `repeatplan` mode to specific vehicles |
 | `plan_loadpoint_index` | `map` | *(auto)* | **YAML only** — Override the evcc loadpoint index (1-based) used for the plan preview, e.g. `{ openwb: 1, wp: 2 }`. Only needed if the auto-detected order does not match evcc |
-| `no_pv` | `list` | *(none)* | Treat specific charge points as having **no PV system**, mirroring evcc's own mode logic: **Min+PV** is hidden and **PV** is replaced by a single **Smart** mode when a dynamic tariff is configured (otherwise only **Off** / **Now** remain). See [Charge modes](#charge-modes) below |
+| `no_pv` | `list` | *(none)* | Treat specific charge points as having **no PV system**, mirroring evcc's own mode logic: the **Smart** mode is offered only when a dynamic tariff is configured (otherwise only **Off** / **Fast** remain). See [Charge modes](#charge-modes) below |
 | `disabled_loadpoints` | `string` | `hide` | How to treat charge points disabled in the evcc configuration (ha-evcc 2026.8.8+): `hide` removes them from the card, `dim` shows them grayed out with a "Disabled" badge, `show` keeps the previous behavior |
 | `site_details` | `string` | `expanded` | `collapsed` to hide the IN/OUT detail table by default in `site` and `flow` mode |
 | `charge_current_settings` | `string` | `collapsed` | `expanded` to show charge settings expanded by default |
@@ -205,7 +205,7 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 
 The main charge point view. For each discovered charge point it shows:
 
-- Charge mode buttons (Off / PV / Min+PV / Now) - see [Charge modes](#charge-modes) for when which mode is shown
+- Charge mode buttons (Off / Smart / Fast, plus the **Always charge** row of the Smart mode) - see [Charge modes](#charge-modes) for when which mode is shown
 - Vehicle SoC progress bar with percentage and estimated range
 - Current charging session: energy, cost, duration, phases
 - Sliders: Target SoC, Min SoC - tap the value next to any slider to enter it directly, see [Slider settings](#slider-settings)
@@ -215,15 +215,25 @@ A tap on a value in the header opens the more-info dialog of the ha-evcc entity 
 
 #### Charge modes
 
-The mode selector mirrors evcc's own logic, where the available modes depend on whether the charge point has a PV system (controlled here via the [`no_pv`](#configuration-options) option) and whether a dynamic electricity tariff is configured:
+The card renders the modes the ha-evcc mode entity offers, so it follows whatever evcc version is behind it:
+
+| evcc version | Modes shown |
+| --- | --- |
+| 0.316 and newer | **Off** / **Smart** / **Fast**, plus an **Always charge** row (Off / On / Once) under the buttons while the Smart mode is active |
+| before 0.316 | **Off** / **PV** / **Min+PV** / **Fast** |
+
+evcc 0.316 replaced the **PV** mode with **Smart** and turned **Min+PV** into the **Always charge** setting of the Smart mode: charge without interruption at least at the minimum current, either permanently (**On**) or for the running session only (**Once**). ha-evcc 2026.8.3 or newer detects this on startup, so after updating evcc, reload the ha-evcc integration once (or restart Home Assistant) for the new modes to appear. Switch devices (a heat pump with SG-Ready, a heating rod) get no Always charge row, as in evcc itself.
+
+**Heating loadpoints** carry evcc's own labels: **Normal** / **Smart** / **Boost** instead of Off / Smart / Fast.
+
+The **`no_pv`** option mirrors evcc's mode logic for a charge point without a PV system, where the Smart mode depends on a dynamic electricity tariff:
 
 | Situation | Modes shown |
 | --- | --- |
-| PV system present (default) | **Off** / **PV** / **Min+PV** / **Now** |
-| `no_pv` set + dynamic tariff available | **Off** / **Smart** / **Now** |
-| `no_pv` set + no dynamic tariff | **Off** / **Now** |
+| `no_pv` set + dynamic tariff available | **Off** / **Smart** / **Fast** |
+| `no_pv` set + no dynamic tariff | **Off** / **Fast** |
 
-> **About the Smart mode:** Without a PV system, charging is driven by electricity tariffs rather than solar surplus, so evcc renames the **PV** mode to **Smart** and drops **Min+PV**. The card does the same: the **Smart** button still sets the same underlying `pv` charge mode, only the label and icon change. A dynamic tariff is detected via the `tariff_grid` (price) or `tariff_co2` (CO2) sensor; if neither reports a value, only **Off** / **Now** are offered.
+> A dynamic tariff is detected via the `tariff_grid` (price) or `tariff_co2` (CO2) sensor; if neither reports a value, only **Off** / **Fast** are offered. On an evcc before 0.316 the card does what evcc did then: **PV** is relabelled as **Smart** and still sets the underlying `pv` mode, **Min+PV** is dropped.
 
 The loadpoint header also shows **live action indicators** when EVCC has scheduled a pending phase switch or PV-charging change - e.g. *"Switching to 3-phase in 0:42"* or *"PV charging on in 1:15"*. The chip disappears automatically once the action is executed. Requires ha-evcc with the `phase_action` / `pv_action` sensors exposed.
 
@@ -416,7 +426,7 @@ The selected tab is remembered per charge point across re-renders.
 
 Minimalist charge plan view:
 
-- Vehicle selector
+- Vehicle selector, including evcc's **Guest vehicle** (no vehicle assigned while a car is plugged in; **No vehicle** when nothing is plugged in). The loadpoint header names the guest vehicle as well
 - Target time picker
 - Target SoC slider (tap the value to type it, see [Slider settings](#slider-settings))
 - **Live preview** - as soon as a target SoC and time are set, a chart previews the planned charging window over the upcoming tariff/forecast, with the expected duration, charging power and the average price or CO₂ of the plan (ha-evcc 2026.6.x+). It updates while you drag and is debounced and cached so it never floods evcc
@@ -428,7 +438,9 @@ Minimalist charge plan view:
 
 > **Heating loadpoints:** loadpoints that evcc marks as heating (for example a heat pump) do not get an EV charge plan; the plan block is skipped for them and their target/limit is shown as a temperature instead of a state of charge.
 
-> **Vehicles without a state of charge:** the plan is set on the vehicle evcc has selected, with the target as a percentage. A guest vehicle, or a vehicle that reports no SoC, would have to be planned on the loadpoint with an energy target in kWh, which the card does not offer yet; it says so instead of setting a plan. Deleting an existing loadpoint plan does work.
+> **Vehicles without a state of charge:** the card decides like evcc. A vehicle that reports a SoC and has a known capacity is planned with a target in percent on the vehicle. A guest vehicle, or a vehicle that reports no SoC, is planned on the charge point with an energy target in kWh (1 kWh up to the vehicle's capacity, or 100 kWh when evcc knows none); the live preview then works in kWh as well. Like evcc, the loadpoint then shows the energy charged instead of a SoC, and an energy limit (**Limit**, `limit_energy`) in place of the SoC sliders; `hide_settings: [limit_soc]` hides that limit too.
+
+> **Two ha-evcc instances:** the card names its own instance (`config_entry_id`) in every plan call. ha-evcc registers its plan services once for all instances; a version that does not know the field sends the plan to the instance that was set up last, so with two instances a plan can land on the other evcc until ha-evcc supports it.
 
 <img src="images/plan-dark.png" width="400"> <img src="images/plan-light.png" width="400">
 

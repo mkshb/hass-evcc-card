@@ -198,8 +198,9 @@ export const evccApi = {
 
   // Debounced plan preview fetch — called after SOC/time/vehicle changes.
   _requestPlanPreview(lpName) {
-    const state = this._planState[lpName];
-    if (!state || !state.soc || !state.time || !this._hasCmd("plan_preview")) return;
+    const state  = this._planState[lpName];
+    const target = this._planTarget(state);
+    if (!target || !state.time || !this._hasCmd("plan_preview")) return;
     const lpIdx = this._lpIndex(lpName);
     if (lpIdx == null) return;
 
@@ -209,7 +210,7 @@ export const evccApi = {
       const d = new Date(state.time);
       if (isNaN(d.getTime())) return;
       const ts = d.toISOString();
-      const opts = { loadpoint: lpIdx, kind: "soc", value: state.soc, timestamp: ts, settings: this._planSettingsKey(lpName) };
+      const opts = { loadpoint: lpIdx, kind: target.kind, value: target.value, timestamp: ts, settings: this._planSettingsKey(lpName) };
       const cacheKey = this._planPreviewKey(opts);
       // Drop previews for OTHER inputs of this loadpoint (bounds the cache), but
       // keep the current one — refetching what we already have wastes a backend call.
