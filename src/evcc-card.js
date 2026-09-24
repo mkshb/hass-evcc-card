@@ -3,7 +3,7 @@ import { CARD_SIZES, CARD_SIZE_DETAILS, CARD_SIZE_FOOTER, RENDER_ATTRS, normaliz
 import { stateVal, unitStr } from "./utils/state.js";
 import { escHtml } from "./utils/html.js";
 import { morphInto } from "./utils/morph.js";
-import { socFillGradient } from "./utils/format.js";
+import { socFillGradient, fmtCountdownFromISO } from "./utils/format.js";
 import { loadSharedTranslations, sharedTranslations } from "./utils/translations.js";
 
 import { actions } from "./core/actions.js";
@@ -603,18 +603,16 @@ export class EvccCard extends HTMLElement {
     if (!root) return;
     root.querySelectorAll("[data-countdown-target]").forEach(el => {
       const ts = el.dataset.countdownTarget;
-      if (!ts) return;
-      const target = Date.parse(ts);
-      if (isNaN(target)) return;
-      const sec = Math.max(0, Math.round((target - Date.now()) / 1000));
-      const cd = sec <= 0
-        ? ""
-        : sec < 60
-          ? `${sec}s`
-          : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
-      // A run-out timer leaves like evcc's, until the next render drops the chip.
+      if (!ts || isNaN(Date.parse(ts))) return;
+      const cd = fmtCountdownFromISO(ts);
+      // A run-out timer leaves like evcc's, until the next render drops the chip,
+      // and takes the row with it when it was the last chip there.
       const chip = el.closest(".lp-action-chip");
-      if (chip) chip.hidden = !cd;
+      if (chip) {
+        chip.hidden = !cd;
+        const row = chip.closest(".lp-action-row");
+        if (row) row.hidden = [...row.querySelectorAll(".lp-action-chip")].every(c => c.hidden);
+      }
       const key = el.dataset.countdownLabel;
       if (key && cd) {
         el.textContent = this._t(key, { val: cd });

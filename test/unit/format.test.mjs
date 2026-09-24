@@ -88,6 +88,16 @@ test("fmtClock reads the time alone today and adds the weekday on another day", 
   assert.ok(fmtClock(other.toISOString(), "de").endsWith("12:34"));
 });
 
+test("fmtClock names the date from six days on, where a weekday would mislead", () => {
+  const d = new Date(); d.setHours(7, 0, 0, 0);
+  const in5 = new Date(d); in5.setDate(d.getDate() + 5);
+  const in8 = new Date(d); in8.setDate(d.getDate() + 8);
+  assert.ok(fmtClock(in5.toISOString(), "de").startsWith(in5.toLocaleString("de", { weekday: "short" })), fmtClock(in5.toISOString(), "de"));
+  const date = in8.toLocaleString("de", { day: "2-digit", month: "2-digit" });
+  assert.ok(fmtClock(in8.toISOString(), "de").startsWith(date), fmtClock(in8.toISOString(), "de"));
+  assert.ok(fmtClock(in8.toISOString(), "de").endsWith("07:00"));
+});
+
 test("fmtClock is empty for anything that is not a date", () => {
   for (const v of [null, "", "unknown", "unavailable", "not a date"]) assert.equal(fmtClock(v, "de"), "", String(v));
 });

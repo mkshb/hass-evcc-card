@@ -579,8 +579,6 @@ export const sliderCss = `
       .smart-cost-chip.active { color: var(--evcc-green); }
       .smart-cost-chip.active:hover { color: var(--evcc-green); filter: brightness(1.2); }
       .settings-divider { border: none; border-top: 1px solid var(--divider-color, #e5e7eb); margin: 8px 0; }
-      @keyframes smart-cost-pulse { 0%,100% { background: transparent; } 40% { background: color-mix(in srgb, var(--primary-color) 15%, transparent); } }
-      .smart-cost-highlight { border-radius: 6px; animation: smart-cost-pulse 1.5s ease; }
 
       .current-block {
         border-top: 1px solid var(--divider-color, #333);

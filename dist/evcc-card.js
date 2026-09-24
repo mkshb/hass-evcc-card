@@ -759,17 +759,20 @@ function fmtDuration(seconds) {
   return `${m} min`;
 }
 
-// A point in time as a short clock reading: "02:00" today, "Sa., 07:00" on
-// another day. Empty for anything that is not a date.
+// A point in time as a short clock reading: "02:00" today, "Sa., 07:00" within
+// the next days, "26.09., 07:00" from six days on, where a weekday would read
+// like this week's. Empty for anything that is not a date.
 function fmtClock(iso, lang = "en") {
   if (!iso || iso === "unknown" || iso === "unavailable") return "";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
-  const today = new Date().toDateString() === d.toDateString();
+  const midnight = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((midnight(d) - midnight(new Date())) / 86400000);
+  const time = { hour: "2-digit", minute: "2-digit" };
   try {
-    return d.toLocaleString(lang, today
-      ? { hour: "2-digit", minute: "2-digit" }
-      : { weekday: "short", hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleString(lang, days === 0 ? time
+      : days > 0 && days < 6 ? { weekday: "short", ...time }
+      : { day: "2-digit", month: "2-digit", ...time });
   } catch (e) {
     return "";
   }
@@ -1355,17 +1358,26 @@ const loadpointView = {
     return this._phaseTargets[entityId].iso;
   },
 
+  // Lights up the block a chip jumped to. An animation rather than a class: the
+  // morph strips every class the template does not render, so the next evcc
+  // update (about every two seconds) would cut a class-driven one short.
+  _flash(el) {
+    const color = getComputedStyle(el).getPropertyValue("--primary-color").trim() || "#03a9f4";
+    const lit   = `color-mix(in srgb, ${color} 15%, transparent)`;
+    el.animate?.([
+      { background: "transparent", borderRadius: "6px" },
+      { background: lit, borderRadius: "6px", offset: 0.4 },
+      { background: "transparent", borderRadius: "6px" },
+    ], { duration: 1500, easing: "ease" });
+  },
+
   _renderActionIndicator(ents, lpName = "", noPlan = false) {
     const flashIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>`;
     const sunIcon   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z"/></svg>`;
 
-    const fmtCountdown = (sec) => {
-      const n = Math.max(0, Math.round(parseFloat(sec)));
-      if (isNaN(n) || n <= 0) return "";
-      if (n < 60) return `${n}s`;
-      return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
-    };
-
+    // Every chip carries its own data-key: they share one class name, and the
+    // morph would otherwise build a chip out of the one that left before it,
+    // role and click listener included.
     const chips = [];
 
     // What drives the loadpoint right now comes first, as in evcc's vehicle
@@ -1381,18 +1393,13 @@ const loadpointView = {
         const key    = state === "scale1p" ? "phaseActionScale1p" : "phaseActionScale3p";
         const raw    = ents.phase_remaining ? stateVal(this._hass, ents.phase_remaining) : "";
         const target = ents.phase_remaining ? this._phaseTargetISO(ents.phase_remaining, raw) : null;
-        const cd     = target ? fmtCountdownFromISO(target) : fmtCountdown(raw);
+        const cd     = target ? fmtCountdownFromISO(target) : "";
         // Like evcc, the chip shows only while there is time left to count down.
-        if (cd) {
-          const span = target
-            ? `<span data-countdown-target="${target}" data-countdown-label="${key}">${this._t(key, { val: cd })}</span>`
-            : `<span>${this._t(key, { val: cd })}</span>`;
-          chips.push(`
-          <div class="lp-action-chip phase">
+        if (cd) chips.push(`
+          <div class="lp-action-chip phase" data-key="phase">
             ${flashIcon}
-            ${span}
+            <span data-countdown-target="${target}" data-countdown-label="${key}">${this._t(key, { val: cd })}</span>
           </div>`);
-        }
       }
     }
 
@@ -1403,7 +1410,7 @@ const loadpointView = {
         const cd  = fmtCountdownFromTimestamp(this._hass, ents.pv_remaining);
         const key = state === "enable" ? "pvActionEnable" : "pvActionDisable";
         if (cd) chips.push(`
-          <div class="lp-action-chip pv">
+          <div class="lp-action-chip pv" data-key="pv">
             ${sunIcon}
             <span data-countdown-target="${ts}" data-countdown-label="${key}">${this._t(key, { val: cd })}</span>
           </div>`);
@@ -1411,14 +1418,14 @@ const loadpointView = {
     }
 
     const vehicleStatuses = [
-      { key: "vehicle_detection_active", label: "vehicleDetectionActive", icon: "M9.61 16.11C9.61 14.03 10.59 12.19 12.1 11H5L6.5 6.5H17.5L18.72 10.16C19.56 10.53 20.3 11.07 20.91 11.74L18.92 6C18.72 5.42 18.16 5 17.5 5H6.5C5.84 5 5.28 5.42 5.08 6L3 12V20C3 20.55 3.45 21 4 21H5C5.55 21 6 20.55 6 20V19H10.29C9.86 18.13 9.61 17.15 9.61 16.11M6.5 16C5.67 16 5 15.33 5 14.5S5.67 13 6.5 13 8 13.67 8 14.5 7.33 16 6.5 16M20.71 20.7L20.7 20.71L20.71 20.7M16.11 11.61C18.61 11.61 20.61 13.61 20.61 16.11C20.61 17 20.36 17.82 19.92 18.5L23 21.61L21.61 23L18.5 19.93C17.8 20.36 17 20.61 16.11 20.61C13.61 20.61 11.61 18.61 11.61 16.11S13.61 11.61 16.11 11.61M16.11 13.61C14.73 13.61 13.61 14.73 13.61 16.11S14.73 18.61 16.11 18.61 18.61 17.5 18.61 16.11 17.5 13.61 16.11 13.61" },
-      { key: "vehicle_climater_active",  label: "vehicleClimaterActive",  icon: "M12,11A1,1 0 0,0 11,12A1,1 0 0,0 12,13A1,1 0 0,0 13,12A1,1 0 0,0 12,11M12.5,2C17,2 17.11,5.57 14.75,6.75C13.76,7.24 13.32,8.29 13.13,9.22C13.61,9.42 14.03,9.73 14.35,10.13C18.05,8.13 22.03,8.92 22.03,12.5C22.03,17 18.46,17.1 17.28,14.73C16.78,13.74 15.72,13.3 14.79,13.11C14.59,13.59 14.28,14 13.88,14.34C15.87,18.03 15.08,22 11.5,22C7,22 6.91,18.42 9.27,17.24C10.25,16.75 10.69,15.71 10.89,14.79C10.4,14.59 9.97,14.27 9.65,13.87C5.96,15.85 2,15.07 2,11.5C2,7 5.56,6.89 6.74,9.26C7.24,10.25 8.29,10.68 9.22,10.87C9.41,10.39 9.73,9.97 10.14,9.65C8.15,5.96 8.94,2 12.5,2Z" },
-      { key: "vehicle_welcome_active",   label: "vehicleWelcomeActive",   icon: "M22,12V20A2,2 0 0,1 20,22H4A2,2 0 0,1 2,20V12A1,1 0 0,1 1,11V8A2,2 0 0,1 3,6H6.17C6.06,5.69 6,5.35 6,5A3,3 0 0,1 9,2C10,2 10.88,2.5 11.43,3.24V3.23L12,4L12.57,3.23V3.24C13.12,2.5 14,2 15,2A3,3 0 0,1 18,5C18,5.35 17.94,5.69 17.83,6H21A2,2 0 0,1 23,8V11A1,1 0 0,1 22,12M4,20H11V12H4V20M20,20V12H13V20H20M9,4A1,1 0 0,0 8,5A1,1 0 0,0 9,6A1,1 0 0,0 10,5A1,1 0 0,0 9,4M15,4A1,1 0 0,0 14,5A1,1 0 0,0 15,6A1,1 0 0,0 16,5A1,1 0 0,0 15,4M3,8V10H11V8H3M13,8V10H21V8H13Z" },
+      { key: "vehicle_detection_active", chip: "detection", label: "vehicleDetectionActive", icon: "M9.61 16.11C9.61 14.03 10.59 12.19 12.1 11H5L6.5 6.5H17.5L18.72 10.16C19.56 10.53 20.3 11.07 20.91 11.74L18.92 6C18.72 5.42 18.16 5 17.5 5H6.5C5.84 5 5.28 5.42 5.08 6L3 12V20C3 20.55 3.45 21 4 21H5C5.55 21 6 20.55 6 20V19H10.29C9.86 18.13 9.61 17.15 9.61 16.11M6.5 16C5.67 16 5 15.33 5 14.5S5.67 13 6.5 13 8 13.67 8 14.5 7.33 16 6.5 16M20.71 20.7L20.7 20.71L20.71 20.7M16.11 11.61C18.61 11.61 20.61 13.61 20.61 16.11C20.61 17 20.36 17.82 19.92 18.5L23 21.61L21.61 23L18.5 19.93C17.8 20.36 17 20.61 16.11 20.61C13.61 20.61 11.61 18.61 11.61 16.11S13.61 11.61 16.11 11.61M16.11 13.61C14.73 13.61 13.61 14.73 13.61 16.11S14.73 18.61 16.11 18.61 18.61 17.5 18.61 16.11 17.5 13.61 16.11 13.61" },
+      { key: "vehicle_climater_active",  chip: "climater",  label: "vehicleClimaterActive",  icon: "M12,11A1,1 0 0,0 11,12A1,1 0 0,0 12,13A1,1 0 0,0 13,12A1,1 0 0,0 12,11M12.5,2C17,2 17.11,5.57 14.75,6.75C13.76,7.24 13.32,8.29 13.13,9.22C13.61,9.42 14.03,9.73 14.35,10.13C18.05,8.13 22.03,8.92 22.03,12.5C22.03,17 18.46,17.1 17.28,14.73C16.78,13.74 15.72,13.3 14.79,13.11C14.59,13.59 14.28,14 13.88,14.34C15.87,18.03 15.08,22 11.5,22C7,22 6.91,18.42 9.27,17.24C10.25,16.75 10.69,15.71 10.89,14.79C10.4,14.59 9.97,14.27 9.65,13.87C5.96,15.85 2,15.07 2,11.5C2,7 5.56,6.89 6.74,9.26C7.24,10.25 8.29,10.68 9.22,10.87C9.41,10.39 9.73,9.97 10.14,9.65C8.15,5.96 8.94,2 12.5,2Z" },
+      { key: "vehicle_welcome_active",   chip: "welcome",   label: "vehicleWelcomeActive",   icon: "M22,12V20A2,2 0 0,1 20,22H4A2,2 0 0,1 2,20V12A1,1 0 0,1 1,11V8A2,2 0 0,1 3,6H6.17C6.06,5.69 6,5.35 6,5A3,3 0 0,1 9,2C10,2 10.88,2.5 11.43,3.24V3.23L12,4L12.57,3.23V3.24C13.12,2.5 14,2 15,2A3,3 0 0,1 18,5C18,5.35 17.94,5.69 17.83,6H21A2,2 0 0,1 23,8V11A1,1 0 0,1 22,12M4,20H11V12H4V20M20,20V12H13V20H20M9,4A1,1 0 0,0 8,5A1,1 0 0,0 9,6A1,1 0 0,0 10,5A1,1 0 0,0 9,4M15,4A1,1 0 0,0 14,5A1,1 0 0,0 15,6A1,1 0 0,0 16,5A1,1 0 0,0 15,4M3,8V10H11V8H3M13,8V10H21V8H13Z" },
     ];
     for (const vs of vehicleStatuses) {
       if (ents[vs.key] && isOn(this._hass, ents[vs.key])) {
         chips.push(`
-          <div class="lp-action-chip vehicle">
+          <div class="lp-action-chip vehicle" data-key="${vs.chip}">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="${vs.icon}"/></svg>
             <span>${this._t(vs.label)}</span>
           </div>`);
@@ -1431,48 +1438,50 @@ const loadpointView = {
   // The charge plan in one line, so it shows without scrolling to the plan block
   // (or, in compact mode, switching to its tab): when it starts, or until when it
   // runs, and a warning when evcc projects the end after the target time. A tap
-  // jumps to the plan block. Heating loadpoints get no EV plan block, no hint.
+  // jumps to the plan block, so the chip shows only where that block is drawn.
+  // A start that has passed without the plan running is a stale value (vehicle
+  // unplugged); unlike evcc, the chip does not announce it.
   _renderPlanHint(ents, lpName) {
-    if (this._isHeatingLoadpoint(ents)) return "";
-    const valid = (id) => {
-      const v = id ? stateVal(this._hass, id) : null;
-      return v && v !== "unknown" && v !== "unavailable" && !isNaN(Date.parse(v)) ? v : null;
-    };
-    const active    = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
-    const start     = valid(ents.plan_projected_start);
-    const end       = valid(ents.plan_projected_end);
-    const target    = valid(ents.effective_plan_time);
-    if (active ? !end : !start) return "";
+    if (!this._hasPlanBlock(ents)) return "";
+    const date   = (id) => id ? evccDate(stateVal(this._hass, id)) : null;
+    const active = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
+    const start  = date(ents.plan_projected_start);
+    const end    = date(ents.plan_projected_end);
+    const target = date(ents.effective_plan_time);
+    if (active ? !end : !start || start.getTime() <= Date.now()) return "";
 
     const lang    = this._config.language || this._hass?.language || "en";
     // evcc's planTimeUnreachable: the projected end lies after the target time.
     // A minute of slack keeps rounding in evcc's projection from raising it.
-    const overrun = end && target ? (Date.parse(end) - Date.parse(target)) / 1000 : 0;
+    const overrun = end && target ? (end.getTime() - target.getTime()) / 1000 : 0;
     const late    = overrun >= 60;
     const text    = late
       ? this._t("planHintLate", { overrun: fmtDuration(overrun) })
       : active
-        ? this._t("planHintActive", { time: fmtClock(end, lang) })
-        : this._t("planHintStart", { time: fmtClock(start, lang) });
+        ? this._t("planHintActive", { time: fmtClock(end.toISOString(), lang) })
+        : this._t("planHintStart", { time: fmtClock(start.toISOString(), lang) });
     const icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19,3H18V1H16V3H8V1H6V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M19,19H5V8H19V19Z"/></svg>`;
     return `
-          <div class="lp-action-chip plan${late ? " late" : ""}" data-lp-plan-open="${escAttr(lpName)}">
+          <div class="lp-action-chip plan${late ? " late" : ""}" data-key="plan" data-lp-plan-open="${escAttr(lpName)}">
             ${icon}
             <span>${escHtml(text)}</span>
           </div>`;
   },
 
-  // evcc charges to the minimum SoC first, whatever the mode; evcc's
-  // minSocNotReached while a vehicle is connected. SoC 0 is evcc's "no value".
+  // evcc charges to the minimum SoC first in every mode but Off (the Off case
+  // comes first in core/loadpoint.go); evcc's minSocNotReached while a vehicle
+  // is connected. SoC 0 is evcc's "no value". evcc's own status shows the hint
+  // in Off as well; here it stays away there, as nothing gets charged.
   _renderMinSocHint(ents) {
     if (!ents.min_soc || !ents.vehicle_soc || this._isHeatingLoadpoint(ents)) return "";
+    if (ents.mode && stateVal(this._hass, ents.mode) === "off") return "";
     const connected = ents.connected ? isOn(this._hass, ents.connected) : false;
     const minSoc    = parseFloat(stateVal(this._hass, ents.min_soc));
     const soc       = parseFloat(stateVal(this._hass, ents.vehicle_soc));
     if (!connected || !(minSoc > 0) || !(soc > 0) || soc >= minSoc) return "";
     const icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M16,20H8V6H16M16.67,4H15V2H9V4H7.33A1.33,1.33 0 0,0 6,5.33V20.67C6,21.4 6.6,22 7.33,22H16.67A1.33,1.33 0 0,0 18,20.67V5.33C18,4.6 17.4,4 16.67,4M11,18H13V16H11V18M11,9V14H13V9H11Z"/></svg>`;
     return `
-          <div class="lp-action-chip minsoc"${moreInfo(ents.min_soc)}>
+          <div class="lp-action-chip minsoc" data-key="minsoc"${moreInfo(ents.min_soc)}>
             ${icon}
             <span>${escHtml(this._t("minSocHint", { soc: `${Math.round(minSoc)} %` }))}</span>
           </div>`;
@@ -1888,8 +1897,7 @@ const loadpointView = {
         const section = block.querySelector(`[data-lp-smart-cost-section="${lpName}"]`);
         if (section) {
           section.scrollIntoView({ behavior: "smooth", block: "nearest" });
-          section.classList.add("smart-cost-highlight");
-          setTimeout(() => section.classList.remove("smart-cost-highlight"), 1500);
+          this._flash(section);
         }
       });
     });
@@ -1904,8 +1912,7 @@ const loadpointView = {
         const block = [...this.shadowRoot.querySelectorAll(".plan-block")].find(b => b.dataset.lp === lpName);
         if (!block) return;
         block.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        block.classList.add("plan-highlight");
-        setTimeout(() => block.classList.remove("plan-highlight"), 1500);
+        this._flash(block);
       });
     });
 
@@ -2015,6 +2022,7 @@ const loadpointCss = `
       .lp-badge.disabled  { color: var(--evcc-gray);   background: color-mix(in srgb, var(--evcc-gray)   15%, transparent); }
       .loadpoint.lp-disabled { opacity: 0.55; }
       .lp-action-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+      .lp-action-row[hidden], .lp-action-chip[hidden] { display: none; }
       .lp-action-chip {
         display: inline-flex; align-items: center; gap: 4px;
         padding: 3px 8px; border-radius: 999px;
@@ -2685,8 +2693,6 @@ const sliderCss = `
       .smart-cost-chip.active { color: var(--evcc-green); }
       .smart-cost-chip.active:hover { color: var(--evcc-green); filter: brightness(1.2); }
       .settings-divider { border: none; border-top: 1px solid var(--divider-color, #e5e7eb); margin: 8px 0; }
-      @keyframes smart-cost-pulse { 0%,100% { background: transparent; } 40% { background: color-mix(in srgb, var(--primary-color) 15%, transparent); } }
-      .smart-cost-highlight { border-radius: 6px; animation: smart-cost-pulse 1.5s ease; }
 
       .current-block {
         border-top: 1px solid var(--divider-color, #333);
@@ -2725,8 +2731,20 @@ const sliderCss = `
 
 // Charge plan block with preview chart, plan mode and repeating plans. Methods are mixed into EvccCard.prototype.
 const planningView = {
+  // Whether the loadpoint and compact modes draw the plan block: it needs the
+  // plan SoC entity, an EV loadpoint and a vehicle with a SoC or a running
+  // plan. The plan chip under the header asks the same, as it jumps there.
+  // `force` (the plan mode) drops the last condition.
+  _hasPlanBlock(ents, force = false) {
+    if (!ents.effective_plan_soc || !this._hass.states[ents.effective_plan_soc]) return false;
+    // Heating loadpoints (ha-evcc 'is_heating') are not EV charge points — their
+    // "SOC" is a target temperature. The EV charge-plan UI/preview does not apply.
+    if (this._isHeatingLoadpoint(ents)) return false;
+    const planActive = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
+    return force || !!ents.vehicle_soc || planActive;
+  },
+
   _renderPlanBlock(lpName, ents, force = false) {
-    const hasVehicle = !!ents.vehicle_soc;
     const planActive = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
     const planTime   = ents.effective_plan_time
       ? stateVal(this._hass, ents.effective_plan_time) : null;
@@ -2737,11 +2755,7 @@ const planningView = {
     const projEnd    = ents.plan_projected_end
       ? stateVal(this._hass, ents.plan_projected_end) : null;
 
-    if (!ents.effective_plan_soc || !this._hass.states[ents.effective_plan_soc]) return "";
-    // Heating loadpoints (ha-evcc 'is_heating') are not EV charge points — their
-    // "SOC" is a target temperature. The EV charge-plan UI/preview does not apply.
-    if (this._isHeatingLoadpoint(ents)) return "";
-    if (!force && !hasVehicle && !planActive) return "";
+    if (!this._hasPlanBlock(ents, force)) return "";
 
     const vehicleEntityId    = ents.vehicle_name || null;
     const vehicleAttrs       = vehicleEntityId ? (this._hass.states[vehicleEntityId]?.attributes ?? {}) : {};
@@ -3475,7 +3489,6 @@ const planningView = {
 // Part of the card stylesheet, see src/styles.js.
 const planCss = `
       .plan-block { border-top: 1px solid var(--divider-color, #e5e7eb); margin-top: 10px; padding-top: 10px; }
-      .plan-block.plan-highlight { animation: smart-cost-pulse 1.5s ease; }
       .plan-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
       .plan-badge { font-size: .7rem; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--divider-color); color: var(--secondary-text-color); }
       .plan-badge.planned { background: rgba(0, 120, 180, 0.3); color: #60aaff; }
@@ -7410,18 +7423,16 @@ class EvccCard extends HTMLElement {
     if (!root) return;
     root.querySelectorAll("[data-countdown-target]").forEach(el => {
       const ts = el.dataset.countdownTarget;
-      if (!ts) return;
-      const target = Date.parse(ts);
-      if (isNaN(target)) return;
-      const sec = Math.max(0, Math.round((target - Date.now()) / 1000));
-      const cd = sec <= 0
-        ? ""
-        : sec < 60
-          ? `${sec}s`
-          : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
-      // A run-out timer leaves like evcc's, until the next render drops the chip.
+      if (!ts || isNaN(Date.parse(ts))) return;
+      const cd = fmtCountdownFromISO(ts);
+      // A run-out timer leaves like evcc's, until the next render drops the chip,
+      // and takes the row with it when it was the last chip there.
       const chip = el.closest(".lp-action-chip");
-      if (chip) chip.hidden = !cd;
+      if (chip) {
+        chip.hidden = !cd;
+        const row = chip.closest(".lp-action-row");
+        if (row) row.hidden = [...row.querySelectorAll(".lp-action-chip")].every(c => c.hidden);
+      }
       const key = el.dataset.countdownLabel;
       if (key && cd) {
         el.textContent = this._t(key, { val: cd });
