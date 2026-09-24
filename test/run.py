@@ -2302,9 +2302,148 @@ def unit(browser, port, t):
             t.fail(f"{f.name} contains tests", f"no testcase in the report; stderr={p.stderr[:200]}")
 
 
+def hints(browser, port, t):
+    """The chips under the loadpoint header, as in evcc's vehicle status: the
+    charge plan (start, running until, late) and the minimum charge, plus the
+    PV and phase timers, which show only while there is time to count down.
+    The fixture clock stands at 2026-09-18 13:00 Europe/Berlin."""
+    chips = lambda page: page.evaluate("""() => [...window.__card.shadowRoot.querySelectorAll('.lp-action-chip')]
+        .filter(c => !c.hidden).map(c => c.className.replace('lp-action-chip', '').trim() + ': ' + c.textContent.trim().replace(/\\s+/g, ' '))""")
+    plan = lambda page: [c for c in chips(page) if c.startswith("plan")]
+    lp = {"mode": "loadpoint", "loadpoints": ["openwb"]}
+    planned = {"sensor.evcc_openwb_plan_projected_start": "2026-09-19T02:00:00+02:00",
+               "sensor.evcc_openwb_plan_projected_end":   "2026-09-19T06:30:00+02:00",
+               "sensor.evcc_openwb_effective_plan_time":  "2026-09-19T07:00:00+02:00"}
+    running = {"binary_sensor.evcc_openwb_plan_active": "on",
+               "sensor.evcc_openwb_plan_projected_start": "2026-09-18T12:00:00+02:00",
+               "sensor.evcc_openwb_plan_projected_end":   "2026-09-18T16:30:00+02:00",
+               "sensor.evcc_openwb_effective_plan_time":  "2026-09-18T17:00:00+02:00"}
+
+    t.group("hints - charge plan")
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, config=lp)
+    t.check(plan(page) == [], "no plan: no plan chip", str(chips(page)))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set=planned)
+    got = plan(page)
+    t.check(got == ["plan: Ladeplan startet Sa., 02:00"], "a plan for tomorrow: start with the weekday", str(got))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={**planned, "sensor.evcc_openwb_plan_projected_start": "2026-09-18T15:00:00+02:00"})
+    got = plan(page)
+    t.check(got == ["plan: Ladeplan startet 15:00"], "a plan starting today: the time alone", str(got))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set=running)
+    got = plan(page)
+    t.check(got == ["plan: Ladeplan aktiv bis 16:30"], "a running plan: until its projected end", str(got))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={**running, "sensor.evcc_openwb_plan_projected_end": "2026-09-18T18:20:00+02:00"})
+    got = plan(page)
+    t.check(got == ["plan late: Zielzeit wird 1 h 20 min später erreicht"], "projected end after the target: the late warning", str(got))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={**planned, "sensor.evcc_openwb_plan_projected_end": "2026-09-19T07:00:30+02:00"})
+    got = plan(page)
+    t.check(got == ["plan: Ladeplan startet Sa., 02:00"], "half a minute past the target is rounding, no warning", str(got))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={**lp, "no_plan": ["openwb"]}, set=planned)
+    t.check(plan(page) == [], "no_plan: no plan chip either", str(chips(page)))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["wp"]},
+              set={"binary_sensor.evcc_wp_plan_active": "on", "sensor.evcc_wp_plan_projected_end": "2026-09-18T16:30:00+02:00"})
+    t.check(plan(page) == [], "heating loadpoint: no EV plan, no plan chip", str(chips(page)))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set=running, lang="en")
+    got = plan(page)
+    t.check(got == ["plan: Charging plan active until 04:30 PM"], "text and clock follow the card language", str(got))
+    page.close()
+
+    t.group("hints - the plan chip jumps to the plan")
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set=planned)
+    role = page.evaluate("window.__card.shadowRoot.querySelector('.lp-action-chip.plan').getAttribute('role')")
+    t.check(role == "button", "the plan chip is a keyboard target", str(role))
+    page.locator(in_card(".lp-action-chip.plan")).click()
+    page.wait_for_timeout(100)
+    lit = page.evaluate("window.__card.shadowRoot.querySelector('.plan-block[data-lp=\"openwb\"]').classList.contains('plan-highlight')")
+    t.check(lit, "loadpoint mode: a tap highlights the plan block", str(lit))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "compact", "loadpoints": ["openwb"]}, set=planned)
+    t.check(len(plan(page)) == 1, "compact mode: the plan chip sits above the tabs", str(chips(page)))
+    page.locator(in_card(".lp-action-chip.plan")).click()
+    page.wait_for_timeout(600)
+    tab = page.evaluate("window.__card.shadowRoot.querySelector('button.compact-tab.active')?.dataset.tab")
+    visible = page.evaluate("!!window.__card.shadowRoot.querySelector('.plan-block[data-lp=\"openwb\"]')?.offsetParent")
+    t.check(tab == "2" and visible, "compact mode: a tap switches to the plan tab", f"tab={tab} visible={visible}")
+    page.close()
+
+    t.group("hints - minimum charge")
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={"select.evcc_openwb_min_soc": "80"})
+    got = [c for c in chips(page) if c.startswith("minsoc")]
+    t.check(got == ["minsoc: Mindestladung bis 80 %"], "SoC below the minimum while connected: the minimum charge", str(got))
+    role = page.evaluate("window.__card.shadowRoot.querySelector('.lp-action-chip.minsoc').dataset.moreInfo")
+    t.check(role == "select.evcc_openwb_min_soc", "and a tap opens the minimum SoC entity", str(role))
+    page.close()
+
+    for case, st in (("minimum 0", {"select.evcc_openwb_min_soc": "0"}),
+                     ("SoC above the minimum", {"select.evcc_openwb_min_soc": "40"}),
+                     ("not connected", {"select.evcc_openwb_min_soc": "80", "binary_sensor.evcc_openwb_connected": "off", "binary_sensor.evcc_openwb_charging": "off"})):
+        page = new_page(browser, 480, 1600)
+        open_card(page, port, config=lp, set=st)
+        got = [c for c in chips(page) if c.startswith("minsoc")]
+        t.check(got == [], f"{case}: no minimum charge chip", str(got))
+        page.close()
+
+    t.group("hints - timers only while they count")
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={"sensor.evcc_openwb_pv_remaining": "unknown"})
+    got = [c for c in chips(page) if c.startswith("pv")]
+    t.check(got == [], "pv action without a remaining time: no chip and no dash", str(got))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={"sensor.evcc_openwb_pv_remaining": "2026-09-18T13:02:00+02:00"})
+    got = [c for c in chips(page) if c.startswith("pv")]
+    t.check(got == ["pv: PV-Laden aus in 2:00"], "pv action with a remaining time: the countdown", str(got))
+    page.clock.set_fixed_time("2026-09-18T13:02:05+02:00")
+    page.wait_for_timeout(1300)   # the countdown ticks once a second
+    got = [c for c in chips(page) if c.startswith("pv")]
+    t.check(got == [], "a run-out countdown leaves", str(got))
+    page.close()
+
+    t.group("hints - the chips stay through a render")
+    page = new_page(browser, 480, 1600)
+    errors += open_card(page, port, config=lp, set={**planned, "select.evcc_openwb_min_soc": "80"})
+    page.evaluate("""() => { const r = window.__card.shadowRoot; window.__chips = [...r.querySelectorAll('.lp-action-chip')];
+        const st = { ...window.__hass.states }; const id = 'sensor.evcc_openwb_charge_power';
+        st[id] = { ...st[id], state: '4.2' }; window.__hass.states = st; window.__card.hass = { ...window.__hass, states: st }; }""")
+    page.wait_for_timeout(600)
+    kept = page.evaluate("() => { const now = [...window.__card.shadowRoot.querySelectorAll('.lp-action-chip')]; return now.length === window.__chips.length && now.every((c, i) => c === window.__chips[i]); }")
+    t.check(kept, "a value change keeps the plan and minimum chips in place", str(kept))
+    t.check(not errors, "no console errors", "; ".join(errors)[:300])
+    page.close()
+
+
 GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
-          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths}
+          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints}
 
 
 def main():

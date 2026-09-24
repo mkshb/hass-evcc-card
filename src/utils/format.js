@@ -52,6 +52,22 @@ export function fmtDuration(seconds) {
   return `${m} min`;
 }
 
+// A point in time as a short clock reading: "02:00" today, "Sa., 07:00" on
+// another day. Empty for anything that is not a date.
+export function fmtClock(iso, lang = "en") {
+  if (!iso || iso === "unknown" || iso === "unavailable") return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const today = new Date().toDateString() === d.toDateString();
+  try {
+    return d.toLocaleString(lang, today
+      ? { hour: "2-digit", minute: "2-digit" }
+      : { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  } catch (e) {
+    return "";
+  }
+}
+
 export function fmtRemainingDuration(hass, entityId) {
   if (!entityId || !hass) return "";
   const raw = parseFloat(stateVal(hass, entityId));

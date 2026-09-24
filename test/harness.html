@@ -54,7 +54,8 @@
 
     // Fixture variants via query: set=entity:state,... disable=entity,... rename=from:to
     // tariff=co2, and attrs as JSON because attribute values may contain any character.
-    const set = Object.fromEntries((q.get("set") || "").split(",").filter(Boolean).map(kv => kv.split(":")));
+    // split at the first colon only: a value may be an ISO time
+    const set = Object.fromEntries((q.get("set") || "").split(",").filter(Boolean).map(kv => [kv.slice(0, kv.indexOf(":")), kv.slice(kv.indexOf(":") + 1)]));
     const attrs = q.get("attrs") ? JSON.parse(q.get("attrs")) : {};
     const disable = (q.get("disable") || "").split(",").filter(Boolean);
     const rename = q.get("rename") ? (([from, to]) => ({ from, to }))(q.get("rename").split(":")) : null;

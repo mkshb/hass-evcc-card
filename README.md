@@ -235,7 +235,11 @@ The **`no_pv`** option mirrors evcc's mode logic for a charge point without a PV
 
 > A dynamic tariff is detected via the `tariff_grid` (price) or `tariff_co2` (CO2) sensor; if neither reports a value, only **Off** / **Fast** are offered. On an evcc before 0.316 the card does what evcc did then: **PV** is relabelled as **Smart** and still sets the underlying `pv` mode, **Min+PV** is dropped.
 
-The loadpoint header also shows **live action indicators** when EVCC has scheduled a pending phase switch or PV-charging change - e.g. *"Switching to 3-phase in 0:42"* or *"PV charging on in 1:15"*. The chip disappears automatically once the action is executed. Requires ha-evcc with the `phase_action` / `pv_action` sensors exposed.
+Under the loadpoint header a row of chips names what drives the charge point right now, as evcc does in its vehicle status:
+
+- **Charge plan:** *"Charging plan starts 02:00"* or *"Charging plan active until 06:30"*, and a warning *"Goal will be reached 1 h 20 min later"* when evcc projects the end after the target time. A tap jumps to the plan block; in `compact` mode, where the chip sits above the tabs, it opens the plan tab. Not on heating loadpoints or with `no_plan`.
+- **Minimum charge:** *"Minimum charging to 20 %"* while a connected vehicle is below its minimum SoC. A tap opens the minimum SoC entity.
+- **Live action indicators** when evcc has scheduled a pending phase switch or PV-charging change, e.g. *"Switching to 3-phase in 0:42"* or *"PV charging on in 1:15"*. Like in evcc, the chip shows only while there is time to count down and disappears once the action is executed. Requires ha-evcc with the `phase_action` / `pv_action` sensors exposed.
 
 The **CHARGE SETTINGS** section is collapsed by default and can be toggled using the gear icon. It contains:
 - Phase switch: Auto / 1-phase / 3-phase

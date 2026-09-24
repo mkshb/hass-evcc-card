@@ -759,6 +759,22 @@ function fmtDuration(seconds) {
   return `${m} min`;
 }
 
+// A point in time as a short clock reading: "02:00" today, "Sa., 07:00" on
+// another day. Empty for anything that is not a date.
+function fmtClock(iso, lang = "en") {
+  if (!iso || iso === "unknown" || iso === "unavailable") return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const today = new Date().toDateString() === d.toDateString();
+  try {
+    return d.toLocaleString(lang, today
+      ? { hour: "2-digit", minute: "2-digit" }
+      : { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  } catch (e) {
+    return "";
+  }
+}
+
 function fmtRemainingDuration(hass, entityId) {
   if (!entityId || !hass) return "";
   const raw = parseFloat(stateVal(hass, entityId));
@@ -1217,7 +1233,7 @@ const loadpointView = {
             ${statusLabel}
           </span>
         </div>
-        ${this._renderActionIndicator(ents)}
+        ${this._renderActionIndicator(ents, lpName, noPlan)}
         ${this._renderModeSelector(ents, noPv)}
         ${this._renderVehicleInfo(ents, charging, lpName)}
         ${this._renderPowerRow(ents, charging)}
@@ -1289,7 +1305,7 @@ const loadpointView = {
             ${statusLabel}
           </span>
         </div>
-        ${this._renderActionIndicator(ents)}
+        ${this._renderActionIndicator(ents, lpName, noPlan)}
         ${tabBar}
         ${tabContent}
       </div>
@@ -1339,7 +1355,7 @@ const loadpointView = {
     return this._phaseTargets[entityId].iso;
   },
 
-  _renderActionIndicator(ents) {
+  _renderActionIndicator(ents, lpName = "", noPlan = false) {
     const flashIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>`;
     const sunIcon   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z"/></svg>`;
 
@@ -1352,20 +1368,31 @@ const loadpointView = {
 
     const chips = [];
 
+    // What drives the loadpoint right now comes first, as in evcc's vehicle
+    // status: the charge plan, then the minimum charge.
+    const planChip = noPlan ? "" : this._renderPlanHint(ents, lpName);
+    if (planChip) chips.push(planChip);
+    const minChip = this._renderMinSocHint(ents);
+    if (minChip) chips.push(minChip);
+
     if (ents.phase_action && this._hass.states[ents.phase_action]) {
       const state = stateVal(this._hass, ents.phase_action);
       if (state === "scale1p" || state === "scale3p") {
         const key    = state === "scale1p" ? "phaseActionScale1p" : "phaseActionScale3p";
         const raw    = ents.phase_remaining ? stateVal(this._hass, ents.phase_remaining) : "";
         const target = ents.phase_remaining ? this._phaseTargetISO(ents.phase_remaining, raw) : null;
-        const span   = target
-          ? `<span data-countdown-target="${target}" data-countdown-label="${key}">${this._t(key, { val: fmtCountdownFromISO(target) || "—" })}</span>`
-          : `<span>${this._t(key, { val: fmtCountdown(raw) || "—" })}</span>`;
-        chips.push(`
+        const cd     = target ? fmtCountdownFromISO(target) : fmtCountdown(raw);
+        // Like evcc, the chip shows only while there is time left to count down.
+        if (cd) {
+          const span = target
+            ? `<span data-countdown-target="${target}" data-countdown-label="${key}">${this._t(key, { val: cd })}</span>`
+            : `<span>${this._t(key, { val: cd })}</span>`;
+          chips.push(`
           <div class="lp-action-chip phase">
             ${flashIcon}
             ${span}
           </div>`);
+        }
       }
     }
 
@@ -1375,10 +1402,10 @@ const loadpointView = {
         const ts  = ents.pv_remaining ? (stateVal(this._hass, ents.pv_remaining) || "") : "";
         const cd  = fmtCountdownFromTimestamp(this._hass, ents.pv_remaining);
         const key = state === "enable" ? "pvActionEnable" : "pvActionDisable";
-        chips.push(`
+        if (cd) chips.push(`
           <div class="lp-action-chip pv">
             ${sunIcon}
-            <span data-countdown-target="${ts}" data-countdown-label="${key}">${this._t(key, { val: cd || "—" })}</span>
+            <span data-countdown-target="${ts}" data-countdown-label="${key}">${this._t(key, { val: cd })}</span>
           </div>`);
       }
     }
@@ -1399,6 +1426,56 @@ const loadpointView = {
     }
 
     return chips.length ? `<div class="lp-action-row">${chips.join("")}</div>` : "";
+  },
+
+  // The charge plan in one line, so it shows without scrolling to the plan block
+  // (or, in compact mode, switching to its tab): when it starts, or until when it
+  // runs, and a warning when evcc projects the end after the target time. A tap
+  // jumps to the plan block. Heating loadpoints get no EV plan block, no hint.
+  _renderPlanHint(ents, lpName) {
+    if (this._isHeatingLoadpoint(ents)) return "";
+    const valid = (id) => {
+      const v = id ? stateVal(this._hass, id) : null;
+      return v && v !== "unknown" && v !== "unavailable" && !isNaN(Date.parse(v)) ? v : null;
+    };
+    const active    = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
+    const start     = valid(ents.plan_projected_start);
+    const end       = valid(ents.plan_projected_end);
+    const target    = valid(ents.effective_plan_time);
+    if (active ? !end : !start) return "";
+
+    const lang    = this._config.language || this._hass?.language || "en";
+    // evcc's planTimeUnreachable: the projected end lies after the target time.
+    // A minute of slack keeps rounding in evcc's projection from raising it.
+    const overrun = end && target ? (Date.parse(end) - Date.parse(target)) / 1000 : 0;
+    const late    = overrun >= 60;
+    const text    = late
+      ? this._t("planHintLate", { overrun: fmtDuration(overrun) })
+      : active
+        ? this._t("planHintActive", { time: fmtClock(end, lang) })
+        : this._t("planHintStart", { time: fmtClock(start, lang) });
+    const icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19,3H18V1H16V3H8V1H6V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M19,19H5V8H19V19Z"/></svg>`;
+    return `
+          <div class="lp-action-chip plan${late ? " late" : ""}" data-lp-plan-open="${escAttr(lpName)}">
+            ${icon}
+            <span>${escHtml(text)}</span>
+          </div>`;
+  },
+
+  // evcc charges to the minimum SoC first, whatever the mode; evcc's
+  // minSocNotReached while a vehicle is connected. SoC 0 is evcc's "no value".
+  _renderMinSocHint(ents) {
+    if (!ents.min_soc || !ents.vehicle_soc || this._isHeatingLoadpoint(ents)) return "";
+    const connected = ents.connected ? isOn(this._hass, ents.connected) : false;
+    const minSoc    = parseFloat(stateVal(this._hass, ents.min_soc));
+    const soc       = parseFloat(stateVal(this._hass, ents.vehicle_soc));
+    if (!connected || !(minSoc > 0) || !(soc > 0) || soc >= minSoc) return "";
+    const icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M16,20H8V6H16M16.67,4H15V2H9V4H7.33A1.33,1.33 0 0,0 6,5.33V20.67C6,21.4 6.6,22 7.33,22H16.67A1.33,1.33 0 0,0 18,20.67V5.33C18,4.6 17.4,4 16.67,4M11,18H13V16H11V18M11,9V14H13V9H11Z"/></svg>`;
+    return `
+          <div class="lp-action-chip minsoc"${moreInfo(ents.min_soc)}>
+            ${icon}
+            <span>${escHtml(this._t("minSocHint", { soc: `${Math.round(minSoc)} %` }))}</span>
+          </div>`;
   },
 
   _renderModeSelector(ents, hidePv = false) {
@@ -1817,6 +1894,21 @@ const loadpointView = {
       });
     });
 
+    this._fresh("[data-lp-plan-open]").forEach(chip => {
+      chip.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const lpName = chip.dataset.lpPlanOpen;
+        // compact mode: the plan sits in its own tab, switch to it
+        const tab = chip.closest("[data-lp-compact]")?.querySelector('button.compact-tab[data-tab="2"]');
+        if (tab && !tab.classList.contains("active")) tab.click();
+        const block = [...this.shadowRoot.querySelectorAll(".plan-block")].find(b => b.dataset.lp === lpName);
+        if (!block) return;
+        block.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        block.classList.add("plan-highlight");
+        setTimeout(() => block.classList.remove("plan-highlight"), 1500);
+      });
+    });
+
     this._fresh("button.compact-tab").forEach(btn => {
       btn.addEventListener("click", () => {
         const lpName   = btn.dataset.lp;
@@ -1933,6 +2025,9 @@ const loadpointCss = `
       .lp-action-chip svg { width: 14px; height: 14px; flex: 0 0 14px; }
       .lp-action-chip.phase { color: var(--evcc-bolt, #ffae00); border-color: color-mix(in srgb, var(--evcc-bolt, #ffae00) 50%, transparent); background: color-mix(in srgb, var(--evcc-bolt, #ffae00) 10%, transparent); }
       .lp-action-chip.pv    { color: var(--evcc-green, #0a0);  border-color: color-mix(in srgb, var(--evcc-green, #0a0)  50%, transparent); background: color-mix(in srgb, var(--evcc-green, #0a0)  10%, transparent); }
+      .lp-action-chip.plan  { color: var(--info-color, #2196f3); border-color: color-mix(in srgb, var(--info-color, #2196f3) 50%, transparent); background: color-mix(in srgb, var(--info-color, #2196f3) 10%, transparent); cursor: pointer; }
+      .lp-action-chip.plan.late, .lp-action-chip.minsoc { color: var(--warning-color, #ff9800); border-color: color-mix(in srgb, var(--warning-color, #ff9800) 50%, transparent); background: color-mix(in srgb, var(--warning-color, #ff9800) 10%, transparent); }
+      .lp-action-chip.minsoc { cursor: pointer; }
       .lp-action-chip.vehicle { color: var(--info-color, #2196f3); border-color: color-mix(in srgb, var(--info-color, #2196f3) 50%, transparent); background: color-mix(in srgb, var(--info-color, #2196f3) 10%, transparent); }
       .lp-remaining {
         font-size: .85em; color: var(--secondary-text-color);
@@ -3380,6 +3475,7 @@ const planningView = {
 // Part of the card stylesheet, see src/styles.js.
 const planCss = `
       .plan-block { border-top: 1px solid var(--divider-color, #e5e7eb); margin-top: 10px; padding-top: 10px; }
+      .plan-block.plan-highlight { animation: smart-cost-pulse 1.5s ease; }
       .plan-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
       .plan-badge { font-size: .7rem; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--divider-color); color: var(--secondary-text-color); }
       .plan-badge.planned { background: rgba(0, 120, 180, 0.3); color: #60aaff; }
@@ -6558,7 +6654,7 @@ const debugCss = `
 // is not a <button>, <input>, <select> or <a> and so gets no keyboard support
 // from the browser. They are made focusable and get the button role here,
 // once per render, instead of every view remembering to do it.
-const NON_NATIVE_CLICKABLES = "[data-more-info], [data-action], [data-lp-current-toggle], [data-lp-smart-cost-open]";
+const NON_NATIVE_CLICKABLES = "[data-more-info], [data-action], [data-lp-current-toggle], [data-lp-smart-cost-open], [data-lp-plan-open]";
 const NATIVE = "button, input, select, textarea, a[href]";
 
 // The listeners every view shares: keyboard activation, more-info, the site
@@ -7323,9 +7419,12 @@ class EvccCard extends HTMLElement {
         : sec < 60
           ? `${sec}s`
           : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+      // A run-out timer leaves like evcc's, until the next render drops the chip.
+      const chip = el.closest(".lp-action-chip");
+      if (chip) chip.hidden = !cd;
       const key = el.dataset.countdownLabel;
-      if (key) {
-        el.textContent = this._t(key, { val: cd || "—" });
+      if (key && cd) {
+        el.textContent = this._t(key, { val: cd });
       }
     });
   }

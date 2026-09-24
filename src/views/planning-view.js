@@ -755,6 +755,7 @@ export const planningView = {
 // Part of the card stylesheet, see src/styles.js.
 export const planCss = `
       .plan-block { border-top: 1px solid var(--divider-color, #e5e7eb); margin-top: 10px; padding-top: 10px; }
+      .plan-block.plan-highlight { animation: smart-cost-pulse 1.5s ease; }
       .plan-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
       .plan-badge { font-size: .7rem; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--divider-color); color: var(--secondary-text-color); }
       .plan-badge.planned { background: rgba(0, 120, 180, 0.3); color: #60aaff; }

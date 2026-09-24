@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  stepDecimals, fmtNum, evccDate, fmtDuration, fmtRemainingDuration,
+  stepDecimals, fmtNum, evccDate, fmtDuration, fmtClock, fmtRemainingDuration,
   fmtCountdownFromISO, fmtCountdownFromTimestamp, socFillGradient, socTrackBg,
 } from "../../src/utils/format.js";
 
@@ -75,6 +75,21 @@ test("evccDate returns null instead of an Invalid Date", () => {
   for (const bad of [null, undefined, "", "not a date", true, {}, NaN]) {
     assert.equal(evccDate(bad), null, `input: ${String(bad)}`);
   }
+});
+
+// --- fmtClock ----------------------------------------------------------------
+
+test("fmtClock reads the time alone today and adds the weekday on another day", () => {
+  const today = new Date(); today.setHours(12, 34, 0, 0);
+  const other = new Date(today); other.setDate(other.getDate() + 1);
+  assert.equal(fmtClock(today.toISOString(), "de"), "12:34");
+  const weekday = other.toLocaleString("de", { weekday: "short" });
+  assert.ok(fmtClock(other.toISOString(), "de").startsWith(weekday), fmtClock(other.toISOString(), "de"));
+  assert.ok(fmtClock(other.toISOString(), "de").endsWith("12:34"));
+});
+
+test("fmtClock is empty for anything that is not a date", () => {
+  for (const v of [null, "", "unknown", "unavailable", "not a date"]) assert.equal(fmtClock(v, "de"), "", String(v));
 });
 
 // --- fmtDuration -------------------------------------------------------------

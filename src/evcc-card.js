@@ -612,9 +612,12 @@ export class EvccCard extends HTMLElement {
         : sec < 60
           ? `${sec}s`
           : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+      // A run-out timer leaves like evcc's, until the next render drops the chip.
+      const chip = el.closest(".lp-action-chip");
+      if (chip) chip.hidden = !cd;
       const key = el.dataset.countdownLabel;
-      if (key) {
-        el.textContent = this._t(key, { val: cd || "—" });
+      if (key && cd) {
+        el.textContent = this._t(key, { val: cd });
       }
     });
   }
