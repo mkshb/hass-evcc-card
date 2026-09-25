@@ -333,5 +333,21 @@
   "editorModeVehicle": "Pojazd (vehicle)",
   "editorModeDescVehicle": "Jeden blok na pojazd: poziom naładowania, zasięg, przebieg, punkt ładowania, plany i sumy.",
   "editorTitlePlaceholderVehicle": "Domyślnie: nazwa pojazdu",
-  "editorVehiclesNoneFound": "Nie znaleziono pojazdów"
+  "editorVehiclesNoneFound": "Nie znaleziono pojazdów",
+  "vehicleLocked": "Zablokowany",
+  "vehicleUnlocked": "Odblokowany",
+  "vehicleAllClosed": "Wszystko zamknięte",
+  "vehicleNoWarnings": "Brak ostrzeżeń",
+  "vehicleAtHome": "W domu",
+  "vehicleAway": "Poza domem",
+  "vehicleDetails": "Szczegóły pojazdu",
+  "vehicleDriving": "Jedzie",
+  "vehicleParked": "Zaparkowany",
+  "editorVehicleDeviceTitle": "Urządzenia pojazdów w Home Assistant",
+  "editorVehicleDeviceHint": "Karta sama znajduje urządzenie integracji pojazdu i dodaje jego dane: zamek, drzwi, ostrzeżenia, lokalizację i więcej. Jeśli się pomyli, wybierz tutaj inne urządzenie.",
+  "editorVehicleDeviceAuto": "Automatycznie ({val})",
+  "editorVehicleDeviceNotFound": "nie znaleziono",
+  "editorVehicleDeviceNone": "Brak urządzenia",
+  "editorVehicleDeviceGroupVehicles": "Pojazdy",
+  "editorVehicleDeviceGroupOther": "Inne urządzenia"
 }

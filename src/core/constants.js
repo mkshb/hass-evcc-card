@@ -279,6 +279,15 @@ export function validateCardConfig(config) {
   if (vehicles && (!vehicles.length || vehicles.some(v => typeof v !== "string" || !v.trim()))) {
     throw new Error("evcc-card: vehicles has to be a vehicle name or a list of names");
   }
+
+  // vehicle_devices: false switches the device link off, a map names the device
+  // per vehicle ("none" for a vehicle that is to stay without one).
+  const links = c.vehicle_devices;
+  if (links !== undefined && links !== null && links !== false) {
+    const ok = typeof links === "object" && !Array.isArray(links)
+      && Object.values(links).every(v => v === false || (typeof v === "string" && v.trim()));
+    if (!ok) throw new Error("evcc-card: vehicle_devices has to be false or a map of vehicle name to device id or \"none\"");
+  }
 }
 
 // Entity attributes the card reads while rendering. The render key is built from
@@ -294,6 +303,7 @@ export function validateCardConfig(config) {
 export const RENDER_ATTRS = [
   "options", "min", "max", "step", "unit_of_measurement", "device_class",
   "title", "loadpoint_title", "vehicle", "soc", "time", "weekdays",
+  "state_class", "source_type",
 ];
 
 // Settings the user can drop from the loadpoint/compact card via

@@ -4,6 +4,7 @@ import { enableEntity } from "./core/actions.js";
 import { disabledEntitiesHtml, disabledListCss, enableEntities } from "./components/disabled-entities.js";
 import { loadSharedTranslations, sharedTranslations, sharedTranslationsReady } from "./utils/translations.js";
 import { escHtml } from "./utils/html.js";
+import { listVehicleDevices, findVehicleDevice, evccVehicleTitle } from "./core/vehicle-device.js";
 
 export class EvccCardEditor extends HTMLElement {
   constructor() {
@@ -130,6 +131,35 @@ export class EvccCardEditor extends HTMLElement {
         <input type="checkbox" data-field="${type}" data-lp="${this._esc(slug)}" ${selected.includes(slug) ? "checked" : ""}>
         <span>${this._esc(label)}</span>
       </label>`;
+    }).join("");
+  }
+
+  // One device select per vehicle. The first option is what the card does on
+  // its own and names the device it found, so nobody has to pick what is
+  // already right; a choice is written to `vehicle_devices`, the automatic one
+  // removes the vehicle from it again.
+  _vehicleDeviceFields(vehicles) {
+    const slugs = Object.keys(vehicles).sort();
+    if (slugs.length === 0) return `<div class="hint">${this._t("editorVehiclesNoneFound")}</div>`;
+    const devices = listVehicleDevices(this._hass);
+    const chosen  = this._config.vehicle_devices && typeof this._config.vehicle_devices === "object" ? this._config.vehicle_devices : {};
+    const option  = (val, label, cur) => `<option value="${this._esc(val)}"${cur === val ? " selected" : ""}>${this._esc(label)}</option>`;
+
+    return slugs.map(slug => {
+      const title = evccVehicleTitle(this._hass, slug, vehicles[slug]) || slug;
+      const found = devices.find(d => d.id === findVehicleDevice(this._hass, slug, title));
+      const cur   = chosen[slug] === false ? "none" : (chosen[slug] || "");
+      const like  = devices.filter(d => d.vehicleLike);
+      const other = devices.filter(d => !d.vehicleLike);
+      return `
+        <label class="field-label" for="vehicle-device-${this._esc(slug)}">${this._esc(title)}</label>
+        <select id="vehicle-device-${this._esc(slug)}" class="ha-select" data-vehicle-device="${this._esc(slug)}">
+          ${option("", this._t("editorVehicleDeviceAuto", { val: found ? found.name : this._t("editorVehicleDeviceNotFound") }), cur)}
+          ${option("none", this._t("editorVehicleDeviceNone"), cur)}
+          ${like.length ? `<optgroup label="${this._esc(this._t("editorVehicleDeviceGroupVehicles"))}">${like.map(d => option(d.id, d.name, cur)).join("")}</optgroup>` : ""}
+          ${other.length ? `<optgroup label="${this._esc(this._t("editorVehicleDeviceGroupOther"))}">${other.map(d => option(d.id, d.name, cur)).join("")}</optgroup>` : ""}
+          ${cur && cur !== "none" && !devices.some(d => d.id === cur) ? option(cur, cur, cur) : ""}
+        </select>`;
     }).join("");
   }
 
@@ -326,6 +356,11 @@ export class EvccCardEditor extends HTMLElement {
           <div class="hint">${this._t("editorVehicleFilterHint")}</div>
           ${this._vehicleCheckboxes("vehicles", selVehicles, this._hass ? Object.keys(discoverVehicles(this._hass, this._getPrefix())).sort() : [], "editorVehiclesNoneFound")}
         </div>
+        <div class="field">
+          <div class="section-title">${this._t("editorVehicleDeviceTitle")}</div>
+          <div class="hint">${this._t("editorVehicleDeviceHint")}</div>
+          ${this._hass ? this._vehicleDeviceFields(discoverVehicles(this._hass, this._getPrefix())) : ""}
+        </div>
         ` : ""}
         ${showNoPlan ? `
         <div class="field">
@@ -414,7 +449,7 @@ export class EvccCardEditor extends HTMLElement {
         this._config = {
           ...this._config,
           prefix: isDefault ? undefined : chosen,
-          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined, vehicles: undefined,
+          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined, vehicles: undefined, vehicle_devices: undefined,
         };
         this._discoverLoadpoints();
         this._fire();
@@ -449,6 +484,16 @@ export class EvccCardEditor extends HTMLElement {
     });
     const optEl = this.shadowRoot.querySelector("details.disabled-optional");
     if (optEl) optEl.addEventListener("toggle", () => { this._disabledOptionalOpen = optEl.open; });
+
+    this.shadowRoot.querySelectorAll("[data-vehicle-device]").forEach(sel => {
+      sel.addEventListener("change", () => {
+        const map = { ...(this._config.vehicle_devices && typeof this._config.vehicle_devices === "object" ? this._config.vehicle_devices : {}) };
+        if (sel.value) map[sel.dataset.vehicleDevice] = sel.value;
+        else delete map[sel.dataset.vehicleDevice];
+        this._config = { ...this._config, vehicle_devices: Object.keys(map).length ? map : undefined };
+        this._fire();
+      });
+    });
 
     this.shadowRoot.querySelectorAll("input[type=checkbox][data-field]").forEach(cb => {
       cb.addEventListener("change", () => {

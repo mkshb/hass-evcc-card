@@ -333,5 +333,21 @@
   "editorModeVehicle": "Vehicle (vehicle)",
   "editorModeDescVehicle": "One block per vehicle: charge level, range, odometer, charge point, plans and totals.",
   "editorTitlePlaceholderVehicle": "Default: Vehicle name",
-  "editorVehiclesNoneFound": "No vehicles found"
+  "editorVehiclesNoneFound": "No vehicles found",
+  "vehicleLocked": "Locked",
+  "vehicleUnlocked": "Unlocked",
+  "vehicleAllClosed": "All closed",
+  "vehicleNoWarnings": "No warnings",
+  "vehicleAtHome": "Home",
+  "vehicleAway": "Away",
+  "vehicleDetails": "Vehicle details",
+  "vehicleDriving": "Driving",
+  "vehicleParked": "Parked",
+  "editorVehicleDeviceTitle": "Vehicle devices in Home Assistant",
+  "editorVehicleDeviceHint": "The card finds the device of the vehicle's own integration by itself and adds its data: lock, doors, warnings, location and more. Pick another device here if it got it wrong.",
+  "editorVehicleDeviceAuto": "Automatic ({val})",
+  "editorVehicleDeviceNotFound": "none found",
+  "editorVehicleDeviceNone": "No device",
+  "editorVehicleDeviceGroupVehicles": "Vehicles",
+  "editorVehicleDeviceGroupOther": "Other devices"
 }

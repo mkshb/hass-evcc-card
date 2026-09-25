@@ -333,5 +333,21 @@
   "editorModeVehicle": "Fahrzeug (vehicle)",
   "editorModeDescVehicle": "Ein Block pro Fahrzeug: Ladestand, Reichweite, Kilometerstand, Ladepunkt, Pläne und Summen.",
   "editorTitlePlaceholderVehicle": "Standard: Fahrzeugname",
-  "editorVehiclesNoneFound": "Keine Fahrzeuge gefunden"
+  "editorVehiclesNoneFound": "Keine Fahrzeuge gefunden",
+  "vehicleLocked": "Verriegelt",
+  "vehicleUnlocked": "Entriegelt",
+  "vehicleAllClosed": "Alles geschlossen",
+  "vehicleNoWarnings": "Keine Warnungen",
+  "vehicleAtHome": "Zuhause",
+  "vehicleAway": "Unterwegs",
+  "vehicleDetails": "Fahrzeugdetails",
+  "vehicleDriving": "Fährt",
+  "vehicleParked": "Parkt",
+  "editorVehicleDeviceTitle": "Fahrzeug-Geräte in Home Assistant",
+  "editorVehicleDeviceHint": "Die Karte findet das Gerät der Fahrzeug-Integration selbst und ergänzt dessen Daten: Schloss, Türen, Warnungen, Standort und mehr. Liegt sie daneben, hier ein anderes Gerät wählen.",
+  "editorVehicleDeviceAuto": "Automatisch ({val})",
+  "editorVehicleDeviceNotFound": "keines gefunden",
+  "editorVehicleDeviceNone": "Kein Gerät",
+  "editorVehicleDeviceGroupVehicles": "Fahrzeuge",
+  "editorVehicleDeviceGroupOther": "Andere Geräte"
 }

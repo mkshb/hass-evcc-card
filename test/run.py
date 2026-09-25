@@ -139,11 +139,13 @@ def done(page):
 
 
 def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="de", ws=True, set=None, disable=None,
-              rename=None, attrs=None, tariff=None, second=None, wsname=None, admin=True, drop=None):
+              rename=None, attrs=None, tariff=None, second=None, wsname=None, admin=True, drop=None,
+              vehicle_device=True):
     q = {"w": width, "lang": lang}
     if not ws: q["ws"] = 0
     if not admin: q["admin"] = 0
     if drop: q["drop"] = ",".join(drop)
+    if not vehicle_device: q["vd"] = 0
     if set:     q["set"] = ",".join(f"{k}:{v}" for k, v in set.items())
     if attrs:   q["attrs"] = json.dumps(attrs)
     if disable: q["disable"] = ",".join(disable)
@@ -314,7 +316,7 @@ def vehicle_mode(browser, port, t):
             "switching a repeating plan calls switch.turn_on on the plan entity", json.dumps(calls[-1:]))
     done(page)
 
-    page, errors = card(set=UNPLUGGED)
+    page, errors = card(set=UNPLUGGED, vehicle_device=False)
     ex30 = page.locator(block("ex30"))
     info = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .soc-label-row [data-more-info]')].map(e => [e.dataset.moreInfo, e.textContent.trim()])")
     t.check(info == [["sensor.evcc_ex30_configvehicle_soc", "52 %"], ["sensor.evcc_ex30_configvehicle_range", "184 km"], ["sensor.evcc_ex30_configvehicle_odometer", "11445 km"]],
@@ -323,6 +325,90 @@ def vehicle_mode(browser, port, t):
             "unplugged: badge says so, no loadpoint is named", ex30.locator(".lp-header").inner_text())
     marker = ex30.locator(".soc-limit-marker").get_attribute("style") or ""
     t.check("left:90%" in marker.replace(" ", ""), "the limit marker follows the vehicle's own limit", marker)
+    done(page)
+
+    t.group("vehicle - device of the vehicle's own integration")
+    VOLVO, DECOY = "f1c0de00volvoex30fixture000000001", "f1c0de00companionex30fixture00002"
+    values = "[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .soc-label-row [data-more-info]')].map(e => [e.dataset.moreInfo, e.textContent.trim()])"
+    chips  = "[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .vehicle-chip')].map(e => [e.className.replace('vehicle-chip', '').trim(), e.textContent.trim(), e.dataset.moreInfo || ''])"
+    page, errors = card()
+    link = page.evaluate("window.__card._vehicleLinks()")
+    t.check(link.get("ex30", {}).get("deviceId") == VOLVO and "id7" not in link and not errors,
+            "the device is found on its own: the integration's, not the companion app's of the same name", json.dumps({k: v["deviceId"] for k, v in link.items()}))
+    info = page.evaluate(values)
+    t.check([i[0] for i in info] == ["sensor.evcc_openwb_vehicle_soc", "sensor.evcc_openwb_vehicle_range", "sensor.evcc_openwb_vehicle_odometer"],
+            "connected: evcc's loadpoint values still lead", json.dumps(info))
+    got = page.evaluate(chips)
+    t.check(got == [["ok", "Verriegelt", "lock.volvo_ex30_schloss"], ["warn", "Tankdeckel", "binary_sensor.volvo_ex30_tankdeckel"],
+                    ["ok", "Keine Warnungen", ""], ["", "Zuhause", "device_tracker.volvo_ex30_standort"]],
+            "chips: lock, the one open lid by name, thirty warning flags as one chip, location", json.dumps(got, ensure_ascii=False))
+    t.check(page.locator(block("id7")).locator(".vehicle-chips, .vehicle-details").count() == 0, "a vehicle without a device stays as it was", "")
+    details = page.locator(block("ex30")).locator(".vehicle-detail-list")
+    t.check(details.count() == 1 and not details.is_visible(), "the remaining entities are folded away", "")
+    page.locator(block("ex30")).locator(".vehicle-details-toggle").click()
+    page.wait_for_timeout(200)
+    rows = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .vehicle-detail')].map(e => [e.dataset.moreInfo, e.textContent.replace(/\\s+/g, ' ').trim()])")
+    labels = dict(rows)
+    t.check(page.locator(block("ex30")).locator(".vehicle-detail-list").is_visible()
+            and labels.get("sensor.volvo_ex30_batteriekapazitat") == "Batteriekapazität 69 kWh"
+            and labels.get("sensor.volvo_ex30_reichweite_bis_wartung") == "Reichweite bis Wartung 18525 km"
+            and not any(i.startswith(("button.", "lock.", "device_tracker.")) or "bremsleuchte" in i for i in labels)
+            and "sensor.volvo_ex30_batterie" not in labels,
+            "unfolded: capacity and service values by their HA name, nothing shown twice, no unknown flags", json.dumps(rows[:4], ensure_ascii=False))
+    done(page)
+
+    page, errors = card(set=UNPLUGGED)
+    info = page.evaluate(values)
+    t.check(info == [["sensor.volvo_ex30_batterie", "72 %"], ["sensor.volvo_ex30_reichweite_bis_batterie_leer", "257 km"], ["sensor.volvo_ex30_kilometerstand", "11503 km"]],
+            "unplugged: the value that changed last wins, here the integration's; range is not the distance to service", json.dumps(info))
+    tip = page.locator(block("ex30")).locator(".soc-label-row [data-more-info]").first.get_attribute("title") or ""
+    t.check("Aktualisiert" in tip and "Stunde" in tip, "the tooltip tells the age of a value", tip)
+    done(page)
+
+    page, errors = card(set=dict(UNPLUGGED, **{"binary_sensor.volvo_ex30_reifen_vorne_links": "on", "lock.volvo_ex30_schloss": "unlocked"}))
+    got = page.evaluate(chips)
+    t.check(["warn", "Entriegelt", "lock.volvo_ex30_schloss"] in got and ["alert", "Reifen vorne links", "binary_sensor.volvo_ex30_reifen_vorne_links"] in got
+            and not any(c[1] == "Keine Warnungen" for c in got),
+            "a raised warning and an open lock get a chip of their own", json.dumps(got, ensure_ascii=False))
+    done(page)
+
+    for cfg, want, label in (({"vehicle_devices": False}, None, "vehicle_devices: false switches the link off"),
+                             ({"vehicle_devices": {"ex30": "none"}}, None, "\"none\" switches it off for one vehicle"),
+                             ({"vehicle_devices": {"ex30": DECOY}}, DECOY, "a configured device overrides the search"),
+                             ({"vehicle_devices": {"id7": VOLVO}}, VOLVO, "a vehicle the search finds nothing for takes a configured device")):
+        page, errors = card(config=dict({"mode": "vehicle"}, **cfg))
+        link = page.evaluate("window.__card._vehicleLinks()")
+        slug = "id7" if "id7" in (cfg["vehicle_devices"] or {}) else "ex30"
+        t.check(link.get(slug, {}).get("deviceId") == want and not errors, label, json.dumps({k: v["deviceId"] for k, v in link.items()}))
+        done(page)
+
+    page, errors = card(set=UNPLUGGED)
+    page.evaluate("""() => { const h = window.__hass; const id = "sensor.volvo_ex30_batterie";
+      h.states = { ...h.states, [id]: { ...h.states[id], state: "80", last_updated: new Date().toISOString() } };
+      window.__card.hass = { ...h }; }""")
+    page.wait_for_timeout(600)
+    soc = page.locator(block("ex30")).locator(".soc-label-row [data-more-info]").first.inner_text().strip()
+    t.check(soc == "80 %", "a change of an entity without the evcc prefix reaches the card", soc)
+    done(page)
+
+    t.group("vehicle - what the vehicle is doing")
+    AWAY = dict(UNPLUGGED, **{"sensor.volvo_ex30_status_des_ladeanschluss": "disconnected"})
+    badge = lambda page: page.locator(block("ex30")).locator(".lp-badge").inner_text().strip()
+    for st, want, label in (
+        ({}, "Lädt", "charging at the loadpoint"),
+        ({"binary_sensor.evcc_openwb_charging": "off"}, "Verbunden", "connected at the loadpoint"),
+        (AWAY, "Parkt", "parked, told by the integration"),
+        (dict(AWAY, **{"binary_sensor.volvo_ex30_motorstatus": "on"}), "Fährt", "driving"),
+        (dict(AWAY, **{"sensor.volvo_ex30_ladestatus": "charging", "binary_sensor.volvo_ex30_motorstatus": "on"}), "Lädt",
+         "charging away from home, told by the integration alone, beats the engine flag"),
+        (UNPLUGGED, "Verbunden", "plugged in somewhere evcc does not see"),
+    ):
+        page, errors = card(set=st)
+        got = badge(page)
+        t.check(got == want and not errors, f"badge: {label}", got)
+        done(page)
+    page, errors = card(set=UNPLUGGED, vehicle_device=False)
+    t.check(badge(page) == "Nicht verbunden", "without an integration the card does not claim to know: not connected", badge(page))
     done(page)
 
     t.group("vehicle - charge plan of the loadpoint")
@@ -358,7 +444,7 @@ def vehicle_mode(browser, port, t):
     page, errors = card(config={"mode": "vehicle", "title": "Mein Volvo", "vehicles": ["ex30"]})
     t.check(page.locator(block("ex30")).locator(".lp-name").inner_text().strip().upper() == "MEIN VOLVO", "title names a single vehicle", "")
     done(page)
-    page, errors = card(set=UNPLUGGED, disable=[f"sensor.evcc_ex30_configvehicle_{k}" for k in ("soc", "range", "odometer", "limitsoc")])
+    page, errors = card(set=UNPLUGGED, vehicle_device=False, disable=[f"sensor.evcc_ex30_configvehicle_{k}" for k in ("soc", "range", "odometer", "limitsoc")])
     ex30 = page.locator(block("ex30"))
     t.check(ex30.count() == 1 and "erweiterten Fahrzeugdaten" in ex30.inner_text() and ex30.locator(".rplan-row").count() == 2 and not errors,
             "without the extended vehicle data the block stays, with a hint instead of values", ex30.inner_text()[:160] if ex30.count() else "missing")
@@ -1288,6 +1374,25 @@ def editor(browser, port, t):
             str(fld('input[data-field="repeating_plan_vehicles"]').count()))
     cb("repeating_plan_vehicles", "ex30").check()
     t.check(last().get("repeating_plan_vehicles") == ["ex30"], "vehicle filter writes config.repeating_plan_vehicles", json.dumps(last()))
+
+    fld("#mode").select_option("vehicle")
+    page.wait_for_timeout(400)
+    t.check(fld('input[data-field="vehicles"]').count() == 2 and fld('input[data-field="repeating_plan_vehicles"]').count() == 0,
+            "vehicle mode offers the discovered vehicles", str(fld('input[data-field="vehicles"]').count()))
+    cb("vehicles", "id7").check()
+    t.check(last().get("vehicles") == ["id7"] and last().get("mode") == "vehicle", "vehicle filter writes config.vehicles", json.dumps(last()))
+    cb("vehicles", "id7").uncheck()
+    t.check("vehicles" not in last(), "an empty vehicle filter drops the key again", json.dumps(last()))
+    dev = fld('select[data-vehicle-device="ex30"]')
+    auto = dev.locator("option").first.inner_text()
+    t.check(fld("select[data-vehicle-device]").count() == 2 and "Volvo EX30" in auto and dev.input_value() == "",
+            "one device select per vehicle, the automatic option names the device it found", auto)
+    dev.select_option("f1c0de00companionex30fixture00002")
+    t.check(last().get("vehicle_devices") == {"ex30": "f1c0de00companionex30fixture00002"}, "a picked device writes config.vehicle_devices", json.dumps(last()))
+    dev.select_option("none")
+    t.check(last().get("vehicle_devices") == {"ex30": "none"}, "no device writes \"none\"", json.dumps(last()))
+    dev.select_option("")
+    t.check("vehicle_devices" not in last(), "back to automatic drops the key again", json.dumps(last()))
     done(page)
 
 

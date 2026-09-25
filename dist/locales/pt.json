@@ -333,5 +333,21 @@
   "editorModeVehicle": "Veículo (vehicle)",
   "editorModeDescVehicle": "Um bloco por veículo: nível de carga, autonomia, quilometragem, ponto de carregamento, planos e totais.",
   "editorTitlePlaceholderVehicle": "Predefinição: nome do veículo",
-  "editorVehiclesNoneFound": "Nenhum veículo encontrado"
+  "editorVehiclesNoneFound": "Nenhum veículo encontrado",
+  "vehicleLocked": "Trancado",
+  "vehicleUnlocked": "Destrancado",
+  "vehicleAllClosed": "Tudo fechado",
+  "vehicleNoWarnings": "Sem avisos",
+  "vehicleAtHome": "Em casa",
+  "vehicleAway": "Fora",
+  "vehicleDetails": "Detalhes do veículo",
+  "vehicleDriving": "Em andamento",
+  "vehicleParked": "Estacionado",
+  "editorVehicleDeviceTitle": "Dispositivos de veículo no Home Assistant",
+  "editorVehicleDeviceHint": "O cartão encontra sozinho o dispositivo da integração do veículo e acrescenta os seus dados: fecho, portas, avisos, localização e mais. Se errar, escolha aqui outro dispositivo.",
+  "editorVehicleDeviceAuto": "Automático ({val})",
+  "editorVehicleDeviceNotFound": "nenhum encontrado",
+  "editorVehicleDeviceNone": "Sem dispositivo",
+  "editorVehicleDeviceGroupVehicles": "Veículos",
+  "editorVehicleDeviceGroupOther": "Outros dispositivos"
 }

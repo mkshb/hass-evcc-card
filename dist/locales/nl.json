@@ -333,5 +333,21 @@
   "editorModeVehicle": "Voertuig (vehicle)",
   "editorModeDescVehicle": "Eén blok per voertuig: laadniveau, actieradius, kilometerstand, laadpunt, plannen en totalen.",
   "editorTitlePlaceholderVehicle": "Standaard: voertuignaam",
-  "editorVehiclesNoneFound": "Geen voertuigen gevonden"
+  "editorVehiclesNoneFound": "Geen voertuigen gevonden",
+  "vehicleLocked": "Vergrendeld",
+  "vehicleUnlocked": "Ontgrendeld",
+  "vehicleAllClosed": "Alles gesloten",
+  "vehicleNoWarnings": "Geen waarschuwingen",
+  "vehicleAtHome": "Thuis",
+  "vehicleAway": "Onderweg",
+  "vehicleDetails": "Voertuigdetails",
+  "vehicleDriving": "Rijdt",
+  "vehicleParked": "Geparkeerd",
+  "editorVehicleDeviceTitle": "Voertuigapparaten in Home Assistant",
+  "editorVehicleDeviceHint": "De kaart vindt het apparaat van de voertuigintegratie zelf en voegt de gegevens toe: slot, deuren, waarschuwingen, locatie en meer. Kies hier een ander apparaat als dat niet klopt.",
+  "editorVehicleDeviceAuto": "Automatisch ({val})",
+  "editorVehicleDeviceNotFound": "geen gevonden",
+  "editorVehicleDeviceNone": "Geen apparaat",
+  "editorVehicleDeviceGroupVehicles": "Voertuigen",
+  "editorVehicleDeviceGroupOther": "Andere apparaten"
 }

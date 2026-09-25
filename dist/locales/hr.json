@@ -333,5 +333,21 @@
   "editorModeVehicle": "Vozilo (vehicle)",
   "editorModeDescVehicle": "Jedan blok po vozilu: razina napunjenosti, domet, kilometraža, punionica, planovi i zbrojevi.",
   "editorTitlePlaceholderVehicle": "Zadano: naziv vozila",
-  "editorVehiclesNoneFound": "Nema pronađenih vozila"
+  "editorVehiclesNoneFound": "Nema pronađenih vozila",
+  "vehicleLocked": "Zaključano",
+  "vehicleUnlocked": "Otključano",
+  "vehicleAllClosed": "Sve zatvoreno",
+  "vehicleNoWarnings": "Nema upozorenja",
+  "vehicleAtHome": "Kod kuće",
+  "vehicleAway": "Odsutno",
+  "vehicleDetails": "Detalji vozila",
+  "vehicleDriving": "Vozi",
+  "vehicleParked": "Parkirano",
+  "editorVehicleDeviceTitle": "Uređaji vozila u Home Assistantu",
+  "editorVehicleDeviceHint": "Kartica sama pronalazi uređaj integracije vozila i dodaje njegove podatke: bravu, vrata, upozorenja, lokaciju i drugo. Ako pogriješi, ovdje odaberite drugi uređaj.",
+  "editorVehicleDeviceAuto": "Automatski ({val})",
+  "editorVehicleDeviceNotFound": "nije pronađen",
+  "editorVehicleDeviceNone": "Bez uređaja",
+  "editorVehicleDeviceGroupVehicles": "Vozila",
+  "editorVehicleDeviceGroupOther": "Ostali uređaji"
 }

@@ -333,5 +333,21 @@
   "editorModeVehicle": "Véhicule (vehicle)",
   "editorModeDescVehicle": "Un bloc par véhicule : niveau de charge, autonomie, kilométrage, point de charge, plans et totaux.",
   "editorTitlePlaceholderVehicle": "Par défaut : nom du véhicule",
-  "editorVehiclesNoneFound": "Aucun véhicule trouvé"
+  "editorVehiclesNoneFound": "Aucun véhicule trouvé",
+  "vehicleLocked": "Verrouillé",
+  "vehicleUnlocked": "Déverrouillé",
+  "vehicleAllClosed": "Tout est fermé",
+  "vehicleNoWarnings": "Aucune alerte",
+  "vehicleAtHome": "À la maison",
+  "vehicleAway": "Absent",
+  "vehicleDetails": "Détails du véhicule",
+  "vehicleDriving": "En route",
+  "vehicleParked": "Garé",
+  "editorVehicleDeviceTitle": "Appareils de véhicule dans Home Assistant",
+  "editorVehicleDeviceHint": "La carte trouve elle-même l'appareil de l'intégration du véhicule et ajoute ses données : verrouillage, portes, alertes, position et plus. Si elle se trompe, choisissez ici un autre appareil.",
+  "editorVehicleDeviceAuto": "Automatique ({val})",
+  "editorVehicleDeviceNotFound": "aucun trouvé",
+  "editorVehicleDeviceNone": "Aucun appareil",
+  "editorVehicleDeviceGroupVehicles": "Véhicules",
+  "editorVehicleDeviceGroupOther": "Autres appareils"
 }

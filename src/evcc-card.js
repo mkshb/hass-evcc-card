@@ -55,6 +55,7 @@ export class EvccCard extends HTMLElement {
 
     this._siteTableExpanded = undefined; // undefined = use config default
     this._currentBlockExpanded = {};
+    this._vehicleDetailsOpen = {};     // vehicle slug -> detail list unfolded
     this._detectedPrefix = null;
     this._cachedEntities   = null;  // { loadpoints, site } — invalidated when entity IDs change
     this._cachedEntityIdKey = null; // sorted join of evcc entity IDs + prefix
