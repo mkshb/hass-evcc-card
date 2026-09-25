@@ -51,8 +51,12 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
 
 
+class Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    daemon_threads = True
+
+
 def serve():
-    srv = socketserver.TCPServer(("127.0.0.1", 0), Quiet)
+    srv = Server(("127.0.0.1", 0), Quiet)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv, srv.server_address[1]
 
@@ -67,6 +71,7 @@ class T:
     def __init__(self, suite="evcc-card tests", browser="chromium", frozen_time=FIXED_TIME):
         self.suite, self.browser, self.results, self.started, self.section = suite, browser, [], time.time(), ""
         self.frozen_time = frozen_time   # None for a run on the live clock (test/e2e.py)
+        self.durations = {}              # group -> seconds, for the report
     def group(self, title):        self.section = title; print(f"\n[{title}]")
     def ok(self, name, detail=""):   self._add(True, name, detail);  print(f"  PASS {name}" + (f"  ({detail})" if detail else ""))
     def fail(self, name, detail=""): self._add(False, name, detail); print(f"  FAIL {name}  {detail}")
@@ -79,7 +84,7 @@ class T:
         out = Path(out); out.mkdir(parents=True, exist_ok=True)
         passed, failed = len(self.results) - len(self.failed), len(self.failed)
         meta = {"suite": self.suite, "browser": self.browser, "card_version": card_version(), "run_at": datetime.datetime.now().isoformat(timespec="seconds"),
-                "duration_s": round(time.time() - self.started, 1), "fixed_browser_time": self.frozen_time, "passed": passed, "failed": failed}
+                "duration_s": round(time.time() - self.started, 1), "group_durations_s": self.durations, "fixed_browser_time": self.frozen_time, "passed": passed, "failed": failed}
         (out / "report.json").write_text(json.dumps({**meta, "results": self.results, "screenshots": [str(s) for s in screenshots]}, indent=1, ensure_ascii=False))
         lines = [f"# {self.suite}", "",
                  f"**{'FAILED' if failed else 'PASSED'}**: {passed} passed, {failed} failed", "",
@@ -102,11 +107,35 @@ class T:
         return out / "report.md"
 
 
+# Pages are reused: one context per browser, a page taken from the pool by
+# new_page() and handed back by done(). A fresh context per test cost a context
+# start and a cold load of the bundle every time; within one context the bundle
+# comes from the HTTP cache and V8 keeps its compiled code. done() navigates to
+# about:blank, so no card, timer or listener of a test outlives it.
+_pools = {}
+
+
 def new_page(browser, width=480, height=900):
-    ctx = browser.new_context(viewport={"width": width, "height": height}, timezone_id=TIMEZONE, locale=LOCALE)
-    page = ctx.new_page()
+    pool = _pools.get(id(browser))
+    if pool is None:
+        ctx = browser.new_context(viewport={"width": width, "height": height}, timezone_id=TIMEZONE, locale=LOCALE)
+        ctx.route("**/favicon.ico", lambda r: r.fulfill(status=204))
+        pool = _pools[id(browser)] = {"ctx": ctx, "free": []}
+    page = pool["free"].pop() if pool["free"] else pool["ctx"].new_page()
+    page._evcc_pool = pool
+    page.set_viewport_size({"width": width, "height": height})
     page.clock.set_fixed_time(FIXED_TIME)
     return page
+
+
+def done(page):
+    """Hands a test's page back to the pool: the listeners open_card attached
+    removed, the document replaced by about:blank."""
+    for event, fn in getattr(page, "_evcc_listeners", []):
+        page.remove_listener(event, fn)
+    page._evcc_listeners = []
+    page.goto("about:blank")
+    page._evcc_pool["free"].append(page)
 
 
 def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="de", ws=True, set=None, disable=None,
@@ -126,14 +155,24 @@ def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="d
     else: q["mode"] = mode or "loadpoint"
     if dark: q["dark"] = 1
     errors = []
-    page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
-    page.on("console", lambda m: errors.append(f"console.{m.type}: {m.text}") if m.type == "error" else None)
-    page.on("response", lambda r: errors.append(f"http {r.status}: {r.url}") if r.status >= 400 else None)
-    page.route("**/favicon.ico", lambda r: r.fulfill(status=204))
+    listeners = [("pageerror", lambda e: errors.append(f"pageerror: {e}")),
+                 ("console",   lambda m: errors.append(f"console.{m.type}: {m.text}") if m.type == "error" else None),
+                 ("response",  lambda r: errors.append(f"http {r.status}: {r.url}") if r.status >= 400 else None)]
+    for event, fn in listeners:
+        page.on(event, fn)
+    page._evcc_listeners = getattr(page, "_evcc_listeners", []) + listeners
     page.goto(f"http://127.0.0.1:{port}/test/harness.html?{urllib.parse.urlencode(q)}")
     page.wait_for_function("window.__ready && window.__ready()", timeout=10000)
-    page.wait_for_timeout(900)   # debounced render + capability probe + first WS fetches
+    settle(page)   # debounced render + capability probe + first WS fetches
     return errors
+
+
+def settle(page):
+    """Wait until the card is idle: no short timer or fetch pending and its DOM
+    unchanged for 50 ms (window.__settle in harness.html). Replaces a fixed pause
+    after anything that makes the card render."""
+    if not page.evaluate("window.__settle()"):
+        raise TimeoutError("card did not settle within 8 s")
 
 
 def svc(page):
@@ -159,7 +198,7 @@ def render_smoke(browser, port, t):
                 bars = page.locator(in_card(".evcc-chart-wrap svg rect")).count()
                 t.check(bars > 0, "stats: bar chart rendered from sessions", f"{bars} bars")
                 t.check(page.locator(in_card(".stats-chart-loading")).count() == 0, "stats: no loading placeholder left")
-            page.close()
+            done(page)
 
     # The stylesheet is parsed once per page and adopted by every card, so a
     # render carries no <style> element and two cards share the same sheet.
@@ -184,7 +223,7 @@ def render_smoke(browser, port, t):
     # A re-render keeps the one sheet, it is not adopted twice.
     page.evaluate("() => { const c = window.__card; c._lastRenderKey = null; c._render(); c._render(); }")
     t.check(page.evaluate("window.__card.shadowRoot.adoptedStyleSheets.length") == 1, "re-renders keep a single adopted sheet")
-    page.close()
+    done(page)
 
 
 
@@ -234,7 +273,7 @@ def stats_fallback(browser, port, t):
         t.check(len(daily) >= 1, "30d tab queries day buckets", f"{len(daily)} call(s)")
         n = page.locator(in_card("rect.evcc-bar")).count()
         t.check(n == 30, "30d chart shows one bar per day", f"{n} bars")
-    page.close()
+    done(page)
 
 
 def render_attrs():
@@ -277,7 +316,7 @@ def stats_period(browser, port, t):
             got = page.evaluate(active)
             t.check(got == want and not errors, f"stats_period: {value or '(unset)'} selects {want}",
                     f"got {got}; {'; '.join(errors)[:120]}")
-            page.close()
+            done(page)
 
     # The compact footer under site/grid/flow carries the same period. `none`
     # is about this footer only, it never hides the tabs of the stats mode.
@@ -320,7 +359,7 @@ def stats_period(browser, port, t):
                 want_label, want_kwh = loc[LEGACY_TKEY[want_legacy]], LEGACY_KWH[want_legacy]
                 t.check(got_label.casefold() == want_label.casefold() and got_kwh.startswith(want_kwh) and not errors,
                         f"{name}: reads the {want_legacy} entities", f"got {got_label} / {got_kwh}")
-            page.close()
+            done(page)
 
 
 def renderkey(browser, port, t):
@@ -460,7 +499,7 @@ def renderkey(browser, port, t):
         page.wait_for_timeout(250)
     t.check(page.evaluate("window.__renders") == 0, "an update without changes still renders nothing", str(page.evaluate("window.__renders")))
     t.check(not errors, "no console errors", "; ".join(errors)[:200])
-    page.close()
+    done(page)
 
     # Every attribute the card reads while rendering has to be in RENDER_ATTRS,
     # otherwise its changes are invisible again. Proxying the attribute objects
@@ -491,7 +530,7 @@ def renderkey(browser, port, t):
     t.check(not unknown, "no attribute is read that the render key ignores", f"read {len(read)}, missing from RENDER_ATTRS: {unknown}")
     unused = sorted(set(declared) - set(read))
     t.check(not unused, "RENDER_ATTRS carries no attribute the card never reads", f"never read: {unused}")
-    page.close()
+    done(page)
 
 
 def lifecycle(browser, port, t):
@@ -555,7 +594,7 @@ def lifecycle(browser, port, t):
     t.check(n_before > 0 and sessions_calls() == n_before, "re-mount within the TTL fetches the sessions again: no",
             f"{n_before} sessions call(s) before, {sessions_calls()} after")
     t.check(f_before and footer() == f_before, "the footer keeps its figures over the re-mount", f"{f_before[:40]!r} -> {footer()[:40]!r}")
-    page2.close()
+    done(page2)
 
     for _ in range(3): remount()
     t.check(page.evaluate("!!window.__card._countdownInterval") and not errors, "repeated re-mounts leave one live card behind",
@@ -582,7 +621,7 @@ def lifecycle(browser, port, t):
     page.wait_for_timeout(500)
     t.check("5151" in (page.evaluate("window.__card._lastRenderKey") or ""), "re-mount renders the update that was pending at detach")
     t.check(not errors, "no console errors across the re-mounts", "; ".join(errors)[:200])
-    page.close()
+    done(page)
 
     # The site and flow views fold their detail table on a click on the flow
     # graphic. That used to be an inline onclick through a global registry, which
@@ -604,7 +643,7 @@ def lifecycle(browser, port, t):
         page.locator(in_card(target)).click(); page.wait_for_timeout(300)
         t.check(shown() != before, f"{mode}: the toggle still works after a re-mount", f"{before} -> {shown()}")
         t.check(not errors, f"{mode}: no console errors around the toggle", "; ".join(errors)[:200])
-        page.close()
+        done(page)
 
     # In the flow view a click on a node opens more-info and must not fold the
     # table; the delegation keeps the two apart.
@@ -616,7 +655,7 @@ def lifecycle(browser, port, t):
     t.check(shown() == before and len(page.evaluate("window.__moreInfo")) == 1,
             "flow: a click on a node opens more-info and leaves the table alone",
             f"table {before} -> {shown()}, more-info={page.evaluate('window.__moreInfo')}")
-    page.close()
+    done(page)
 
 
 def interactions(browser, port, t):
@@ -747,7 +786,7 @@ def interactions(browser, port, t):
     page.locator(in_card("[data-edit-cancel]")).click(); page.wait_for_timeout(200)
     t.check(page.evaluate("window.__renders") == 1, "closing panel B renders the deferred update", str(page.evaluate("window.__renders")))
     t.check(page.evaluate("window.__card._pendingRender") is False, "and nothing stays pending")
-    page.close()
+    done(page)
 
     # --- compact: tab switch closes the panel ------------------------------------------
     t.group("interaction - compact tab switch")
@@ -760,7 +799,7 @@ def interactions(browser, port, t):
     t.check(page.locator(in_card(".slider-edit")).count() == 0, "tab switch closes panel")
     t.check(page.locator(in_card("button.compact-tab.active")).get_attribute("data-tab") == "0", "tab switch still happened")
     t.check(page.evaluate("window.__card._sliderEditing") is False, "editing flag cleared")
-    page.close()
+    done(page)
 
     # --- plan preview via WebSocket fixture ------------------------------------------------
     t.group("interaction - plan preview")
@@ -795,7 +834,7 @@ def interactions(browser, port, t):
     page.evaluate("() => { window.__card._lastRenderKey = null; window.__card._render(); }"); page.wait_for_timeout(800)
     n2 = len([c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/plan_preview"])
     t.check(n2 == n1, "a render with unchanged settings fetches nothing", f"{n1} -> {n2}")
-    page.close()
+    done(page)
 
     # --- hide_settings + slider_steps ---------------------------------------------------
     t.group("config - hide_settings / slider_steps")
@@ -804,7 +843,7 @@ def interactions(browser, port, t):
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "hide_settings": all_keys})
     t.check(page.locator(in_card(".current-block")).count() == 0, "all hidden: charge settings block gone")
     t.check(page.locator(in_card(".sliders")).count() == 0, "all hidden: soc sliders gone")
-    page.close()
+    done(page)
     page = new_page(browser, 480, 1200)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "hide_settings": ["priority", "phases"],
                                   "charge_current_settings": "expanded", "slider_steps": {"limit_soc": 10}})
@@ -817,7 +856,7 @@ def interactions(browser, port, t):
     panel.locator("[data-edit-dec]").click(); v1 = panel.locator(".slider-edit-input").input_value()
     t.check(float(v0) - float(v1) == 10, "− uses the overridden step", f"{v0}->{v1}")
     page.locator("#host").screenshot(path=str(OUT / "panel-open.png"))
-    page.close()
+    done(page)
 
     # The key is the ha-evcc feature the entity was discovered under, matched
     # exactly: a short key must not steer every feature ending in it. And a step
@@ -838,7 +877,7 @@ def interactions(browser, port, t):
             "a step on a select-backed slider is reported in the console", "; ".join(warnings)[:200])
     t.check(not any("slider_steps.soc" in w for w in warnings),
             "a key that matches nothing stays quiet", "; ".join(warnings)[:200])
-    page.close()
+    done(page)
 
     # --- more-info on the header values (loadpoint and compact share the render) ---
     t.group("interaction - more-info on the loadpoint values")
@@ -873,7 +912,7 @@ def interactions(browser, port, t):
         t.check(page.locator(in_card("button.slider-val[data-more-info]")).count() == 0,
                 f"{mode}: the slider values open the input panel, not more-info")
         t.check(not errors, f"{mode}: no console errors", "; ".join(errors)[:200])
-        page.close()
+        done(page)
 
     # Live updates of the power value and the SoC keep the attribute in place.
     page = new_page(browser, 480, 1600)
@@ -882,7 +921,7 @@ def interactions(browser, port, t):
     kept = page.evaluate("""() => ['.power-value', '[data-live-type="soc-pct"]']
         .map(s => window.__card.shadowRoot.querySelector(s)?.dataset.moreInfo)""")
     t.check(all(kept), "a live update leaves the more-info attribute on the value", json.dumps(kept))
-    page.close()
+    done(page)
 
     # --- mode buttons mark the pressed one at once ---------------------------------
     t.group("interaction - mode buttons")
@@ -906,7 +945,7 @@ def interactions(browser, port, t):
     page.wait_for_timeout(100)
     t.check(active() == "now", "a refused call reverts to the previous mode button", active())
     t.check(any("select_option failed" in w for w in warnings), "and says so in the console", "; ".join(warnings)[:120])
-    page.close()
+    done(page)
 
     # Before HA answers, a render for some other value must not take the mark
     # away again: the pressed mode has to be what the template draws until the
@@ -928,7 +967,7 @@ def interactions(browser, port, t):
     page.wait_for_timeout(600)
     t.check(page.evaluate("window.__card.shadowRoot.querySelector('.mode-btn.active')?.dataset.value") == "off",
             "a state HA reports overrides the optimistic mark")
-    page.close()
+    done(page)
 
     # --- a focused input holds every render back ------------------------------------
     t.group("interaction - inputs hold the render")
@@ -971,7 +1010,7 @@ def interactions(browser, port, t):
     page.evaluate("""() => { const c = window.__card, host = c.parentNode; host.removeChild(c); host.appendChild(c); }""")
     page.wait_for_timeout(500)
     t.check(page.evaluate("!window.__card._inputFocused && !window.__card._pendingRender"), "a re-mount clears the guard")
-    page.close()
+    done(page)
 
     # Regression: with a render pending while the dropdown is open, the pick
     # must reach HA as picked. The guard used to run the deferred render right
@@ -1003,7 +1042,7 @@ def interactions(browser, port, t):
     page.wait_for_timeout(300)
     t.check(page.evaluate("window.__card._planState.openwb?.time") == "2026-09-19T07:30",
             "a typed plan time survives the deferred render", str(page.evaluate("window.__card._planState.openwb?.time")))
-    page.close()
+    done(page)
 
     # --- the charging bar outlives the render, so its pulse just goes on --------------
     t.group("interaction - charging pulse")
@@ -1016,7 +1055,7 @@ def interactions(browser, port, t):
         return { same: before === after, sameAnim: !!a0 && after.getAnimations()[0] === a0, state: a0?.playState }; }""")
     t.check(r["same"] and r["sameAnim"] and r["state"] == "running",
             "a re-render keeps the charging bar and its running pulse animation", json.dumps(r))
-    page.close()
+    done(page)
 
 
 def editor(browser, port, t):
@@ -1104,7 +1143,7 @@ def editor(browser, port, t):
     t.check(last().get("stats_period") == "month", "stats_period writes config.stats_period", json.dumps(last()))
     fld("#stats_period").select_option("")
     t.check("stats_period" not in last(), "stats_period back to its default drops the key", json.dumps(last()))
-    page.close()
+    done(page)
 
     # --- stats_period: what the editor shows must be what the card does ----------
     # Unconfigured, the card follows the default of its mode; the editor says so
@@ -1140,7 +1179,7 @@ def editor(browser, port, t):
             str(fld('input[data-field="repeating_plan_vehicles"]').count()))
     cb("repeating_plan_vehicles", "ex30").check()
     t.check(last().get("repeating_plan_vehicles") == ["ex30"], "vehicle filter writes config.repeating_plan_vehicles", json.dumps(last()))
-    page.close()
+    done(page)
 
 
 def contracts(browser, port, t):
@@ -1208,7 +1247,7 @@ def contracts(browser, port, t):
     page.locator(in_card("button.plan-btn.save")).click(); page.wait_for_timeout(400)
     t.check(last() == exp("evcc_intg", "set_vehicle_plan", {"vehicle": "db:18", "soc": 80, "startdate": "2026-09-19 07:00:00", "config_entry_id": entry}),
             "set plan → evcc_intg.set_vehicle_plan {vehicle, soc, startdate}", json.dumps(last()))
-    page.close()
+    done(page)
 
     # plan delete needs an active plan → state override
     page = new_page(browser, 480, 1400)
@@ -1216,7 +1255,7 @@ def contracts(browser, port, t):
     t.check(page.locator(in_card("button.plan-btn.delete")).count() == 1, "delete button shown while a plan is active")
     page.locator(in_card("button.plan-btn.delete")).click(); page.wait_for_timeout(300)
     t.check(last() == exp("evcc_intg", "del_vehicle_plan", {"vehicle": "db:18", "config_entry_id": entry}), "delete plan → evcc_intg.del_vehicle_plan", json.dumps(last()))
-    page.close()
+    done(page)
 
     # A guest vehicle (vehicle select on "null") has no plan of its own: evcc plans
     # it on the loadpoint with an energy target in kWh. ha-evcc's set_plan() only
@@ -1241,7 +1280,7 @@ def contracts(browser, port, t):
             and label == "25 kWh" and badge == 1,
             "guest vehicle: set plan → evcc_intg.set_loadpoint_plan {loadpoint, energy, startdate}",
             f"{json.dumps(last())} label={label!r} badge={badge}")
-    page.close()
+    done(page)
 
     # A vehicle that reports no SoC (evcc feature "Offline") is planned in kWh as
     # well, up to its capacity, and its plan lives on the loadpoint too.
@@ -1260,7 +1299,7 @@ def contracts(browser, port, t):
     page.locator(in_card("button.plan-btn.delete")).click(); page.wait_for_timeout(300)
     t.check(last() == exp("evcc_intg", "del_loadpoint_plan", {"loadpoint": 1, "config_entry_id": entry}),
             "vehicle without SoC: delete plan → evcc_intg.del_loadpoint_plan", json.dumps(last()))
-    page.close()
+    done(page)
 
     # ha-evcc's "null" is no vehicle assigned: with a car plugged in that is evcc's
     # guest vehicle, named so in the header and picked in the vehicle select;
@@ -1286,24 +1325,24 @@ def contracts(browser, port, t):
             and head["sliders"] == ["Ladelimit=keins"],
             "guest vehicle: energy charged instead of a SoC, the energy limit instead of the SoC sliders", json.dumps(head))
     page.screenshot(path=str(OUT / "guest-vehicle.png"))
-    page.close()
+    done(page)
     # a SoC above zero (a charger that reads it) keeps the SoC view, as in evcc
     page = new_page(browser, 480, 1800)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]}, set={"select.evcc_openwb_vehicle_name": "null"})
     row = page.evaluate("window.__card.shadowRoot.querySelector('.soc-label-row')?.textContent.replace(/\\s+/g, ' ').trim()")
     t.check("56 %" in (row or "") and page.locator(in_card(".energy-track")).count() == 0,
             "guest vehicle with a SoC from the charger: the SoC view stays", repr(row))
-    page.close()
+    done(page)
     page = new_page(browser, 480, 1800)
     open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]},
               set={"select.evcc_openwb_vehicle_name": "null", "binary_sensor.evcc_openwb_connected": "off"})
     t.check(picked(page) == "null=Kein Fahrzeug", "no car plugged in: the vehicle select reads Kein Fahrzeug", repr(picked(page)))
-    page.close()
+    done(page)
     page = new_page(browser, 480, 1800)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]},
               set={"select.evcc_openwb_vehicle_name": "null", "binary_sensor.evcc_openwb_connected": "off"})
     t.check(name(page) is None, "no car plugged in: no vehicle name in the header", repr(name(page)))
-    page.close()
+    done(page)
 
     # Deleting needs no kWh target, only the 1-based evcc loadpoint index, which the
     # card resolves through the capabilities command (here: the sorted-name fallback).
@@ -1313,7 +1352,7 @@ def contracts(browser, port, t):
     page.locator(in_card("button.plan-btn.delete")).click(); page.wait_for_timeout(300)
     t.check(last() == exp("evcc_intg", "del_loadpoint_plan", {"loadpoint": 1, "config_entry_id": entry}),
             "guest vehicle: delete plan → evcc_intg.del_loadpoint_plan with the loadpoint index", json.dumps(last()))
-    page.close()
+    done(page)
 
     # battery boost chip is only offered while the boost limit is below 100 %
     page = new_page(browser, 480, 1400)
@@ -1321,7 +1360,7 @@ def contracts(browser, port, t):
     page.locator(in_card('button.boost-activate-btn[data-entity="switch.evcc_openwb_battery_boost"]')).click(); page.wait_for_timeout(300)
     t.check(last() == exp("switch", "turn_on", {"entity_id": "switch.evcc_openwb_battery_boost"}),
             "battery boost chip (off, limit 80 %) → switch.turn_on", json.dumps(last()))
-    page.close()
+    done(page)
 
     # battery mode
     page = new_page(browser, 480, 900)
@@ -1333,7 +1372,7 @@ def contracts(browser, port, t):
     page.locator(in_card('select.batt-inline-select[data-entity="select.evcc_priority_soc"]')).first.select_option("30"); page.wait_for_timeout(300)
     t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_priority_soc", "option": "30"}),
             "priority soc → select.select_option 30", json.dumps(last()))
-    page.close()
+    done(page)
 
     # a disabled clear button of a smart cost limit is enabled in the entity registry
     page = new_page(browser, 480, 1800)
@@ -1344,7 +1383,7 @@ def contracts(browser, port, t):
     ws_last = page.evaluate("window.__hass.wsCalls.at(-1)")
     t.check(ws_last == {"type": "config/entity_registry/update", "entity_id": "button.evcc_openwb_smart_cost_limit", "disabled_by": None},
             "enable clear button → config/entity_registry/update disabled_by=null", json.dumps(ws_last))
-    page.close()
+    done(page)
 
 
 def tariff_modes(browser, port, t):
@@ -1378,7 +1417,7 @@ def tariff_modes(browser, port, t):
     }""")
     page.wait_for_timeout(900)
     t.check(ac() == [], "another mode: the always-charge row is gone", str(ac()))
-    page.close()
+    done(page)
 
     # a real smart mode + no_pv: Mode.vue keeps Smart while a tariff is available and drops it otherwise
     page = new_page(browser, 480, 1400)
@@ -1386,19 +1425,19 @@ def tariff_modes(browser, port, t):
               set={"select.evcc_openwb_mode": "off"})
     got = modes(page)
     t.check(got == ["off", "smart", "now"], "no_pv with a price tariff: the offered smart mode stays", str(got))
-    page.close()
+    done(page)
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]},
               set={"sensor.evcc_tariff_grid": "unknown", "select.evcc_openwb_mode": "off"})
     got = modes(page)
     t.check(got == ["off", "now"], "no_pv without a tariff: the smart mode is dropped", str(got))
-    page.close()
+    done(page)
 
     t.group("tariff - no_pv on the legacy mode set")
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]}, attrs=legacy, set={"select.evcc_openwb_mode": "pv"})
     t.check(modes(page) == ["off", "pv", "minpv", "now"], "with solar: the full legacy set", str(modes(page)))
-    page.close()
+    done(page)
 
     # no_pv + a valid price tariff → [off, smart, now]; 'pv' carries the smart label
     page = new_page(browser, 480, 1400)
@@ -1409,7 +1448,7 @@ def tariff_modes(browser, port, t):
     smart_label = page.evaluate("window.__card._t('modeSmart')")
     label = page.evaluate("window.__card.shadowRoot.querySelector('.mode-btn[data-value=\"pv\"] .mode-label').textContent.trim()")
     t.check(label == smart_label, "no_pv: the pv button is relabelled as the smart mode", f"{label!r} vs {smart_label!r}")
-    page.close()
+    done(page)
 
     # no_pv without any tariff → [off, now]
     page = new_page(browser, 480, 1400)
@@ -1417,7 +1456,7 @@ def tariff_modes(browser, port, t):
               attrs=legacy, set={"sensor.evcc_tariff_grid": "unknown", "select.evcc_openwb_mode": "off"})
     got = modes(page)
     t.check(got == ["off", "now"], "no_pv without a tariff: no smart mode either", str(got))
-    page.close()
+    done(page)
 
     t.group("tariff - co2 signal instead of prices")
     # The unit on the smart cost limit is what tells the card to read tariff_co2
@@ -1429,7 +1468,7 @@ def tariff_modes(browser, port, t):
               set={"sensor.evcc_tariff_grid": "unknown", "sensor.evcc_tariff_co2": "310", "select.evcc_openwb_mode": "off"})
     got = modes(page)
     t.check(got == ["off", "pv", "now"], "co2 tariff: the smart mode is read from tariff_co2, not tariff_grid", str(got))
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "no_pv": ["openwb"]},
@@ -1437,7 +1476,7 @@ def tariff_modes(browser, port, t):
               set={"sensor.evcc_tariff_grid": "0.202", "sensor.evcc_tariff_co2": "unknown", "select.evcc_openwb_mode": "off"})
     got = modes(page)
     t.check(got == ["off", "now"], "co2 tariff: a valid price sensor does not stand in for a missing co2 value", str(got))
-    page.close()
+    done(page)
 
     # Plan preview: units, label and the forecast it draws behind the plan all switch
     page = new_page(browser, 480, 1400)
@@ -1454,7 +1493,7 @@ def tariff_modes(browser, port, t):
     bars = page.locator(in_card(".plan-preview svg rect")).count()
     t.check(bars > 0 and not errors, "co2 plan preview still renders a chart", f"{bars} bars; {'; '.join(errors)[:150]}")
     page.locator("#host").screenshot(path=str(OUT / "plan-preview-co2.png"))
-    page.close()
+    done(page)
 
     # Counter-check on the same fixtures: as a price tariff it is currency again.
     page = new_page(browser, 480, 1400)
@@ -1464,7 +1503,7 @@ def tariff_modes(browser, port, t):
     page.wait_for_timeout(1500)
     header = page.locator(in_card(".plan-preview-header")).inner_text()
     t.check("\u20ac/kWh" in header and "g/kWh" not in header, "price tariff keeps currency per kWh", " ".join(header.split())[:160])
-    page.close()
+    done(page)
 
 
 def traffic(browser, port, t):
@@ -1496,7 +1535,7 @@ def traffic(browser, port, t):
     for i in range(1, 9): page.mouse.move(box["x"] + box["width"] * (0.75 - i * 0.06), y); page.wait_for_timeout(60)
     page.mouse.up(); page.wait_for_timeout(1500)
     t.check(count("evcc_intg/plan_preview") == p0 + 2, "slider drag over 8 positions → exactly one more plan_preview call", str(count("evcc_intg/plan_preview")))
-    page.close()
+    done(page)
 
 
 def priority_dnd(browser, port, t):
@@ -1525,7 +1564,7 @@ def priority_dnd(browser, port, t):
     calls = {c["data"]["entity_id"]: c["data"]["value"] for c in svc(page) if c["domain"] == "number"}
     t.check(calls == {"number.evcc_wp_priority": 1, "number.evcc_openwb_priority": 0}, "apply → number.set_value wp=1, openwb=0", json.dumps(calls))
     t.check(not errors, "no console errors during drag", "; ".join(errors)[:200])
-    page.close()
+    done(page)
 
 
 LANGS = ["de", "en", "es", "fr", "hr", "nl", "pl", "pt"]
@@ -1548,9 +1587,9 @@ def locales(browser, port, t):
         for cfg in ({"mode": "loadpoint", "charge_current_settings": "expanded"}, {"mode": "stats"}, {"mode": "battery"}, {"mode": "site"}):
             page = new_page(browser, 480, 1800)
             open_card(page, port, config=cfg, lang=lang)
-            page.evaluate(hook); page.evaluate("window.__card._lastRenderKey = null; window.__card._render()"); page.wait_for_timeout(300)
+            page.evaluate(hook); page.evaluate("window.__card._lastRenderKey = null; window.__card._render()")   # renders synchronously
             missing |= set(page.evaluate("[...window.__missingKeys]"))
-            page.close()
+            done(page)
         t.check(not missing, f"{lang}: no untranslated keys rendered", str(sorted(missing))[:200])
 
 
@@ -1561,7 +1600,7 @@ def discovery(browser, port, t):
     errors = open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]}, rename=("evcc_", "myevcc_"))
     t.check(page.locator(in_card('button.mode-btn[data-entity="select.myevcc_openwb_mode"]')).count() > 0 and not errors,
             "custom prefix myevcc_ detected from the registry", "; ".join(errors)[:200])
-    page.close()
+    done(page)
 
     # A second installation whose prefix extends the first one: "evcc demo" next
     # to "evcc". Every demo entity id starts with evcc_ too, and the production
@@ -1576,13 +1615,13 @@ def discovery(browser, port, t):
         clean = all(m.startswith(f"select.{own}") and (own != "evcc_" or not m.startswith("select.evcc_demo_")) for m in modes)
         t.check(rows == want and clean and not errors, f"prefix evcc_ next to evcc_demo_: {label}",
                 f"rows={rows} modes={sorted(set(modes))[:4]}; {'; '.join(errors)[:120]}")
-        page.close()
+        done(page)
     for opt, want_rows, want_badge in (("hide", 1, 0), ("dim", 2, 1), ("show", 2, 0)):
         page = new_page(browser, 480, 1800)
         open_card(page, port, config={"mode": "loadpoint", "disabled_loadpoints": opt}, set={"binary_sensor.evcc_wp_disabled_in_config": "on"})
         rows, badge = page.locator(in_card(".loadpoint")).count(), page.locator(in_card(".lp-badge.disabled")).count()
         t.check(rows == want_rows and badge == want_badge, f"disabled_loadpoints: {opt} → {want_rows} loadpoint(s), {want_badge} disabled badge", f"rows={rows} badge={badge}")
-        page.close()
+        done(page)
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["wp"]})
     labels = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.slider-row label')].map(l => l.textContent.trim())")
@@ -1592,13 +1631,13 @@ def discovery(browser, port, t):
     mode_labels = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.mode-btn')].map(b => b.dataset.value + '=' + b.querySelector('.mode-label').textContent.trim())")
     t.check(mode_labels == ["off=Normal", "smart=Smart", "now=Boost"],
             "heating loadpoint: the modes read Normal / Smart / Boost", str(mode_labels))
-    page.close()
+    done(page)
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
     mode_labels = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.mode-btn')].map(b => b.dataset.value + '=' + b.querySelector('.mode-label').textContent.trim())")
     t.check(mode_labels == ["off=Aus", "smart=Smart", "now=Schnell"],
             "charge point: the modes keep Off / Smart / Fast", str(mode_labels))
-    page.close()
+    done(page)
 
     # The fixture carries the whole plan entity set for the heating loadpoint, but
     # idle: plan_active off, every plan timestamp unknown. A card that simply has no
@@ -1615,7 +1654,7 @@ def discovery(browser, port, t):
     errors = open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["wp"]}, set=heating_plan)
     t.check(page.locator(in_card(".plan-block")).count() == 0 and not errors,
             "heating loadpoint with an active plan: still no charge plan block", "; ".join(errors)[:200])
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1400)
     errors = open_card(page, port, config={"mode": "plan", "loadpoints": ["wp"]}, set=heating_plan)
@@ -1624,14 +1663,14 @@ def discovery(browser, port, t):
             and not previews and not errors,
             "plan mode on a heating loadpoint: no block, no plan_preview call",
             f"previews={len(previews)}; " + "; ".join(errors)[:200])
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"},
               disable=["number.evcc_openwb_smart_cost_limit", "number.evcc_openwb_smart_feed_in_priority_limit"])
     t.check(page.locator(in_card(".smart-cost-section")).count() == 0 and page.locator(in_card(".current-block")).count() == 1,
             "disabled limit entities: sections absent, block still rendered")
-    page.close()
+    done(page)
 
     # --- two ha-evcc config entries ------------------------------------------------
     # ha-evcc derives the entity prefix from the config entry title, so a second
@@ -1654,7 +1693,7 @@ def discovery(browser, port, t):
                                   if str(c["type"]).startswith("evcc_intg/") and c.get("entry_id")}),
             "errors": errors,
         }
-        page.close()
+        done(page)
         return out
 
     d = detected({"mode": "loadpoint"}, None)
@@ -1697,7 +1736,7 @@ def discovery(browser, port, t):
     t.check(after["wsEntryIds"] == [SECOND], "and the WebSocket commands switch to that entry", json.dumps(after["wsEntryIds"]))
     t.check(after["probes"] == 0, "without a second registry call", str(after["probes"]))
     t.check(not errors, "no console errors across the prefix change", "; ".join(errors)[:200])
-    page.close()
+    done(page)
 
 
 def flow_labels(browser, port, t):
@@ -1742,7 +1781,7 @@ def flow_labels(browser, port, t):
                     f"{label}: {name} labels keep their distance",
                     f"{len(rows)} labels, overlapping: {overlaps}; {'; '.join(errors)[:120]}")
         page.locator("#host").screenshot(path=str(OUT / f"flow-{'small' if overrides else 'default'}.png"))
-        page.close()
+        done(page)
 
 
 def card_api(browser, port, t):
@@ -1780,7 +1819,7 @@ def card_api(browser, port, t):
         t.check(size >= real - 0.01 and size - real < 1.5,
                 f"the reported size matches the rendered height: {label}",
                 f"gemeldet={size} real={real:.1f}")
-        p2.close()
+        done(p2)
 
     # While the translations load, the shadow root holds the loading placeholder,
     # an ha-card of about 70 px. A relayout in that moment must get the estimate,
@@ -1843,7 +1882,7 @@ def card_api(browser, port, t):
     drawn = stub.locator(in_card("ha-card")).count() > 0
     t.check(drawn and not stub_errors, "the stub config renders without any evcc entity present",
             "; ".join(stub_errors)[:200] or f"ha-card={drawn}")
-    stub.close()
+    done(stub)
 
     t.group("cardapi - getEntitySuggestion")
     sug = page.evaluate("""(() => {
@@ -1891,7 +1930,7 @@ def card_api(browser, port, t):
     })()""")
     t.check(pref and pref.get("prefix") == "evcc2_", "a second installation carries its prefix into the config",
             json.dumps(pref))
-    second.close()
+    done(second)
 
     # ha-evcc slugifies the config entry title into the prefix, so a two-word
     # title gives a prefix with an underscore of its own. Cut from the id alone,
@@ -1908,7 +1947,7 @@ def card_api(browser, port, t):
     ok_multi = (multi["lp"] and multi["lp"].get("prefix") == "my_evcc_" and multi["lp"].get("loadpoints") == ["openwb"]
                 and multi["site"] and multi["site"].get("prefix") == "my_evcc_" and "loadpoints" not in multi["site"])
     t.check(ok_multi, "a prefix with an underscore of its own is not cut short", json.dumps(multi))
-    second.close()
+    done(second)
 
     t.group("cardapi - getGridOptions")
     grid = page.evaluate("""(() => {
@@ -1936,7 +1975,7 @@ def card_api(browser, port, t):
     t.check(not off, "the column limits sit on the 3 column steps of the layout editor",
             f"daneben: {off}" if off else "alle Vielfache von 3")
 
-    page.close()
+    done(page)
 
 
 def setconfig(browser, port, t):
@@ -1995,7 +2034,7 @@ def setconfig(browser, port, t):
     })()""")
     t.check(kept["before"] == kept["after"], "a rejected config leaves the card on the previous one", json.dumps(kept))
     t.check(not errors, "no console errors", "; ".join(errors)[:200])
-    page.close()
+    done(page)
 
 
 def widths(browser, port, t):
@@ -2012,7 +2051,7 @@ def widths(browser, port, t):
         scroll = page.evaluate("(() => { const c = window.__card.shadowRoot.querySelector('ha-card'); return c.scrollWidth - c.clientWidth; })()")
         page.locator("#host").screenshot(path=str(OUT / f"width-{w}.png"))
         t.check(inside and scroll <= 0 and not errors, f"{w} px: input panel inside the card, no horizontal overflow", f"overflow={scroll}; {'; '.join(errors)[:150]}")
-        page.close()
+        done(page)
 
 
 def editor_instances(browser, port, t):
@@ -2038,7 +2077,7 @@ def editor_instances(browser, port, t):
     open_card(page, port, config={"mode": "loadpoint"})
     mount(page, {"mode": "loadpoint"})
     t.check(opts(page) is None, "one ha-evcc entry: no instance field", json.dumps(opts(page)))
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint"}, second={"prefix": "evcc_demo_"})
@@ -2057,7 +2096,7 @@ def editor_instances(browser, port, t):
     mount(page, {"mode": "loadpoint", "prefix": "evcc_demo_"})
     t.check(page.evaluate("document.querySelector('evcc-card-editor').shadowRoot.getElementById('prefix').value") == "evcc_demo_",
             "a configured prefix is preselected")
-    page.close()
+    done(page)
 
 
 def morph(browser, port, t):
@@ -2137,10 +2176,10 @@ def morph(browser, port, t):
       Object.defineProperty(c, 'shadowRoot', { value: sr, configurable: true });
       c._lastRenderKey = null; c._renderNow();
       Object.defineProperty(c, 'shadowRoot', { value: saved, configurable: true });
-      const norm = s => s.replace(/\s+/g, ' ').replace(/ data-morph-keep/g, '');
+      const norm = s => s.replace(/\\s+/g, ' ').replace(/ data-morph-keep/g, '');
       return norm(sr.innerHTML) === norm(live) ? null : { live: norm(live).slice(0, 200), fresh: norm(sr.innerHTML).slice(0, 200) }; }""")
     t.check(diff is None and not errors, "the morphed DOM equals a fresh render of the same markup", json.dumps(diff)[:300] if diff else "; ".join(errors)[:200])
-    page.close()
+    done(page)
 
     # The chart tooltip is written at runtime and marked to be left alone.
     t.group("morph - the chart tooltip survives")
@@ -2151,7 +2190,7 @@ def morph(browser, port, t):
     page.evaluate("() => { window.__card._lastRenderKey = null; window.__card._render(); }")
     still = page.evaluate("() => { const tt = window.__card.shadowRoot.querySelector('.evcc-chart-tooltip'); return !tt.hidden && tt.textContent.length > 0; }")
     t.check(shown and still, "an open tooltip stays open through a render", f"before={shown} after={still}")
-    page.close()
+    done(page)
 
 
 def keyboard(browser, port, t):
@@ -2170,7 +2209,7 @@ def keyboard(browser, port, t):
         errors = open_card(page, port, mode=mode)
         left = unreachable(page)
         t.check(not left and not errors, f"{mode}: every non-native click target is focusable with the button role", f"unreachable: {left}; {'; '.join(errors)[:100]}")
-        page.close()
+        done(page)
 
     # Enter and Space on a focused more-info row fire the event a click would
     # (the site view has them as plain divs; the loadpoint view uses buttons).
@@ -2181,7 +2220,7 @@ def keyboard(browser, port, t):
     row.focus(); page.keyboard.press("Enter"); page.keyboard.press(" ")
     fired = page.evaluate("window.__moreInfo")
     t.check(len(fired) == 2 and all(fired), "site: Enter and Space on a focused row open more-info", json.dumps(fired))
-    page.close()
+    done(page)
 
     # The SVG nodes of the flow view are focusable too, and the site toggle folds on Space.
     page = new_page(browser, 480, 1600)
@@ -2193,7 +2232,7 @@ def keyboard(browser, port, t):
     before = shown()
     page.locator(in_card(".sankey-wrap")).focus(); page.keyboard.press(" "); page.wait_for_timeout(200)
     t.check(before is not None and shown() != before, "flow: Space on the focused graphic folds the table", f"{before} -> {shown()}")
-    page.close()
+    done(page)
 
     t.group("keyboard - language fallback")
     page = new_page(browser, 480, 1600)
@@ -2203,7 +2242,7 @@ def keyboard(browser, port, t):
     page.evaluate("() => { const c = window.__card; c.hass = { ...window.__hass, language: undefined, locale: {} }; c._lastRenderKey = null; c._render(); }")
     page.wait_for_timeout(200)
     t.check(label() == "Off", "without a language from HA the card falls back to English", label())
-    page.close()
+    done(page)
 
     # The chart labels of the statistics follow the same rule: the year scope
     # prints month names, and without a language from HA they are English.
@@ -2218,7 +2257,7 @@ def keyboard(browser, port, t):
     en = months()
     t.check(("Dec" in en or "Mar" in en) and "Dez" not in en, "stats: without a language from HA the month labels are English", json.dumps(en)[:120])
     t.check(page.evaluate("window.__card._statsLang()") == "en", "stats: _statsLang() falls back to en")
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1600)
     open_card(page, port, mode="loadpoint")
@@ -2229,7 +2268,7 @@ def keyboard(browser, port, t):
       return ed.shadowRoot.querySelector('label[for=mode]')?.textContent.trim();
     }""")
     t.check(ed == "Mode", "without a language from HA the editor falls back to English", str(ed))
-    page.close()
+    done(page)
 
 
 def escaping(browser, port, t):
@@ -2279,7 +2318,7 @@ def escaping(browser, port, t):
         t.check(injected["nodes"] == 0 and injected["flag"] is None and shown and not errors,
                 f"{name}: rendered as text, no element created",
                 f"nodes={injected['nodes']} flag={injected['flag']} shown={shown}; {'; '.join(errors)[:120]}")
-        page.close()
+        done(page)
 
 
 def unit(browser, port, t):
@@ -2344,53 +2383,53 @@ def hints(browser, port, t):
     page = new_page(browser, 480, 1600)
     errors = open_card(page, port, config=lp)
     t.check(plan(page) == [], "no plan: no plan chip", str(chips(page)))
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1600)
     open_card(page, port, config=lp, set=planned)
     got = plan(page)
     t.check(got == ["plan: Ladeplan startet Sa., 02:00"], "a plan for tomorrow: start with the weekday", str(got))
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1600)
     open_card(page, port, config=lp, set={**planned, "sensor.evcc_openwb_plan_projected_start": "2026-09-18T15:00:00+02:00"})
     got = plan(page)
     t.check(got == ["plan: Ladeplan startet 15:00"], "a plan starting today: the time alone", str(got))
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1600)
     open_card(page, port, config=lp, set=running)
     got = plan(page)
     t.check(got == ["plan: Ladeplan aktiv bis 16:30"], "a running plan: until its projected end", str(got))
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1600)
     open_card(page, port, config=lp, set={**running, "sensor.evcc_openwb_plan_projected_end": "2026-09-18T18:20:00+02:00"})
     got = plan(page)
     t.check(got == ["plan late: Zielzeit wird 1 h 20 min später erreicht"], "projected end after the target: the late warning", str(got))
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1600)
     open_card(page, port, config=lp, set={**planned, "sensor.evcc_openwb_plan_projected_end": "2026-09-19T07:00:30+02:00"})
     got = plan(page)
     t.check(got == ["plan: Ladeplan startet Sa., 02:00"], "half a minute past the target is rounding, no warning", str(got))
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1600)
     open_card(page, port, config={**lp, "no_plan": ["openwb"]}, set=planned)
     t.check(plan(page) == [], "no_plan: no plan chip either", str(chips(page)))
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1600)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["wp"]},
               set={"binary_sensor.evcc_wp_plan_active": "on", "sensor.evcc_wp_plan_projected_end": "2026-09-18T16:30:00+02:00"})
     t.check(plan(page) == [], "heating loadpoint: no EV plan, no plan chip", str(chips(page)))
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1600)
     open_card(page, port, config=lp, set={**planned, "sensor.evcc_openwb_plan_projected_start": "2026-09-18T12:00:00+02:00"})
     t.check(plan(page) == [], "a start that has passed without the plan running: no chip", str(chips(page)))
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1600)
     open_card(page, port, config=lp, set={**planned, "sensor.evcc_openwb_plan_projected_start": "2026-09-18T13:00:03+02:00"})
@@ -2401,18 +2440,18 @@ def hints(browser, port, t):
     t.check(got == [], "the start passes without a render: the chip leaves", str(got))
     got = [c.split(":")[0] for c in chips(page)]
     t.check(got == ["pv"], "the timer next to it stays, and with it the row", str(chips(page)))
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1600)
     open_card(page, port, config=lp, set=planned, disable=["sensor.evcc_openwb_effective_plan_soc"])
     t.check(plan(page) == [], "a start reported, but no plan block to jump to: no chip", str(chips(page)))
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1600)
     open_card(page, port, config=lp, set=running, lang="en")
     got = plan(page)
     t.check(got == ["plan: Charging plan active until 04:30 PM"], "text and clock follow the card language", str(got))
-    page.close()
+    done(page)
 
     t.group("hints - the plan chip jumps to the plan")
     page = new_page(browser, 480, 1600)
@@ -2426,7 +2465,7 @@ def hints(browser, port, t):
     update(page, {"sensor.evcc_openwb_charge_power": "4.2"})
     page.wait_for_timeout(600)
     t.check(lit() == 1, "and the highlight outlasts the next render", str(lit()))
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1600)
     open_card(page, port, config={"mode": "compact", "loadpoints": ["openwb"]}, set=planned)
@@ -2436,7 +2475,7 @@ def hints(browser, port, t):
     tab = page.evaluate("window.__card.shadowRoot.querySelector('button.compact-tab.active')?.dataset.tab")
     visible = page.evaluate("!!window.__card.shadowRoot.querySelector('.plan-block[data-lp=\"openwb\"]')?.offsetParent")
     t.check(tab == "2" and visible, "compact mode: a tap switches to the plan tab", f"tab={tab} visible={visible}")
-    page.close()
+    done(page)
 
     t.group("hints - minimum charge")
     page = new_page(browser, 480, 1600)
@@ -2445,7 +2484,7 @@ def hints(browser, port, t):
     t.check(got == ["minsoc: Mindestladung bis 80 %"], "SoC below the minimum while connected: the minimum charge", str(got))
     role = page.evaluate("window.__card.shadowRoot.querySelector('.lp-action-chip.minsoc').dataset.moreInfo")
     t.check(role == "select.evcc_openwb_min_soc", "and a tap opens the minimum SoC entity", str(role))
-    page.close()
+    done(page)
 
     for case, st in (("minimum 0", {"select.evcc_openwb_min_soc": "0"}),
                      ("mode Off", {"select.evcc_openwb_min_soc": "80", "select.evcc_openwb_mode": "off"}),
@@ -2455,14 +2494,14 @@ def hints(browser, port, t):
         open_card(page, port, config=lp, set=st)
         got = [c for c in chips(page) if c.startswith("minsoc")]
         t.check(got == [], f"{case}: no minimum charge chip", str(got))
-        page.close()
+        done(page)
 
     t.group("hints - timers only while they count")
     page = new_page(browser, 480, 1600)
     open_card(page, port, config=lp, set={"sensor.evcc_openwb_pv_remaining": "unknown"})
     got = [c for c in chips(page) if c.startswith("pv")]
     t.check(got == [], "pv action without a remaining time: no chip and no dash", str(got))
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1600)
     open_card(page, port, config=lp, set={"sensor.evcc_openwb_pv_remaining": "2026-09-18T13:02:00+02:00"})
@@ -2474,7 +2513,7 @@ def hints(browser, port, t):
     t.check(got == [], "a run-out countdown leaves", str(got))
     height = page.evaluate("window.__card.shadowRoot.querySelector('.lp-action-row')?.getBoundingClientRect().height ?? 0")
     t.check(height == 0, "and, as the last chip, takes its row with it", str(height))
-    page.close()
+    done(page)
 
     t.group("hints - the chips stay through a render")
     page = new_page(browser, 480, 1600)
@@ -2486,7 +2525,7 @@ def hints(browser, port, t):
     kept = page.evaluate("() => { const now = [...window.__card.shadowRoot.querySelectorAll('.lp-action-chip')]; return now.length === window.__chips.length && now.every((c, i) => c === window.__chips[i]); }")
     t.check(kept, "a value change keeps the plan and minimum chips in place", str(kept))
     t.check(not errors, "no console errors", "; ".join(errors)[:300])
-    page.close()
+    done(page)
 
     t.group("hints - a chip that leaves takes its role and listener along")
     page = new_page(browser, 480, 1600)
@@ -2499,7 +2538,7 @@ def hints(browser, port, t):
     got = page.evaluate("""() => { const c = window.__card.shadowRoot.querySelector('.lp-action-chip.phase');
         return { same: c === window.__phase, role: c.getAttribute('role'), info: c.dataset.moreInfo ?? null }; }""")
     t.check(got == {"same": True, "role": None, "info": None}, "the phase chip keeps its own element, no button role, no more-info", str(got))
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1600)
     errors += open_card(page, port, config={"mode": "compact", "loadpoints": ["openwb"]}, set={**planned, "select.evcc_openwb_min_soc": "80"})
@@ -2511,7 +2550,7 @@ def hints(browser, port, t):
     got = page.evaluate("({ tab: window.__card.shadowRoot.querySelector('button.compact-tab.active')?.dataset.tab, opened: window.__opened })")
     t.check(got == {"tab": "0", "opened": ["select.evcc_openwb_min_soc"]}, "the minimum chip after a plan chip: more-info only, no jump to the plan tab", str(got))
     t.check(not errors, "no console errors", "; ".join(errors)[:300])
-    page.close()
+    done(page)
 
 
 def disabled_entities(browser, port, t):
@@ -2547,14 +2586,14 @@ def disabled_entities(browser, port, t):
     errors = open_card(page, port, config=cfg, set=limit)
     got = view(page)
     t.check(got["slider"] and got["clear"] and got["chip"] and got["warn"] is None, "clear button there: slider, clear button and chip, no triangle", str(got))
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1800)
     open_card(page, port, config=cfg, set=limit, drop=[btn, fibtn])
     got = view(page)
     t.check(not got["slider"] and not got["chip"] and not got["feedIn"] and got["warn"] is None,
             "no clear button in ha-evcc at all: no limit and nothing to enable", str(got))
-    page.close()
+    done(page)
 
     t.group("disabled entities - triangle, debug view and enabling")
     page = new_page(browser, 480, 1800)
@@ -2586,7 +2625,7 @@ def disabled_entities(browser, port, t):
     got = view(page)
     t.check(got["slider"] and got["clear"] and got["chip"] and got["warn"] is None, "after the reload: the limit is back", str(got))
     t.check(not errors, "no console errors", "; ".join(errors)[:300])
-    page.close()
+    done(page)
 
     # the feed-in limit ships disabled together with its clear button
     page = new_page(browser, 480, 1800)
@@ -2599,7 +2638,7 @@ def disabled_entities(browser, port, t):
     t.check(got["all"] == f"{fibtn},{fi}", "enable all offers the needed ones", str(got["all"]))
     page.locator(in_card("button.disabled-enable-all")).click(); page.wait_for_timeout(300)
     t.check(sorted(u["entity_id"] for u in updates(page)) == sorted([fi, fibtn]), "enable all → one registry update each", json.dumps(updates(page)))
-    page.close()
+    done(page)
 
     # the phase current sensors: named once, no hint under the power row any more
     page = new_page(browser, 480, 1800)
@@ -2607,33 +2646,33 @@ def disabled_entities(browser, port, t):
     got = view(page)
     t.check(got["warn"] == "Deaktivierte Entitäten: Stromwerte je Phase", "phase currents disabled: named once in the triangle", str(got["warn"]))
     t.check(page.locator(in_card(".power-currents-hint")).count() == 0, "and no hint under the power row", "")
-    page.close()
+    done(page)
 
     t.group("disabled entities - who sees the triangle")
     page = new_page(browser, 480, 1800)
     open_card(page, port, config=cfg, disable=[btn], admin=False)
     got = view(page)
     t.check(got["warn"] is None, "no administrator: no triangle", str(got))
-    page.close()
+    done(page)
     page = new_page(browser, 480, 1800)
     open_card(page, port, config={**cfg, "mode": "debug"}, disable=[btn], admin=False)
     got = view(page)
     t.check((got["intro"] or "").endswith("Aktivieren kann sie ein Administrator unter Einstellungen, Entitäten.")
             and not any(r["enable"] for r in got["rows"] or []) and got["all"] is None,
             "no administrator: the debug view names who can enable them, no switches", str(got))
-    page.close()
+    done(page)
     page = new_page(browser, 480, 1800)
     open_card(page, port, config={**cfg, "hide_disabled_hint": True}, disable=[btn])
     t.check(view(page)["warn"] is None, "hide_disabled_hint: no triangle", "")
-    page.close()
+    done(page)
     page = new_page(browser, 480, 1800)
     open_card(page, port, config={**cfg, "hide_settings": ["smart_cost_limit"]}, disable=[btn])
     t.check(view(page)["warn"] is None, "a hidden setting needs nothing: no triangle", "")
-    page.close()
+    done(page)
     page = new_page(browser, 480, 1800)
     open_card(page, port, config={"mode": "compact", "loadpoints": ["openwb"]}, disable=[btn])
     t.check(view(page)["warn"] is not None, "the compact header carries the triangle too", "")
-    page.close()
+    done(page)
 
     t.group("disabled entities - editor")
     page = new_page(browser, 480, 1800)
@@ -2658,7 +2697,7 @@ def disabled_entities(browser, port, t):
     ed("#hide_disabled_hint").uncheck(); page.wait_for_timeout(100)
     cfgs = page.evaluate("window.__cfg")
     t.check("hide_disabled_hint" not in cfgs[-1], "unchecked, the key is dropped again", json.dumps(cfgs[-1]))
-    page.close()
+    done(page)
 
 
 def solar_share(browser, port, t):
@@ -2690,13 +2729,13 @@ def solar_share(browser, port, t):
     t.check(g["label"] == "0 %" and g["hint"] == "Laden startet, sobald etwas Überschuss verfügbar ist.",
             "released at 0 %: value and text follow at once, before HA answers", str(g))
     t.check(not errors, "no console errors", "; ".join(errors)[:300])
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1600)
     open_card(page, port, config=lp, set={"number.evcc_openwb_solar_share": "30"}, lang="en")
     g = got(page)
     t.check(g["hint"] == "At least 30 % of the minimum charging power must come from solar.", "30 %: the share in the text, card language", str(g))
-    page.close()
+    done(page)
 
     for case, st in (("enable threshold", {"number.evcc_openwb_enable_threshold": "-1200"}),
                      ("disable threshold", {"number.evcc_openwb_disable_threshold": "10"})):
@@ -2705,7 +2744,7 @@ def solar_share(browser, port, t):
         g = got(page)
         t.check(g and g["disabled"] and g["edit"] and g["hint"].startswith("Leistungsbasierte Ladeschwellen sind konfiguriert"),
                 f"{case} set: locked with evcc's hint, no direct input", str(g))
-        page.close()
+        done(page)
 
     # ha-evcc creates no solar share for an integrated device (the heat pump);
     # a heating device on a plain charger (a heating rod on a switched socket)
@@ -2713,7 +2752,7 @@ def solar_share(browser, port, t):
     page = new_page(browser, 480, 1600)
     open_card(page, port, config={**lp, "loadpoints": ["wp"]})
     t.check(got(page, "wp") is None, "integrated heat pump: ha-evcc has no solar share, no slider")
-    page.close()
+    done(page)
 
     page = new_page(browser, 480, 1600)
     open_card(page, port, config=lp, set={"number.evcc_openwb_solar_share": "50"},
@@ -2721,7 +2760,7 @@ def solar_share(browser, port, t):
     g = got(page)
     t.check(g and g["hint"] == "Mindestens 50 % der minimalen Heizleistung muss aus Solarstrom stammen.",
             "heating loadpoint: evcc's heating text", str(g))
-    page.close()
+    done(page)
 
     for case, cfg, st, dis in (("hide_settings", {**lp, "hide_settings": ["solar_share"]}, None, None),
                                ("no_pv", {**lp, "no_pv": ["openwb"]}, None, None),
@@ -2730,18 +2769,47 @@ def solar_share(browser, port, t):
         page = new_page(browser, 480, 1600)
         open_card(page, port, config=cfg, set=st, drop=dis)
         t.check(page.locator(in_card(sel)).count() == 0, f"{case}: no solar share slider")
-        page.close()
+        done(page)
 
     page = new_page(browser, 480, 1600)
     open_card(page, port, config={**lp, "hide_settings": ["limit_soc", "min_soc", "phases", "max_current", "min_current", "battery_boost", "priority", "smart_cost_limit", "smart_feed_in_priority_limit"]})
     n = page.evaluate("window.__card.shadowRoot.querySelectorAll('.current-block-body > *').length")
     t.check(n == 1 and page.locator(in_card(sel)).count() == 1, "the only setting left: the block stays, no divider", str(n))
-    page.close()
+    done(page)
 
 
 GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
           "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities, "solar_share": solar_share}
+
+
+# The groups that take longest go to the workers first, so the run is not left
+# waiting for one of them at the end. Measured on the full run; a group missing
+# here simply queues after these.
+SLOW_FIRST = ["locales", "stats_period", "hints", "render", "interaction", "contracts", "discovery", "disabled", "tariff"]
+
+_worker = {}
+
+
+def _init_worker(browser_name, headed, out):
+    """One browser per worker process, started once and used for every group it runs."""
+    global OUT
+    OUT = out
+    from playwright.sync_api import sync_playwright
+    _worker["pw"] = sync_playwright().start()
+    _worker["browser"] = launch(_worker["pw"], browser_name, headed)
+
+
+def _run_group(name, port, browser_name):
+    """Runs one group in a worker; returns its printed output, results and duration."""
+    import contextlib, io
+    t = T(browser=browser_name)
+    buf, t0 = io.StringIO(), time.time()
+    with contextlib.redirect_stdout(buf):
+        try: GROUPS[name](_worker["browser"], port, t)
+        except Exception as e:   # a crashed group must not hide the other groups' results
+            t.fail(f"{name}: group crashed", f"{type(e).__name__}: {str(e)[:300]}")
+    return buf.getvalue(), t.results, time.time() - t0
 
 
 def main():
@@ -2750,23 +2818,34 @@ def main():
     ap.add_argument("--only", action="append", choices=list(GROUPS), help="run only these groups (repeatable)")
     ap.add_argument("--browser", choices=BROWSERS, default=os.environ.get("EVCC_BROWSER", "chromium"),
                     help="engine under test (default: chromium, or $EVCC_BROWSER)")
+    ap.add_argument("-j", "--jobs", type=int, default=int(os.environ.get("EVCC_JOBS", 0)) or os.cpu_count() or 1,
+                    help="groups run in parallel, one browser each (default: CPU count, or $EVCC_JOBS)")
     a = ap.parse_args()
     if a.browser != "chromium": OUT = OUT / a.browser     # keep the Chromium reports and shots apart
     OUT.mkdir(parents=True, exist_ok=True)
-    from playwright.sync_api import sync_playwright
     srv, port = serve()
     t = T(f"evcc-card tests ({a.browser})", browser=a.browser)
-    with sync_playwright() as p:
-        browser = launch(p, a.browser, a.headed)
-        for name, fn in GROUPS.items():
-            if not a.only or name in a.only:
-                try: fn(browser, port, t)
-                except Exception as e:   # a crashed group must not hide the other groups' results
-                    t.fail(f"{name}: group crashed", f"{type(e).__name__}: {str(e)[:300]}")
-        browser.close()
+    names = [n for n in GROUPS if not a.only or n in a.only]
+    jobs  = max(1, min(a.jobs, len(names)))
+    if a.headed: jobs = 1   # one visible browser to watch
+
+    # Workers are spawned, not forked: Playwright's driver must not be shared
+    # with a child. Each group's output is printed in the usual order once it is
+    # complete, whatever order the workers finish in.
+    import multiprocessing
+    order = sorted(names, key=lambda n: SLOW_FIRST.index(n) if n in SLOW_FIRST else len(SLOW_FIRST))
+    with multiprocessing.get_context("spawn").Pool(jobs, _init_worker, (a.browser, a.headed, OUT)) as pool:
+        pending = {n: pool.apply_async(_run_group, (n, port, a.browser)) for n in order}
+        for name in names:
+            output, results, secs = pending[name].get()
+            print(output, end="")
+            print(f"  ({secs:.1f} s)", file=sys.stderr)
+            t.durations[name] = round(secs, 1)
+            t.results.extend(results)
     srv.shutdown()
     report = t.write_reports(OUT, sorted(p.name for p in OUT.glob("*.png")))
-    print(f"\n{len(t.results) - len(t.failed)} passed, {len(t.failed)} failed  (report: {report}, screenshots in {OUT})")
+    print(f"\n{len(t.results) - len(t.failed)} passed, {len(t.failed)} failed in {time.time() - t.started:.0f} s with {jobs} "
+          f"worker{'s' if jobs > 1 else ''}  (report: {report}, screenshots in {OUT})")
     sys.exit(1 if t.failed else 0)
 
 

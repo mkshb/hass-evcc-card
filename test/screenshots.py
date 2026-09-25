@@ -13,7 +13,7 @@ element itself (470 px wide) for each mode, plus the slider-input crop.
 import argparse, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from run import serve, open_card, in_card, new_page, OUT, T, launch
+from run import serve, open_card, in_card, new_page, done, OUT, T, launch
 
 WIDTH = 470
 LP = ["openwb"]   # the EV loadpoint; "wp" is a heating loadpoint and would double the height
@@ -52,7 +52,7 @@ def shot_mode(browser, port, name, config, dark, out):
     errors = open_card(page, port, dark=dark, width=WIDTH, config=config, set=STATES.get(name))
     path = out / f"{name}-{'dark' if dark else 'light'}.png"
     page.locator(in_card("ha-card")).screenshot(path=str(path), animations="disabled")
-    page.close()
+    done(page)
     return path, errors
 
 
@@ -69,7 +69,7 @@ def shot_slider_input(browser, port, dark, out):
     path = out / f"slider-input-{'dark' if dark else 'light'}.png"
     page.screenshot(path=str(path), animations="disabled",
                     clip={"x": card["x"], "y": y0 - 10, "width": card["width"], "height": (y1 - y0) + 20})
-    page.close()
+    done(page)
     return path, errors
 
 

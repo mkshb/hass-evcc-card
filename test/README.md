@@ -115,10 +115,36 @@ entities added later (e.g. `disabled_in_config`, the energy counters) as missing
 python3 test/run.py                   # everything, Chromium
 python3 test/run.py --browser webkit  # the same checks in WebKit (reports in test/out/webkit/)
 python3 test/run.py --only render     # screenshots only
-python3 test/run.py --headed          # watch it in a window
+python3 test/run.py --headed          # watch it in a window (one worker)
+python3 test/run.py -j 1              # everything in one process, in order
 ```
 
 Screenshots land in `test/out/` (git-ignored). Exit code 1 on failure.
+
+### Speed
+
+The groups run in parallel, one worker process with its own browser each
+(`-j`, default the CPU count, or `EVCC_JOBS`); the longest groups start first
+and every group's output is printed in the usual order once it is complete.
+`report.json` records the seconds per group (`group_durations_s`). A full run
+takes about two minutes per engine.
+
+Two things keep a single check short:
+
+- **Pages are reused.** `new_page()` hands out a page from a pool with one
+  context per browser, `done(page)` gives it back (after `about:blank`, so no
+  card, timer or listener survives the test). Within the context the bundle
+  comes from the HTTP cache and V8 keeps its compiled code; a fresh context
+  per test cost half a second each. Close a test's page with `done(page)`,
+  never `page.close()`.
+- **Waiting for the card, not for the clock.** `harness.html` counts the
+  card's short timers (up to a second: the render debounce, the WebSocket
+  re-render, the mock's service echo) and its open fetches, and watches its
+  shadow DOM. `settle(page)` returns once none is pending and nothing changed
+  for 50 ms; `open_card()` ends with it. Prefer it to a fixed
+  `page.wait_for_timeout` after anything that makes the card render; keep a
+  fixed wait only where the test is about time itself (a countdown tick, a
+  mark that expires).
 
 ### Browsers
 
