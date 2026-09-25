@@ -2389,6 +2389,17 @@ def hints(browser, port, t):
     page.close()
 
     page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={**planned, "sensor.evcc_openwb_plan_projected_start": "2026-09-18T13:00:03+02:00"})
+    t.check(plan(page) == ["plan: Ladeplan startet 13:00"], "a start seconds ahead: the chip", str(chips(page)))
+    page.clock.set_fixed_time("2026-09-18T13:00:05+02:00")
+    page.wait_for_timeout(1300)   # no render in between, only the countdown tick
+    got = plan(page)
+    t.check(got == [], "the start passes without a render: the chip leaves", str(got))
+    got = [c.split(":")[0] for c in chips(page)]
+    t.check(got == ["pv"], "the timer next to it stays, and with it the row", str(chips(page)))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
     open_card(page, port, config=lp, set=planned, disable=["sensor.evcc_openwb_effective_plan_soc"])
     t.check(plan(page) == [], "a start reported, but no plan block to jump to: no chip", str(chips(page)))
     page.close()

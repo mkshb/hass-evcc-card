@@ -616,16 +616,24 @@ export class EvccCard extends HTMLElement {
       // A run-out timer leaves like evcc's, until the next render drops the chip,
       // and takes the row with it when it was the last chip there.
       const chip = el.closest(".lp-action-chip");
-      if (chip) {
-        chip.hidden = !cd;
-        const row = chip.closest(".lp-action-row");
-        if (row) row.hidden = [...row.querySelectorAll(".lp-action-chip")].every(c => c.hidden);
-      }
+      if (chip) this._hideActionChip(chip, !cd);
       const key = el.dataset.countdownLabel;
       if (key && cd) {
         el.textContent = this._t(key, { val: cd });
       }
     });
+    // A chip that names a point in time (the plan start) leaves once it has
+    // passed, as the render would not draw it any more.
+    root.querySelectorAll(".lp-action-chip[data-hide-after]").forEach(chip => {
+      const ts = Date.parse(chip.dataset.hideAfter);
+      if (!isNaN(ts)) this._hideActionChip(chip, ts <= Date.now());
+    });
+  }
+
+  _hideActionChip(chip, hidden) {
+    chip.hidden = hidden;
+    const row = chip.closest(".lp-action-row");
+    if (row) row.hidden = [...row.querySelectorAll(".lp-action-chip")].every(c => c.hidden);
   }
 }
 

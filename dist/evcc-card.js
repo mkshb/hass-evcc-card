@@ -1528,8 +1528,11 @@ const loadpointView = {
         ? this._t("planHintActive", { time: fmtClock(end.toISOString(), lang) })
         : this._t("planHintStart", { time: fmtClock(start.toISOString(), lang) });
     const icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19,3H18V1H16V3H8V1H6V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M19,19H5V8H19V19Z"/></svg>`;
+    // A start that passes without a render in between is hidden by the
+    // countdown tick, see _tickCountdowns.
+    const until = active ? "" : ` data-hide-after="${start.toISOString()}"`;
     return `
-          <div class="lp-action-chip plan${late ? " late" : ""}" data-key="plan" data-lp-plan-open="${escAttr(lpName)}">
+          <div class="lp-action-chip plan${late ? " late" : ""}" data-key="plan" data-lp-plan-open="${escAttr(lpName)}"${until}>
             ${icon}
             <span>${escHtml(text)}</span>
           </div>`;
@@ -7696,16 +7699,24 @@ class EvccCard extends HTMLElement {
       // A run-out timer leaves like evcc's, until the next render drops the chip,
       // and takes the row with it when it was the last chip there.
       const chip = el.closest(".lp-action-chip");
-      if (chip) {
-        chip.hidden = !cd;
-        const row = chip.closest(".lp-action-row");
-        if (row) row.hidden = [...row.querySelectorAll(".lp-action-chip")].every(c => c.hidden);
-      }
+      if (chip) this._hideActionChip(chip, !cd);
       const key = el.dataset.countdownLabel;
       if (key && cd) {
         el.textContent = this._t(key, { val: cd });
       }
     });
+    // A chip that names a point in time (the plan start) leaves once it has
+    // passed, as the render would not draw it any more.
+    root.querySelectorAll(".lp-action-chip[data-hide-after]").forEach(chip => {
+      const ts = Date.parse(chip.dataset.hideAfter);
+      if (!isNaN(ts)) this._hideActionChip(chip, ts <= Date.now());
+    });
+  }
+
+  _hideActionChip(chip, hidden) {
+    chip.hidden = hidden;
+    const row = chip.closest(".lp-action-row");
+    if (row) row.hidden = [...row.querySelectorAll(".lp-action-chip")].every(c => c.hidden);
   }
 }
 
