@@ -349,5 +349,19 @@
   "editorVehicleDeviceNotFound": "none found",
   "editorVehicleDeviceNone": "No device",
   "editorVehicleDeviceGroupVehicles": "Vehicles",
-  "editorVehicleDeviceGroupOther": "Other devices"
+  "editorVehicleDeviceGroupOther": "Other devices",
+  "vehicleLock": "Lock",
+  "vehicleUnlock": "Unlock",
+  "vehicleLocking": "Locking …",
+  "vehicleUnlocking": "Unlocking …",
+  "vehicleClimate": "Climate",
+  "vehicleClimateOn": "Climate on",
+  "vehicleClimateStart": "Start",
+  "vehicleClimateStop": "Stop",
+  "vehicleActions": "Actions",
+  "vehiclePending": "Running …",
+  "vehicleConfirm": "{action}?",
+  "vehicleConfirmYes": "Go",
+  "vehicleConfirmNo": "Cancel",
+  "editorVehicleActions": "Allow commands to the vehicle (lock, climate, buttons of its integration)"
 }

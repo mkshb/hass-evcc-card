@@ -360,6 +360,10 @@ export class EvccCardEditor extends HTMLElement {
           <div class="section-title">${this._t("editorVehicleDeviceTitle")}</div>
           <div class="hint">${this._t("editorVehicleDeviceHint")}</div>
           ${this._hass ? this._vehicleDeviceFields(discoverVehicles(this._hass, this._getPrefix())) : ""}
+          <label class="cb-row">
+            <input type="checkbox" id="vehicle_actions" ${c.vehicle_actions === true ? "checked" : ""}>
+            <span>${this._t("editorVehicleActions")}</span>
+          </label>
         </div>
         ` : ""}
         ${showNoPlan ? `
@@ -462,6 +466,14 @@ export class EvccCardEditor extends HTMLElement {
       titleEl.addEventListener("input", () => {
         const val = titleEl.value.trim();
         this._config = { ...this._config, title: val || undefined };
+        this._fire();
+      });
+    }
+
+    const actionsEl = this.shadowRoot.getElementById("vehicle_actions");
+    if (actionsEl) {
+      actionsEl.addEventListener("change", () => {
+        this._config = { ...this._config, vehicle_actions: actionsEl.checked || undefined };
         this._fire();
       });
     }

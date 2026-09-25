@@ -20,6 +20,9 @@ const HINTS = {
   auxBattery: /12v|12_v|aux|starter|low_voltage/,
   target:     /target|soll|charge_limit|limit/,
   capacity:   /capacity|kapazit/,
+  climate:    /climat|climate|precondition|preheat|pre_heat|hvac|air_condition|aircon|klima/,
+  start:      /start|activate|_on$|begin/,
+  stop:       /stop|deactivate|_off$|cancel|end$/,
 };
 
 // The entities of a device, enabled and visible, each with what the sorting
@@ -54,7 +57,9 @@ const isLevel    = e => e.domain === "sensor" && e.unit === "%" && e.deviceClass
 //             and what the vehicle is doing: driving, charging, plugged
 //   openings  doors, windows, lids
 //   problems  warning flags
-//   actions   buttons
+//   climate   how to precondition: { entity } for a climate entity or a switch
+//             to toggle, { start, stop } for a pair of buttons, or null
+//   actions   the other buttons (flash, honk, refresh, ...)
 //   details   every other sensor and binary sensor
 export function classifyVehicleDevice(hass, deviceId) {
   const ents  = deviceEntities(hass, deviceId);
@@ -94,12 +99,24 @@ export function classifyVehicleDevice(hass, deviceId) {
   const used     = new Set(Object.entries(roles).filter(([role]) => !STATUS.includes(role)).map(([, id]) => id));
   const openings = ents.filter(e => e.domain === "binary_sensor" && ["door", "window", "opening", "garage_door"].includes(e.deviceClass));
   const problems = ents.filter(e => e.domain === "binary_sensor" && e.deviceClass === "problem");
-  const actions  = ents.filter(e => e.domain === "button");
+
+  // Preconditioning. A climate entity says it by its domain; a switch or a
+  // pair of buttons only by words, as buttons carry no device class. A lone
+  // start button without its stop counterpart stays an ordinary action.
+  const climateButtons = ents.filter(e => e.domain === "button" && HINTS.climate.test(e.hint));
+  const start = climateButtons.find(e => HINTS.start.test(e.hint) && !HINTS.stop.test(e.hint));
+  const stop  = climateButtons.find(e => HINTS.stop.test(e.hint));
+  const climateEntity = ents.find(e => e.domain === "climate")
+    ?? ents.find(e => e.domain === "switch" && HINTS.climate.test(e.hint));
+  const climate = climateEntity ? { entity: climateEntity.entityId }
+                : start && stop ? { start: start.entityId, stop: stop.entityId } : null;
+  const climateIds = new Set(climate ? Object.values(climate) : []);
+  const actions  = ents.filter(e => e.domain === "button" && !climateIds.has(e.entityId));
   const grouped  = new Set([...openings, ...problems].map(e => e.entityId));
   const details  = ents.filter(e => (e.domain === "sensor" || e.domain === "binary_sensor") && !used.has(e.entityId) && !grouped.has(e.entityId));
 
   const ids = list => list.map(e => e.entityId).sort();
-  return { roles, openings: ids(openings), problems: ids(problems), actions: ids(actions), details: ids(details) };
+  return { roles, climate, openings: ids(openings), problems: ids(problems), actions: ids(actions), details: ids(details) };
 }
 
 // The device that belongs to an evcc vehicle. It has to be a vehicle, which the

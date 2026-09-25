@@ -156,3 +156,24 @@ test("an image entity on the device is the picture role", () => {
   const hass = hassOf({ d: { name: "Car", ents: [["sensor.car_battery", "70", pct], ["sensor.car_range", "250", km()], ["image.car", "2026-01-01T00:00:00", { entity_picture: "/api/image_proxy/image.car?token=x" }]] } });
   assert.equal(classifyVehicleDevice(hass, "d").roles.image, "image.car");
 });
+
+test("climate: a climate entity, else a switch, else a start/stop pair of buttons, told by words", () => {
+  const btn = (name, tk) => [`button.car_${name}`, "unknown", {}, tk];
+  const pair = hassOf({ d: car("car", [btn("klima_an", "climatization_start"), btn("klima_aus", "climatization_stop"), btn("hupen", "honk"), btn("blinken", "flash")]) });
+  const got = classifyVehicleDevice(pair, "d");
+  assert.deepEqual(got.climate, { start: "button.car_klima_an", stop: "button.car_klima_aus" });
+  assert.deepEqual(got.actions, ["button.car_blinken", "button.car_hupen"], "the climate buttons are no generic actions");
+
+  const lone = classifyVehicleDevice(hassOf({ d: car("car", [btn("klima_an", "climatization_start"), btn("hupen", "honk")]) }), "d");
+  assert.equal(lone.climate, null, "a start without a stop is no climate control");
+  assert.deepEqual(lone.actions, ["button.car_hupen", "button.car_klima_an"]);
+
+  const entity = classifyVehicleDevice(hassOf({ d: car("car", [["climate.car", "off", {}], ["switch.car_preconditioning", "off", {}, "preconditioning"], btn("klima_an", "climatization_start"), btn("klima_aus", "climatization_stop")]) }), "d");
+  assert.deepEqual(entity.climate, { entity: "climate.car" }, "a climate entity wins");
+  assert.deepEqual(entity.actions, ["button.car_klima_an", "button.car_klima_aus"], "then the buttons stay plain actions");
+
+  const sw = classifyVehicleDevice(hassOf({ d: car("car", [["switch.car_preconditioning", "off", {}, "preconditioning"], ["switch.car_sentry", "off", {}, "sentry_mode"]]) }), "d");
+  assert.deepEqual(sw.climate, { entity: "switch.car_preconditioning" }, "a switch only by its words");
+
+  assert.equal(classifyVehicleDevice(hassOf({ d: car("car") }), "d").climate, null);
+});

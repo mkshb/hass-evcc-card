@@ -411,6 +411,72 @@ def vehicle_mode(browser, port, t):
     t.check(badge(page) == "Nicht verbunden", "without an integration the card does not claim to know: not connected", badge(page))
     done(page)
 
+    t.group("vehicle - commands (vehicle_actions)")
+    LOCK = "lock.volvo_ex30_schloss"
+    ex30 = lambda page: page.locator(block("ex30"))
+    lockchip = lambda page: page.evaluate("""() => { const c = window.__card.shadowRoot.querySelector('.vehicle-block[data-vehicle=ex30] .vehicle-chip.ok, .vehicle-block[data-vehicle=ex30] .vehicle-chip.warn');
+        return c ? { tag: c.tagName, text: c.textContent.trim(), cmd: c.dataset.vehicleCmd ?? null, disabled: !!c.disabled } : null; }""")
+    page, errors = card()
+    t.check(lockchip(page)["tag"] == "SPAN" and ex30(page).locator(".vehicle-actions").count() == 0,
+            "without vehicle_actions the card only shows: lock chip without a command, no climate or action buttons", json.dumps(lockchip(page)))
+    done(page)
+
+    page, errors = card(config={"mode": "vehicle", "vehicle_actions": True})
+    t.check(lockchip(page) == {"tag": "BUTTON", "text": "Verriegelt", "cmd": "unlock", "disabled": False}, "with vehicle_actions the lock chip is the switch", json.dumps(lockchip(page)))
+    ex30(page).locator("button.vehicle-chip").click(); page.wait_for_timeout(200)
+    confirm = ex30(page).locator(".vehicle-confirm")
+    t.check(confirm.count() == 1 and "Entriegeln?" in confirm.inner_text() and not svc(page), "unlocking asks first and sends nothing yet", confirm.inner_text() if confirm.count() else "no question")
+    confirm.locator('[data-vehicle-confirm="no"]').click(); page.wait_for_timeout(200)
+    t.check(ex30(page).locator(".vehicle-confirm").count() == 0 and not svc(page), "cancel sends nothing")
+    ex30(page).locator("button.vehicle-chip").click(); page.wait_for_timeout(200)
+    ex30(page).locator('[data-vehicle-confirm="yes"]').click(); page.wait_for_timeout(300)
+    t.check(svc(page)[-1:] == [{"domain": "lock", "service": "unlock", "data": {"entity_id": LOCK}}], "yes → lock.unlock", json.dumps(svc(page)[-1:]))
+    t.check(lockchip(page) == {"tag": "BUTTON", "text": "Wird entriegelt …", "cmd": "unlock", "disabled": True},
+            "until HA reports the lock open, the chip says the command runs", json.dumps(lockchip(page), ensure_ascii=False))
+    page.evaluate(f"""() => {{ const h = window.__hass; h.states = {{ ...h.states, '{LOCK}': {{ ...h.states['{LOCK}'], state: 'unlocked' }} }}; window.__card.hass = {{ ...h }}; }}""")
+    settle(page)
+    t.check(lockchip(page) == {"tag": "BUTTON", "text": "Entriegelt", "cmd": "lock", "disabled": False}, "HA reports it open: the chip offers to lock", json.dumps(lockchip(page)))
+    ex30(page).locator("button.vehicle-chip").click(); page.wait_for_timeout(300)
+    t.check(svc(page)[-1:] == [{"domain": "lock", "service": "lock", "data": {"entity_id": LOCK}}] and ex30(page).locator(".vehicle-confirm").count() == 0,
+            "locking goes at once, without asking", json.dumps(svc(page)[-1:]))
+
+    climate = ex30(page).locator(".vehicle-climate .vehicle-cmd-btn")
+    t.check(climate.all_inner_texts() == ["Starten", "Stoppen"], "a start/stop pair of buttons: two buttons for the climate", json.dumps(climate.all_inner_texts()))
+    climate.first.click(); page.wait_for_timeout(300)
+    t.check(svc(page)[-1:] == [{"domain": "button", "service": "press", "data": {"entity_id": "button.volvo_ex30_klimatisierung_starten"}}]
+            and ex30(page).locator(".vehicle-confirm").count() == 0, "starting the climate goes without asking", json.dumps(svc(page)[-1:]))
+
+    acts = ex30(page).locator(".vehicle-actions-list .vehicle-cmd-btn")
+    t.check(acts.count() == 3 and not acts.first.is_visible(), "the other buttons are folded away", str(acts.count()))
+    ex30(page).locator("[data-vehicle-actions]").click(); page.wait_for_timeout(200)
+    names = acts.all_inner_texts()
+    t.check(names == ["Blinken", "Hupen", "Hupen & Blinken"] and acts.first.is_visible(), "unfolded: the buttons by their HA names", json.dumps(names, ensure_ascii=False))
+    n = len(svc(page))
+    acts.nth(1).click(); page.wait_for_timeout(200)
+    t.check("Hupen?" in ex30(page).locator(".vehicle-confirm").inner_text() and len(svc(page)) == n, "every other button asks first")
+    ex30(page).locator('[data-vehicle-confirm="yes"]').click(); page.wait_for_timeout(300)
+    t.check(svc(page)[-1:] == [{"domain": "button", "service": "press", "data": {"entity_id": "button.volvo_ex30_hupen"}}], "yes → button.press", json.dumps(svc(page)[-1:]))
+    t.check(not errors, "no console errors", "; ".join(errors)[:200])
+    done(page)
+
+    # A climate entity on the device: one button that follows its state, and a chip while it runs.
+    page, errors = card(config={"mode": "vehicle", "vehicle_actions": True})
+    page.evaluate("""() => { const h = window.__hass, id = 'climate.volvo_ex30_klima';
+        h.entities = { ...h.entities, [id]: { entity_id: id, platform: 'volvo', device_id: 'f1c0de00volvoex30fixture000000001' } };
+        h.states = { ...h.states, [id]: { entity_id: id, state: 'off', attributes: {}, last_updated: new Date().toISOString() } };
+        window.__card.hass = { ...h }; }""")
+    settle(page)
+    climate = ex30(page).locator(".vehicle-climate .vehicle-cmd-btn")
+    t.check(climate.all_inner_texts() == ["Starten"], "a climate entity: one button, off → start", json.dumps(climate.all_inner_texts()))
+    climate.first.click(); page.wait_for_timeout(300)
+    t.check(svc(page)[-1:] == [{"domain": "climate", "service": "turn_on", "data": {"entity_id": "climate.volvo_ex30_klima"}}], "→ climate.turn_on", json.dumps(svc(page)[-1:]))
+    page.evaluate("""() => { const h = window.__hass, id = 'climate.volvo_ex30_klima';
+        h.states = { ...h.states, [id]: { ...h.states[id], state: 'heat_cool' } }; window.__card.hass = { ...h }; }""")
+    settle(page)
+    chips = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .vehicle-chip')].map(c => c.textContent.trim())")
+    t.check(climate.all_inner_texts() == ["Stoppen"] and "Klimatisierung an" in chips, "running: the button stops it, a chip says it runs", json.dumps([climate.all_inner_texts(), chips], ensure_ascii=False))
+    done(page)
+
     t.group("vehicle - charge plan of the loadpoint")
     page, errors = card()
     t.check(page.locator(in_card(".vehicle-plan")).count() == 0, "no plan block without a plan", "")
@@ -1393,6 +1459,10 @@ def editor(browser, port, t):
     t.check(last().get("vehicle_devices") == {"ex30": "none"}, "no device writes \"none\"", json.dumps(last()))
     dev.select_option("")
     t.check("vehicle_devices" not in last(), "back to automatic drops the key again", json.dumps(last()))
+    fld("#vehicle_actions").check()
+    t.check(last().get("vehicle_actions") is True, "the checkbox writes vehicle_actions: true", json.dumps(last()))
+    fld("#vehicle_actions").uncheck()
+    t.check("vehicle_actions" not in last(), "unchecked, the key is dropped again", json.dumps(last()))
     done(page)
 
 
@@ -2210,6 +2280,8 @@ def setconfig(browser, port, t):
         ({"disabled_loadpoints": "dim"}, "a known disabled_loadpoints"),
         ({"loadpoints": "openwb"}, "a single loadpoint as a string"),
         ({"prefix": "evcc2_", "language": "en"}, "prefix and language"),
+        ({"mode": "vehicle", "vehicles": "ex30", "vehicle_actions": True, "vehicle_devices": {"ex30": "none"}}, "the vehicle mode options"),
+        ({"mode": "vehicle", "vehicle_devices": False}, "vehicle_devices: false"),
     ]
     INVALID = [
         ({"mode": "quatsch"}, "mode", "an unknown mode"),
@@ -2222,6 +2294,9 @@ def setconfig(browser, port, t):
         ({"loadpoints": []}, "loadpoints", "an empty loadpoint list"),
         ({"loadpoints": [""]}, "loadpoints", "a blank loadpoint name"),
         ({"loadpoints": 5}, "loadpoints", "a numeric loadpoints"),
+        ({"vehicles": []}, "vehicles", "an empty vehicle list"),
+        ({"vehicle_actions": "yes"}, "vehicle_actions", "vehicle_actions not a boolean"),
+        ({"vehicle_devices": ["ex30"]}, "vehicle_devices", "vehicle_devices as a list"),
     ]
 
     t.group("setconfig - invalid configuration is rejected")

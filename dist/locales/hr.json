@@ -349,5 +349,19 @@
   "editorVehicleDeviceNotFound": "nije pronađen",
   "editorVehicleDeviceNone": "Bez uređaja",
   "editorVehicleDeviceGroupVehicles": "Vozila",
-  "editorVehicleDeviceGroupOther": "Ostali uređaji"
+  "editorVehicleDeviceGroupOther": "Ostali uređaji",
+  "vehicleLock": "Zaključaj",
+  "vehicleUnlock": "Otključaj",
+  "vehicleLocking": "Zaključavanje …",
+  "vehicleUnlocking": "Otključavanje …",
+  "vehicleClimate": "Klimatizacija",
+  "vehicleClimateOn": "Klimatizacija uključena",
+  "vehicleClimateStart": "Pokreni",
+  "vehicleClimateStop": "Zaustavi",
+  "vehicleActions": "Radnje",
+  "vehiclePending": "U tijeku …",
+  "vehicleConfirm": "{action}?",
+  "vehicleConfirmYes": "Izvrši",
+  "vehicleConfirmNo": "Odustani",
+  "editorVehicleActions": "Dopusti naredbe vozilu (brava, klimatizacija, tipke njegove integracije)"
 }

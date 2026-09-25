@@ -280,6 +280,10 @@ export function validateCardConfig(config) {
     throw new Error("evcc-card: vehicles has to be a vehicle name or a list of names");
   }
 
+  if (c.vehicle_actions !== undefined && typeof c.vehicle_actions !== "boolean") {
+    throw new Error("evcc-card: vehicle_actions has to be true or false");
+  }
+
   // vehicle_devices: false switches the device link off, a map names the device
   // per vehicle ("none" for a vehicle that is to stay without one).
   const links = c.vehicle_devices;

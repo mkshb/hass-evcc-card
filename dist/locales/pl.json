@@ -349,5 +349,19 @@
   "editorVehicleDeviceNotFound": "nie znaleziono",
   "editorVehicleDeviceNone": "Brak urządzenia",
   "editorVehicleDeviceGroupVehicles": "Pojazdy",
-  "editorVehicleDeviceGroupOther": "Inne urządzenia"
+  "editorVehicleDeviceGroupOther": "Inne urządzenia",
+  "vehicleLock": "Zablokuj",
+  "vehicleUnlock": "Odblokuj",
+  "vehicleLocking": "Blokowanie …",
+  "vehicleUnlocking": "Odblokowywanie …",
+  "vehicleClimate": "Klimatyzacja",
+  "vehicleClimateOn": "Klimatyzacja włączona",
+  "vehicleClimateStart": "Uruchom",
+  "vehicleClimateStop": "Zatrzymaj",
+  "vehicleActions": "Akcje",
+  "vehiclePending": "W toku …",
+  "vehicleConfirm": "{action}?",
+  "vehicleConfirmYes": "Wykonaj",
+  "vehicleConfirmNo": "Anuluj",
+  "editorVehicleActions": "Zezwalaj na polecenia do pojazdu (zamek, klimatyzacja, przyciski jego integracji)"
 }

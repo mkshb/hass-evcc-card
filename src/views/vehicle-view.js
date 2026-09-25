@@ -14,6 +14,7 @@ const ICON_UNLOCK   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 2
 const ICON_DOOR     = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M19,14H16V16H19V14M22,21H3V11L11,3H21A1,1 0 0,1 22,4V21M11.83,5L5.83,11H20V5H11.83Z"/></svg>`;
 const ICON_PIN      = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M12,11.5A2.5,2.5 0 0,1 9.5,9A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,9A2.5,2.5 0 0,1 12,11.5M12,2A7,7 0 0,0 5,9C5,14.25 12,22 12,22C12,22 19,14.25 19,9A7,7 0 0,0 12,2Z"/></svg>`;
 const ICON_WARN     = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M13,14H11V10H13M13,18H11V16H13M1,21H23L12,2L1,21Z"/></svg>`;
+const ICON_CLIMATE  = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M12,11A1,1 0 0,0 11,12A1,1 0 0,0 12,13A1,1 0 0,0 13,12A1,1 0 0,0 12,11M12.5,2C17,2 17.11,5.57 14.75,6.75C13.76,7.24 13.32,8.29 13.13,9.22C13.61,9.42 14.03,9.73 14.35,10.13C18.05,8.13 22.03,8.92 22.03,12.5C22.03,17 18.46,17.1 17.28,14.73C16.78,13.74 15.72,13.3 14.79,13.11C14.59,13.59 14.28,14 13.88,14.34C15.87,18.03 15.08,22 11.5,22C7,22 6.91,18.42 9.27,17.24C10.25,16.75 10.69,15.71 10.89,14.79C10.4,14.59 9.97,14.27 9.65,13.87C5.96,15.85 2,15.07 2,11.5C2,7 5.56,6.89 6.74,9.26C7.24,10.25 8.29,10.68 9.22,10.87C9.41,10.39 9.73,9.97 10.14,9.65C8.15,5.96 8.94,2 12.5,2Z"/></svg>`;
 const ICON_CHECK    = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/></svg>`;
 
 const NO_VALUE = new Set(["unknown", "unavailable", ""]);
@@ -167,6 +168,7 @@ export const vehicleView = {
         ${!hasVehicleData ? `<div class="vehicle-hint">${this._t("vehicleExtDataHint")}</div>`
           : !(soc || range || odometer) ? `<div class="vehicle-hint">${this._t("vehicleNoData")}</div>` : ""}
         ${dev ? this._renderVehicleChips(dev) : ""}
+        ${dev ? this._renderVehicleActions(slug, dev) : ""}
         ${this._renderVehiclePlan(lp)}
         ${this._renderVehicleRepeatPlans(vehicle)}
         ${this._renderVehicleTotals(vehicle)}
@@ -201,11 +203,31 @@ export const vehicleView = {
       `<span class="vehicle-chip ${cls}"${entityId ? ` data-more-info="${escAttr(entityId)}"` : ""}${hint ? ` title="${escAttr(hint)}"` : ""}>${icon} ${escHtml(text)}</span>`;
     const chips = [];
 
+    // With vehicle_actions the lock chip is the switch: a tap locks at once,
+    // unlocking asks first. While the command runs the chip says so.
     const lock = dev.roles.lock && this._hass.states[dev.roles.lock];
     if (lock && !NO_VALUE.has(lock.state)) {
-      const locked = lock.state === "locked";
-      chips.push(chip(locked ? "ok" : "warn", locked ? ICON_LOCK : ICON_UNLOCK,
-        locked ? this._t("vehicleLocked") : this._t("vehicleUnlocked"), dev.roles.lock));
+      const id      = dev.roles.lock;
+      const locked  = lock.state === "locked";
+      // HA's own transition states, or a command of the card still under way:
+      // the one sent is the opposite of what the lock showed.
+      const moving  = lock.state === "locking" ? "vehicleLocking" : lock.state === "unlocking" ? "vehicleUnlocking" : null;
+      const pending = !!moving || this._commandPending(id);
+      const text    = this._t(moving ?? (pending ? (locked ? "vehicleUnlocking" : "vehicleLocking")
+                                                 : (locked ? "vehicleLocked" : "vehicleUnlocked")));
+      if (this._vehicleActionsAllowed()) {
+        chips.push(`<button type="button" class="vehicle-chip vehicle-cmd ${locked ? "ok" : "warn"}${pending ? " pending" : ""}"
+          data-vehicle-cmd="${locked ? "unlock" : "lock"}" data-entity="${escAttr(id)}"${locked ? ` data-confirm="1"` : ""}
+          ${pending ? "disabled" : ""} title="${escAttr(this._t(locked ? "vehicleUnlock" : "vehicleLock"))}">${locked ? ICON_LOCK : ICON_UNLOCK} ${escHtml(text)}</button>`);
+      } else {
+        chips.push(chip(locked ? "ok" : "warn", locked ? ICON_LOCK : ICON_UNLOCK, text, id));
+      }
+    }
+
+    // A climate entity or switch that is on shows as a chip, actions or not.
+    const climate = dev.climate?.entity && this._hass.states[dev.climate.entity];
+    if (climate && !NO_VALUE.has(climate.state) && climate.state !== "off") {
+      chips.push(chip("ok", ICON_CLIMATE, this._t("vehicleClimateOn"), dev.climate.entity));
     }
 
     const group = (ids, okText, icon, cls) => {
@@ -227,6 +249,72 @@ export const vehicleView = {
       chips.push(chip("", ICON_PIN, text, dev.roles.location));
     }
     return chips.length ? `<div class="vehicle-chips">${chips.join("")}</div>` : "";
+  },
+
+  // vehicle_actions: the card may send commands to the vehicle's own
+  // integration. Off unless configured: a card on a wall tablet should not
+  // unlock a car by a stray tap of someone who only wanted to look.
+  _vehicleActionsAllowed() {
+    return this._config.vehicle_actions === true;
+  },
+
+  // Preconditioning and the other buttons of the device, with vehicle_actions.
+  // Preconditioning runs without asking; every other button asks first, as
+  // the card cannot tell a harmless refresh from a horn at midnight.
+  _renderVehicleActions(slug, dev) {
+    if (!this._vehicleActionsAllowed()) return "";
+    const cmd = (entityId, command, label, confirm = false, extra = "") => {
+      const pending = this._commandPending(entityId);
+      return `<button type="button" class="vehicle-cmd-btn${pending ? " pending" : ""}${extra}" data-vehicle-cmd="${command}"
+        data-entity="${escAttr(entityId)}"${confirm ? ` data-confirm="1"` : ""}${pending ? " disabled" : ""}>${escHtml(pending ? this._t("vehiclePending") : label)}</button>`;
+    };
+
+    let climateHtml = "";
+    const c = dev.climate;
+    if (c?.entity && this._hass.states[c.entity] && !NO_VALUE.has(this._hass.states[c.entity].state)) {
+      const on = this._hass.states[c.entity].state !== "off";
+      climateHtml = cmd(c.entity, on ? "climate-off" : "climate-on", this._t(on ? "vehicleClimateStop" : "vehicleClimateStart"), false, on ? " active" : "");
+    } else if (c?.start && c?.stop) {
+      climateHtml = cmd(c.start, "press", this._t("vehicleClimateStart")) + cmd(c.stop, "press", this._t("vehicleClimateStop"));
+    }
+
+    const confirm = this._vehicleConfirm;
+    const mine    = confirm && [dev.roles.lock, ...dev.actions].includes(confirm.entityId);
+    const confirmHtml = mine ? `
+      <div class="vehicle-confirm">
+        <span>${escHtml(this._t("vehicleConfirm", { action: confirm.cmd === "unlock" ? this._t("vehicleUnlock") : this._vehicleEntityName(confirm.entityId) }))}</span>
+        <button type="button" class="vehicle-cmd-btn" data-vehicle-confirm="yes">${this._t("vehicleConfirmYes")}</button>
+        <button type="button" class="vehicle-cmd-btn" data-vehicle-confirm="no">${this._t("vehicleConfirmNo")}</button>
+      </div>` : "";
+
+    let actionsHtml = "";
+    if (dev.actions.length) {
+      const open = !!this._vehicleActionsOpen[slug];
+      actionsHtml = `
+      <div class="vehicle-details vehicle-actions-list">
+        <button class="vehicle-details-toggle" data-vehicle-actions="${escAttr(slug)}" aria-expanded="${open}">
+          <span class="session-title">${this._t("vehicleActions")}</span>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="${open
+            ? "M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
+            : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"}"/></svg>
+        </button>
+        <div class="vehicle-cmd-row"${open ? "" : " hidden"}>${dev.actions.map(id => cmd(id, "press", this._vehicleEntityName(id), true)).join("")}</div>
+      </div>`;
+    }
+
+    if (!climateHtml && !confirmHtml && !actionsHtml) return "";
+    return `
+      <div class="vehicle-actions">
+        ${climateHtml ? `<div class="vehicle-climate"><span class="vehicle-climate-label">${ICON_CLIMATE} ${this._t("vehicleClimate")}</span><span class="vehicle-cmd-row">${climateHtml}</span></div>` : ""}
+        ${confirmHtml}
+        ${actionsHtml}
+      </div>`;
+  },
+
+  _runVehicleCommand(entityId, cmd) {
+    if (cmd === "lock" || cmd === "unlock") return this._setLock(entityId, cmd === "lock");
+    if (cmd === "climate-on" || cmd === "climate-off") return this._setClimate(entityId, cmd === "climate-on");
+    if (cmd === "press") return this._pressVehicleButton(entityId);
   },
 
   // Everything else the device reports, folded away by default.
@@ -329,6 +417,35 @@ export const vehicleView = {
         this._render();
       });
     });
+    this._fresh("[data-vehicle-actions]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const slug = btn.dataset.vehicleActions;
+        this._vehicleActionsOpen[slug] = !this._vehicleActionsOpen[slug];
+        this._render();
+      });
+    });
+    // A command that asks first only notes itself; the yes below sends it.
+    this._fresh("[data-vehicle-cmd]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const { entity, vehicleCmd: cmd } = btn.dataset;
+        if (btn.dataset.confirm === "1") {
+          this._vehicleConfirm = { entityId: entity, cmd };
+          this._render();
+          return;
+        }
+        this._vehicleConfirm = null;
+        this._runVehicleCommand(entity, cmd);
+      });
+    });
+    this._fresh("[data-vehicle-confirm]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const confirm = this._vehicleConfirm;
+        this._vehicleConfirm = null;
+        if (btn.dataset.vehicleConfirm === "yes" && confirm) this._runVehicleCommand(confirm.entityId, confirm.cmd);
+        else this._render();
+      });
+    });
   },
 
   _renderNoVehicles(allVehicles = {}) {
@@ -371,4 +488,20 @@ export const vehicleCss = `
       .vehicle-detail:last-child { border-bottom: none; }
       .vehicle-detail-label { color: var(--secondary-text-color); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .vehicle-detail-value { font-weight: 600; white-space: nowrap; }
+      button.vehicle-chip { font-family: inherit; cursor: pointer; }
+      .vehicle-chip.pending, .vehicle-cmd-btn.pending { opacity: .6; cursor: progress; }
+      .vehicle-actions { margin: 0 0 12px; }
+      .vehicle-climate { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: .85rem; }
+      .vehicle-climate-label { display: inline-flex; align-items: center; gap: 6px; color: var(--secondary-text-color); }
+      .vehicle-cmd-row { display: flex; flex-wrap: wrap; gap: 6px; }
+      .vehicle-cmd-row[hidden] { display: none; }
+      .vehicle-actions-list .vehicle-cmd-row { margin-top: 8px; }
+      .vehicle-cmd-btn {
+        padding: 5px 12px; border-radius: 999px; font: inherit; font-size: .8rem; cursor: pointer;
+        background: none; color: var(--primary-text-color); border: 1px solid var(--divider-color, #4b5563);
+      }
+      .vehicle-cmd-btn.active { border-color: var(--evcc-green); color: var(--evcc-green); }
+      .vehicle-confirm { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; padding: 8px 10px;
+        border-radius: 8px; font-size: .85rem; background: color-mix(in srgb, var(--evcc-amber) 12%, transparent); }
+      .vehicle-confirm span { flex: 1 1 auto; }
 `;
