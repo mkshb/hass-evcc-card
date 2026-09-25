@@ -363,5 +363,9 @@
   "vehicleConfirm": "{action}?",
   "vehicleConfirmYes": "Izvrši",
   "vehicleConfirmNo": "Odustani",
-  "editorVehicleActions": "Dopusti naredbe vozilu (brava, klimatizacija, tipke njegove integracije)"
+  "editorVehicleActions": "Dopusti naredbe vozilu (brava, klimatizacija, tipke njegove integracije)",
+  "editorVehicleImageTitle": "Slika vozila",
+  "editorVehicleImageHint": "Odaberite sliku iz medija Home Assistanta ili unesite putanju (/local/...) odnosno adresu. Bez slike kartica ne prikazuje vozilo; slika integracije vozila koristi se automatski.",
+  "editorVehicleImagePlaceholder": "ili putanja, npr. /local/ex30.png",
+  "editorVehicleImagePick": "Slika iz medijske biblioteke"
 }

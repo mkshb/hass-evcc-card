@@ -363,5 +363,9 @@
   "vehicleConfirm": "{action}?",
   "vehicleConfirmYes": "Ausführen",
   "vehicleConfirmNo": "Abbrechen",
-  "editorVehicleActions": "Befehle an das Fahrzeug erlauben (Schloss, Klimatisierung, Tasten der Integration)"
+  "editorVehicleActions": "Befehle an das Fahrzeug erlauben (Schloss, Klimatisierung, Tasten der Integration)",
+  "editorVehicleImageTitle": "Fahrzeugbild",
+  "editorVehicleImageHint": "Bild aus den Medien von Home Assistant wählen, oder einen Pfad (/local/...) bzw. eine Adresse eingeben. Ohne Bild zeigt die Karte kein Fahrzeug; ein Bild der Fahrzeug-Integration wird von selbst genutzt.",
+  "editorVehicleImagePlaceholder": "oder ein Pfad, z. B. /local/ex30.png",
+  "editorVehicleImagePick": "Bild aus den Medien"
 }

@@ -1,4 +1,4 @@
-import { HIDEABLE_SETTINGS, vehicleFilter } from "./core/constants.js";
+import { HIDEABLE_SETTINGS, vehicleFilter, isVehicleImage, isMediaSourceId } from "./core/constants.js";
 import { detectIntegration, discoverEntities, discoverVehicles, disabledCardEntities } from "./core/entity-discovery.js";
 import { enableEntity } from "./core/actions.js";
 import { disabledEntitiesHtml, disabledListCss, enableEntities } from "./components/disabled-entities.js";
@@ -163,6 +163,55 @@ export class EvccCardEditor extends HTMLElement {
     }).join("");
   }
 
+  // One picture per vehicle: HA's media picker, and a text field underneath for
+  // a path or an address (and to show what was picked).
+  _vehicleImageFields(vehicles) {
+    return Object.keys(vehicles).sort().map(slug => {
+      const title = evccVehicleTitle(this._hass, slug, vehicles[slug]) || slug;
+      return `
+        <label class="field-label" for="vehicle-image-${this._esc(slug)}">${this._esc(title)}</label>
+        <div class="vehicle-media" data-vehicle-media="${this._esc(slug)}"></div>
+        <input id="vehicle-image-${this._esc(slug)}" class="ha-input" type="text" data-vehicle-image="${this._esc(slug)}"
+               value="${this._esc(this._config.vehicle_images?.[slug] || "")}" placeholder="${this._esc(this._t("editorVehicleImagePlaceholder"))}">`;
+    }).join("");
+  }
+
+  // The picture of a vehicle is picked from Home Assistant's media library with
+  // HA's own media selector, narrowed to images. The element belongs to the HA
+  // frontend and is loaded on demand there, so it is created once it is defined;
+  // the text field underneath works without it and shows what was picked.
+  _mountVehicleMediaPickers() {
+    const slots = this.shadowRoot.querySelectorAll("[data-vehicle-media]");
+    if (!slots.length) return;
+    if (!customElements.get("ha-selector")) {
+      if (!this._waitingForSelector) {
+        this._waitingForSelector = true;
+        customElements.whenDefined("ha-selector").then(() => { this._waitingForSelector = false; this._render(); });
+      }
+      return;
+    }
+    slots.forEach(slot => {
+      const slug    = slot.dataset.vehicleMedia;
+      const current = this._config.vehicle_images?.[slug];
+      const picker  = document.createElement("ha-selector");
+      picker.hass     = this._hass;
+      picker.selector = { media: { accept: ["image/*"] } };
+      picker.label    = this._t("editorVehicleImagePick");
+      picker.value    = isMediaSourceId(current) ? { media_content_id: current, media_content_type: "image/*", metadata: {} } : undefined;
+      picker.addEventListener("value-changed", (e) => {
+        e.stopPropagation();
+        const id  = e.detail?.value?.media_content_id;
+        const map = { ...(this._config.vehicle_images || {}) };
+        if (isMediaSourceId(id)) map[slug] = id;
+        else delete map[slug];
+        this._config = { ...this._config, vehicle_images: Object.keys(map).length ? map : undefined };
+        this._fire();
+        this._render();
+      });
+      slot.appendChild(picker);
+    });
+  }
+
   get _availableVehicleSlugs() {
     if (!this._hass) return [];
     const prefix = this._getPrefix();
@@ -268,6 +317,9 @@ export class EvccCardEditor extends HTMLElement {
           box-sizing: border-box; font-family: inherit;
         }
         .ha-select:focus, .ha-input:focus { outline: none; border-color: var(--primary-color); }
+        .vehicle-media { margin-top: 6px; }
+        .vehicle-media:empty { display: none; }
+        .vehicle-media + .ha-input { margin-top: 6px; }
         .cb-row { display: flex; align-items: center; gap: 8px; font-size: .875rem; cursor: pointer; padding: 4px 0; }
         .cb-row input[type="checkbox"] { accent-color: var(--primary-color); width: 16px; height: 16px; cursor: pointer; }
         ${disabledListCss}
@@ -365,6 +417,11 @@ export class EvccCardEditor extends HTMLElement {
             <span>${this._t("editorVehicleActions")}</span>
           </label>
         </div>
+        <div class="field">
+          <div class="section-title">${this._t("editorVehicleImageTitle")}</div>
+          <div class="hint">${this._t("editorVehicleImageHint")}</div>
+          ${this._hass ? this._vehicleImageFields(discoverVehicles(this._hass, this._getPrefix())) : ""}
+        </div>
         ` : ""}
         ${showNoPlan ? `
         <div class="field">
@@ -453,7 +510,7 @@ export class EvccCardEditor extends HTMLElement {
         this._config = {
           ...this._config,
           prefix: isDefault ? undefined : chosen,
-          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined, vehicles: undefined, vehicle_devices: undefined,
+          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined, vehicles: undefined, vehicle_devices: undefined, vehicle_images: undefined,
         };
         this._discoverLoadpoints();
         this._fire();
@@ -496,6 +553,20 @@ export class EvccCardEditor extends HTMLElement {
     });
     const optEl = this.shadowRoot.querySelector("details.disabled-optional");
     if (optEl) optEl.addEventListener("toggle", () => { this._disabledOptionalOpen = optEl.open; });
+
+    this._mountVehicleMediaPickers();
+
+    // Written on change, not on every key: half a path is not a valid config.
+    this.shadowRoot.querySelectorAll("input[data-vehicle-image]").forEach(inp => {
+      inp.addEventListener("change", () => {
+        const map = { ...(this._config.vehicle_images || {}) };
+        const val = inp.value.trim();
+        if (val && isVehicleImage(val)) map[inp.dataset.vehicleImage] = val;
+        else { delete map[inp.dataset.vehicleImage]; if (val) inp.value = ""; }
+        this._config = { ...this._config, vehicle_images: Object.keys(map).length ? map : undefined };
+        this._fire();
+      });
+    });
 
     this.shadowRoot.querySelectorAll("[data-vehicle-device]").forEach(sel => {
       sel.addEventListener("change", () => {

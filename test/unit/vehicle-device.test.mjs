@@ -177,3 +177,17 @@ test("climate: a climate entity, else a switch, else a start/stop pair of button
 
   assert.equal(classifyVehicleDevice(hassOf({ d: car("car") }), "d").climate, null);
 });
+
+test("vehicle pictures: paths Home Assistant serves and http(s), nothing else", async () => {
+  const { isVehicleImageUrl, isVehicleImage, isMediaSourceId } = await import("../../src/core/constants.js");
+  assert.equal(isMediaSourceId("media-source://media_source/local/ex30.png"), true);
+  assert.equal(isVehicleImage("media-source://media_source/local/ex30.png"), true);
+  assert.equal(isVehicleImageUrl("media-source://media_source/local/ex30.png"), false, "a media item is no address the browser can load");
+  assert.equal(isVehicleImage("media-source://"), false);
+  for (const ok of ["/local/ex30.png", "/api/image/serve/abc/512x512", "https://example.org/a.webp", "http://ha.local:8123/local/a.png"]) {
+    assert.equal(isVehicleImageUrl(ok), true, ok);
+  }
+  for (const bad of ["javascript:alert(1)", "data:image/png;base64,AAAA", "//evil.example/a.png", "local/a.png", "", " ", "/local/a b.png", null, 5]) {
+    assert.equal(isVehicleImageUrl(bad), false, String(bad));
+  }
+});

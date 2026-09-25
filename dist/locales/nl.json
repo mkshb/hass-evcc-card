@@ -363,5 +363,9 @@
   "vehicleConfirm": "{action}?",
   "vehicleConfirmYes": "Uitvoeren",
   "vehicleConfirmNo": "Annuleren",
-  "editorVehicleActions": "Opdrachten aan het voertuig toestaan (slot, klimaatregeling, knoppen van de integratie)"
+  "editorVehicleActions": "Opdrachten aan het voertuig toestaan (slot, klimaatregeling, knoppen van de integratie)",
+  "editorVehicleImageTitle": "Afbeelding van het voertuig",
+  "editorVehicleImageHint": "Kies een afbeelding uit de media van Home Assistant, of voer een pad (/local/...) of adres in. Zonder afbeelding toont de kaart geen voertuig; een afbeelding van de voertuigintegratie wordt vanzelf gebruikt.",
+  "editorVehicleImagePlaceholder": "of een pad, bijv. /local/ex30.png",
+  "editorVehicleImagePick": "Afbeelding uit de mediabibliotheek"
 }

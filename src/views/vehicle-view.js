@@ -1,6 +1,6 @@
 import { discoverVehicles, selectVehicles } from "../core/entity-discovery.js";
 import { classifyVehicleDevice, resolveVehicleDevice, evccVehicleTitle, vehicleDeviceState } from "../core/vehicle-device.js";
-import { VEHICLE_FEATURES } from "../core/constants.js";
+import { VEHICLE_FEATURES, isVehicleImageUrl, isMediaSourceId } from "../core/constants.js";
 import { stateVal, unitStr, isOn } from "../utils/state.js";
 import { fmtClock, socFillGradient, socTrackBg } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
@@ -156,6 +156,7 @@ export const vehicleView = {
           ${lpTitle ? `<span class="vehicle-lp" title="${this._t("vehicleAtLoadpoint")}">${escHtml(lpTitle)}</span>` : ""}
           <span class="lp-badge ${statusClass}">${statusLabel}</span>
         </div>
+        ${this._renderVehicleImage(slug, roles, title)}
         ${(soc || range || odometer) ? `
         <div class="soc-section">
           <div class="soc-label-row">
@@ -173,6 +174,55 @@ export const vehicleView = {
         ${this._renderVehicleRepeatPlans(vehicle)}
         ${this._renderVehicleTotals(vehicle)}
         ${dev ? this._renderVehicleDetails(slug, dev) : ""}
+      </div>`;
+  },
+
+  // The picture of the real car: the configured one, else what the vehicle's
+  // integration offers as an image entity. Returns { source, url } or null;
+  // `source` is what was configured and `url` what the browser can load. One
+  // that failed to load is not tried again, the block goes on without a picture.
+  _vehicleImage(slug, roles) {
+    const configured = this._config.vehicle_images?.[slug];
+    const fromEntity = roles.image ? this._hass.states[roles.image]?.attributes?.entity_picture : null;
+    const source = [configured, fromEntity].find(v => isMediaSourceId(v) || isVehicleImageUrl(v))?.trim() ?? null;
+    if (!source || this._vehicleImageFailed[source]) return null;
+    const url = isMediaSourceId(source) ? this._vehicleMediaUrl(source) : source;
+    return url ? { source, url } : null;
+  },
+
+  // An item of the media library has no address of its own: Home Assistant
+  // hands out a signed one on request, valid for a day. It is asked for once
+  // and again after half that time, never on a plain re-render; until the
+  // answer is there the block shows no picture.
+  _vehicleMediaUrl(source) {
+    const HALF_LIFE = 12 * 3600 * 1000;
+    const hit = this._vehicleMedia[source];
+    if (hit?.url && Date.now() - hit.ts < HALF_LIFE) return hit.url;
+    if (!hit?.pending) {
+      this._vehicleMedia[source] = { ...hit, pending: true };
+      this._hass.callWS({ type: "media_source/resolve_media", media_content_id: source })
+        .then(res => {
+          if (!res?.url) throw new Error("no url");
+          this._vehicleMedia[source] = { url: res.url, ts: Date.now() };
+        })
+        .catch(() => {
+          delete this._vehicleMedia[source];
+          this._vehicleImageFailed[source] = true;
+        })
+        .finally(() => { if (this._hass && this.isConnected) this._render(); });
+    }
+    return hit?.url ?? null;   // an address about to expire still beats none
+  },
+
+  // The picture above the values, only when there is one: the card draws no
+  // vehicle of its own. A picture that fails to load is dropped (listener in
+  // _attachVehicleListeners), keyed by what was configured.
+  _renderVehicleImage(slug, roles, title) {
+    const image = this._vehicleImage(slug, roles);
+    if (!image) return "";
+    return `
+      <div class="vehicle-image">
+        <img src="${escAttr(image.url)}" alt="${escAttr(title)}" data-vehicle-image="${escAttr(image.source)}" loading="lazy" decoding="async">
       </div>`;
   },
 
@@ -410,6 +460,14 @@ export const vehicleView = {
   },
 
   _attachVehicleListeners() {
+    // error does not bubble, so it is bound on the picture itself; the morph
+    // keeps the element, a new address reloads it with the listener in place.
+    this._fresh("img[data-vehicle-image]").forEach(img => {
+      img.addEventListener("error", () => {
+        this._vehicleImageFailed[img.dataset.vehicleImage] = true;
+        this._render();
+      });
+    });
     this._fresh("[data-vehicle-details]").forEach(btn => {
       btn.addEventListener("click", () => {
         const slug = btn.dataset.vehicleDetails;
@@ -467,6 +525,8 @@ export const vehicleCss = `
       .vehicle-lp { font-size: .85em; color: var(--secondary-text-color); margin-right: 8px; white-space: nowrap; }
       .vehicle-hint { font-size: .8rem; line-height: 1.4; color: var(--secondary-text-color); margin-bottom: 12px; }
       .vehicle-block [data-more-info] { cursor: pointer; }
+      .vehicle-image { margin: 0 0 12px; display: flex; justify-content: center; }
+      .vehicle-image img { display: block; max-width: 100%; max-height: 180px; object-fit: contain; border-radius: 12px; }
       .vehicle-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
       .vehicle-chip {
         display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px;

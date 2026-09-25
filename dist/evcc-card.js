@@ -246,6 +246,21 @@ function vehicleFilter(config) {
   return Array.isArray(raw) ? raw : [raw];
 }
 
+// A picture of the real vehicle, per vehicle: an item of Home Assistant's media
+// library (media-source://..., what the media picker in the editor writes), a
+// path Home Assistant serves (/local/..., /api/image/serve/...) or an http(s)
+// address. Nothing else, so a dashboard YAML cannot smuggle another scheme into
+// the card.
+function isMediaSourceId(value) {
+  return typeof value === "string" && /^media-source:\/\/\S+$/.test(value.trim());
+}
+function isVehicleImageUrl(value) {
+  return typeof value === "string" && /^(\/(?!\/)|https?:\/\/)\S+$/.test(value.trim());
+}
+function isVehicleImage(value) {
+  return isMediaSourceId(value) || isVehicleImageUrl(value);
+}
+
 // Home Assistant expects setConfig() to throw on a configuration the card cannot
 // render: it catches the error and shows its own error card with the message, so
 // a typo in the YAML is visible instead of quietly rendering something else. The
@@ -285,6 +300,12 @@ function validateCardConfig(config) {
     throw new Error("evcc-card: vehicle_actions has to be true or false");
   }
 
+  const images = c.vehicle_images;
+  if (images !== undefined && images !== null) {
+    const ok = typeof images === "object" && !Array.isArray(images) && Object.values(images).every(isVehicleImage);
+    if (!ok) throw new Error("evcc-card: vehicle_images has to be a map of vehicle name to a media item (media-source://...), an image path (/local/...) or an http(s) address");
+  }
+
   // vehicle_devices: false switches the device link off, a map names the device
   // per vehicle ("none" for a vehicle that is to stay without one).
   const links = c.vehicle_devices;
@@ -308,7 +329,7 @@ function validateCardConfig(config) {
 const RENDER_ATTRS = [
   "options", "min", "max", "step", "unit_of_measurement", "device_class",
   "title", "loadpoint_title", "vehicle", "soc", "time", "weekdays",
-  "state_class", "source_type",
+  "state_class", "source_type", "entity_picture",
 ];
 
 // Settings the user can drop from the loadpoint/compact card via
@@ -1002,7 +1023,7 @@ function socTrackBg(minSoc, limitSoc) {
 // Part of every locale URL next to the card version: a hash over the locale
 // files, stamped in by the build (rollup.config.mjs). HA lets the browser cache
 // them for a month, so changed texts need a URL of their own.
-const LOCALES_VERSION = `${EVCC_CARD_VERSION}-9e8e7774`;
+const LOCALES_VERSION = `${EVCC_CARD_VERSION}-78b0d955`;
 
 /* ── Shared translation cache (used by both EvccCard and EvccCardEditor) ── */
 let _sharedTranslations = {};
@@ -6954,6 +6975,7 @@ const vehicleView = {
           ${lpTitle ? `<span class="vehicle-lp" title="${this._t("vehicleAtLoadpoint")}">${escHtml(lpTitle)}</span>` : ""}
           <span class="lp-badge ${statusClass}">${statusLabel}</span>
         </div>
+        ${this._renderVehicleImage(slug, roles, title)}
         ${(soc || range || odometer) ? `
         <div class="soc-section">
           <div class="soc-label-row">
@@ -6971,6 +6993,55 @@ const vehicleView = {
         ${this._renderVehicleRepeatPlans(vehicle)}
         ${this._renderVehicleTotals(vehicle)}
         ${dev ? this._renderVehicleDetails(slug, dev) : ""}
+      </div>`;
+  },
+
+  // The picture of the real car: the configured one, else what the vehicle's
+  // integration offers as an image entity. Returns { source, url } or null;
+  // `source` is what was configured and `url` what the browser can load. One
+  // that failed to load is not tried again, the block goes on without a picture.
+  _vehicleImage(slug, roles) {
+    const configured = this._config.vehicle_images?.[slug];
+    const fromEntity = roles.image ? this._hass.states[roles.image]?.attributes?.entity_picture : null;
+    const source = [configured, fromEntity].find(v => isMediaSourceId(v) || isVehicleImageUrl(v))?.trim() ?? null;
+    if (!source || this._vehicleImageFailed[source]) return null;
+    const url = isMediaSourceId(source) ? this._vehicleMediaUrl(source) : source;
+    return url ? { source, url } : null;
+  },
+
+  // An item of the media library has no address of its own: Home Assistant
+  // hands out a signed one on request, valid for a day. It is asked for once
+  // and again after half that time, never on a plain re-render; until the
+  // answer is there the block shows no picture.
+  _vehicleMediaUrl(source) {
+    const HALF_LIFE = 12 * 3600 * 1000;
+    const hit = this._vehicleMedia[source];
+    if (hit?.url && Date.now() - hit.ts < HALF_LIFE) return hit.url;
+    if (!hit?.pending) {
+      this._vehicleMedia[source] = { ...hit, pending: true };
+      this._hass.callWS({ type: "media_source/resolve_media", media_content_id: source })
+        .then(res => {
+          if (!res?.url) throw new Error("no url");
+          this._vehicleMedia[source] = { url: res.url, ts: Date.now() };
+        })
+        .catch(() => {
+          delete this._vehicleMedia[source];
+          this._vehicleImageFailed[source] = true;
+        })
+        .finally(() => { if (this._hass && this.isConnected) this._render(); });
+    }
+    return hit?.url ?? null;   // an address about to expire still beats none
+  },
+
+  // The picture above the values, only when there is one: the card draws no
+  // vehicle of its own. A picture that fails to load is dropped (listener in
+  // _attachVehicleListeners), keyed by what was configured.
+  _renderVehicleImage(slug, roles, title) {
+    const image = this._vehicleImage(slug, roles);
+    if (!image) return "";
+    return `
+      <div class="vehicle-image">
+        <img src="${escAttr(image.url)}" alt="${escAttr(title)}" data-vehicle-image="${escAttr(image.source)}" loading="lazy" decoding="async">
       </div>`;
   },
 
@@ -7208,6 +7279,14 @@ const vehicleView = {
   },
 
   _attachVehicleListeners() {
+    // error does not bubble, so it is bound on the picture itself; the morph
+    // keeps the element, a new address reloads it with the listener in place.
+    this._fresh("img[data-vehicle-image]").forEach(img => {
+      img.addEventListener("error", () => {
+        this._vehicleImageFailed[img.dataset.vehicleImage] = true;
+        this._render();
+      });
+    });
     this._fresh("[data-vehicle-details]").forEach(btn => {
       btn.addEventListener("click", () => {
         const slug = btn.dataset.vehicleDetails;
@@ -7265,6 +7344,8 @@ const vehicleCss = `
       .vehicle-lp { font-size: .85em; color: var(--secondary-text-color); margin-right: 8px; white-space: nowrap; }
       .vehicle-hint { font-size: .8rem; line-height: 1.4; color: var(--secondary-text-color); margin-bottom: 12px; }
       .vehicle-block [data-more-info] { cursor: pointer; }
+      .vehicle-image { margin: 0 0 12px; display: flex; justify-content: center; }
+      .vehicle-image img { display: block; max-width: 100%; max-height: 180px; object-fit: contain; border-radius: 12px; }
       .vehicle-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
       .vehicle-chip {
         display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px;
@@ -8060,6 +8141,8 @@ class EvccCard extends HTMLElement {
     this._currentBlockExpanded = {};
     this._vehicleDetailsOpen = {};     // vehicle slug -> detail list unfolded
     this._vehicleActionsOpen = {};     // vehicle slug -> action list unfolded
+    this._vehicleImageFailed = {};     // configured picture -> true once it failed to load
+    this._vehicleMedia = {};           // media-source id -> { url, ts } signed address from HA
     this._vehicleConfirm = null;       // { entityId, cmd } waiting for the user's yes
     this._commands      = {};     // entity id -> vehicle command still running (actions.js)
     this._detectedPrefix = null;
@@ -8823,6 +8906,55 @@ class EvccCardEditor extends HTMLElement {
     }).join("");
   }
 
+  // One picture per vehicle: HA's media picker, and a text field underneath for
+  // a path or an address (and to show what was picked).
+  _vehicleImageFields(vehicles) {
+    return Object.keys(vehicles).sort().map(slug => {
+      const title = evccVehicleTitle(this._hass, slug, vehicles[slug]) || slug;
+      return `
+        <label class="field-label" for="vehicle-image-${this._esc(slug)}">${this._esc(title)}</label>
+        <div class="vehicle-media" data-vehicle-media="${this._esc(slug)}"></div>
+        <input id="vehicle-image-${this._esc(slug)}" class="ha-input" type="text" data-vehicle-image="${this._esc(slug)}"
+               value="${this._esc(this._config.vehicle_images?.[slug] || "")}" placeholder="${this._esc(this._t("editorVehicleImagePlaceholder"))}">`;
+    }).join("");
+  }
+
+  // The picture of a vehicle is picked from Home Assistant's media library with
+  // HA's own media selector, narrowed to images. The element belongs to the HA
+  // frontend and is loaded on demand there, so it is created once it is defined;
+  // the text field underneath works without it and shows what was picked.
+  _mountVehicleMediaPickers() {
+    const slots = this.shadowRoot.querySelectorAll("[data-vehicle-media]");
+    if (!slots.length) return;
+    if (!customElements.get("ha-selector")) {
+      if (!this._waitingForSelector) {
+        this._waitingForSelector = true;
+        customElements.whenDefined("ha-selector").then(() => { this._waitingForSelector = false; this._render(); });
+      }
+      return;
+    }
+    slots.forEach(slot => {
+      const slug    = slot.dataset.vehicleMedia;
+      const current = this._config.vehicle_images?.[slug];
+      const picker  = document.createElement("ha-selector");
+      picker.hass     = this._hass;
+      picker.selector = { media: { accept: ["image/*"] } };
+      picker.label    = this._t("editorVehicleImagePick");
+      picker.value    = isMediaSourceId(current) ? { media_content_id: current, media_content_type: "image/*", metadata: {} } : undefined;
+      picker.addEventListener("value-changed", (e) => {
+        e.stopPropagation();
+        const id  = e.detail?.value?.media_content_id;
+        const map = { ...(this._config.vehicle_images || {}) };
+        if (isMediaSourceId(id)) map[slug] = id;
+        else delete map[slug];
+        this._config = { ...this._config, vehicle_images: Object.keys(map).length ? map : undefined };
+        this._fire();
+        this._render();
+      });
+      slot.appendChild(picker);
+    });
+  }
+
   get _availableVehicleSlugs() {
     if (!this._hass) return [];
     const prefix = this._getPrefix();
@@ -8928,6 +9060,9 @@ class EvccCardEditor extends HTMLElement {
           box-sizing: border-box; font-family: inherit;
         }
         .ha-select:focus, .ha-input:focus { outline: none; border-color: var(--primary-color); }
+        .vehicle-media { margin-top: 6px; }
+        .vehicle-media:empty { display: none; }
+        .vehicle-media + .ha-input { margin-top: 6px; }
         .cb-row { display: flex; align-items: center; gap: 8px; font-size: .875rem; cursor: pointer; padding: 4px 0; }
         .cb-row input[type="checkbox"] { accent-color: var(--primary-color); width: 16px; height: 16px; cursor: pointer; }
         ${disabledListCss}
@@ -9025,6 +9160,11 @@ class EvccCardEditor extends HTMLElement {
             <span>${this._t("editorVehicleActions")}</span>
           </label>
         </div>
+        <div class="field">
+          <div class="section-title">${this._t("editorVehicleImageTitle")}</div>
+          <div class="hint">${this._t("editorVehicleImageHint")}</div>
+          ${this._hass ? this._vehicleImageFields(discoverVehicles(this._hass, this._getPrefix())) : ""}
+        </div>
         ` : ""}
         ${showNoPlan ? `
         <div class="field">
@@ -9113,7 +9253,7 @@ class EvccCardEditor extends HTMLElement {
         this._config = {
           ...this._config,
           prefix: isDefault ? undefined : chosen,
-          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined, vehicles: undefined, vehicle_devices: undefined,
+          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined, vehicles: undefined, vehicle_devices: undefined, vehicle_images: undefined,
         };
         this._discoverLoadpoints();
         this._fire();
@@ -9156,6 +9296,20 @@ class EvccCardEditor extends HTMLElement {
     });
     const optEl = this.shadowRoot.querySelector("details.disabled-optional");
     if (optEl) optEl.addEventListener("toggle", () => { this._disabledOptionalOpen = optEl.open; });
+
+    this._mountVehicleMediaPickers();
+
+    // Written on change, not on every key: half a path is not a valid config.
+    this.shadowRoot.querySelectorAll("input[data-vehicle-image]").forEach(inp => {
+      inp.addEventListener("change", () => {
+        const map = { ...(this._config.vehicle_images || {}) };
+        const val = inp.value.trim();
+        if (val && isVehicleImage(val)) map[inp.dataset.vehicleImage] = val;
+        else { delete map[inp.dataset.vehicleImage]; if (val) inp.value = ""; }
+        this._config = { ...this._config, vehicle_images: Object.keys(map).length ? map : undefined };
+        this._fire();
+      });
+    });
 
     this.shadowRoot.querySelectorAll("[data-vehicle-device]").forEach(sel => {
       sel.addEventListener("change", () => {

@@ -363,5 +363,9 @@
   "vehicleConfirm": "¿{action}?",
   "vehicleConfirmYes": "Ejecutar",
   "vehicleConfirmNo": "Cancelar",
-  "editorVehicleActions": "Permitir órdenes al vehículo (cierre, climatización, botones de su integración)"
+  "editorVehicleActions": "Permitir órdenes al vehículo (cierre, climatización, botones de su integración)",
+  "editorVehicleImageTitle": "Imagen del vehículo",
+  "editorVehicleImageHint": "Elige una imagen de los medios de Home Assistant o introduce una ruta (/local/...) o una dirección. Sin imagen la tarjeta no muestra vehículo; una imagen de la integración del vehículo se usa automáticamente.",
+  "editorVehicleImagePlaceholder": "o una ruta, p. ej. /local/ex30.png",
+  "editorVehicleImagePick": "Imagen de la biblioteca multimedia"
 }

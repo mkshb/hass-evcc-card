@@ -411,6 +411,50 @@ def vehicle_mode(browser, port, t):
     t.check(badge(page) == "Nicht verbunden", "without an integration the card does not claim to know: not connected", badge(page))
     done(page)
 
+    t.group("vehicle - picture of the real car")
+    PHOTO = "/test/fixtures/car.png"
+    pic = lambda page, slug="ex30": page.evaluate(f"(() => {{ const i = window.__card.shadowRoot.querySelector('.vehicle-block[data-vehicle={slug}] .vehicle-image img'); return i ? {{ src: i.getAttribute('src'), alt: i.alt, loaded: i.complete && i.naturalWidth > 0 }} : null; }})()")
+    page, errors = card()
+    t.check(pic(page) is None and pic(page, "id7") is None, "without a picture the card draws no vehicle")
+    done(page)
+    page, errors = card(config={"mode": "vehicle", "vehicle_images": {"ex30": PHOTO}})
+    page.wait_for_timeout(200)
+    got = pic(page)
+    t.check(got == {"src": PHOTO, "alt": "EX30", "loaded": True} and pic(page, "id7") is None and not errors,
+            "a configured picture above the values, only at its vehicle", json.dumps(got))
+    done(page)
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "vehicle", "vehicle_images": {"ex30": "/test/fixtures/missing.png"}})
+    page.wait_for_timeout(400); settle(page)
+    t.check(pic(page) is None, "a picture that does not load is dropped", json.dumps(pic(page)))
+    done(page)
+
+    MEDIA = "media-source://media_source/local/car.png"
+    resolves = "window.__hass.wsCalls.filter(c => c.type === 'media_source/resolve_media').length"
+    page, errors = card(config={"mode": "vehicle", "vehicle_images": {"ex30": MEDIA}})
+    got = pic(page)
+    t.check(got and got["src"] == "/test/fixtures/car.png?authSig=mock" and not errors,
+            "a picture from the media library is shown through the signed address Home Assistant hands out", json.dumps(got))
+    page.evaluate("window.__card._lastRenderKey = null; window.__card._render(); window.__card._render()")
+    settle(page)
+    t.check(page.evaluate(resolves) == 1, "the address is asked for once, not on every render", str(page.evaluate(resolves)))
+    done(page)
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "vehicle", "vehicle_images": {"ex30": "media-source://media_source/local/gone.png"}})
+    t.check(pic(page) is None and page.evaluate(resolves) == 1, "a media item that is gone shows nothing and is not asked for again", json.dumps(pic(page)))
+    done(page)
+
+    # A picture the vehicle's integration offers as an image entity is used on its own.
+    page, errors = card()
+    page.evaluate("""() => { const h = window.__hass, id = 'image.volvo_ex30_bild';
+        h.entities = { ...h.entities, [id]: { entity_id: id, platform: 'volvo', device_id: 'f1c0de00volvoex30fixture000000001' } };
+        h.states = { ...h.states, [id]: { entity_id: id, state: '2026-09-18T10:00:00+00:00', attributes: { entity_picture: '/test/fixtures/car.png?token=abc' } } };
+        window.__card.hass = { ...h }; }""")
+    settle(page)
+    got = pic(page)
+    t.check(got and got["src"] == "/test/fixtures/car.png?token=abc", "an image entity on the vehicle's device is the picture when none is configured", json.dumps(got))
+    done(page)
+
     t.group("vehicle - commands (vehicle_actions)")
     LOCK = "lock.volvo_ex30_schloss"
     ex30 = lambda page: page.locator(block("ex30"))
@@ -1459,6 +1503,25 @@ def editor(browser, port, t):
     t.check(last().get("vehicle_devices") == {"ex30": "none"}, "no device writes \"none\"", json.dumps(last()))
     dev.select_option("")
     t.check("vehicle_devices" not in last(), "back to automatic drops the key again", json.dumps(last()))
+    t.check(fld("ha-selector").count() == 0, "without HA's selector element the text field stands alone", "")
+    img = fld('input[data-vehicle-image="ex30"]')
+    img.fill("/local/ex30.png"); img.dispatch_event("change")
+    t.check(last().get("vehicle_images") == {"ex30": "/local/ex30.png"}, "a picture path writes config.vehicle_images", json.dumps(last()))
+    img.fill("javascript:alert(1)"); img.dispatch_event("change")
+    t.check("vehicle_images" not in last(), "a path the card would reject is not written, the key goes again", json.dumps(last()))
+    # Home Assistant's media selector, stood in for by an element that keeps what it is given.
+    page.evaluate("""() => { if (!customElements.get("ha-selector")) customElements.define("ha-selector", class extends HTMLElement {}); }""")
+    page.wait_for_timeout(300)
+    pick = "document.querySelector('evcc-card-editor').shadowRoot.querySelector('[data-vehicle-media=ex30] ha-selector')"
+    t.check(page.evaluate(f"(() => {{ const p = {pick}; return !!p && JSON.stringify(p.selector) === JSON.stringify({{media: {{accept: ['image/*']}}}}) && !!p.hass && p.value === undefined; }})()"),
+            "once it is defined, each vehicle gets HA's media selector narrowed to images", "")
+    page.evaluate(f"{pick}.dispatchEvent(new CustomEvent('value-changed', {{ detail: {{ value: {{ media_content_id: 'media-source://media_source/local/ex30.png', media_content_type: 'image/png' }} }} }}))")
+    t.check(last().get("vehicle_images") == {"ex30": "media-source://media_source/local/ex30.png"}, "a picked media item writes config.vehicle_images", json.dumps(last()))
+    t.check(page.evaluate(f"{pick}.value && {pick}.value.media_content_id") == "media-source://media_source/local/ex30.png"
+            and fld('input[data-vehicle-image="ex30"]').input_value() == "media-source://media_source/local/ex30.png",
+            "the pick shows in the selector and in the text field", "")
+    page.evaluate(f"{pick}.dispatchEvent(new CustomEvent('value-changed', {{ detail: {{ value: undefined }} }}))")
+    t.check("vehicle_images" not in last(), "clearing the selector drops the key again", json.dumps(last()))
     fld("#vehicle_actions").check()
     t.check(last().get("vehicle_actions") is True, "the checkbox writes vehicle_actions: true", json.dumps(last()))
     fld("#vehicle_actions").uncheck()
@@ -2282,6 +2345,7 @@ def setconfig(browser, port, t):
         ({"prefix": "evcc2_", "language": "en"}, "prefix and language"),
         ({"mode": "vehicle", "vehicles": "ex30", "vehicle_actions": True, "vehicle_devices": {"ex30": "none"}}, "the vehicle mode options"),
         ({"mode": "vehicle", "vehicle_devices": False}, "vehicle_devices: false"),
+        ({"mode": "vehicle", "vehicle_images": {"ex30": "media-source://media_source/local/ex30.png", "id7": "/local/id7.png"}}, "vehicle_images"),
     ]
     INVALID = [
         ({"mode": "quatsch"}, "mode", "an unknown mode"),
@@ -2297,6 +2361,7 @@ def setconfig(browser, port, t):
         ({"vehicles": []}, "vehicles", "an empty vehicle list"),
         ({"vehicle_actions": "yes"}, "vehicle_actions", "vehicle_actions not a boolean"),
         ({"vehicle_devices": ["ex30"]}, "vehicle_devices", "vehicle_devices as a list"),
+        ({"vehicle_images": {"ex30": "javascript:alert(1)"}}, "vehicle_images", "a picture with another scheme"),
     ]
 
     t.group("setconfig - invalid configuration is rejected")

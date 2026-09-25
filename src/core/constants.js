@@ -245,6 +245,21 @@ export function vehicleFilter(config) {
   return Array.isArray(raw) ? raw : [raw];
 }
 
+// A picture of the real vehicle, per vehicle: an item of Home Assistant's media
+// library (media-source://..., what the media picker in the editor writes), a
+// path Home Assistant serves (/local/..., /api/image/serve/...) or an http(s)
+// address. Nothing else, so a dashboard YAML cannot smuggle another scheme into
+// the card.
+export function isMediaSourceId(value) {
+  return typeof value === "string" && /^media-source:\/\/\S+$/.test(value.trim());
+}
+export function isVehicleImageUrl(value) {
+  return typeof value === "string" && /^(\/(?!\/)|https?:\/\/)\S+$/.test(value.trim());
+}
+export function isVehicleImage(value) {
+  return isMediaSourceId(value) || isVehicleImageUrl(value);
+}
+
 // Home Assistant expects setConfig() to throw on a configuration the card cannot
 // render: it catches the error and shows its own error card with the message, so
 // a typo in the YAML is visible instead of quietly rendering something else. The
@@ -284,6 +299,12 @@ export function validateCardConfig(config) {
     throw new Error("evcc-card: vehicle_actions has to be true or false");
   }
 
+  const images = c.vehicle_images;
+  if (images !== undefined && images !== null) {
+    const ok = typeof images === "object" && !Array.isArray(images) && Object.values(images).every(isVehicleImage);
+    if (!ok) throw new Error("evcc-card: vehicle_images has to be a map of vehicle name to a media item (media-source://...), an image path (/local/...) or an http(s) address");
+  }
+
   // vehicle_devices: false switches the device link off, a map names the device
   // per vehicle ("none" for a vehicle that is to stay without one).
   const links = c.vehicle_devices;
@@ -307,7 +328,7 @@ export function validateCardConfig(config) {
 export const RENDER_ATTRS = [
   "options", "min", "max", "step", "unit_of_measurement", "device_class",
   "title", "loadpoint_title", "vehicle", "soc", "time", "weekdays",
-  "state_class", "source_type",
+  "state_class", "source_type", "entity_picture",
 ];
 
 // Settings the user can drop from the loadpoint/compact card via

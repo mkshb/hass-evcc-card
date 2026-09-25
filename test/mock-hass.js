@@ -236,6 +236,15 @@ export async function createMockHass({ language = "de", ws = true, set = {}, att
           return Promise.resolve({ entity_entry: e, reload_delay: 30 });
         }
 
+        // The media library: an item resolves to a signed address, here to a
+        // file under test/fixtures named like the item; anything else is gone.
+        case "media_source/resolve_media": {
+          const m = /^media-source:\/\/media_source\/local\/([\w.-]+)$/.exec(msg.media_content_id || "");
+          return m && m[1] !== "gone.png"
+            ? Promise.resolve({ url: `/test/fixtures/${m[1]}?authSig=mock`, mime_type: "image/png" })
+            : Promise.reject(new Error("mock: unknown media item"));
+        }
+
         default:
           return Promise.reject(new Error(`mock: unknown WS command ${msg.type}`));
       }
