@@ -1,4 +1,4 @@
-export const EVCC_CARD_VERSION = "0.8.6";
+export const EVCC_CARD_VERSION = "0.8.7";
 
 export const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -11,6 +11,11 @@ export const FEATURES = [
   { suffix: "smart_cost_limit",    domain: "number",        type: "slider",        lp: true  },
   { suffix: "smart_feed_in_priority_limit", domain: "number", type: "slider",      lp: true  },
   { suffix: "priority",            domain: "number",        type: "slider",        lp: true  },
+  // ha-evcc 2026.9.5+ (evcc 0.316): the share of the minimum charging power that
+  // has to come from solar, 0 to 100 %. evcc locks it while a power threshold is set.
+  { suffix: "solar_share",         domain: "number",        type: "slider",        lp: true  },
+  { suffix: "enable_threshold",    domain: "number",        type: "info",          lp: true  },
+  { suffix: "disable_threshold",   domain: "number",        type: "info",          lp: true  },
   { suffix: "phases_configured",   domain: "select",        type: "select",        lp: true  },
   { suffix: "vehicle_name",        domain: "select",        type: "select",        lp: true  },
   { suffix: "battery_boost_limit", domain: "select",        type: "select_slider", lp: true  },
@@ -265,6 +270,7 @@ export const HIDEABLE_SETTINGS = [
   ["max_current",                  "maxCurrent"],
   ["min_current",                  "minCurrent"],
   ["battery_boost",                "batteryBoost"],
+  ["solar_share",                  "solarShare"],
   ["priority",                     "priority"],
   ["smart_cost_limit",             "smartCostLimitPrice"],
   ["smart_feed_in_priority_limit", "feedInPriorityLimit"],

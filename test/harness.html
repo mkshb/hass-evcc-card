@@ -24,6 +24,40 @@
 </head>
 <body>
   <div id="host"></div>
+  <script>
+    // Idle signal for the suite (window.__settle): the card has settled when no
+    // short timer is pending (render debounce, the mock's service echo, preview
+    // debounces), no fetch is open and its shadow DOM has not changed for 50 ms.
+    // Timers above a second are left out: they are expiries (a written value's
+    // mark, a highlight) that a test waits for on purpose, not work in flight.
+    // Wrapped before the card loads, so every timer it sets is seen; the clock
+    // Playwright installs keeps timers native, only Date is frozen.
+    (() => {
+      const nativeSet = window.setTimeout, nativeClear = window.clearTimeout, nativeFetch = window.fetch;
+      const pending = new Set();
+      let fetches = 0;
+      window.setTimeout = function (fn, ms = 0, ...args) {
+        const id = nativeSet(function () {
+          pending.delete(id);
+          return typeof fn === "function" ? fn.apply(this, args) : (0, eval)(fn);
+        }, ms);
+        if (ms <= 1000) pending.add(id);
+        return id;
+      };
+      window.clearTimeout = (id) => { pending.delete(id); nativeClear(id); };
+      window.fetch = (...a) => { fetches++; return nativeFetch(...a).finally(() => { fetches--; }); };
+      window.__mutations = 0;
+      window.__idle = () => !!window.__ready?.() && pending.size === 0 && fetches === 0;
+      window.__settle = async (maxMs = 8000) => {
+        for (let waited = 0; waited < maxMs; waited += 50) {
+          const seen = window.__mutations;
+          await new Promise(r => nativeSet(r, 50));
+          if (window.__idle() && seen === window.__mutations) return true;
+        }
+        return false;
+      };
+    })();
+  </script>
   <script type="module">
     import { createMockHass } from "./mock-hass.js";
 
@@ -71,6 +105,8 @@
                                         wsName: q.get("wsname") });
     await customElements.whenDefined("evcc-card");
     const card = document.createElement("evcc-card");
+    new MutationObserver(() => { window.__mutations++; })
+      .observe(card.shadowRoot, { subtree: true, childList: true, attributes: true, characterData: true });
     card.setConfig(config);
     card.hass = hass;
     document.getElementById("host").appendChild(card);

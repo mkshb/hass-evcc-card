@@ -1,5 +1,5 @@
 /* hass-evcc-card. Built from src/ with Rollup; edit the sources, not this file. */
-const EVCC_CARD_VERSION = "0.8.6";
+const EVCC_CARD_VERSION = "0.8.7";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -12,6 +12,11 @@ const FEATURES = [
   { suffix: "smart_cost_limit",    domain: "number",        type: "slider",        lp: true  },
   { suffix: "smart_feed_in_priority_limit", domain: "number", type: "slider",      lp: true  },
   { suffix: "priority",            domain: "number",        type: "slider",        lp: true  },
+  // ha-evcc 2026.9.5+ (evcc 0.316): the share of the minimum charging power that
+  // has to come from solar, 0 to 100 %. evcc locks it while a power threshold is set.
+  { suffix: "solar_share",         domain: "number",        type: "slider",        lp: true  },
+  { suffix: "enable_threshold",    domain: "number",        type: "info",          lp: true  },
+  { suffix: "disable_threshold",   domain: "number",        type: "info",          lp: true  },
   { suffix: "phases_configured",   domain: "select",        type: "select",        lp: true  },
   { suffix: "vehicle_name",        domain: "select",        type: "select",        lp: true  },
   { suffix: "battery_boost_limit", domain: "select",        type: "select_slider", lp: true  },
@@ -266,6 +271,7 @@ const HIDEABLE_SETTINGS = [
   ["max_current",                  "maxCurrent"],
   ["min_current",                  "minCurrent"],
   ["battery_boost",                "batteryBoost"],
+  ["solar_share",                  "solarShare"],
   ["priority",                     "priority"],
   ["smart_cost_limit",             "smartCostLimitPrice"],
   ["smart_feed_in_priority_limit", "feedInPriorityLimit"],
@@ -892,7 +898,7 @@ function socTrackBg(minSoc, limitSoc) {
 // Part of every locale URL next to the card version: a hash over the locale
 // files, stamped in by the build (rollup.config.mjs). HA lets the browser cache
 // them for a month, so changed texts need a URL of their own.
-const LOCALES_VERSION = `${EVCC_CARD_VERSION}-5b0c61a4`;
+const LOCALES_VERSION = `${EVCC_CARD_VERSION}-238b1cdf`;
 
 /* ── Shared translation cache (used by both EvccCard and EvccCardEditor) ── */
 let _sharedTranslations = {};
@@ -2232,8 +2238,9 @@ const socControl = {
     const hasFeedIn     = !!ents.smart_feed_in_priority_limit && !hide("smart_feed_in_priority_limit") && !!this._limitClear(ents.smart_feed_in_priority_limit);
     const hasPriority   = !!ents.priority && !hide("priority");
     const hasBoost      = !!ents.battery_boost_limit && !hide("battery_boost");
+    const solarShare    = this._renderSolarShare(ents, lpName);
     // Everything hidden or missing: no block, no gear button.
-    if (!hasPhases && !hasCurrent && !hasSmartCost && !hasFeedIn && !hasPriority && !hasBoost) return "";
+    if (!hasPhases && !hasCurrent && !hasSmartCost && !hasFeedIn && !hasPriority && !hasBoost && !solarShare) return "";
 
     const configDefault = this._config.charge_current_settings === "expanded";
     const expanded = this._currentBlockExpanded[lpName] !== undefined
@@ -2280,14 +2287,12 @@ const socControl = {
           </button>
         </div>
         <div class="current-block-body" ${expanded ? "" : "hidden"}>
-          ${phasesHtml}
-          ${currentRows}
-          ${(hasPhases || hasCurrent) && (hasBoost || hasPriority || hasSmartCost || hasFeedIn) ? `<hr class="settings-divider">` : ""}
-          ${hasBoost ? this._renderBatteryBoost(ents) : ""}
-          ${hasBoost && (hasPriority || hasSmartCost || hasFeedIn) ? `<hr class="settings-divider">` : ""}
-          ${hasPriority ? this._sliderRow(ents.priority, this._t("priority")) : ""}
-          ${hasPriority && (hasSmartCost || hasFeedIn) ? `<hr class="settings-divider">` : ""}
-          ${hasSmartCost ? (() => {
+          ${[
+          phasesHtml + currentRows,
+          solarShare,
+          hasBoost ? this._renderBatteryBoost(ents) : "",
+          hasPriority ? this._sliderRow(ents.priority, this._t("priority")) : "",
+          hasSmartCost ? (() => {
             const unit      = attr(this._hass, ents.smart_cost_limit, "unit_of_measurement") ?? "";
             const isCo2     = unit === "g/kWh";
             const label     = isCo2 ? this._t("smartCostLimitCo2") : this._t("smartCostLimitPrice");
@@ -2300,9 +2305,8 @@ const socControl = {
               (active ? `<div class="smart-active-hint">⚡ ${this._t("smartCostActive")}</div>` : "") +
               `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` +
               `</div>`;
-          })() : ""}
-          ${hasSmartCost && hasFeedIn ? `<hr class="settings-divider">` : ""}
-          ${hasFeedIn ? (() => {
+          })() : "",
+          hasFeedIn ? (() => {
             // Feed-in priority: above this feed-in limit, evcc prioritizes selling to the
             // grid over PV-surplus charging. Like the smart charging limit, the limit follows
             // evcc's global cost type, so the unit is currency/kWh (price mode) or g/kWh
@@ -2317,9 +2321,39 @@ const socControl = {
               (active ? `<div class="smart-active-hint">⚡ ${this._t("feedInPriorityActive")}</div>` : "") +
               `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` +
               `</div>`;
-          })() : ""}
+          })() : "",
+          ].filter(Boolean).join(`<hr class="settings-divider">`)}
         </div>
       </div>`;
+  },
+
+  // evcc's solar share (0.316, ha-evcc 2026.9.5): how much of the minimum
+  // charging power has to come from solar before evcc starts or keeps charging
+  // on surplus. Worded like evcc's loadpoint settings, below the slider. evcc
+  // locks the setting while a power threshold (enable or disable) is set, as
+  // the thresholds decide then; the card shows it locked with evcc's hint. Not
+  // offered without a PV system (`no_pv`), nor while evcc reports no value.
+  _renderSolarShare(ents, lpName) {
+    const id = ents.solar_share;
+    if (!id || this._isSettingHidden("solar_share")) return "";
+    if (Array.isArray(this._config.no_pv) && this._config.no_pv.includes(lpName)) return "";
+    const share = parseFloat(stateVal(this._hass, id));
+    if (isNaN(share)) return "";
+
+    const threshold = key => {
+      const v = ents[key] ? parseFloat(stateVal(this._hass, ents[key])) : NaN;
+      return !isNaN(v) && v !== 0;
+    };
+    const locked = threshold("enable_threshold") || threshold("disable_threshold");
+    const kind   = this._isHeatingLoadpoint(ents) ? "Heating" : "Charging";
+    const hint   = locked ? this._t("solarShareThresholds")
+      : share <= 0   ? this._t(`solarShare${kind}Zero`)
+      : share >= 100 ? this._t(`solarShare${kind}Full`)
+      : this._t(`solarShare${kind}`, { share: `${Math.round(share)} %` });
+    return `<div class="solar-share-section${locked ? " locked" : ""}">` +
+      this._sliderRow(id, this._t("solarShare"), null, locked) +
+      `<div class="setting-hint">${escHtml(hint)}</div>` +
+      `</div>`;
   },
 
   _sliderOptions(entityId) {
@@ -2337,7 +2371,9 @@ const socControl = {
     return String(opts[idx]);
   },
 
-  _sliderRow(entityId, label, zeroLabel = null) {
+  // `locked` draws the slider and its value unusable, for a setting evcc does
+  // not take right now (the solar share while a power threshold is set).
+  _sliderRow(entityId, label, zeroLabel = null, locked = false) {
     const domain  = entityId.split(".")[0];
     const _v      = parseFloat(stateVal(this._hass, entityId));
     const val     = isNaN(_v) ? 0 : _v;
@@ -2379,8 +2415,8 @@ const socControl = {
           <input type="range"
                  min="${min}" max="${max}" step="${step}" value="${sliderVal}"
                  data-entity="${entityId}"
-                 data-domain="${domain}" />
-          <button type="button" class="slider-val" data-slider-edit
+                 data-domain="${domain}"${locked ? " disabled" : ""} />
+          <button type="button" class="slider-val" data-slider-edit${locked ? " disabled" : ""}
                   title="${this._t("sliderEditHint")}">${zeroLabel && val === 0 ? zeroLabel : `${val} ${escHtml(unit)}`}</button>
         </div>
       </div>`;
@@ -2757,6 +2793,9 @@ const sliderCss = `
         .slider-edit-btn { min-width: 40px; }
         .slider-edit-field { flex-basis: 64px; min-width: 64px; padding: 0 8px; }
       }
+      .setting-hint { font-size: .75rem; line-height: 1.4; color: var(--secondary-text-color); margin: -4px 0 8px; }
+      .solar-share-section.locked .slider-row { opacity: .5; }
+      .slider-row input[type="range"]:disabled, .slider-val:disabled { cursor: not-allowed; }
       .smart-active-hint { font-size: .75rem; color: var(--evcc-green); margin-top: -4px; margin-bottom: 8px; }
       .smart-cost-clear-row { display: flex; justify-content: flex-end; margin-top: 6px; margin-bottom: 2px; }
       .smart-cost-clear-btn { background: none; border: 1px solid var(--divider-color, #555); border-radius: 4px; cursor: pointer; font-size: .75rem; color: var(--secondary-text-color); padding: 3px 8px; font-family: inherit; transition: border-color .15s, color .15s; }

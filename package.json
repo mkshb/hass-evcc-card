@@ -1,6 +1,6 @@
 {
   "name": "hass-evcc-card",
-  "version": "0.8.6",
+  "version": "0.8.7",
   "description": "Home Assistant Lovelace card for the ha-evcc integration",
   "private": true,
   "type": "module",

@@ -403,6 +403,21 @@
   "last_updated": "2026-09-17T17:24:20.154523+00:00",
   "state": "unknown"
  },
+ "number.evcc_openwb_solar_share": {
+  "attributes": {
+   "friendly_name": "openWB Sonnenanteil (Solarüberschuss)",
+   "icon": "mdi:sun-angle",
+   "max": 100,
+   "min": 0,
+   "mode": "slider",
+   "step": 10,
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "number.evcc_openwb_solar_share",
+  "last_changed": "2026-09-25T17:30:00.000000+00:00",
+  "last_updated": "2026-09-25T17:30:00.000000+00:00",
+  "state": "100"
+ },
  "number.evcc_residual_power": {
   "attributes": {
    "device_class": "power",
