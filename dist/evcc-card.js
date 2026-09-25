@@ -841,6 +841,11 @@ function socTrackBg(minSoc, limitSoc) {
   return `linear-gradient(to right, ${stops.join(", ")})`;
 }
 
+// Part of every locale URL next to the card version: a hash over the locale
+// files, stamped in by the build (rollup.config.mjs). HA lets the browser cache
+// them for a month, so changed texts need a URL of their own.
+const LOCALES_VERSION = `${EVCC_CARD_VERSION}-4d178e65`;
+
 /* ── Shared translation cache (used by both EvccCard and EvccCardEditor) ── */
 let _sharedTranslations = {};
 let _sharedTranslationsReady = false;
@@ -854,7 +859,7 @@ async function loadSharedTranslations() {
     const base = new URL("locales/", import.meta.url).href;
     let langs = ["de", "en"];
     try {
-      const idxResp = await fetch(`${base}index.json?v=${EVCC_CARD_VERSION}`);
+      const idxResp = await fetch(`${base}index.json?v=${LOCALES_VERSION}`);
       if (idxResp.ok) langs = await idxResp.json();
       else console.warn("[evcc-card] locales/index.json not found, using fallback:", langs);
     } catch (e) {
@@ -862,7 +867,7 @@ async function loadSharedTranslations() {
     }
     const results = await Promise.allSettled(
       langs.map(lang =>
-        fetch(`${base}${lang}.json?v=${EVCC_CARD_VERSION}`)
+        fetch(`${base}${lang}.json?v=${LOCALES_VERSION}`)
           .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
           .then(data => ({ lang, data }))
       )
