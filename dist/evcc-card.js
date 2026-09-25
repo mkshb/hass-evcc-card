@@ -7387,9 +7387,18 @@ class EvccCard extends HTMLElement {
     this._refreshEvccIds(hass);
 
     const lang = this._config.language || (hass.language ?? "en");
+    // Entities outside the evcc prefix that the last render read (the vehicle's
+    // own integration, for one) count as well: _evccStatesChanged sees them
+    // move through the read set, and the key has to see it too, or it stays
+    // the same and the update is dropped. Sorted, so the order of the reads
+    // does not change the key.
+    const prefix = this._getPrefix();
+    const ids = this._readIds
+      ? this._evccIds.concat([...this._readIds].filter(id => !id.split(".")[1]?.startsWith(prefix)).sort())
+      : this._evccIds;
     // \u001f (unit separator) keeps attribute values from colliding with the
     // key's own delimiters; a title or an option may contain anything else.
-    return lang + "|" + this._evccIds.map(id => {
+    return lang + "|" + ids.map(id => {
       const s = hass.states[id];
       if (!s) return `${id}=`;
       let part = `${id}=${s.state}`;

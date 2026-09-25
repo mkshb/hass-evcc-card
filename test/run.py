@@ -469,6 +469,22 @@ def renderkey(browser, port, t):
     t.check(page.evaluate("window.__renders") == 1, "a change on the tariff sensor, read past the discovery, renders",
             str(page.evaluate("window.__renders")))
 
+    # An entity outside the evcc prefix that a render reads (the vehicle mode
+    # reads the vehicle's own integration) is in the read set and has to be in
+    # the key as well, or the key stays the same and the update is dropped.
+    page.evaluate("""() => { const c = window.__card, orig = c._renderNow.bind(c);
+        c._renderNow = function () { void this._hass.states['sensor.foreign_temperature']; return orig(); };
+        c._lastRenderKey = null; c._render(); c._lastRenderKey = c._buildRenderKey(c._hass); }""")
+    page.wait_for_timeout(100)
+    page.evaluate("window.__keys = 0; window.__renders = 0")
+    page.evaluate("""() => window.__push(st => {
+      st['sensor.foreign_temperature'] = { ...st['sensor.foreign_temperature'], state: '23.0' };
+    })""")
+    page.wait_for_timeout(900)
+    t.check(page.evaluate("window.__renders") == 1 and "sensor.foreign_temperature=23.0" in page.evaluate("window.__card._lastRenderKey"),
+            "a foreign entity the render reads is in the key: its change renders",
+            f"renders={page.evaluate('window.__renders')}")
+
     modes = lambda: page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.mode-btn')].map(x => x.dataset.value)")
     before = modes()
     page.evaluate("window.__renders = 0")
