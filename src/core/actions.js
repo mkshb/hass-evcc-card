@@ -3,6 +3,14 @@
 // card's own debounce add a little.
 const EXPECT_MS = 6000;
 
+// Switches a disabled ha-evcc entity on in the entity registry (admins only,
+// HA refuses everyone else). HA answers with `reload_delay` when it reloads the
+// integration on its own after that many seconds, or `require_restart`. A plain
+// function, since the editor enables entities as well and has no mixins.
+export function enableEntity(hass, entityId) {
+  return hass.callWS({ type: "config/entity_registry/update", entity_id: entityId, disabled_by: null });
+}
+
 // Every write the card sends to Home Assistant. Methods are mixed into EvccCard.prototype.
 export const actions = {
   // ── Service calls ───────────────────────────────────────────────────────
@@ -57,6 +65,10 @@ export const actions = {
 
   _pressButton(entityId) {
     return this._hass.callService("button", "press", { entity_id: entityId });
+  },
+
+  _enableEntity(entityId) {
+    return enableEntity(this._hass, entityId);
   },
 
   // ── ha-evcc plan services ───────────────────────────────────────────────

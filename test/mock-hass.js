@@ -16,7 +16,9 @@
 //   second:  { prefix, entryId, first } - clone the fixture as a second ha-evcc config entry
 //   wsName:  "…"  put this string into every name the WS data API reports (session
 //            loadpoint/vehicle, currency) - used by the escaping tests
-export async function createMockHass({ language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null } = {}) {
+//   admin:   false - the user is no administrator; HA then refuses registry updates
+//   drop:    ["button.evcc_openwb_smart_cost_limit", ...]  remove state and registry entry (never created)
+export async function createMockHass({ language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, admin = true, drop = [] } = {}) {
   const base = new URL("./fixtures/", import.meta.url);
   const json = (p) => fetch(new URL(p, base)).then(r => r.ok ? r.json() : Promise.reject(new Error(`fixture ${p}: ${r.status}`)));
 
@@ -27,6 +29,10 @@ export async function createMockHass({ language = "de", ws = true, set = {}, att
   }
   for (const [id, over] of Object.entries(attrs)) {
     if (states[id]) states[id] = { ...states[id], attributes: { ...states[id].attributes, ...over } };
+  }
+  for (const id of drop) {
+    delete states[id];
+    registry = registry.filter(r => r.entity_id !== id);
   }
   for (const id of disable) {
     delete states[id];
@@ -114,6 +120,7 @@ export async function createMockHass({ language = "de", ws = true, set = {}, att
     language,
     locale: { language },
     config: { version: "2026.9.2-mock", time_zone: "Europe/Berlin" },
+    user: { id: "mock", name: "Mock", is_admin: admin },
     states,
     // The registry as the HA frontend mirrors it into hass.entities: one entry
     // per entity with its platform, disabled entries left out. The card picker
@@ -195,6 +202,18 @@ export async function createMockHass({ language = "de", ws = true, set = {}, att
             });
           }
           return Promise.resolve(out);
+        }
+
+        // Enabling an entity: HA answers with the entry and, for an integration
+        // that can unload, the delay after which it reloads it on its own. The
+        // entity only gets a state after that reload, which a test plays by
+        // setting the state itself.
+        case "config/entity_registry/update": {
+          if (!admin) return Promise.reject(new Error("Unauthorized"));
+          const e = registry.find(r => r.entity_id === msg.entity_id);
+          if (!e) return Promise.reject(new Error(`Entity not found: ${msg.entity_id}`));
+          if ("disabled_by" in msg) e.disabled_by = msg.disabled_by;
+          return Promise.resolve({ entity_entry: e, reload_delay: 30 });
         }
 
         default:

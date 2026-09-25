@@ -66,7 +66,7 @@
     const disable = (q.get("disable") || "").split(",").filter(Boolean);
     const rename = q.get("rename") ? (([from, to]) => ({ from, to }))(q.get("rename").split(":")) : null;
     const second = q.get("second") ? JSON.parse(q.get("second")) : null;
-    const hass = await createMockHass({ language: q.get("lang") || "de", ws: q.get("ws") !== "0",
+    const hass = await createMockHass({ language: q.get("lang") || "de", ws: q.get("ws") !== "0", admin: q.get("admin") !== "0", drop: (q.get("drop") || "").split(",").filter(Boolean),
                                         set, attrs, disable, rename, tariff: q.get("tariff") || "price", second,
                                         wsName: q.get("wsname") });
     await customElements.whenDefined("evcc-card");

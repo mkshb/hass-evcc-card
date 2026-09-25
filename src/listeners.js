@@ -86,6 +86,7 @@ export const listeners = {
 
     this._attachLoadpointListeners();
     this._attachSliderListeners();
+    this._attachDisabledListeners();
     this._attachPlanListeners();
     this._attachStatsListeners();
     this._attachBatteryListeners();

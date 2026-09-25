@@ -25,6 +25,7 @@ export const loadpointView = {
       <div class="loadpoint">
         <div class="lp-header">
           <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
+          ${this._renderDisabledWarn(ents, lpName)}
           ${remaining ? `<span class="lp-remaining" title="${this._t("remaining")}"${moreInfo(ents.charge_remaining_duration)}>${remaining}</span>` : ""}
           <span class="lp-badge ${statusClass}"${moreInfo(charging ? ents.charging : ents.connected)}>
             ${statusLabel}
@@ -97,6 +98,7 @@ export const loadpointView = {
       <div class="loadpoint" data-lp-compact="${escAttr(lpName)}">
         <div class="lp-header">
           <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
+          ${this._renderDisabledWarn(ents, lpName)}
           ${remaining ? `<span class="lp-remaining" title="${this._t("remaining")}"${moreInfo(ents.charge_remaining_duration)}>${remaining}</span>` : ""}
           <span class="lp-badge ${statusClass}"${moreInfo(charging ? ents.charging : ents.connected)}>
             ${statusLabel}
@@ -425,8 +427,10 @@ export const loadpointView = {
     const fillBg  = soc !== null ? socFillGradient(soc, minSoc ?? 0, limit ?? 100) : "var(--evcc-blue)";
     const trackBg = socTrackBg(minSoc ?? 0, limit ?? 100);
 
-    const _rawLimit  = ents.smart_cost_limit ? parseFloat(stateVal(this._hass, ents.smart_cost_limit)) : NaN;
-    const smartLimit = ents.smart_cost_limit && !isNaN(_rawLimit) ? _rawLimit : null;
+    // Like the slider, the chip needs the clear button (see _limitClear).
+    const offered    = !!ents.smart_cost_limit && !!this._limitClear(ents.smart_cost_limit);
+    const _rawLimit  = offered ? parseFloat(stateVal(this._hass, ents.smart_cost_limit)) : NaN;
+    const smartLimit = offered && !isNaN(_rawLimit) ? _rawLimit : null;
     const smartUnit  = smartLimit !== null
       ? (attr(this._hass, ents.smart_cost_limit, "unit_of_measurement") ?? "") : "";
     const isCo2Chip  = smartUnit === "g/kWh";
@@ -490,7 +494,8 @@ export const loadpointView = {
     const power = parseFloat(stateVal(this._hass, ents.charge_power)).toFixed(1);
     const unit  = unitStr(this._hass, ents.charge_power);
 
-    // Phasenstrom-Sensoren (echte Messwerte, standardmäßig deaktiviert)
+    // Phase current sensors (measured values). ha-evcc creates them disabled;
+    // while they are off the warning triangle points at them (DISABLED_NEEDED).
     const hasPhaseCurrents = ents.charge_currents_0 || ents.charge_currents_1 || ents.charge_currents_2;
     const phaseCurrents = hasPhaseCurrents
       ? [0, 1, 2].map(i => {
@@ -501,7 +506,7 @@ export const loadpointView = {
         })
       : null;
 
-    // Fallback: offeredCurrent (wenn keine Phasenstrom-Sensoren vorhanden)
+    // Fallback: offeredCurrent (without phase current sensors)
     const current = !hasPhaseCurrents && ents.charge_current
       ? stateVal(this._hass, ents.charge_current) : null;
 
@@ -518,11 +523,6 @@ export const loadpointView = {
       ? activePhases.map(v => Math.round(v)).join(" / ") + " A"
       : null;
 
-    // Show hint when offeredCurrent is displayed (no phase current entities available).
-    const hint = current !== null
-      ? `<div class="power-currents-hint">${this._t("phaseCurrentsHint")}</div>`
-      : "";
-
     return `
       <div class="power-row ${charging ? "charging" : ""}">
         <span class="power-value"
@@ -533,7 +533,6 @@ export const loadpointView = {
         ${current !== null ? `<span class="power-sep">·</span><span class="power-current"${moreInfo(ents.charge_current)}>${current} A</span>` : ""}
         ${phasesLabel !== null ? `<span class="power-sep">·</span><span class="power-phases"${moreInfo(ents.phases_active)}>${phasesLabel}</span>` : ""}
       </div>
-      ${hint}
     `;
   },
 
@@ -893,7 +892,6 @@ export const loadpointCss = `
       .power-sep { font-size: .8rem; color: var(--secondary-text-color); align-self: flex-end; padding-bottom: .2rem; }
       .power-current { font-size: .82rem; align-self: flex-end; padding-bottom: .2rem; }
       .power-phases  { font-size: .82rem; align-self: flex-end; padding-bottom: .2rem; }
-      .power-currents-hint { font-size: .72rem; color: var(--secondary-text-color, #757575); margin-top: 2px; opacity: .8; }
 
       .toggles { margin-bottom: 10px; }
       .toggle-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; flex-wrap: wrap; gap: 4px; }

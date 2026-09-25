@@ -10,6 +10,7 @@ import { actions } from "./core/actions.js";
 import { evccApi } from "./core/evcc-api.js";
 import { loadpointView } from "./views/loadpoint-view.js";
 import { socControl } from "./components/soc-control.js";
+import { disabledEntities } from "./components/disabled-entities.js";
 import { planningView } from "./views/planning-view.js";
 import { priorityView } from "./views/priority-view.js";
 import { siteView } from "./views/site-view.js";
@@ -36,6 +37,9 @@ export class EvccCard extends HTMLElement {
     this._inputFocused  = null;   // focused select or date input, see _inputBusy()
     this._readIds       = null;   // entity ids the last render read, see _render()
     this._expected      = {};     // entity id -> value written, not yet reported back (actions.js)
+    this._disabledEntities = new Set();   // ha-evcc entities disabled in the registry (detectIntegration)
+    this._enabling      = {};     // entity id -> outcome of enabling it from the card (disabled-entities.js)
+    this._debugReturn   = null;   // the config the warning triangle left for the debug view
     this._renderTimer   = null;
     this._lastRenderKey = null;
     this._countdownInterval = null;
@@ -146,9 +150,10 @@ export class EvccCard extends HTMLElement {
     if (!this._integrationDetected && !this._detectingIntegration) {
       this._detectingIntegration = true;
       const probePrefix = this._config.prefix || null;
-      detectIntegration(hass, probePrefix).then(({ prefix, entryId, instances }) => {
+      detectIntegration(hass, probePrefix).then(({ prefix, entryId, instances, disabled }) => {
         this._detectingIntegration = false;
         this._integrationDetected = true;
+        this._disabledEntities = new Set(disabled);
         this._evccInstances = instances;
         this._instancePrefix = probePrefix;
         this._entryId = entryId;
@@ -157,7 +162,9 @@ export class EvccCard extends HTMLElement {
         // The config may have changed while the registry call was in flight.
         this._syncIntegrationInstance();
         // Honour an explicitly configured prefix, but still keep the detected one.
-        const changed = (!this._config.prefix && prefix !== this._detectedPrefix);
+        // A disabled entity can change what a view offers (a limit without its
+        // clear button, the warning triangle), so those renders start over too.
+        const changed = (!this._config.prefix && prefix !== this._detectedPrefix) || disabled.length > 0;
         this._detectedPrefix = prefix;
         if (changed) {
           this._lastRenderKey = null;
@@ -351,6 +358,7 @@ export class EvccCard extends HTMLElement {
     // the one it had and Home Assistant shows its error card with the reason.
     validateCardConfig(config);
     this._config = config || {};
+    this._debugReturn = null;
     this._syncIntegrationInstance();
     // Both stats paths are fed from the same normalised value, so the current
     // vocabulary (month/year/total/none) and the legacy one (30d/365d/thisYear)
@@ -623,7 +631,7 @@ export class EvccCard extends HTMLElement {
 
 // Mode views, components and shared behaviour are plain objects of methods
 // (no framework): mix them into the prototype, refusing silent overrides.
-const mixins = [actions, evccApi, loadpointView, socControl, planningView, priorityView, siteView, flowView, gridView, statisticsLegacy, statisticsView, batteryView, debugView, listeners, styles];
+const mixins = [actions, evccApi, loadpointView, socControl, disabledEntities, planningView, priorityView, siteView, flowView, gridView, statisticsLegacy, statisticsView, batteryView, debugView, listeners, styles];
 for (const m of mixins) {
   for (const key of Object.keys(m)) {
     if (key in EvccCard.prototype) throw new Error(`evcc-card: duplicate method ${key}`);
