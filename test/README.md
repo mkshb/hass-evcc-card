@@ -70,7 +70,7 @@ run by hand before a release, not in CI:
 E2E_HA_USER=e2e
 E2E_HA_PASSWORD=...
 
-python3 test/e2e.py                 # smoke + roundtrip, report in test/out/e2e/
+python3 test/e2e.py                 # smoke + roundtrip + solar_share, report in test/out/e2e/
 python3 test/e2e.py --only smoke    # one group; --headed shows the browser
 ```
 
@@ -78,6 +78,7 @@ python3 test/e2e.py --only smoke    # one group; --headed shows the browser
 |---|---|
 | `smoke` | Every mode renders on the real dashboard without card errors; the loadpoint modes show every demo loadpoint by name, the debug mode the prefix. One screenshot per mode in `test/out/e2e/` |
 | `roundtrip` | Garage starts off; a click on "now" in the card arrives at evcc (card → HA service → ha-evcc → evcc API), the state comes back into the card, and a change made in evcc itself reaches the card. The demo is reset to its shipped modes before and after |
+| `solar_share` | Garage starts at evcc's default of 100 %; Home on the slider arrives at evcc as 0, and 0.5 set in evcc itself shows as 50 % in the card. Needs evcc 0.316 and ha-evcc 2026.9.5. The demo's solar share is reset to 1 with the modes |
 
 Two things to know when timing interactions here: a fresh browser context reloads
 the page once about two seconds after the first render (the first activation of

@@ -800,7 +800,7 @@ def interactions(browser, port, t):
     # --- hide_settings + slider_steps ---------------------------------------------------
     t.group("config - hide_settings / slider_steps")
     page = new_page(browser, 480, 1200)
-    all_keys = ["limit_soc", "min_soc", "phases", "max_current", "min_current", "battery_boost", "priority", "smart_cost_limit", "smart_feed_in_priority_limit"]
+    all_keys = ["limit_soc", "min_soc", "phases", "max_current", "min_current", "battery_boost", "solar_share", "priority", "smart_cost_limit", "smart_feed_in_priority_limit"]
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "hide_settings": all_keys})
     t.check(page.locator(in_card(".current-block")).count() == 0, "all hidden: charge settings block gone")
     t.check(page.locator(in_card(".sliders")).count() == 0, "all hidden: soc sliders gone")
@@ -1055,7 +1055,7 @@ def editor(browser, port, t):
       const b = [...document.querySelector("evcc-card-editor").shadowRoot.querySelectorAll('input[data-field="hide_settings"]')];
       return { count: b.length, checked: b.filter(x => x.checked).map(x => x.dataset.lp) };
     }""")
-    t.check(boxes["count"] == 9 and boxes["checked"] == ["priority"], "existing config is reflected in the checkboxes", json.dumps(boxes))
+    t.check(boxes["count"] == 10 and boxes["checked"] == ["priority"], "existing config is reflected in the checkboxes", json.dumps(boxes))
     t.check(count() == 0, "mounting alone emits nothing", f"{count()} events")
 
     # --- free text ---------------------------------------------------------------
@@ -1164,6 +1164,10 @@ def contracts(browser, port, t):
     drag_to_end('input[data-entity="number.evcc_openwb_limit_soc"]')
     t.check(last() == exp("number", "set_value", {"entity_id": "number.evcc_openwb_limit_soc", "value": 100}),
             "slider released at the max → number.set_value 100", json.dumps(last()))
+    el = page.locator(in_card('input[data-entity="number.evcc_openwb_solar_share"]'))
+    el.click(position={"x": 1, "y": el.bounding_box()["height"] / 2}); page.wait_for_timeout(400)
+    t.check(last() == exp("number", "set_value", {"entity_id": "number.evcc_openwb_solar_share", "value": 0}),
+            "solar share released at the start → number.set_value 0 (ha-evcc writes 0 to evcc)", json.dumps(last()))
     drag_to_end('input[data-entity="select.evcc_openwb_min_current"]')
     t.check(last() == exp("select", "select_option", {"entity_id": "select.evcc_openwb_min_current", "option": "16"}),
             "select slider released at the max → select.select_option 16", json.dumps(last()))
@@ -2657,9 +2661,87 @@ def disabled_entities(browser, port, t):
     page.close()
 
 
+def solar_share(browser, port, t):
+    """evcc's solar share (0.316, ha-evcc 2026.9.5) in the charge settings: the
+    slider with evcc's wording below it, locked while a power threshold is set."""
+    t.group("solar share")
+    lp  = {"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"}
+    sel = 'input[data-entity="number.evcc_openwb_solar_share"]'
+    got = lambda page, lpn="openwb": page.evaluate("""(id) => { const i = window.__card.shadowRoot.querySelector(`input[data-entity="${id}"]`);
+        if (!i) return null; const sec = i.closest('.solar-share-section');
+        return { value: i.value, step: i.step, disabled: i.disabled, edit: i.nextElementSibling.disabled,
+                 label: i.nextElementSibling.textContent.trim(), hint: sec.querySelector('.setting-hint').textContent.trim() }; }""",
+        f"number.evcc_{lpn}_solar_share")
+
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, config=lp)
+    g = got(page)
+    t.check(g == {"value": "100", "step": "10", "disabled": False, "edit": False, "label": "100 %",
+                  "hint": "Laden startet, sobald der Überschuss die minimale Ladeleistung deckt."},
+            "100 %: the slider, evcc's text for a full share", str(g))
+    order = page.evaluate("""() => [...window.__card.shadowRoot.querySelector('.current-block-body').children]
+        .map(c => c.matches('hr') ? '|' : c.classList.contains('solar-share-section') ? 'solar'
+                : c.querySelector('[data-boost-entity]') ? 'boost' : 'other')""")
+    i = order.index("solar")
+    t.check(order[i - 2:i + 3] == ["other", "|", "solar", "|", "boost"], "between the currents and battery boost, as in evcc", str(order))
+    el = page.locator(in_card(sel))
+    el.click(position={"x": 1, "y": el.bounding_box()["height"] / 2}); page.wait_for_timeout(400)
+    g = got(page)
+    t.check(g["label"] == "0 %" and g["hint"] == "Laden startet, sobald etwas Überschuss verfügbar ist.",
+            "released at 0 %: value and text follow at once, before HA answers", str(g))
+    t.check(not errors, "no console errors", "; ".join(errors)[:300])
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={"number.evcc_openwb_solar_share": "30"}, lang="en")
+    g = got(page)
+    t.check(g["hint"] == "At least 30 % of the minimum charging power must come from solar.", "30 %: the share in the text, card language", str(g))
+    page.close()
+
+    for case, st in (("enable threshold", {"number.evcc_openwb_enable_threshold": "-1200"}),
+                     ("disable threshold", {"number.evcc_openwb_disable_threshold": "10"})):
+        page = new_page(browser, 480, 1600)
+        open_card(page, port, config=lp, set=st)
+        g = got(page)
+        t.check(g and g["disabled"] and g["edit"] and g["hint"].startswith("Leistungsbasierte Ladeschwellen sind konfiguriert"),
+                f"{case} set: locked with evcc's hint, no direct input", str(g))
+        page.close()
+
+    # ha-evcc creates no solar share for an integrated device (the heat pump);
+    # a heating device on a plain charger (a heating rod on a switched socket)
+    # gets one, and evcc's heating wording with it.
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={**lp, "loadpoints": ["wp"]})
+    t.check(got(page, "wp") is None, "integrated heat pump: ha-evcc has no solar share, no slider")
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={"number.evcc_openwb_solar_share": "50"},
+              attrs={"sensor.evcc_openwb_effective_plan_soc": {"unit_of_measurement": "°C", "device_class": "temperature"}})
+    g = got(page)
+    t.check(g and g["hint"] == "Mindestens 50 % der minimalen Heizleistung muss aus Solarstrom stammen.",
+            "heating loadpoint: evcc's heating text", str(g))
+    page.close()
+
+    for case, cfg, st, dis in (("hide_settings", {**lp, "hide_settings": ["solar_share"]}, None, None),
+                               ("no_pv", {**lp, "no_pv": ["openwb"]}, None, None),
+                               ("no value from evcc", lp, {"number.evcc_openwb_solar_share": "unavailable"}, None),
+                               ("no entity (ha-evcc before 2026.9.5)", lp, None, ["number.evcc_openwb_solar_share"])):
+        page = new_page(browser, 480, 1600)
+        open_card(page, port, config=cfg, set=st, drop=dis)
+        t.check(page.locator(in_card(sel)).count() == 0, f"{case}: no solar share slider")
+        page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={**lp, "hide_settings": ["limit_soc", "min_soc", "phases", "max_current", "min_current", "battery_boost", "priority", "smart_cost_limit", "smart_feed_in_priority_limit"]})
+    n = page.evaluate("window.__card.shadowRoot.querySelectorAll('.current-block-body > *').length")
+    t.check(n == 1 and page.locator(in_card(sel)).count() == 1, "the only setting left: the block stays, no divider", str(n))
+    page.close()
+
+
 GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
-          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities}
+          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities, "solar_share": solar_share}
 
 
 def main():

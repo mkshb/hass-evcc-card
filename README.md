@@ -88,7 +88,7 @@ All charge points and site entities are **automatically discovered** via the HA 
 | **Live updates** | Power, SoC and status update in real time without full re-render |
 | **Responsive scaling** | Card automatically scales to fit larger screens via CSS container queries; can be overridden with a fixed `size` |
 | **SoC display** | Vehicle state of charge as a progress bar with percentage and estimated range |
-| **Slider controls** | Adjust Target SoC, Min SoC, Priority, smart charging limit, feed-in priority limit, battery boost, Max current and Min current inline |
+| **Slider controls** | Adjust Target SoC, Min SoC, Priority, smart charging limit, feed-in priority limit, battery boost, solar share, Max current and Min current inline |
 | **Phase switching** | Auto / 1-phase / 3-phase control built in |
 | **Plan strategies** | Continuous charging and battery preconditioning settings inline in the plan block |
 | **Repeating plans** | `repeatplan` mode lists evcc's weekly repeating charge plans per vehicle and toggles them on/off (ha-evcc 2026.6.1+) |
@@ -190,7 +190,7 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 | `disabled_loadpoints` | `string` | `hide` | How to treat charge points disabled in the evcc configuration (ha-evcc 2026.8.8+): `hide` removes them from the card, `dim` shows them grayed out with a "Disabled" badge, `show` keeps the previous behavior |
 | `site_details` | `string` | `expanded` | `collapsed` to hide the IN/OUT detail table by default in `site` and `flow` mode |
 | `charge_current_settings` | `string` | `collapsed` | `expanded` to show charge settings expanded by default |
-| `hide_settings` | `list` | *(none)* | Remove individual settings from the `loadpoint` / `compact` card: `limit_soc`, `min_soc`, `phases`, `max_current`, `min_current`, `battery_boost`, `priority`, `smart_cost_limit`, `smart_feed_in_priority_limit`. See [Slider settings](#slider-settings) |
+| `hide_settings` | `list` | *(none)* | Remove individual settings from the `loadpoint` / `compact` card: `limit_soc`, `min_soc`, `phases`, `max_current`, `min_current`, `battery_boost`, `solar_share`, `priority`, `smart_cost_limit`, `smart_feed_in_priority_limit`. See [Slider settings](#slider-settings) |
 | `hide_disabled_hint` | `boolean` | `false` | `true` hides the warning triangle that the `loadpoint` / `compact` card shows administrators while an entity it needs is disabled in Home Assistant. See [Disabled entities](#disabled-entities) |
 | `slider_steps` | `map` | *(entity)* | **YAML only** — Override the step of a number slider per setting, e.g. `{ smart_cost_limit: 0.01, limit_soc: 5 }`. Keys are ha-evcc feature names and are matched exactly. Also sets the increment of the − / + buttons in the direct-input panel. Number entities only. See [Slider settings](#slider-settings) |
 | `stats_period` | `string` | *(see note)* | Statistics period: `month`, `year`, `total`, `none`. Unconfigured, the `stats` mode opens on the most recent month and the footer under `site`/`grid`/`flow` summarises everything; `none` hides that footer. The older values `30d`, `365d` and `thisYear` still work |
@@ -245,6 +245,7 @@ Under the loadpoint header a row of chips names what drives the charge point rig
 The **CHARGE SETTINGS** section is collapsed by default and can be toggled using the gear icon. It contains:
 - Phase switch: Auto / 1-phase / 3-phase
 - Max current / Min current sliders
+- Solar share - how much of the minimum charging power has to come from solar before evcc charges on surplus, 0 to 100 % in steps of 10, with evcc's explanation below the slider (for heating loadpoints the heating power). At 100 % charging starts once the surplus covers the minimum charging power, at 0 % as soon as there is any surplus. evcc ignores the setting while a power threshold is configured for the loadpoint (`enable_threshold` / `disable_threshold`), so the card shows it locked with a hint, as evcc does. Needs evcc 0.316 and ha-evcc 2026.9.5 (`number.evcc_<loadpoint>_solar_share`); not shown with `no_pv`
 - Battery boost - lets the vehicle draw from the home battery; the slider sets the battery SoC threshold above which boosting is allowed. Only shown when ha-evcc exposes the battery boost entities (`battery_boost_limit`, `battery_boost`)
 - Priority - PV-surplus priority of this charge point relative to the others
 - Smart charging limit - threshold below which charging starts automatically; shows "Off" when set to 0; EVCC supports either CO2-based (g/kWh) **or** price-based (EUR/kWh) - not both simultaneously; the active mode is reflected in the entity's unit
@@ -254,7 +255,7 @@ The **CHARGE SETTINGS** section is collapsed by default and can be toggled using
 
 #### Slider settings
 
-Every slider in the card (target SoC, min SoC, current limits, battery boost, priority, smart charging limit, feed-in priority limit, and the target SoC of the charge plan) can also be set without dragging:
+Every slider in the card (target SoC, min SoC, current limits, battery boost, solar share, priority, smart charging limit, feed-in priority limit, and the target SoC of the charge plan) can also be set without dragging:
 
 - **Direct input** - tap the value next to the slider. A touch-sized row opens below it with **−** and **+** buttons, a number field with the unit, and apply / cancel. The buttons walk the slider step (for the current sliders: the next available option), the field accepts an exact value with either a comma or a dot and is clamped to the slider range. **Enter** or **✓** writes the value, **Escape** or **✕** discards it. Only one panel is open at a time.
 - **Keyboard** - with the slider focused, the arrow keys, Home / End and PageUp / PageDown change the value and write it as well. Everything else that reacts to a tap (the more-info rows, the flow graphic that folds the detail table, the buttons and chips) is reachable with Tab and fires on Enter or Space.

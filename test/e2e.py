@@ -79,6 +79,10 @@ def reset_demo():
         mode = DEMO_MODES.get(title)
         if mode:
             evcc(f"loadpoints/{idx}/mode/{mode}", "POST")
+    # evcc's default solar share: the surplus has to cover the minimum power
+    for i, lp in enumerate(evcc_state()["loadpoints"], 1):
+        if lp.get("solarShare") not in (None, 1):
+            evcc(f"loadpoints/{i}/solarshare/1", "POST")
 
 
 def wait_for(pred, timeout=20, step=0.5):
@@ -224,7 +228,43 @@ def roundtrip(page, t):
     reset_demo()
 
 
-GROUPS = {"smoke": smoke, "roundtrip": roundtrip}
+def solar_share(page, t):
+    """The solar share slider (evcc 0.316, ha-evcc 2026.9.5) writes through to evcc and follows evcc back."""
+    t.group("e2e solar share - slider through the whole stack")
+    garage = next(((i, s) for i, title, s in demo_loadpoints() if title == "Garage"), None)
+    if not garage:
+        t.fail("the demo has a Garage loadpoint", str(demo_loadpoints()))
+        return
+    idx, slug = garage
+    entity = f"number.{PREFIX}{slug}_solar_share"
+    share  = lambda: evcc_state()["loadpoints"][idx - 1].get("solarShare")
+    if share() is None:
+        t.fail("evcc reports a solar share (0.316+)", f"evcc {evcc_state().get('version')}")
+        return
+    reset_demo()
+    open_view(page, "loadpoint")
+    card  = page.locator("evcc-card").first
+    input = page.locator(f'evcc-card input[type="range"][data-entity="{entity}"]')
+    label = lambda: card.evaluate(
+        "(el, e) => el.shadowRoot?.querySelector(`input[data-entity=\"${e}\"]`)?.nextElementSibling?.textContent.trim() ?? null", entity)
+
+    page.locator(f'evcc-card [data-lp-current-toggle="{slug}"]').click()
+    t.check(input.count() == 1, "the Garage has the solar share slider", f"{input.count()} slider(s) for {entity}")
+    start = wait_for(lambda: label() == "100 %" and "100 %", timeout=30)
+    t.check(start == "100 %", "starting point: 100 % in the card", f"label={label()} evcc={share()}")
+
+    input.focus(); page.keyboard.press("Home")
+    at_evcc = wait_for(lambda: share() == 0 and "0", timeout=20)
+    t.check(at_evcc == "0", "Home on the slider arrives at evcc as 0 (card -> HA -> ha-evcc -> evcc)", f"evcc solarShare={share()}")
+
+    evcc(f"loadpoints/{idx}/solarshare/0.5", "POST")
+    followed = wait_for(lambda: label() == "50 %" and "50 %", timeout=40)
+    t.check(followed == "50 %", "0.5 set in evcc itself shows as 50 % in the card", f"label={label()} ha={ha_state(page, entity)}")
+    t.check(not ERRORS, "no card errors", "; ".join(ERRORS)[:200])
+    reset_demo()
+
+
+GROUPS = {"smoke": smoke, "roundtrip": roundtrip, "solar_share": solar_share}
 
 
 def main():

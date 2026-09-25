@@ -336,6 +336,14 @@
   "original_name": "openWB Priorität"
  },
  {
+  "entity_id": "number.evcc_openwb_solar_share",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_openwb_solar_share",
+  "original_name": "openWB Sonnenanteil (Solarüberschuss)"
+ },
+ {
   "entity_id": "number.evcc_wp_limit_soc",
   "platform": "evcc_intg",
   "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
