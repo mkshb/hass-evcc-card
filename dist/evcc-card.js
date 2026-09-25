@@ -1,5 +1,5 @@
 /* hass-evcc-card. Built from src/ with Rollup; edit the sources, not this file. */
-const EVCC_CARD_VERSION = "0.8.7";
+const EVCC_CARD_VERSION = "0.9.0";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
