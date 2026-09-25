@@ -19,6 +19,7 @@ import { gridView } from "./views/grid-view.js";
 import { statisticsLegacy } from "./views/statistics-legacy.js";
 import { statisticsView } from "./views/statistics-view.js";
 import { batteryView } from "./views/battery-view.js";
+import { vehicleView } from "./views/vehicle-view.js";
 import { debugView } from "./views/debug-view.js";
 import { listeners } from "./listeners.js";
 import { styles } from "./styles.js";
@@ -550,6 +551,8 @@ export class EvccCard extends HTMLElement {
             ? this._renderDebugBlock(loadpoints, site, meters)
             : this._config.mode === "battery"
             ? this._renderBatteryBlock(site)
+            : this._config.mode === "vehicle"
+            ? this._renderVehicleMode(lpEnabled)
             : this._config.mode === "site"
               ? this._renderSiteBlock(site, loadpoints)
               : this._config.mode === "flow"
@@ -648,7 +651,7 @@ export class EvccCard extends HTMLElement {
 
 // Mode views, components and shared behaviour are plain objects of methods
 // (no framework): mix them into the prototype, refusing silent overrides.
-const mixins = [actions, evccApi, loadpointView, socControl, disabledEntities, planningView, priorityView, siteView, flowView, gridView, statisticsLegacy, statisticsView, batteryView, debugView, listeners, styles];
+const mixins = [actions, evccApi, loadpointView, socControl, disabledEntities, planningView, priorityView, siteView, flowView, gridView, statisticsLegacy, statisticsView, batteryView, vehicleView, debugView, listeners, styles];
 for (const m of mixins) {
   for (const key of Object.keys(m)) {
     if (key in EvccCard.prototype) throw new Error(`evcc-card: duplicate method ${key}`);

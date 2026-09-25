@@ -320,5 +320,18 @@
   "editorDisabledLoadpointsHide": "Ukryj (domyślnie)",
   "editorDisabledLoadpointsDim": "Pokaż przyciemnione",
   "editorDisabledLoadpointsShow": "Pokaż normalnie",
-  "editorDisabledLoadpointsHint": "Sposób traktowania punktów ładowania wyłączonych w konfiguracji evcc (ha-evcc 2026.8.8+)."
+  "editorDisabledLoadpointsHint": "Sposób traktowania punktów ładowania wyłączonych w konfiguracji evcc (ha-evcc 2026.8.8+).",
+  "vehicleNotConnected": "Niepodłączony",
+  "vehicleAtLoadpoint": "Punkt ładowania",
+  "vehicleExtDataHint": "Poziom naładowania, zasięg i przebieg wymagają rozszerzonych danych pojazdu w integracji ha-evcc oraz czujników pojazdu włączonych w Home Assistant.",
+  "vehicleNoData": "Brak aktualnych danych z pojazdu.",
+  "vehicleUpdated": "Zaktualizowano {val}",
+  "vehicleTotals": "Naładowano łącznie",
+  "vehicleChargeDuration": "Czas ładowania",
+  "noVehicles": "Nie znaleziono pojazdów.",
+  "availableVehicles": "Dostępne pojazdy: {list}",
+  "editorModeVehicle": "Pojazd (vehicle)",
+  "editorModeDescVehicle": "Jeden blok na pojazd: poziom naładowania, zasięg, przebieg, punkt ładowania, plany i sumy.",
+  "editorTitlePlaceholderVehicle": "Domyślnie: nazwa pojazdu",
+  "editorVehiclesNoneFound": "Nie znaleziono pojazdów"
 }

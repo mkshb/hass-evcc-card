@@ -320,5 +320,18 @@
   "editorDisabledLoadpointsHide": "Hide (default)",
   "editorDisabledLoadpointsDim": "Show dimmed",
   "editorDisabledLoadpointsShow": "Show normally",
-  "editorDisabledLoadpointsHint": "How to treat charge points disabled in the evcc configuration (ha-evcc 2026.8.8+)."
+  "editorDisabledLoadpointsHint": "How to treat charge points disabled in the evcc configuration (ha-evcc 2026.8.8+).",
+  "vehicleNotConnected": "Not connected",
+  "vehicleAtLoadpoint": "Charge point",
+  "vehicleExtDataHint": "Charge level, range and odometer need the extended vehicle data of the ha-evcc integration, and the vehicle sensors enabled in Home Assistant.",
+  "vehicleNoData": "No current data from the vehicle.",
+  "vehicleUpdated": "Updated {val}",
+  "vehicleTotals": "Charged in total",
+  "vehicleChargeDuration": "Charging time",
+  "noVehicles": "No vehicles found.",
+  "availableVehicles": "Available vehicles: {list}",
+  "editorModeVehicle": "Vehicle (vehicle)",
+  "editorModeDescVehicle": "One block per vehicle: charge level, range, odometer, charge point, plans and totals.",
+  "editorTitlePlaceholderVehicle": "Default: Vehicle name",
+  "editorVehiclesNoneFound": "No vehicles found"
 }

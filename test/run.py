@@ -19,7 +19,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT  = ROOT / "test" / "out"
-MODES = ["loadpoint", "compact", "battery", "site", "flow", "grid", "stats", "plan", "repeatplan", "priority", "debug"]
+MODES = ["loadpoint", "compact", "battery", "vehicle", "site", "flow", "grid", "stats", "plan", "repeatplan", "priority", "debug"]
 
 # The browser clock is frozen at the capture time of the fixtures so every run
 # renders the same pixels (hour labels, plan times, "current month"). Timezone
@@ -273,6 +273,99 @@ def stats_fallback(browser, port, t):
         t.check(len(daily) >= 1, "30d tab queries day buckets", f"{len(daily)} call(s)")
         n = page.locator(in_card("rect.evcc-bar")).count()
         t.check(n == 30, "30d chart shows one bar per day", f"{n} bars")
+    done(page)
+
+
+def vehicle_mode(browser, port, t):
+    """Vehicle mode: one block per vehicle evcc knows, fed from the vehicle's own
+    entities and, while it is connected, from the loadpoint it is plugged into."""
+    UNPLUGGED = {"binary_sensor.evcc_openwb_connected": "off", "binary_sensor.evcc_openwb_charging": "off"}
+    block = lambda slug: in_card(f'.vehicle-block[data-vehicle="{slug}"]')
+
+    def card(**kw):
+        page = new_page(browser, 480, 1400)
+        kw.setdefault("config", {"mode": "vehicle"})
+        return page, open_card(page, port, **kw)
+
+    t.group("vehicle - blocks, value source and loadpoint")
+    page, errors = card()
+    slugs = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block')].map(b => b.dataset.vehicle)")
+    t.check(slugs == ["ex30", "id7"] and not errors, "every vehicle evcc knows gets a block, plugged in or not", f"{slugs}; {'; '.join(errors)[:150]}")
+    ex30 = page.locator(block("ex30"))
+    t.check(ex30.locator(".lp-name").inner_text().strip().upper() == "EX30" and ex30.locator(".vehicle-lp").inner_text().strip() == "openwb",
+            "the connected vehicle carries its evcc title and names its loadpoint", ex30.locator(".lp-header").inner_text())
+    info = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .soc-label-row [data-more-info]')].map(e => [e.dataset.moreInfo, e.textContent.trim()])")
+    t.check(info == [["sensor.evcc_openwb_vehicle_soc", "56 %"], ["sensor.evcc_openwb_vehicle_range", "198 km"], ["sensor.evcc_openwb_vehicle_odometer", "11445 km"]],
+            "connected: charge level, range and odometer are read from the loadpoint", json.dumps(info))
+    id7 = page.locator(block("id7"))
+    t.check(id7.locator(".lp-badge.ready").count() == 1 and id7.locator(".vehicle-lp").count() == 0
+            and id7.locator(".soc-track").count() == 0 and "Keine aktuellen Daten" in id7.inner_text(),
+            "a vehicle evcc cannot reach shows no 0 % bar but a hint", id7.inner_text()[:120])
+    t.check(ex30.locator(".rplan-row").count() == 2 and id7.locator(".rplan-row").count() == 0,
+            "repeating plans sit in the block of their vehicle, unavailable ones stay out",
+            f"ex30={ex30.locator('.rplan-row').count()} id7={id7.locator('.rplan-row').count()}")
+    totals = ex30.locator(".vehicle-totals .si-value").all_inner_texts()
+    t.check(totals == ["2425 kWh", "308.32 €", "1459 h"] and id7.locator(".vehicle-totals").count() == 0,
+            "session totals per vehicle, none for a vehicle that never charged", json.dumps(totals))
+    ex30.locator(".rplan-row button.toggle").first.click()
+    page.wait_for_timeout(200)
+    calls = svc(page)
+    t.check(calls and calls[-1] == {"domain": "switch", "service": "turn_on", "data": {"entity_id": "switch.evcc_ex30_repeating_plan_2"}},
+            "switching a repeating plan calls switch.turn_on on the plan entity", json.dumps(calls[-1:]))
+    done(page)
+
+    page, errors = card(set=UNPLUGGED)
+    ex30 = page.locator(block("ex30"))
+    info = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .soc-label-row [data-more-info]')].map(e => [e.dataset.moreInfo, e.textContent.trim()])")
+    t.check(info == [["sensor.evcc_ex30_configvehicle_soc", "52 %"], ["sensor.evcc_ex30_configvehicle_range", "184 km"], ["sensor.evcc_ex30_configvehicle_odometer", "11445 km"]],
+            "unplugged: the values come from the vehicle's own sensors", json.dumps(info))
+    t.check(ex30.locator(".lp-badge.ready").inner_text().strip() == "Nicht verbunden" and ex30.locator(".vehicle-lp").count() == 0 and not errors,
+            "unplugged: badge says so, no loadpoint is named", ex30.locator(".lp-header").inner_text())
+    marker = ex30.locator(".soc-limit-marker").get_attribute("style") or ""
+    t.check("left:90%" in marker.replace(" ", ""), "the limit marker follows the vehicle's own limit", marker)
+    done(page)
+
+    t.group("vehicle - charge plan of the loadpoint")
+    page, errors = card()
+    t.check(page.locator(in_card(".vehicle-plan")).count() == 0, "no plan block without a plan", "")
+    done(page)
+    page, errors = card(set={"sensor.evcc_openwb_effective_plan_time": "2030-01-04T06:00:00+00:00",
+                             "sensor.evcc_openwb_effective_plan_soc": "80", "binary_sensor.evcc_openwb_plan_active": "on"})
+    plan = page.locator(block("ex30")).locator(".vehicle-plan")
+    t.check(plan.count() == 1 and "80 %" in plan.inner_text() and plan.locator(".plan-badge.active").count() == 1
+            and page.locator(block("id7")).locator(".vehicle-plan").count() == 0 and not errors,
+            "the plan of the loadpoint shows up at the vehicle plugged in there, and only there", plan.inner_text()[:120] if plan.count() else "missing")
+    t.check(plan.locator("input, select, button").count() == 0, "the plan is read only", "")
+    done(page)
+    page, errors = card(set={"sensor.evcc_openwb_effective_plan_time": "2026-09-18T18:30:00+02:00", "sensor.evcc_openwb_effective_plan_soc": "80"},
+                        attrs={"select.evcc_openwb_vehicle_name": {"vehicle": {"id": "ex30", "name": "EX30", "capacity": 0}}})
+    plan = page.locator(block("ex30")).locator(".vehicle-plan")
+    t.check(plan.count() == 1 and "18:30" in plan.inner_text() and "%" not in plan.inner_text(),
+            "a vehicle evcc plans in kWh shows no SoC goal; the time as in the plan chip", plan.inner_text()[:120] if plan.count() else "missing")
+    done(page)
+
+    t.group("vehicle - filter, missing data, second instance")
+    for cfg, want, label in (({"mode": "vehicle", "vehicles": ["id7"]}, ["id7"], "a list"),
+                             ({"mode": "vehicle", "vehicles": "EX30"}, ["ex30"], "a single name, compared without case")):
+        page, errors = card(config=cfg)
+        slugs = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block')].map(b => b.dataset.vehicle)")
+        t.check(slugs == want and not errors, f"vehicles option: {label}", str(slugs))
+        done(page)
+    page, errors = card(config={"mode": "vehicle", "vehicles": ["tesla"]})
+    empty = page.locator(in_card(".empty")).inner_text()
+    t.check("Keine Fahrzeuge" in empty and "ex30" in empty and "id7" in empty, "an unknown vehicle names the ones that exist", empty[:150])
+    done(page)
+    page, errors = card(config={"mode": "vehicle", "title": "Mein Volvo", "vehicles": ["ex30"]})
+    t.check(page.locator(block("ex30")).locator(".lp-name").inner_text().strip().upper() == "MEIN VOLVO", "title names a single vehicle", "")
+    done(page)
+    page, errors = card(set=UNPLUGGED, disable=[f"sensor.evcc_ex30_configvehicle_{k}" for k in ("soc", "range", "odometer", "limitsoc")])
+    ex30 = page.locator(block("ex30"))
+    t.check(ex30.count() == 1 and "erweiterten Fahrzeugdaten" in ex30.inner_text() and ex30.locator(".rplan-row").count() == 2 and not errors,
+            "without the extended vehicle data the block stays, with a hint instead of values", ex30.inner_text()[:160] if ex30.count() else "missing")
+    done(page)
+    page, errors = card(second={"prefix": "evcc_demo_"})
+    slugs = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block')].map(b => b.dataset.vehicle)")
+    t.check(slugs == ["ex30", "id7"] and not errors, "vehicles of a second installation under evcc_demo_ stay out", str(slugs))
     done(page)
 
 
@@ -2796,7 +2889,7 @@ def solar_share(browser, port, t):
 
 GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
-          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities, "solar_share": solar_share}
+          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities, "solar_share": solar_share, "vehicle": vehicle_mode}
 
 
 # The groups that take longest go to the workers first, so the run is not left

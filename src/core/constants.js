@@ -205,6 +205,7 @@ export const CARD_SIZES = {
   site2:       7,   // legacy alias of grid
   stats:      10,
   battery:     7,
+  vehicle:     8,
   debug:      20,
 };
 
@@ -220,7 +221,7 @@ export const CARD_SIZE_FOOTER  = { site: 1, flow: 1, grid: 1, site2: 1 };
 // former name of `grid` and stays valid so dashboards carrying it keep working.
 export const CARD_MODES = [
   "loadpoint", "compact", "plan", "repeatplan", "priority",
-  "site", "flow", "grid", "site2", "stats", "battery", "debug",
+  "site", "flow", "grid", "site2", "stats", "battery", "vehicle", "debug",
 ];
 export const CARD_SIZE_OPTIONS        = ["small", "medium", "large"];
 export const DISABLED_LOADPOINT_MODES = ["hide", "dim", "show"];

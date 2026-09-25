@@ -1,5 +1,5 @@
-import { HIDEABLE_SETTINGS } from "./core/constants.js";
-import { detectIntegration, discoverEntities, disabledCardEntities } from "./core/entity-discovery.js";
+import { HIDEABLE_SETTINGS, vehicleFilter } from "./core/constants.js";
+import { detectIntegration, discoverEntities, discoverVehicles, disabledCardEntities } from "./core/entity-discovery.js";
 import { enableEntity } from "./core/actions.js";
 import { disabledEntitiesHtml, disabledListCss, enableEntities } from "./components/disabled-entities.js";
 import { loadSharedTranslations, sharedTranslations, sharedTranslationsReady } from "./utils/translations.js";
@@ -121,9 +121,8 @@ export class EvccCardEditor extends HTMLElement {
     `).join("");
   }
 
-  _vehicleCheckboxes(type, selected) {
-    const slugs = this._availableVehicleSlugs;
-    if (slugs.length === 0) return `<div class="hint">${this._t("editorNoVehiclesFound")}</div>`;
+  _vehicleCheckboxes(type, selected, slugs = this._availableVehicleSlugs, emptyKey = "editorNoVehiclesFound") {
+    if (slugs.length === 0) return `<div class="hint">${this._t(emptyKey)}</div>`;
     return slugs.map(slug => {
       const label = String(slug).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
       return `
@@ -161,6 +160,8 @@ export class EvccCardEditor extends HTMLElement {
     const showSiteDetails   = ["site", "flow"].includes(mode);
     const showStatsPeriod   = ["stats", "site", "flow", "grid"].includes(mode);
     const showVehicleFilter = mode === "repeatplan";
+    const showVehicles      = mode === "vehicle";
+    const selVehicles       = vehicleFilter(c) || [];
     const rplanVehicles     = Array.isArray(c.repeating_plan_vehicles) ? c.repeating_plan_vehicles : [];
     const instanceOptions   = this._instanceOptions();
     const disabledEntries   = this._disabledEntries();
@@ -203,6 +204,7 @@ export class EvccCardEditor extends HTMLElement {
       grid:      this._t("editorTitlePlaceholderGrid"),
       stats:     this._t("editorTitlePlaceholderStats"),
       battery:   this._t("editorTitlePlaceholderBattery"),
+      vehicle:   this._t("editorTitlePlaceholderVehicle"),
     }[mode] || this._t("editorTitlePlaceholderLoadpoint");
 
     const modeDesc = {
@@ -212,6 +214,7 @@ export class EvccCardEditor extends HTMLElement {
       flow:       this._t("editorModeDescFlow"),
       grid:       this._t("editorModeDescGrid"),
       battery:    this._t("editorModeDescBattery"),
+      vehicle:    this._t("editorModeDescVehicle"),
       stats:      this._t("editorModeDescStats"),
       plan:       this._t("editorModeDescPlan"),
       repeatplan: this._t("editorModeDescRepeatplan"),
@@ -249,6 +252,7 @@ export class EvccCardEditor extends HTMLElement {
             ["flow",      this._t("editorModeFlow")],
             ["grid",      this._t("editorModeGrid")],
             ["battery",   this._t("editorModeBattery")],
+            ["vehicle",   this._t("editorModeVehicle")],
             ["stats",     this._t("editorModeStats")],
             ["plan",      this._t("editorModePlan")],
             ["repeatplan",this._t("editorModeRepeatplan")],
@@ -314,6 +318,13 @@ export class EvccCardEditor extends HTMLElement {
           <div class="section-title">${this._t("editorVehicleFilterTitle")}</div>
           <div class="hint">${this._t("editorVehicleFilterHint")}</div>
           ${this._vehicleCheckboxes("repeating_plan_vehicles", rplanVehicles)}
+        </div>
+        ` : ""}
+        ${showVehicles ? `
+        <div class="field">
+          <div class="section-title">${this._t("editorVehicleFilterTitle")}</div>
+          <div class="hint">${this._t("editorVehicleFilterHint")}</div>
+          ${this._vehicleCheckboxes("vehicles", selVehicles, this._hass ? Object.keys(discoverVehicles(this._hass, this._getPrefix())).sort() : [], "editorVehiclesNoneFound")}
         </div>
         ` : ""}
         ${showNoPlan ? `
@@ -403,7 +414,7 @@ export class EvccCardEditor extends HTMLElement {
         this._config = {
           ...this._config,
           prefix: isDefault ? undefined : chosen,
-          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined,
+          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined, vehicles: undefined,
         };
         this._discoverLoadpoints();
         this._fire();

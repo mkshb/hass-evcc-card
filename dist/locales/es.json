@@ -320,5 +320,18 @@
   "editorDisabledLoadpointsHide": "Ocultar (predeterminado)",
   "editorDisabledLoadpointsDim": "Mostrar atenuado",
   "editorDisabledLoadpointsShow": "Mostrar normalmente",
-  "editorDisabledLoadpointsHint": "Cómo tratar los puntos de carga desactivados en la configuración de evcc (ha-evcc 2026.8.8+)."
+  "editorDisabledLoadpointsHint": "Cómo tratar los puntos de carga desactivados en la configuración de evcc (ha-evcc 2026.8.8+).",
+  "vehicleNotConnected": "No conectado",
+  "vehicleAtLoadpoint": "Punto de carga",
+  "vehicleExtDataHint": "El nivel de carga, la autonomía y el cuentakilómetros necesitan los datos ampliados del vehículo de la integración ha-evcc y los sensores del vehículo activados en Home Assistant.",
+  "vehicleNoData": "Sin datos actuales del vehículo.",
+  "vehicleUpdated": "Actualizado {val}",
+  "vehicleTotals": "Cargado en total",
+  "vehicleChargeDuration": "Tiempo de carga",
+  "noVehicles": "No se encontraron vehículos.",
+  "availableVehicles": "Vehículos disponibles: {list}",
+  "editorModeVehicle": "Vehículo (vehicle)",
+  "editorModeDescVehicle": "Un bloque por vehículo: nivel de carga, autonomía, cuentakilómetros, punto de carga, planes y totales.",
+  "editorTitlePlaceholderVehicle": "Por defecto: nombre del vehículo",
+  "editorVehiclesNoneFound": "No se encontraron vehículos"
 }
