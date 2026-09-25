@@ -1,5 +1,5 @@
 /* hass-evcc-card. Built from src/ with Rollup; edit the sources, not this file. */
-const EVCC_CARD_VERSION = "0.8.5";
+const EVCC_CARD_VERSION = "0.8.6";
 
 const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -271,6 +271,25 @@ const HIDEABLE_SETTINGS = [
   ["smart_feed_in_priority_limit", "feedInPriorityLimit"],
 ];
 
+// ha-evcc entities that are created disabled in the entity registry although a
+// control of the loadpoint card depends on them. While one of them is off, the
+// loadpoint header shows a warning triangle to administrators (unless
+// `hide_disabled_hint`), and the debug view and the editor offer to enable it.
+//   hide:   the hide_settings key that drops the control, and the triangle with it
+//   needs:  the control only exists next to this entity, enabled or disabled
+//   energy: only while the vehicle charges by energy instead of SoC
+//   what:   translation key naming what the card is missing
+const DISABLED_NEEDED = [
+  { domain: "button", suffix: "smart_cost_limit",             hide: "smart_cost_limit",             needs: "number.smart_cost_limit",             what: "disabledWhatSmartCostClear" },
+  { domain: "number", suffix: "smart_feed_in_priority_limit", hide: "smart_feed_in_priority_limit",                                               what: "disabledWhatFeedIn" },
+  { domain: "button", suffix: "smart_feed_in_priority_limit", hide: "smart_feed_in_priority_limit", needs: "number.smart_feed_in_priority_limit", what: "disabledWhatFeedInClear" },
+  { domain: "number", suffix: "limit_energy",                 hide: "limit_soc",                    energy: true,                                   what: "disabledWhatLimitEnergy" },
+  { domain: "sensor", suffix: "phase_action",                 needs: "select.phases_configured",                                              what: "disabledWhatPhaseAction" },
+  { domain: "sensor", suffix: "charge_currents_0",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
+  { domain: "sensor", suffix: "charge_currents_1",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
+  { domain: "sensor", suffix: "charge_currents_2",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
+];
+
 const CHARGE_MODES = {
   "off":   { icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M13,3H11V13H13V3M17.83,5.17L16.41,6.59C17.99,7.86 19,9.81 19,12A7,7 0 0,1 12,19A7,7 0 0,1 5,12C5,9.81 6.01,7.86 7.58,6.58L6.17,5.17C4.23,6.82 3,9.26 3,12A9,9 0 0,0 12,21A9,9 0 0,0 21,12C21,9.26 19.77,6.82 17.83,5.17Z"/></svg>`,  tKey: "modeOff"  },
   // 'smart' replaces 'pv'/'minpv' with evcc PR 32490 (ha-evcc 2026.8.3+).
@@ -337,11 +356,15 @@ function sitePrefixOf(entityId) {
 // one installation while asking the other one for forecast, sessions and plan
 // previews. `preferredPrefix` is the card's configured prefix, which decides
 // which instance is meant; without it the first entry in the registry wins.
+// `disabled` lists the ha-evcc entities switched off in the registry: they have
+// no state, and hass.entities leaves them out, so only this call tells a
+// disabled entity from one the integration never created.
 async function detectIntegration(hass, preferredPrefix = null) {
   try {
     const entities = await hass.callWS({ type: "config/entity_registry/list" });
     const evccEnts = entities.filter(e => e.platform === "evcc_intg");
-    if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null, instances: [] };
+    if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null, instances: [], disabled: [] };
+    const disabled = evccEnts.filter(e => e.disabled_by).map(e => e.entity_id);
 
     // One group per config entry, in registry order; the prefix of a group comes
     // from its own first site entity.
@@ -355,11 +378,36 @@ async function detectIntegration(hass, preferredPrefix = null) {
 
     const instances = [...byEntry.values()].map(g => ({ prefix: g.prefix ?? "evcc_", entryId: g.entryId }));
     const chosen = (preferredPrefix && instances.find(i => i.prefix === preferredPrefix)) || instances[0];
-    return { prefix: chosen.prefix, entryId: chosen.entryId, instances };
+    return { prefix: chosen.prefix, entryId: chosen.entryId, instances, disabled };
   } catch (e) {
     console.warn("[evcc-card] Could not detect integration from entity registry:", e);
-    return { prefix: "evcc_", entryId: null, instances: [] };
+    return { prefix: "evcc_", entryId: null, instances: [], disabled: [] };
   }
+}
+
+// The disabled ha-evcc entities of one installation that the card would use,
+// out of detectIntegration()'s `disabled`: their id matches a DISABLED_NEEDED
+// or a FEATURES entry. `owner` is what sits between prefix and feature (a
+// loadpoint or vehicle name, empty for the site), `need` the DISABLED_NEEDED
+// entry when a control depends on the entity. One that has a state by now was
+// enabled since the registry was read and is left out. Needed ones first.
+function disabledCardEntities(hass, disabled, prefix = "evcc_") {
+  const foreign = installedPrefixes(hass).filter(p => p.length > prefix.length && p.startsWith(prefix));
+  const candidates = [...DISABLED_NEEDED, ...SORTED_FEATURES];
+  const out = [];
+  for (const id of disabled || []) {
+    if (hass?.states?.[id]) continue;
+    const dotIdx = id.indexOf(".");
+    const domain = id.slice(0, dotIdx);
+    const slug   = id.slice(dotIdx + 1);
+    if (!slug.startsWith(prefix) || foreign.some(p => slug.startsWith(p))) continue;
+    const rest = slug.slice(prefix.length);
+    const hit  = candidates.find(f => f.domain === domain && (rest === f.suffix || rest.endsWith("_" + f.suffix)));
+    if (!hit) continue;
+    const owner = rest === hit.suffix ? "" : rest.slice(0, rest.length - hit.suffix.length - 1);
+    out.push({ id, owner, suffix: hit.suffix, need: owner && DISABLED_NEEDED.includes(hit) ? hit : null });
+  }
+  return out.sort((a, b) => (!!b.need - !!a.need) || a.id.localeCompare(b.id));
 }
 
 // Backwards-compatible thin wrapper: the editor only needs the prefix.
@@ -759,6 +807,25 @@ function fmtDuration(seconds) {
   return `${m} min`;
 }
 
+// A point in time as a short clock reading: "02:00" today, "Sa., 07:00" within
+// the next days, "26.09., 07:00" from six days on, where a weekday would read
+// like this week's. Empty for anything that is not a date.
+function fmtClock(iso, lang = "en") {
+  if (!iso || iso === "unknown" || iso === "unavailable") return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const midnight = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((midnight(d) - midnight(new Date())) / 86400000);
+  const time = { hour: "2-digit", minute: "2-digit" };
+  try {
+    return d.toLocaleString(lang, days === 0 ? time
+      : days > 0 && days < 6 ? { weekday: "short", ...time }
+      : { day: "2-digit", month: "2-digit", ...time });
+  } catch (e) {
+    return "";
+  }
+}
+
 function fmtRemainingDuration(hass, entityId) {
   if (!entityId || !hass) return "";
   const raw = parseFloat(stateVal(hass, entityId));
@@ -822,6 +889,11 @@ function socTrackBg(minSoc, limitSoc) {
   return `linear-gradient(to right, ${stops.join(", ")})`;
 }
 
+// Part of every locale URL next to the card version: a hash over the locale
+// files, stamped in by the build (rollup.config.mjs). HA lets the browser cache
+// them for a month, so changed texts need a URL of their own.
+const LOCALES_VERSION = `${EVCC_CARD_VERSION}-5b0c61a4`;
+
 /* ── Shared translation cache (used by both EvccCard and EvccCardEditor) ── */
 let _sharedTranslations = {};
 let _sharedTranslationsReady = false;
@@ -835,7 +907,7 @@ async function loadSharedTranslations() {
     const base = new URL("locales/", import.meta.url).href;
     let langs = ["de", "en"];
     try {
-      const idxResp = await fetch(`${base}index.json?v=${EVCC_CARD_VERSION}`);
+      const idxResp = await fetch(`${base}index.json?v=${LOCALES_VERSION}`);
       if (idxResp.ok) langs = await idxResp.json();
       else console.warn("[evcc-card] locales/index.json not found, using fallback:", langs);
     } catch (e) {
@@ -843,7 +915,7 @@ async function loadSharedTranslations() {
     }
     const results = await Promise.allSettled(
       langs.map(lang =>
-        fetch(`${base}${lang}.json?v=${EVCC_CARD_VERSION}`)
+        fetch(`${base}${lang}.json?v=${LOCALES_VERSION}`)
           .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
           .then(data => ({ lang, data }))
       )
@@ -869,6 +941,14 @@ function sharedTranslationsReady() { return _sharedTranslationsReady; }
 // answered: ha-evcc bundles evcc updates for up to two seconds, HA and the
 // card's own debounce add a little.
 const EXPECT_MS = 6000;
+
+// Switches a disabled ha-evcc entity on in the entity registry (admins only,
+// HA refuses everyone else). HA answers with `reload_delay` when it reloads the
+// integration on its own after that many seconds, or `require_restart`. A plain
+// function, since the editor enables entities as well and has no mixins.
+function enableEntity(hass, entityId) {
+  return hass.callWS({ type: "config/entity_registry/update", entity_id: entityId, disabled_by: null });
+}
 
 // Every write the card sends to Home Assistant. Methods are mixed into EvccCard.prototype.
 const actions = {
@@ -924,6 +1004,10 @@ const actions = {
 
   _pressButton(entityId) {
     return this._hass.callService("button", "press", { entity_id: entityId });
+  },
+
+  _enableEntity(entityId) {
+    return enableEntity(this._hass, entityId);
   },
 
   // ── ha-evcc plan services ───────────────────────────────────────────────
@@ -1212,12 +1296,13 @@ const loadpointView = {
       <div class="loadpoint">
         <div class="lp-header">
           <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
+          ${this._renderDisabledWarn(ents, lpName)}
           ${remaining ? `<span class="lp-remaining" title="${this._t("remaining")}"${moreInfo(ents.charge_remaining_duration)}>${remaining}</span>` : ""}
           <span class="lp-badge ${statusClass}"${moreInfo(charging ? ents.charging : ents.connected)}>
             ${statusLabel}
           </span>
         </div>
-        ${this._renderActionIndicator(ents)}
+        ${this._renderActionIndicator(ents, lpName, noPlan)}
         ${this._renderModeSelector(ents, noPv)}
         ${this._renderVehicleInfo(ents, charging, lpName)}
         ${this._renderPowerRow(ents, charging)}
@@ -1284,12 +1369,13 @@ const loadpointView = {
       <div class="loadpoint" data-lp-compact="${escAttr(lpName)}">
         <div class="lp-header">
           <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
+          ${this._renderDisabledWarn(ents, lpName)}
           ${remaining ? `<span class="lp-remaining" title="${this._t("remaining")}"${moreInfo(ents.charge_remaining_duration)}>${remaining}</span>` : ""}
           <span class="lp-badge ${statusClass}"${moreInfo(charging ? ents.charging : ents.connected)}>
             ${statusLabel}
           </span>
         </div>
-        ${this._renderActionIndicator(ents)}
+        ${this._renderActionIndicator(ents, lpName, noPlan)}
         ${tabBar}
         ${tabContent}
       </div>
@@ -1339,18 +1425,34 @@ const loadpointView = {
     return this._phaseTargets[entityId].iso;
   },
 
-  _renderActionIndicator(ents) {
+  // Lights up the block a chip jumped to. An animation rather than a class: the
+  // morph strips every class the template does not render, so the next evcc
+  // update (about every two seconds) would cut a class-driven one short.
+  _flash(el) {
+    const color = getComputedStyle(el).getPropertyValue("--primary-color").trim() || "#03a9f4";
+    const lit   = `color-mix(in srgb, ${color} 15%, transparent)`;
+    el.animate?.([
+      { background: "transparent", borderRadius: "6px" },
+      { background: lit, borderRadius: "6px", offset: 0.4 },
+      { background: "transparent", borderRadius: "6px" },
+    ], { duration: 1500, easing: "ease" });
+  },
+
+  _renderActionIndicator(ents, lpName = "", noPlan = false) {
     const flashIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M11 15H6L13 1V9H18L11 23V15Z"/></svg>`;
     const sunIcon   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z"/></svg>`;
 
-    const fmtCountdown = (sec) => {
-      const n = Math.max(0, Math.round(parseFloat(sec)));
-      if (isNaN(n) || n <= 0) return "";
-      if (n < 60) return `${n}s`;
-      return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
-    };
-
+    // Every chip carries its own data-key: they share one class name, and the
+    // morph would otherwise build a chip out of the one that left before it,
+    // role and click listener included.
     const chips = [];
+
+    // What drives the loadpoint right now comes first, as in evcc's vehicle
+    // status: the charge plan, then the minimum charge.
+    const planChip = noPlan ? "" : this._renderPlanHint(ents, lpName);
+    if (planChip) chips.push(planChip);
+    const minChip = this._renderMinSocHint(ents);
+    if (minChip) chips.push(minChip);
 
     if (ents.phase_action && this._hass.states[ents.phase_action]) {
       const state = stateVal(this._hass, ents.phase_action);
@@ -1358,13 +1460,12 @@ const loadpointView = {
         const key    = state === "scale1p" ? "phaseActionScale1p" : "phaseActionScale3p";
         const raw    = ents.phase_remaining ? stateVal(this._hass, ents.phase_remaining) : "";
         const target = ents.phase_remaining ? this._phaseTargetISO(ents.phase_remaining, raw) : null;
-        const span   = target
-          ? `<span data-countdown-target="${target}" data-countdown-label="${key}">${this._t(key, { val: fmtCountdownFromISO(target) || "—" })}</span>`
-          : `<span>${this._t(key, { val: fmtCountdown(raw) || "—" })}</span>`;
-        chips.push(`
-          <div class="lp-action-chip phase">
+        const cd     = target ? fmtCountdownFromISO(target) : "";
+        // Like evcc, the chip shows only while there is time left to count down.
+        if (cd) chips.push(`
+          <div class="lp-action-chip phase" data-key="phase">
             ${flashIcon}
-            ${span}
+            <span data-countdown-target="${target}" data-countdown-label="${key}">${this._t(key, { val: cd })}</span>
           </div>`);
       }
     }
@@ -1375,23 +1476,23 @@ const loadpointView = {
         const ts  = ents.pv_remaining ? (stateVal(this._hass, ents.pv_remaining) || "") : "";
         const cd  = fmtCountdownFromTimestamp(this._hass, ents.pv_remaining);
         const key = state === "enable" ? "pvActionEnable" : "pvActionDisable";
-        chips.push(`
-          <div class="lp-action-chip pv">
+        if (cd) chips.push(`
+          <div class="lp-action-chip pv" data-key="pv">
             ${sunIcon}
-            <span data-countdown-target="${ts}" data-countdown-label="${key}">${this._t(key, { val: cd || "—" })}</span>
+            <span data-countdown-target="${ts}" data-countdown-label="${key}">${this._t(key, { val: cd })}</span>
           </div>`);
       }
     }
 
     const vehicleStatuses = [
-      { key: "vehicle_detection_active", label: "vehicleDetectionActive", icon: "M9.61 16.11C9.61 14.03 10.59 12.19 12.1 11H5L6.5 6.5H17.5L18.72 10.16C19.56 10.53 20.3 11.07 20.91 11.74L18.92 6C18.72 5.42 18.16 5 17.5 5H6.5C5.84 5 5.28 5.42 5.08 6L3 12V20C3 20.55 3.45 21 4 21H5C5.55 21 6 20.55 6 20V19H10.29C9.86 18.13 9.61 17.15 9.61 16.11M6.5 16C5.67 16 5 15.33 5 14.5S5.67 13 6.5 13 8 13.67 8 14.5 7.33 16 6.5 16M20.71 20.7L20.7 20.71L20.71 20.7M16.11 11.61C18.61 11.61 20.61 13.61 20.61 16.11C20.61 17 20.36 17.82 19.92 18.5L23 21.61L21.61 23L18.5 19.93C17.8 20.36 17 20.61 16.11 20.61C13.61 20.61 11.61 18.61 11.61 16.11S13.61 11.61 16.11 11.61M16.11 13.61C14.73 13.61 13.61 14.73 13.61 16.11S14.73 18.61 16.11 18.61 18.61 17.5 18.61 16.11 17.5 13.61 16.11 13.61" },
-      { key: "vehicle_climater_active",  label: "vehicleClimaterActive",  icon: "M12,11A1,1 0 0,0 11,12A1,1 0 0,0 12,13A1,1 0 0,0 13,12A1,1 0 0,0 12,11M12.5,2C17,2 17.11,5.57 14.75,6.75C13.76,7.24 13.32,8.29 13.13,9.22C13.61,9.42 14.03,9.73 14.35,10.13C18.05,8.13 22.03,8.92 22.03,12.5C22.03,17 18.46,17.1 17.28,14.73C16.78,13.74 15.72,13.3 14.79,13.11C14.59,13.59 14.28,14 13.88,14.34C15.87,18.03 15.08,22 11.5,22C7,22 6.91,18.42 9.27,17.24C10.25,16.75 10.69,15.71 10.89,14.79C10.4,14.59 9.97,14.27 9.65,13.87C5.96,15.85 2,15.07 2,11.5C2,7 5.56,6.89 6.74,9.26C7.24,10.25 8.29,10.68 9.22,10.87C9.41,10.39 9.73,9.97 10.14,9.65C8.15,5.96 8.94,2 12.5,2Z" },
-      { key: "vehicle_welcome_active",   label: "vehicleWelcomeActive",   icon: "M22,12V20A2,2 0 0,1 20,22H4A2,2 0 0,1 2,20V12A1,1 0 0,1 1,11V8A2,2 0 0,1 3,6H6.17C6.06,5.69 6,5.35 6,5A3,3 0 0,1 9,2C10,2 10.88,2.5 11.43,3.24V3.23L12,4L12.57,3.23V3.24C13.12,2.5 14,2 15,2A3,3 0 0,1 18,5C18,5.35 17.94,5.69 17.83,6H21A2,2 0 0,1 23,8V11A1,1 0 0,1 22,12M4,20H11V12H4V20M20,20V12H13V20H20M9,4A1,1 0 0,0 8,5A1,1 0 0,0 9,6A1,1 0 0,0 10,5A1,1 0 0,0 9,4M15,4A1,1 0 0,0 14,5A1,1 0 0,0 15,6A1,1 0 0,0 16,5A1,1 0 0,0 15,4M3,8V10H11V8H3M13,8V10H21V8H13Z" },
+      { key: "vehicle_detection_active", chip: "detection", label: "vehicleDetectionActive", icon: "M9.61 16.11C9.61 14.03 10.59 12.19 12.1 11H5L6.5 6.5H17.5L18.72 10.16C19.56 10.53 20.3 11.07 20.91 11.74L18.92 6C18.72 5.42 18.16 5 17.5 5H6.5C5.84 5 5.28 5.42 5.08 6L3 12V20C3 20.55 3.45 21 4 21H5C5.55 21 6 20.55 6 20V19H10.29C9.86 18.13 9.61 17.15 9.61 16.11M6.5 16C5.67 16 5 15.33 5 14.5S5.67 13 6.5 13 8 13.67 8 14.5 7.33 16 6.5 16M20.71 20.7L20.7 20.71L20.71 20.7M16.11 11.61C18.61 11.61 20.61 13.61 20.61 16.11C20.61 17 20.36 17.82 19.92 18.5L23 21.61L21.61 23L18.5 19.93C17.8 20.36 17 20.61 16.11 20.61C13.61 20.61 11.61 18.61 11.61 16.11S13.61 11.61 16.11 11.61M16.11 13.61C14.73 13.61 13.61 14.73 13.61 16.11S14.73 18.61 16.11 18.61 18.61 17.5 18.61 16.11 17.5 13.61 16.11 13.61" },
+      { key: "vehicle_climater_active",  chip: "climater",  label: "vehicleClimaterActive",  icon: "M12,11A1,1 0 0,0 11,12A1,1 0 0,0 12,13A1,1 0 0,0 13,12A1,1 0 0,0 12,11M12.5,2C17,2 17.11,5.57 14.75,6.75C13.76,7.24 13.32,8.29 13.13,9.22C13.61,9.42 14.03,9.73 14.35,10.13C18.05,8.13 22.03,8.92 22.03,12.5C22.03,17 18.46,17.1 17.28,14.73C16.78,13.74 15.72,13.3 14.79,13.11C14.59,13.59 14.28,14 13.88,14.34C15.87,18.03 15.08,22 11.5,22C7,22 6.91,18.42 9.27,17.24C10.25,16.75 10.69,15.71 10.89,14.79C10.4,14.59 9.97,14.27 9.65,13.87C5.96,15.85 2,15.07 2,11.5C2,7 5.56,6.89 6.74,9.26C7.24,10.25 8.29,10.68 9.22,10.87C9.41,10.39 9.73,9.97 10.14,9.65C8.15,5.96 8.94,2 12.5,2Z" },
+      { key: "vehicle_welcome_active",   chip: "welcome",   label: "vehicleWelcomeActive",   icon: "M22,12V20A2,2 0 0,1 20,22H4A2,2 0 0,1 2,20V12A1,1 0 0,1 1,11V8A2,2 0 0,1 3,6H6.17C6.06,5.69 6,5.35 6,5A3,3 0 0,1 9,2C10,2 10.88,2.5 11.43,3.24V3.23L12,4L12.57,3.23V3.24C13.12,2.5 14,2 15,2A3,3 0 0,1 18,5C18,5.35 17.94,5.69 17.83,6H21A2,2 0 0,1 23,8V11A1,1 0 0,1 22,12M4,20H11V12H4V20M20,20V12H13V20H20M9,4A1,1 0 0,0 8,5A1,1 0 0,0 9,6A1,1 0 0,0 10,5A1,1 0 0,0 9,4M15,4A1,1 0 0,0 14,5A1,1 0 0,0 15,6A1,1 0 0,0 16,5A1,1 0 0,0 15,4M3,8V10H11V8H3M13,8V10H21V8H13Z" },
     ];
     for (const vs of vehicleStatuses) {
       if (ents[vs.key] && isOn(this._hass, ents[vs.key])) {
         chips.push(`
-          <div class="lp-action-chip vehicle">
+          <div class="lp-action-chip vehicle" data-key="${vs.chip}">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="${vs.icon}"/></svg>
             <span>${this._t(vs.label)}</span>
           </div>`);
@@ -1399,6 +1500,61 @@ const loadpointView = {
     }
 
     return chips.length ? `<div class="lp-action-row">${chips.join("")}</div>` : "";
+  },
+
+  // The charge plan in one line, so it shows without scrolling to the plan block
+  // (or, in compact mode, switching to its tab): when it starts, or until when it
+  // runs, and a warning when evcc projects the end after the target time. A tap
+  // jumps to the plan block, so the chip shows only where that block is drawn.
+  // A start that has passed without the plan running is a stale value (vehicle
+  // unplugged); unlike evcc, the chip does not announce it.
+  _renderPlanHint(ents, lpName) {
+    if (!this._hasPlanBlock(ents)) return "";
+    const date   = (id) => id ? evccDate(stateVal(this._hass, id)) : null;
+    const active = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
+    const start  = date(ents.plan_projected_start);
+    const end    = date(ents.plan_projected_end);
+    const target = date(ents.effective_plan_time);
+    if (active ? !end : !start || start.getTime() <= Date.now()) return "";
+
+    const lang    = this._config.language || this._hass?.language || "en";
+    // evcc's planTimeUnreachable: the projected end lies after the target time.
+    // A minute of slack keeps rounding in evcc's projection from raising it.
+    const overrun = end && target ? (end.getTime() - target.getTime()) / 1000 : 0;
+    const late    = overrun >= 60;
+    const text    = late
+      ? this._t("planHintLate", { overrun: fmtDuration(overrun) })
+      : active
+        ? this._t("planHintActive", { time: fmtClock(end.toISOString(), lang) })
+        : this._t("planHintStart", { time: fmtClock(start.toISOString(), lang) });
+    const icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19,3H18V1H16V3H8V1H6V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M19,19H5V8H19V19Z"/></svg>`;
+    // A start that passes without a render in between is hidden by the
+    // countdown tick, see _tickCountdowns.
+    const until = active ? "" : ` data-hide-after="${start.toISOString()}"`;
+    return `
+          <div class="lp-action-chip plan${late ? " late" : ""}" data-key="plan" data-lp-plan-open="${escAttr(lpName)}"${until}>
+            ${icon}
+            <span>${escHtml(text)}</span>
+          </div>`;
+  },
+
+  // evcc charges to the minimum SoC first in every mode but Off (the Off case
+  // comes first in core/loadpoint.go); evcc's minSocNotReached while a vehicle
+  // is connected. SoC 0 is evcc's "no value". evcc's own status shows the hint
+  // in Off as well; here it stays away there, as nothing gets charged.
+  _renderMinSocHint(ents) {
+    if (!ents.min_soc || !ents.vehicle_soc || this._isHeatingLoadpoint(ents)) return "";
+    if (ents.mode && stateVal(this._hass, ents.mode) === "off") return "";
+    const connected = ents.connected ? isOn(this._hass, ents.connected) : false;
+    const minSoc    = parseFloat(stateVal(this._hass, ents.min_soc));
+    const soc       = parseFloat(stateVal(this._hass, ents.vehicle_soc));
+    if (!connected || !(minSoc > 0) || !(soc > 0) || soc >= minSoc) return "";
+    const icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M16,20H8V6H16M16.67,4H15V2H9V4H7.33A1.33,1.33 0 0,0 6,5.33V20.67C6,21.4 6.6,22 7.33,22H16.67A1.33,1.33 0 0,0 18,20.67V5.33C18,4.6 17.4,4 16.67,4M11,18H13V16H11V18M11,9V14H13V9H11Z"/></svg>`;
+    return `
+          <div class="lp-action-chip minsoc" data-key="minsoc"${moreInfo(ents.min_soc)}>
+            ${icon}
+            <span>${escHtml(this._t("minSocHint", { soc: `${Math.round(minSoc)} %` }))}</span>
+          </div>`;
   },
 
   _renderModeSelector(ents, hidePv = false) {
@@ -1545,8 +1701,10 @@ const loadpointView = {
     const fillBg  = soc !== null ? socFillGradient(soc, minSoc ?? 0, limit ?? 100) : "var(--evcc-blue)";
     const trackBg = socTrackBg(minSoc ?? 0, limit ?? 100);
 
-    const _rawLimit  = ents.smart_cost_limit ? parseFloat(stateVal(this._hass, ents.smart_cost_limit)) : NaN;
-    const smartLimit = ents.smart_cost_limit && !isNaN(_rawLimit) ? _rawLimit : null;
+    // Like the slider, the chip needs the clear button (see _limitClear).
+    const offered    = !!ents.smart_cost_limit && !!this._limitClear(ents.smart_cost_limit);
+    const _rawLimit  = offered ? parseFloat(stateVal(this._hass, ents.smart_cost_limit)) : NaN;
+    const smartLimit = offered && !isNaN(_rawLimit) ? _rawLimit : null;
     const smartUnit  = smartLimit !== null
       ? (attr(this._hass, ents.smart_cost_limit, "unit_of_measurement") ?? "") : "";
     const isCo2Chip  = smartUnit === "g/kWh";
@@ -1610,7 +1768,8 @@ const loadpointView = {
     const power = parseFloat(stateVal(this._hass, ents.charge_power)).toFixed(1);
     const unit  = unitStr(this._hass, ents.charge_power);
 
-    // Phasenstrom-Sensoren (echte Messwerte, standardmäßig deaktiviert)
+    // Phase current sensors (measured values). ha-evcc creates them disabled;
+    // while they are off the warning triangle points at them (DISABLED_NEEDED).
     const hasPhaseCurrents = ents.charge_currents_0 || ents.charge_currents_1 || ents.charge_currents_2;
     const phaseCurrents = hasPhaseCurrents
       ? [0, 1, 2].map(i => {
@@ -1621,7 +1780,7 @@ const loadpointView = {
         })
       : null;
 
-    // Fallback: offeredCurrent (wenn keine Phasenstrom-Sensoren vorhanden)
+    // Fallback: offeredCurrent (without phase current sensors)
     const current = !hasPhaseCurrents && ents.charge_current
       ? stateVal(this._hass, ents.charge_current) : null;
 
@@ -1638,11 +1797,6 @@ const loadpointView = {
       ? activePhases.map(v => Math.round(v)).join(" / ") + " A"
       : null;
 
-    // Show hint when offeredCurrent is displayed (no phase current entities available).
-    const hint = current !== null
-      ? `<div class="power-currents-hint">${this._t("phaseCurrentsHint")}</div>`
-      : "";
-
     return `
       <div class="power-row ${charging ? "charging" : ""}">
         <span class="power-value"
@@ -1653,7 +1807,6 @@ const loadpointView = {
         ${current !== null ? `<span class="power-sep">·</span><span class="power-current"${moreInfo(ents.charge_current)}>${current} A</span>` : ""}
         ${phasesLabel !== null ? `<span class="power-sep">·</span><span class="power-phases"${moreInfo(ents.phases_active)}>${phasesLabel}</span>` : ""}
       </div>
-      ${hint}
     `;
   },
 
@@ -1811,9 +1964,22 @@ const loadpointView = {
         const section = block.querySelector(`[data-lp-smart-cost-section="${lpName}"]`);
         if (section) {
           section.scrollIntoView({ behavior: "smooth", block: "nearest" });
-          section.classList.add("smart-cost-highlight");
-          setTimeout(() => section.classList.remove("smart-cost-highlight"), 1500);
+          this._flash(section);
         }
+      });
+    });
+
+    this._fresh("[data-lp-plan-open]").forEach(chip => {
+      chip.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const lpName = chip.dataset.lpPlanOpen;
+        // compact mode: the plan sits in its own tab, switch to it
+        const tab = chip.closest("[data-lp-compact]")?.querySelector('button.compact-tab[data-tab="2"]');
+        if (tab && !tab.classList.contains("active")) tab.click();
+        const block = [...this.shadowRoot.querySelectorAll(".plan-block")].find(b => b.dataset.lp === lpName);
+        if (!block) return;
+        block.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        this._flash(block);
       });
     });
 
@@ -1923,6 +2089,7 @@ const loadpointCss = `
       .lp-badge.disabled  { color: var(--evcc-gray);   background: color-mix(in srgb, var(--evcc-gray)   15%, transparent); }
       .loadpoint.lp-disabled { opacity: 0.55; }
       .lp-action-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+      .lp-action-row[hidden], .lp-action-chip[hidden] { display: none; }
       .lp-action-chip {
         display: inline-flex; align-items: center; gap: 4px;
         padding: 3px 8px; border-radius: 999px;
@@ -1933,6 +2100,9 @@ const loadpointCss = `
       .lp-action-chip svg { width: 14px; height: 14px; flex: 0 0 14px; }
       .lp-action-chip.phase { color: var(--evcc-bolt, #ffae00); border-color: color-mix(in srgb, var(--evcc-bolt, #ffae00) 50%, transparent); background: color-mix(in srgb, var(--evcc-bolt, #ffae00) 10%, transparent); }
       .lp-action-chip.pv    { color: var(--evcc-green, #0a0);  border-color: color-mix(in srgb, var(--evcc-green, #0a0)  50%, transparent); background: color-mix(in srgb, var(--evcc-green, #0a0)  10%, transparent); }
+      .lp-action-chip.plan  { color: var(--info-color, #2196f3); border-color: color-mix(in srgb, var(--info-color, #2196f3) 50%, transparent); background: color-mix(in srgb, var(--info-color, #2196f3) 10%, transparent); cursor: pointer; }
+      .lp-action-chip.plan.late, .lp-action-chip.minsoc { color: var(--warning-color, #ff9800); border-color: color-mix(in srgb, var(--warning-color, #ff9800) 50%, transparent); background: color-mix(in srgb, var(--warning-color, #ff9800) 10%, transparent); }
+      .lp-action-chip.minsoc { cursor: pointer; }
       .lp-action-chip.vehicle { color: var(--info-color, #2196f3); border-color: color-mix(in srgb, var(--info-color, #2196f3) 50%, transparent); background: color-mix(in srgb, var(--info-color, #2196f3) 10%, transparent); }
       .lp-remaining {
         font-size: .85em; color: var(--secondary-text-color);
@@ -1996,7 +2166,6 @@ const loadpointCss = `
       .power-sep { font-size: .8rem; color: var(--secondary-text-color); align-self: flex-end; padding-bottom: .2rem; }
       .power-current { font-size: .82rem; align-self: flex-end; padding-bottom: .2rem; }
       .power-phases  { font-size: .82rem; align-self: flex-end; padding-bottom: .2rem; }
-      .power-currents-hint { font-size: .72rem; color: var(--secondary-text-color, #757575); margin-top: 2px; opacity: .8; }
 
       .toggles { margin-bottom: 10px; }
       .toggle-row { display: flex; justify-content: space-between; align-items: center; font-size: .83rem; margin-bottom: 6px; flex-wrap: wrap; gap: 4px; }
@@ -2044,14 +2213,23 @@ const socControl = {
     return Array.isArray(h) && h.includes(key);
   },
 
+  // A limit, once set, only goes away again through its clear button, which
+  // ha-evcc creates disabled. The card offers the limit only with that button
+  // and returns its id; null while it is missing. Whether it sits disabled in
+  // the registry is for the warning triangle (disabled-entities.js).
+  _limitClear(limitId) {
+    const id = limitId.replace(/^number\./, "button.");
+    return this._hass.states[id] ? id : null;
+  },
+
   _renderCurrentBlock(ents, lpName = "") {
     const hide          = k => this._isSettingHidden(k);
     const hasPhases     = !!ents.phases_configured && !hide("phases");
     const hasMaxCurrent = !!ents.max_current && !hide("max_current");
     const hasMinCurrent = !!ents.min_current && !hide("min_current");
     const hasCurrent    = hasMaxCurrent || hasMinCurrent;
-    const hasSmartCost  = !!ents.smart_cost_limit && !hide("smart_cost_limit");
-    const hasFeedIn     = !!ents.smart_feed_in_priority_limit && !hide("smart_feed_in_priority_limit");
+    const hasSmartCost  = !!ents.smart_cost_limit && !hide("smart_cost_limit") && !!this._limitClear(ents.smart_cost_limit);
+    const hasFeedIn     = !!ents.smart_feed_in_priority_limit && !hide("smart_feed_in_priority_limit") && !!this._limitClear(ents.smart_feed_in_priority_limit);
     const hasPriority   = !!ents.priority && !hide("priority");
     const hasBoost      = !!ents.battery_boost_limit && !hide("battery_boost");
     // Everything hidden or missing: no block, no gear button.
@@ -2116,12 +2294,11 @@ const socControl = {
             const scTariffId = isCo2 ? `sensor.${this._getPrefix()}tariff_co2` : `sensor.${this._getPrefix()}tariff_grid`;
             const scTariff   = parseFloat(this._hass.states[scTariffId]?.state ?? "NaN");
             const active     = !isNaN(scTariff) && scTariff <= parseFloat(stateVal(this._hass, ents.smart_cost_limit) || 0);
-            const clearId   = ents.smart_cost_limit.replace(/^number\./, "button.");
-            const hasClear  = !!this._hass.states[clearId];
+            const clearId    = this._limitClear(ents.smart_cost_limit);
             return `<div class="smart-cost-section" data-lp-smart-cost-section="${escAttr(lpName)}">` +
               this._sliderRow(ents.smart_cost_limit, label) +
               (active ? `<div class="smart-active-hint">⚡ ${this._t("smartCostActive")}</div>` : "") +
-              (hasClear ? `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` : "") +
+              `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` +
               `</div>`;
           })() : ""}
           ${hasSmartCost && hasFeedIn ? `<hr class="settings-divider">` : ""}
@@ -2134,12 +2311,11 @@ const socControl = {
             const active     = ents.smart_feed_in_priority_active
               ? isOn(this._hass, ents.smart_feed_in_priority_active)
               : false;
-            const clearId   = ents.smart_feed_in_priority_limit.replace(/^number\./, "button.");
-            const hasClear  = !!this._hass.states[clearId];
+            const clearId = this._limitClear(ents.smart_feed_in_priority_limit);
             return `<div class="smart-cost-section" data-lp-feed-in-section="${escAttr(lpName)}">` +
               this._sliderRow(ents.smart_feed_in_priority_limit, this._t("feedInPriorityLimit")) +
               (active ? `<div class="smart-active-hint">⚡ ${this._t("feedInPriorityActive")}</div>` : "") +
-              (hasClear ? `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` : "") +
+              `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` +
               `</div>`;
           })() : ""}
         </div>
@@ -2590,8 +2766,6 @@ const sliderCss = `
       .smart-cost-chip.active { color: var(--evcc-green); }
       .smart-cost-chip.active:hover { color: var(--evcc-green); filter: brightness(1.2); }
       .settings-divider { border: none; border-top: 1px solid var(--divider-color, #e5e7eb); margin: 8px 0; }
-      @keyframes smart-cost-pulse { 0%,100% { background: transparent; } 40% { background: color-mix(in srgb, var(--primary-color) 15%, transparent); } }
-      .smart-cost-highlight { border-radius: 6px; animation: smart-cost-pulse 1.5s ease; }
 
       .current-block {
         border-top: 1px solid var(--divider-color, #333);
@@ -2628,10 +2802,199 @@ const sliderCss = `
       button.phase-btn.active, button.pill-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
 `;
 
+// Entities ha-evcc creates disabled although the card would use them. The card
+// marks a loadpoint whose controls miss one of them with a warning triangle in
+// its header; the list itself, with the switch that enables an entity, sits in
+// the debug view and in the editor. Both render it through
+// disabledEntitiesHtml(), the editor has no mixins.
+
+const WARN_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M13,14H11V10H13M13,18H11V16H13M1,21H23L12,2L1,21Z"/></svg>`;
+
+// Enables `entries` one registry update each and notes the outcome per entity
+// id in `enabling`: pending while the call runs, then the reload HA announced,
+// a required restart or the error. HA reloads ha-evcc once for a burst of
+// updates, its delay starts over with each of them. `changed` re-renders.
+function enableEntities(enable, entries, enabling, changed) {
+  for (const e of entries) enabling[e.id] = { status: "pending" };
+  changed();
+  return Promise.all(entries.map(e => enable(e.id).then(
+    res => { enabling[e.id] = res?.require_restart ? { status: "restart" } : { status: "reload", sec: res?.reload_delay ?? 30 }; },
+    err => { enabling[e.id] = { status: "failed", error: err?.message || String(err) }; },
+  ))).then(changed);
+}
+
+// The list of `entries` (disabledCardEntities()), the ones a control depends
+// on first, the rest folded away. Administrators get a switch per entity and
+// one for all needed ones; an entity leaves the list once it has a state.
+function disabledEntitiesHtml({ entries, enabling, admin, t, optionalOpen = false }) {
+  if (!entries.length) return `<div class="disabled-none">${t("disabledNone")}</div>`;
+  const status = st => !st ? ""
+    : st.status === "pending" ? t("disabledPending")
+    : st.status === "reload"  ? t("disabledReload", { sec: st.sec })
+    : st.status === "restart" ? t("disabledRestart")
+    : t("disabledFailed", { error: st.error });
+  const open = e => admin && (!enabling[e.id] || enabling[e.id].status === "failed");
+  const row = e => {
+    const st = enabling[e.id];
+    return `<li class="disabled-row">
+        <div class="disabled-main">
+          ${e.need ? `<div class="disabled-what">${escHtml(t(e.need.what))} <span class="disabled-owner">${escHtml(e.owner)}</span></div>` : ""}
+          <code class="disabled-id">${escHtml(e.id)}</code>
+          ${st ? `<div class="disabled-status ${st.status}">${escHtml(status(st))}</div>` : ""}
+        </div>
+        ${open(e) ? `<button class="disabled-enable" data-enable-entity="${escAttr(e.id)}">${t("disabledEnable")}</button>` : ""}
+      </li>`;
+  };
+  const needed   = entries.filter(e => e.need);
+  const optional = entries.filter(e => !e.need);
+  const all      = needed.filter(open);
+  return `
+    <div class="disabled-intro">${t("disabledIntro")}${admin ? "" : " " + t("disabledAdminOnly")}</div>
+    ${needed.length ? `<div class="disabled-group">${t("disabledNeeded")}</div>
+      <ul class="disabled-list">${needed.map(row).join("")}</ul>` : ""}
+    ${all.length > 1 ? `<div class="disabled-all-row"><button class="disabled-enable-all" data-enable-entities="${escAttr(all.map(e => e.id).join(","))}">${t("disabledEnableAll")}</button></div>` : ""}
+    ${optional.length ? `<details class="disabled-optional"${optionalOpen ? " open" : ""}>
+      <summary>${t("disabledOptional")} (${optional.length})</summary>
+      <ul class="disabled-list">${optional.map(row).join("")}</ul>
+    </details>` : ""}`;
+}
+
+// The CSS of the list, shared by the card sheet and the editor.
+const disabledListCss = `
+      .disabled-intro { font-size: .8rem; color: var(--secondary-text-color); margin-bottom: 8px; }
+      .disabled-none { font-size: .8rem; color: var(--secondary-text-color); }
+      .disabled-group { font-size: .78rem; font-weight: 600; margin: 6px 0 4px; }
+      .disabled-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+      .disabled-row { display: flex; align-items: center; gap: 8px; }
+      .disabled-main { flex: 1; min-width: 0; }
+      .disabled-what { font-size: .82rem; }
+      .disabled-owner { color: var(--secondary-text-color); }
+      .disabled-id { font-size: .72rem; color: var(--secondary-text-color); word-break: break-all; }
+      .disabled-status { font-size: .75rem; color: var(--secondary-text-color); }
+      .disabled-status.failed { color: var(--error-color, #ef4444); }
+      .disabled-enable, .disabled-enable-all { flex-shrink: 0; background: none; border: 1px solid var(--primary-color); border-radius: 4px; cursor: pointer; font-size: .75rem; color: var(--primary-color); padding: 3px 8px; font-family: inherit; }
+      .disabled-enable:disabled, .disabled-enable-all:disabled { opacity: .5; cursor: default; }
+      .disabled-all-row { display: flex; justify-content: flex-end; margin-top: 6px; }
+      .disabled-optional { margin-top: 8px; font-size: .8rem; }
+      .disabled-optional summary { cursor: pointer; color: var(--secondary-text-color); }
+      .disabled-optional .disabled-list { margin-top: 6px; }
+`;
+
+// Methods mixed into EvccCard.prototype.
+const disabledEntities = {
+  // Off in the registry and not enabled since: an entity that has a state was
+  // switched on (and ha-evcc reloaded) after the registry was read.
+  _isEntityDisabled(id) {
+    return this._disabledEntities.has(id) && !this._hass.states[id];
+  },
+
+  // The DISABLED_NEEDED entities of a loadpoint whose control the card would
+  // show right now if they were on, see the fields there.
+  _neededDisabled(ents, lpName) {
+    const prefix = this._getPrefix();
+    const id = (domain, suffix) => `${domain}.${prefix}${lpName}_${suffix}`;
+    // An entity enabled from the card waits for HA's reload of ha-evcc,
+    // nothing left to point at; a failed attempt keeps the triangle.
+    const pending = eid => this._enabling[eid] && this._enabling[eid].status !== "failed";
+    return DISABLED_NEEDED.filter(n => {
+      const eid = id(n.domain, n.suffix);
+      if (!this._isEntityDisabled(eid) || pending(eid)) return false;
+      if (n.hide && this._isSettingHidden(n.hide)) return false;
+      if (n.energy && this._socBasedCharging(ents)) return false;
+      if (n.needs) {
+        const [domain, suffix] = n.needs.split(".");
+        if (!ents[suffix] && !this._isEntityDisabled(id(domain, suffix))) return false;
+      }
+      return true;
+    });
+  },
+
+  // The triangle in a loadpoint header, only for administrators (nobody else
+  // can enable an entity) and switched off by `hide_disabled_hint`. A click
+  // opens the list in the debug view.
+  _renderDisabledWarn(ents, lpName) {
+    if (this._config.hide_disabled_hint || !this._hass.user?.is_admin) return "";
+    const missing = this._neededDisabled(ents, lpName);
+    if (!missing.length) return "";
+    const title = this._t("disabledWarnTitle") + ": " + [...new Set(missing.map(n => this._t(n.what)))].join(", ");
+    return `<button class="lp-disabled-warn" data-open-disabled title="${escAttr(title)}" aria-label="${escAttr(title)}">${WARN_ICON}</button>`;
+  },
+
+  // The section of the debug view.
+  _renderDisabledSection() {
+    const entries = disabledCardEntities(this._hass, [...this._disabledEntities], this._getPrefix());
+    return `
+        <div class="debug-section" id="debug-disabled">
+          <div class="debug-section-title">${this._t("disabledTitle")}</div>
+          ${disabledEntitiesHtml({ entries, enabling: this._enabling, admin: !!this._hass.user?.is_admin,
+                                   t: (k, r) => this._t(k, r), optionalOpen: this._disabledOptionalOpen })}
+        </div>`;
+  },
+
+  _attachDisabledListeners() {
+    // Into the debug view, and back to the card the triangle sat in.
+    this._fresh("[data-open-disabled]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._debugReturn = this._config;
+        this._config = { ...this._config, mode: "debug" };
+        this._lastRenderKey = null;
+        this._render();
+        this.shadowRoot.getElementById("debug-disabled")?.scrollIntoView({ block: "start", behavior: "smooth" });
+      });
+    });
+    this._fresh(".debug-back").forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._config = this._debugReturn || this._config;
+        this._debugReturn = null;
+        this._lastRenderKey = null;
+        this._render();
+      });
+    });
+
+    const rerender = () => { this._lastRenderKey = null; this._render(); };
+    const entriesFor = ids => disabledCardEntities(this._hass, ids, this._getPrefix());
+    this._fresh("button.disabled-enable").forEach(btn => {
+      btn.addEventListener("click", () => {
+        btn.disabled = true;
+        enableEntities(id => this._enableEntity(id), entriesFor([btn.dataset.enableEntity]), this._enabling, rerender);
+      });
+    });
+    this._fresh("button.disabled-enable-all").forEach(btn => {
+      btn.addEventListener("click", () => {
+        btn.disabled = true;
+        enableEntities(id => this._enableEntity(id), entriesFor(btn.dataset.enableEntities.split(",")), this._enabling, rerender);
+      });
+    });
+    // The morph drops an `open` the template does not carry, so the folded
+    // part remembers it here.
+    this._fresh("details.disabled-optional").forEach(el => {
+      el.addEventListener("toggle", () => { this._disabledOptionalOpen = el.open; });
+    });
+  },
+};
+
+const disabledCss = disabledListCss + `
+      .lp-disabled-warn { display: inline-flex; align-items: center; background: none; border: none; padding: 0 2px; margin-right: 6px; cursor: pointer; color: var(--evcc-amber); flex-shrink: 0; }
+      .lp-disabled-warn:hover { filter: brightness(1.15); }
+      .debug-back { background: none; border: 1px solid var(--divider-color, #4b5563); border-radius: 6px; color: var(--primary-color); padding: 3px 10px; cursor: pointer; font: inherit; font-size: .8rem; }
+`;
+
 // Charge plan block with preview chart, plan mode and repeating plans. Methods are mixed into EvccCard.prototype.
 const planningView = {
+  // Whether the loadpoint and compact modes draw the plan block: it needs the
+  // plan SoC entity, an EV loadpoint and a vehicle with a SoC or a running
+  // plan. The plan chip under the header asks the same, as it jumps there.
+  // `force` (the plan mode) drops the last condition.
+  _hasPlanBlock(ents, force = false) {
+    if (!ents.effective_plan_soc || !this._hass.states[ents.effective_plan_soc]) return false;
+    // Heating loadpoints (ha-evcc 'is_heating') are not EV charge points — their
+    // "SOC" is a target temperature. The EV charge-plan UI/preview does not apply.
+    if (this._isHeatingLoadpoint(ents)) return false;
+    const planActive = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
+    return force || !!ents.vehicle_soc || planActive;
+  },
+
   _renderPlanBlock(lpName, ents, force = false) {
-    const hasVehicle = !!ents.vehicle_soc;
     const planActive = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
     const planTime   = ents.effective_plan_time
       ? stateVal(this._hass, ents.effective_plan_time) : null;
@@ -2642,11 +3005,7 @@ const planningView = {
     const projEnd    = ents.plan_projected_end
       ? stateVal(this._hass, ents.plan_projected_end) : null;
 
-    if (!ents.effective_plan_soc || !this._hass.states[ents.effective_plan_soc]) return "";
-    // Heating loadpoints (ha-evcc 'is_heating') are not EV charge points — their
-    // "SOC" is a target temperature. The EV charge-plan UI/preview does not apply.
-    if (this._isHeatingLoadpoint(ents)) return "";
-    if (!force && !hasVehicle && !planActive) return "";
+    if (!this._hasPlanBlock(ents, force)) return "";
 
     const vehicleEntityId    = ents.vehicle_name || null;
     const vehicleAttrs       = vehicleEntityId ? (this._hass.states[vehicleEntityId]?.attributes ?? {}) : {};
@@ -6188,7 +6547,7 @@ const debugView = {
           </li>`;
         }).join("")}</ul>`;
 
-    const cfgSource = this._origConfig || this._config;
+    const cfgSource = this._origConfig || this._debugReturn || this._config;
     const cfgYaml = this._formatConfigYaml(cfgSource, this._debugMask === true);
     const cfgNote = this._origConfig
       ? `<div class="debug-cfg-note">${this._t("debugCfgFromEmptyState")}</div>`
@@ -6199,6 +6558,7 @@ const debugView = {
         <div class="debug-header">
           <div class="debug-title">🐞 ${this._t("debugTitle")}</div>
           <div class="debug-actions">
+            ${this._debugReturn ? `<button class="debug-back">← ${this._t("debugBack")}</button>` : ""}
             <button class="debug-copy-btn">${this._t("debugCopyReport")}</button>
             <label class="debug-mask">
               <input type="checkbox" class="debug-mask-toggle" ${this._debugMask ? "checked" : ""}/>
@@ -6207,6 +6567,7 @@ const debugView = {
           </div>
           <div class="debug-toast" hidden></div>
         </div>
+${this._renderDisabledSection()}
 
         <div class="debug-section">
           <div class="debug-section-title">${this._t("debugVersions")}</div>
@@ -6401,9 +6762,20 @@ const debugView = {
       }
     }
     out.push(``);
+    // By feature, not by id: the ids carry loadpoint and vehicle names.
+    const disabled = disabledCardEntities(this._hass, [...this._disabledEntities], prefix);
+    out.push(`**Disabled entities the card uses** (${disabled.length})`);
+    if (disabled.length === 0) out.push(`*(none)*`);
+    const byFeature = {};
+    for (const e of disabled) {
+      const key = `${e.id.slice(0, e.id.indexOf("."))}.${e.suffix}${e.need ? " (needed)" : ""}`;
+      byFeature[key] = (byFeature[key] || 0) + 1;
+    }
+    for (const [key, n] of Object.entries(byFeature)) out.push(`- \`${key}\`${n > 1 ? ` ×${n}` : ""}`);
+    out.push(``);
     out.push(`**Card configuration**${this._origConfig ? " *(restored from empty state)*" : ""}`);
     out.push("```yaml");
-    out.push(this._formatConfigYaml(this._origConfig || this._config, maskNames));
+    out.push(this._formatConfigYaml(this._origConfig || this._debugReturn || this._config, maskNames));
     out.push("```");
     out.push(``);
     out.push(`**Translations**`);
@@ -6558,7 +6930,7 @@ const debugCss = `
 // is not a <button>, <input>, <select> or <a> and so gets no keyboard support
 // from the browser. They are made focusable and get the button role here,
 // once per render, instead of every view remembering to do it.
-const NON_NATIVE_CLICKABLES = "[data-more-info], [data-action], [data-lp-current-toggle], [data-lp-smart-cost-open]";
+const NON_NATIVE_CLICKABLES = "[data-more-info], [data-action], [data-lp-current-toggle], [data-lp-smart-cost-open], [data-lp-plan-open]";
 const NATIVE = "button, input, select, textarea, a[href]";
 
 // The listeners every view shares: keyboard activation, more-info, the site
@@ -6642,6 +7014,7 @@ const listeners = {
 
     this._attachLoadpointListeners();
     this._attachSliderListeners();
+    this._attachDisabledListeners();
     this._attachPlanListeners();
     this._attachStatsListeners();
     this._attachBatteryListeners();
@@ -6690,7 +7063,7 @@ const baseCss = `
 `;
 
 const CSS = [
-  baseCss, loadpointCss, sliderCss, siteCss, flowCss, gridCss,
+  baseCss, loadpointCss, sliderCss, disabledCss, siteCss, flowCss, gridCss,
   statsCss, batteryCss, planCss, debugCss, priorityCss,
 ].join("\n");
 
@@ -6747,6 +7120,9 @@ class EvccCard extends HTMLElement {
     this._inputFocused  = null;   // focused select or date input, see _inputBusy()
     this._readIds       = null;   // entity ids the last render read, see _render()
     this._expected      = {};     // entity id -> value written, not yet reported back (actions.js)
+    this._disabledEntities = new Set();   // ha-evcc entities disabled in the registry (detectIntegration)
+    this._enabling      = {};     // entity id -> outcome of enabling it from the card (disabled-entities.js)
+    this._debugReturn   = null;   // the config the warning triangle left for the debug view
     this._renderTimer   = null;
     this._lastRenderKey = null;
     this._countdownInterval = null;
@@ -6857,9 +7233,10 @@ class EvccCard extends HTMLElement {
     if (!this._integrationDetected && !this._detectingIntegration) {
       this._detectingIntegration = true;
       const probePrefix = this._config.prefix || null;
-      detectIntegration(hass, probePrefix).then(({ prefix, entryId, instances }) => {
+      detectIntegration(hass, probePrefix).then(({ prefix, entryId, instances, disabled }) => {
         this._detectingIntegration = false;
         this._integrationDetected = true;
+        this._disabledEntities = new Set(disabled);
         this._evccInstances = instances;
         this._instancePrefix = probePrefix;
         this._entryId = entryId;
@@ -6868,7 +7245,9 @@ class EvccCard extends HTMLElement {
         // The config may have changed while the registry call was in flight.
         this._syncIntegrationInstance();
         // Honour an explicitly configured prefix, but still keep the detected one.
-        const changed = (!this._config.prefix && prefix !== this._detectedPrefix);
+        // A disabled entity can change what a view offers (a limit without its
+        // clear button, the warning triangle), so those renders start over too.
+        const changed = (!this._config.prefix && prefix !== this._detectedPrefix) || disabled.length > 0;
         this._detectedPrefix = prefix;
         if (changed) {
           this._lastRenderKey = null;
@@ -7062,6 +7441,7 @@ class EvccCard extends HTMLElement {
     // the one it had and Home Assistant shows its error card with the reason.
     validateCardConfig(config);
     this._config = config || {};
+    this._debugReturn = null;
     this._syncIntegrationInstance();
     // Both stats paths are fed from the same normalised value, so the current
     // vocabulary (month/year/total/none) and the legacy one (30d/365d/thisYear)
@@ -7314,26 +7694,35 @@ class EvccCard extends HTMLElement {
     if (!root) return;
     root.querySelectorAll("[data-countdown-target]").forEach(el => {
       const ts = el.dataset.countdownTarget;
-      if (!ts) return;
-      const target = Date.parse(ts);
-      if (isNaN(target)) return;
-      const sec = Math.max(0, Math.round((target - Date.now()) / 1000));
-      const cd = sec <= 0
-        ? ""
-        : sec < 60
-          ? `${sec}s`
-          : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+      if (!ts || isNaN(Date.parse(ts))) return;
+      const cd = fmtCountdownFromISO(ts);
+      // A run-out timer leaves like evcc's, until the next render drops the chip,
+      // and takes the row with it when it was the last chip there.
+      const chip = el.closest(".lp-action-chip");
+      if (chip) this._hideActionChip(chip, !cd);
       const key = el.dataset.countdownLabel;
-      if (key) {
-        el.textContent = this._t(key, { val: cd || "—" });
+      if (key && cd) {
+        el.textContent = this._t(key, { val: cd });
       }
     });
+    // A chip that names a point in time (the plan start) leaves once it has
+    // passed, as the render would not draw it any more.
+    root.querySelectorAll(".lp-action-chip[data-hide-after]").forEach(chip => {
+      const ts = Date.parse(chip.dataset.hideAfter);
+      if (!isNaN(ts)) this._hideActionChip(chip, ts <= Date.now());
+    });
+  }
+
+  _hideActionChip(chip, hidden) {
+    chip.hidden = hidden;
+    const row = chip.closest(".lp-action-row");
+    if (row) row.hidden = [...row.querySelectorAll(".lp-action-chip")].every(c => c.hidden);
   }
 }
 
 // Mode views, components and shared behaviour are plain objects of methods
 // (no framework): mix them into the prototype, refusing silent overrides.
-const mixins = [actions, evccApi, loadpointView, socControl, planningView, priorityView, siteView, flowView, gridView, statisticsLegacy, statisticsView, batteryView, debugView, listeners, styles];
+const mixins = [actions, evccApi, loadpointView, socControl, disabledEntities, planningView, priorityView, siteView, flowView, gridView, statisticsLegacy, statisticsView, batteryView, debugView, listeners, styles];
 for (const m of mixins) {
   for (const key of Object.keys(m)) {
     if (key in EvccCard.prototype) throw new Error(`evcc-card: duplicate method ${key}`);
@@ -7351,6 +7740,9 @@ class EvccCardEditor extends HTMLElement {
     this._detectedPrefix = null;
     this._detectingPrefix = false;
     this._instances = [];   // every ha-evcc entry in the registry, first one is the default
+    this._disabled  = [];   // ha-evcc entities disabled in the registry
+    this._enabling  = {};   // entity id -> outcome of enabling it here (disabled-entities.js)
+    this._disabledOptionalOpen = false;
   }
 
   _t(key, replacements = {}) {
@@ -7370,18 +7762,20 @@ class EvccCardEditor extends HTMLElement {
     }
     if (!this._detectedPrefix && !this._detectingPrefix) {
       this._detectingPrefix = true;
-      detectIntegration(hass).then(({ prefix, instances }) => {
+      detectIntegration(hass).then(({ prefix, instances, disabled }) => {
         this._detectingPrefix = false;
         this._detectedPrefix = prefix;
         this._instances = instances;
+        this._disabled = disabled;
         this._discoverLoadpoints();
         this._render();
       });
       return;
     }
-    const prev = this._availableLoadpoints.join(",");
+    // An enabled entity leaves the list once HA has reloaded ha-evcc.
+    const prev = this._availableLoadpoints.join(",") + "|" + this._disabledKey;
     this._discoverLoadpoints();
-    const next = this._availableLoadpoints.join(",");
+    const next = this._availableLoadpoints.join(",") + "|" + this._disabledEntries().map(e => e.id).join(",");
     if (prev !== next) this._render();
   }
 
@@ -7401,6 +7795,10 @@ class EvccCardEditor extends HTMLElement {
     const prefix = this._getPrefix();
     const { loadpoints } = discoverEntities(this._hass, prefix);
     this._availableLoadpoints = Object.keys(loadpoints).sort();
+  }
+
+  _disabledEntries() {
+    return this._hass ? disabledCardEntities(this._hass, this._disabled, this._getPrefix()) : [];
   }
 
   _esc(str) {
@@ -7490,6 +7888,8 @@ class EvccCardEditor extends HTMLElement {
     const showVehicleFilter = mode === "repeatplan";
     const rplanVehicles     = Array.isArray(c.repeating_plan_vehicles) ? c.repeating_plan_vehicles : [];
     const instanceOptions   = this._instanceOptions();
+    const disabledEntries   = this._disabledEntries();
+    this._disabledKey       = disabledEntries.map(e => e.id).join(",");
 
     // `stats_period` has no implicit value: unconfigured, every mode follows its
     // own default (the stats mode opens on the most recent month, the compact
@@ -7562,6 +7962,7 @@ class EvccCardEditor extends HTMLElement {
         .ha-select:focus, .ha-input:focus { outline: none; border-color: var(--primary-color); }
         .cb-row { display: flex; align-items: center; gap: 8px; font-size: .875rem; cursor: pointer; padding: 4px 0; }
         .cb-row input[type="checkbox"] { accent-color: var(--primary-color); width: 16px; height: 16px; cursor: pointer; }
+        ${disabledListCss}
       </style>
       <div class="form">
         <div class="field">
@@ -7687,6 +8088,18 @@ class EvccCardEditor extends HTMLElement {
           ${this._sel("stats_period", statsPeriodOptions, c.stats_period || "")}
         </div>
         ` : ""}
+        ${disabledEntries.length || c.hide_disabled_hint ? `
+        <div class="field">
+          <div class="section-title">${this._t("disabledTitle")}</div>
+          ${disabledEntitiesHtml({ entries: disabledEntries, enabling: this._enabling, admin: !!this._hass?.user?.is_admin,
+                                   t: (k, r) => this._t(k, r), optionalOpen: this._disabledOptionalOpen })}
+          ${showChargeCurrent ? `
+          <label class="cb-row">
+            <input type="checkbox" id="hide_disabled_hint" ${c.hide_disabled_hint ? "checked" : ""}>
+            <span>${this._t("editorHideDisabledHint")}</span>
+          </label>` : ""}
+        </div>
+        ` : ""}
       </div>
     `;
 
@@ -7732,7 +8145,26 @@ class EvccCardEditor extends HTMLElement {
       });
     }
 
-    this.shadowRoot.querySelectorAll("input[type=checkbox]").forEach(cb => {
+    const hintEl = this.shadowRoot.getElementById("hide_disabled_hint");
+    if (hintEl) {
+      hintEl.addEventListener("change", () => {
+        this._config = { ...this._config, hide_disabled_hint: hintEl.checked || undefined };
+        this._fire();
+      });
+    }
+
+    const enable = ids => enableEntities(id => enableEntity(this._hass, id),
+      this._disabledEntries().filter(e => ids.includes(e.id)), this._enabling, () => this._render());
+    this.shadowRoot.querySelectorAll("button.disabled-enable").forEach(btn => {
+      btn.addEventListener("click", () => { btn.disabled = true; enable([btn.dataset.enableEntity]); });
+    });
+    this.shadowRoot.querySelectorAll("button.disabled-enable-all").forEach(btn => {
+      btn.addEventListener("click", () => { btn.disabled = true; enable(btn.dataset.enableEntities.split(",")); });
+    });
+    const optEl = this.shadowRoot.querySelector("details.disabled-optional");
+    if (optEl) optEl.addEventListener("toggle", () => { this._disabledOptionalOpen = optEl.open; });
+
+    this.shadowRoot.querySelectorAll("input[type=checkbox][data-field]").forEach(cb => {
       cb.addEventListener("change", () => {
         const field = cb.dataset.field;
         const lp    = cb.dataset.lp;

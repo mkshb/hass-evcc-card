@@ -3109,7 +3109,7 @@
   "entity_id": "sensor.evcc_openwb_pv_remaining",
   "last_changed": "2026-09-18T09:23:11.481089+00:00",
   "last_updated": "2026-09-18T09:23:11.481089+00:00",
-  "state": "unknown"
+  "state": "2026-09-18T13:01:15+02:00"
  },
  "sensor.evcc_openwb_session_co2_per_kwh": {
   "attributes": {

@@ -5,8 +5,20 @@ import { escHtml, escAttr } from "../utils/html.js";
 
 // Charge plan block with preview chart, plan mode and repeating plans. Methods are mixed into EvccCard.prototype.
 export const planningView = {
+  // Whether the loadpoint and compact modes draw the plan block: it needs the
+  // plan SoC entity, an EV loadpoint and a vehicle with a SoC or a running
+  // plan. The plan chip under the header asks the same, as it jumps there.
+  // `force` (the plan mode) drops the last condition.
+  _hasPlanBlock(ents, force = false) {
+    if (!ents.effective_plan_soc || !this._hass.states[ents.effective_plan_soc]) return false;
+    // Heating loadpoints (ha-evcc 'is_heating') are not EV charge points — their
+    // "SOC" is a target temperature. The EV charge-plan UI/preview does not apply.
+    if (this._isHeatingLoadpoint(ents)) return false;
+    const planActive = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
+    return force || !!ents.vehicle_soc || planActive;
+  },
+
   _renderPlanBlock(lpName, ents, force = false) {
-    const hasVehicle = !!ents.vehicle_soc;
     const planActive = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
     const planTime   = ents.effective_plan_time
       ? stateVal(this._hass, ents.effective_plan_time) : null;
@@ -17,11 +29,7 @@ export const planningView = {
     const projEnd    = ents.plan_projected_end
       ? stateVal(this._hass, ents.plan_projected_end) : null;
 
-    if (!ents.effective_plan_soc || !this._hass.states[ents.effective_plan_soc]) return "";
-    // Heating loadpoints (ha-evcc 'is_heating') are not EV charge points — their
-    // "SOC" is a target temperature. The EV charge-plan UI/preview does not apply.
-    if (this._isHeatingLoadpoint(ents)) return "";
-    if (!force && !hasVehicle && !planActive) return "";
+    if (!this._hasPlanBlock(ents, force)) return "";
 
     const vehicleEntityId    = ents.vehicle_name || null;
     const vehicleAttrs       = vehicleEntityId ? (this._hass.states[vehicleEntityId]?.attributes ?? {}) : {};

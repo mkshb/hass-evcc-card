@@ -1,5 +1,7 @@
 import { HIDEABLE_SETTINGS } from "./core/constants.js";
-import { detectIntegration, discoverEntities } from "./core/entity-discovery.js";
+import { detectIntegration, discoverEntities, disabledCardEntities } from "./core/entity-discovery.js";
+import { enableEntity } from "./core/actions.js";
+import { disabledEntitiesHtml, disabledListCss, enableEntities } from "./components/disabled-entities.js";
 import { loadSharedTranslations, sharedTranslations, sharedTranslationsReady } from "./utils/translations.js";
 import { escHtml } from "./utils/html.js";
 
@@ -13,6 +15,9 @@ export class EvccCardEditor extends HTMLElement {
     this._detectedPrefix = null;
     this._detectingPrefix = false;
     this._instances = [];   // every ha-evcc entry in the registry, first one is the default
+    this._disabled  = [];   // ha-evcc entities disabled in the registry
+    this._enabling  = {};   // entity id -> outcome of enabling it here (disabled-entities.js)
+    this._disabledOptionalOpen = false;
   }
 
   _t(key, replacements = {}) {
@@ -32,18 +37,20 @@ export class EvccCardEditor extends HTMLElement {
     }
     if (!this._detectedPrefix && !this._detectingPrefix) {
       this._detectingPrefix = true;
-      detectIntegration(hass).then(({ prefix, instances }) => {
+      detectIntegration(hass).then(({ prefix, instances, disabled }) => {
         this._detectingPrefix = false;
         this._detectedPrefix = prefix;
         this._instances = instances;
+        this._disabled = disabled;
         this._discoverLoadpoints();
         this._render();
       });
       return;
     }
-    const prev = this._availableLoadpoints.join(",");
+    // An enabled entity leaves the list once HA has reloaded ha-evcc.
+    const prev = this._availableLoadpoints.join(",") + "|" + this._disabledKey;
     this._discoverLoadpoints();
-    const next = this._availableLoadpoints.join(",");
+    const next = this._availableLoadpoints.join(",") + "|" + this._disabledEntries().map(e => e.id).join(",");
     if (prev !== next) this._render();
   }
 
@@ -63,6 +70,10 @@ export class EvccCardEditor extends HTMLElement {
     const prefix = this._getPrefix();
     const { loadpoints } = discoverEntities(this._hass, prefix);
     this._availableLoadpoints = Object.keys(loadpoints).sort();
+  }
+
+  _disabledEntries() {
+    return this._hass ? disabledCardEntities(this._hass, this._disabled, this._getPrefix()) : [];
   }
 
   _esc(str) {
@@ -152,6 +163,8 @@ export class EvccCardEditor extends HTMLElement {
     const showVehicleFilter = mode === "repeatplan";
     const rplanVehicles     = Array.isArray(c.repeating_plan_vehicles) ? c.repeating_plan_vehicles : [];
     const instanceOptions   = this._instanceOptions();
+    const disabledEntries   = this._disabledEntries();
+    this._disabledKey       = disabledEntries.map(e => e.id).join(",");
 
     // `stats_period` has no implicit value: unconfigured, every mode follows its
     // own default (the stats mode opens on the most recent month, the compact
@@ -224,6 +237,7 @@ export class EvccCardEditor extends HTMLElement {
         .ha-select:focus, .ha-input:focus { outline: none; border-color: var(--primary-color); }
         .cb-row { display: flex; align-items: center; gap: 8px; font-size: .875rem; cursor: pointer; padding: 4px 0; }
         .cb-row input[type="checkbox"] { accent-color: var(--primary-color); width: 16px; height: 16px; cursor: pointer; }
+        ${disabledListCss}
       </style>
       <div class="form">
         <div class="field">
@@ -349,6 +363,18 @@ export class EvccCardEditor extends HTMLElement {
           ${this._sel("stats_period", statsPeriodOptions, c.stats_period || "")}
         </div>
         ` : ""}
+        ${disabledEntries.length || c.hide_disabled_hint ? `
+        <div class="field">
+          <div class="section-title">${this._t("disabledTitle")}</div>
+          ${disabledEntitiesHtml({ entries: disabledEntries, enabling: this._enabling, admin: !!this._hass?.user?.is_admin,
+                                   t: (k, r) => this._t(k, r), optionalOpen: this._disabledOptionalOpen })}
+          ${showChargeCurrent ? `
+          <label class="cb-row">
+            <input type="checkbox" id="hide_disabled_hint" ${c.hide_disabled_hint ? "checked" : ""}>
+            <span>${this._t("editorHideDisabledHint")}</span>
+          </label>` : ""}
+        </div>
+        ` : ""}
       </div>
     `;
 
@@ -394,7 +420,26 @@ export class EvccCardEditor extends HTMLElement {
       });
     }
 
-    this.shadowRoot.querySelectorAll("input[type=checkbox]").forEach(cb => {
+    const hintEl = this.shadowRoot.getElementById("hide_disabled_hint");
+    if (hintEl) {
+      hintEl.addEventListener("change", () => {
+        this._config = { ...this._config, hide_disabled_hint: hintEl.checked || undefined };
+        this._fire();
+      });
+    }
+
+    const enable = ids => enableEntities(id => enableEntity(this._hass, id),
+      this._disabledEntries().filter(e => ids.includes(e.id)), this._enabling, () => this._render());
+    this.shadowRoot.querySelectorAll("button.disabled-enable").forEach(btn => {
+      btn.addEventListener("click", () => { btn.disabled = true; enable([btn.dataset.enableEntity]); });
+    });
+    this.shadowRoot.querySelectorAll("button.disabled-enable-all").forEach(btn => {
+      btn.addEventListener("click", () => { btn.disabled = true; enable(btn.dataset.enableEntities.split(",")); });
+    });
+    const optEl = this.shadowRoot.querySelector("details.disabled-optional");
+    if (optEl) optEl.addEventListener("toggle", () => { this._disabledOptionalOpen = optEl.open; });
+
+    this.shadowRoot.querySelectorAll("input[type=checkbox][data-field]").forEach(cb => {
       cb.addEventListener("change", () => {
         const field = cb.dataset.field;
         const lp    = cb.dataset.lp;

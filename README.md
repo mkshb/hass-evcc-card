@@ -191,6 +191,7 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 | `site_details` | `string` | `expanded` | `collapsed` to hide the IN/OUT detail table by default in `site` and `flow` mode |
 | `charge_current_settings` | `string` | `collapsed` | `expanded` to show charge settings expanded by default |
 | `hide_settings` | `list` | *(none)* | Remove individual settings from the `loadpoint` / `compact` card: `limit_soc`, `min_soc`, `phases`, `max_current`, `min_current`, `battery_boost`, `priority`, `smart_cost_limit`, `smart_feed_in_priority_limit`. See [Slider settings](#slider-settings) |
+| `hide_disabled_hint` | `boolean` | `false` | `true` hides the warning triangle that the `loadpoint` / `compact` card shows administrators while an entity it needs is disabled in Home Assistant. See [Disabled entities](#disabled-entities) |
 | `slider_steps` | `map` | *(entity)* | **YAML only** — Override the step of a number slider per setting, e.g. `{ smart_cost_limit: 0.01, limit_soc: 5 }`. Keys are ha-evcc feature names and are matched exactly. Also sets the increment of the − / + buttons in the direct-input panel. Number entities only. See [Slider settings](#slider-settings) |
 | `stats_period` | `string` | *(see note)* | Statistics period: `month`, `year`, `total`, `none`. Unconfigured, the `stats` mode opens on the most recent month and the footer under `site`/`grid`/`flow` summarises everything; `none` hides that footer. The older values `30d`, `365d` and `thisYear` still work |
 | `prefix` | `string` | *(auto)* | Entity prefix, auto-detected from ha-evcc. With more than one ha-evcc entry the visual editor offers the instance to use; the first entry is the default and needs no `prefix` |
@@ -235,7 +236,11 @@ The **`no_pv`** option mirrors evcc's mode logic for a charge point without a PV
 
 > A dynamic tariff is detected via the `tariff_grid` (price) or `tariff_co2` (CO2) sensor; if neither reports a value, only **Off** / **Fast** are offered. On an evcc before 0.316 the card does what evcc did then: **PV** is relabelled as **Smart** and still sets the underlying `pv` mode, **Min+PV** is dropped.
 
-The loadpoint header also shows **live action indicators** when EVCC has scheduled a pending phase switch or PV-charging change - e.g. *"Switching to 3-phase in 0:42"* or *"PV charging on in 1:15"*. The chip disappears automatically once the action is executed. Requires ha-evcc with the `phase_action` / `pv_action` sensors exposed.
+Under the loadpoint header a row of chips names what drives the charge point right now, as evcc does in its vehicle status:
+
+- **Charge plan:** *"Charging plan starts 02:00"* or *"Charging plan active until 06:30"*, and a warning *"Goal will be reached 1 h 20 min later"* when evcc projects the end after the target time. A tap jumps to the plan block; in `compact` mode, where the chip sits above the tabs, it opens the plan tab. Not on heating loadpoints or with `no_plan`.
+- **Minimum charge:** *"Minimum charging to 20 %"* while a connected vehicle is below its minimum SoC. A tap opens the minimum SoC entity.
+- **Live action indicators** when evcc has scheduled a pending phase switch or PV-charging change, e.g. *"Switching to 3-phase in 0:42"* or *"PV charging on in 1:15"*. Like in evcc, the chip shows only while there is time to count down and disappears once the action is executed. Requires ha-evcc with the `phase_action` / `pv_action` sensors exposed.
 
 The **CHARGE SETTINGS** section is collapsed by default and can be toggled using the gear icon. It contains:
 - Phase switch: Auto / 1-phase / 3-phase
@@ -275,6 +280,8 @@ Every slider in the card (target SoC, min SoC, current limits, battery boost, pr
   ```
 
 > **Resetting a limit:** the smart charging limit and the feed-in priority limit have a **clear** button that removes the limit in evcc. The other sliders have no default value in evcc, so there is nothing to reset them to.
+>
+> The clear buttons (`button.evcc_<loadpoint>_smart_cost_limit`, `button.evcc_<loadpoint>_smart_feed_in_priority_limit`) ship **disabled by default** in ha-evcc. Without its clear button a limit could be set but never removed again, so the card offers the limit only once the button is enabled. See [Disabled entities](#disabled-entities).
 
 <img src="images/slider-input-dark.png" width="400"> <img src="images/slider-input-light.png" width="400">
 
@@ -440,7 +447,7 @@ Minimalist charge plan view:
 
 > **Vehicles without a state of charge:** the card decides like evcc. A vehicle that reports a SoC and has a known capacity is planned with a target in percent on the vehicle. A guest vehicle, or a vehicle that reports no SoC, is planned on the charge point with an energy target in kWh (1 kWh up to the vehicle's capacity, or 100 kWh when evcc knows none); the live preview then works in kWh as well. Like evcc, the loadpoint then shows the energy charged instead of a SoC, and an energy limit (**Limit**, `limit_energy`) in place of the SoC sliders; `hide_settings: [limit_soc]` hides that limit too.
 
-> **Two ha-evcc instances:** the card names its own instance (`config_entry_id`) in every plan call. ha-evcc registers its plan services once for all instances; a version that does not know the field sends the plan to the instance that was set up last, so with two instances a plan can land on the other evcc until ha-evcc supports it.
+> **Two ha-evcc instances:** the card names its own instance (`config_entry_id`) in every plan call, which ha-evcc 2026.9.4 or newer honours. An older ha-evcc ignores the field and sends the plan to the instance that was set up last, so with two instances a plan can land on the other evcc; update ha-evcc in that case.
 
 <img src="images/plan-dark.png" width="400"> <img src="images/plan-light.png" width="400">
 
@@ -469,6 +476,7 @@ Diagnostics view for bug reports. Shows everything the card has detected:
 - All discovered charge points with their feature coverage and the list of missing entity suffixes
 - Site features (found vs. missing)
 - Orphan entity groups (loadpoint-like but missing `charge_power` — usually meters or devices with non-standard names)
+- Entities ha-evcc ships disabled that the card can use, with an **Enable** button for administrators (see [Disabled entities](#disabled-entities))
 - The current card configuration
 - Loaded translation files
 
@@ -499,6 +507,21 @@ number.evcc_<loadpoint_name>_limit_soc
 > ```
 >
 > A card sees only its own instance, also when one prefix starts with another (`evcc_` next to `evcc_demo_`).
+
+### Disabled entities
+
+ha-evcc creates some entities **disabled** in Home Assistant, and a disabled entity has no state the card could read. Most of them only add detail (lifetime energy counters, repeating plans 5 to 10). A few are needed for a control or a value of the `loadpoint` / `compact` card:
+
+| Entity | Without it |
+|---|---|
+| `button.evcc_<loadpoint>_smart_cost_limit` | no price / CO₂ limit (it could not be cleared again) |
+| `number.evcc_<loadpoint>_smart_feed_in_priority_limit` | no feed-in priority limit |
+| `button.evcc_<loadpoint>_smart_feed_in_priority_limit` | no feed-in priority limit (it could not be cleared again) |
+| `number.evcc_<loadpoint>_limit_energy` | no limit for vehicles without SoC |
+| `sensor.evcc_<loadpoint>_phase_action` | no countdown while the phases switch |
+| `sensor.evcc_<loadpoint>_charge_currents_0` … `_2` | only the offered current instead of the measured current per phase |
+
+While one of them is disabled, the charge point header shows a small **warning triangle** to administrators. It links to the list in the [`debug`](#debug) view; the visual editor shows the same list. From there an administrator can enable each entity, or all needed ones at once. Home Assistant reloads ha-evcc about 30 seconds later and the control or value appears. Nothing shows for a setting hidden with `hide_settings`, and `hide_disabled_hint: true` switches the triangle off for good.
 
 ---
 

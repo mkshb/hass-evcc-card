@@ -54,12 +54,19 @@
 
     // Fixture variants via query: set=entity:state,... disable=entity,... rename=from:to
     // tariff=co2, and attrs as JSON because attribute values may contain any character.
-    const set = Object.fromEntries((q.get("set") || "").split(",").filter(Boolean).map(kv => kv.split(":")));
+    // split at the first colon only: a value may be an ISO time. An entry
+    // without one is a broken test call; it is skipped with a console error,
+    // which the suite counts, rather than setting a truncated entity.
+    const set = Object.fromEntries((q.get("set") || "").split(",").filter(Boolean).flatMap(kv => {
+      const i = kv.indexOf(":");
+      if (i < 0) { console.error(`harness: set entry without a colon: ${kv}`); return []; }
+      return [[kv.slice(0, i), kv.slice(i + 1)]];
+    }));
     const attrs = q.get("attrs") ? JSON.parse(q.get("attrs")) : {};
     const disable = (q.get("disable") || "").split(",").filter(Boolean);
     const rename = q.get("rename") ? (([from, to]) => ({ from, to }))(q.get("rename").split(":")) : null;
     const second = q.get("second") ? JSON.parse(q.get("second")) : null;
-    const hass = await createMockHass({ language: q.get("lang") || "de", ws: q.get("ws") !== "0",
+    const hass = await createMockHass({ language: q.get("lang") || "de", ws: q.get("ws") !== "0", admin: q.get("admin") !== "0", drop: (q.get("drop") || "").split(",").filter(Boolean),
                                         set, attrs, disable, rename, tariff: q.get("tariff") || "price", second,
                                         wsName: q.get("wsname") });
     await customElements.whenDefined("evcc-card");

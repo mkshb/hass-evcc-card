@@ -1,4 +1,4 @@
-import { FEATURES, loadpointFilter } from "./constants.js";
+import { FEATURES, DISABLED_NEEDED, loadpointFilter } from "./constants.js";
 import { isOn } from "../utils/state.js";
 
 // Longest suffix first: `limit_soc` has to win over `soc` for the same entity.
@@ -34,11 +34,15 @@ function sitePrefixOf(entityId) {
 // one installation while asking the other one for forecast, sessions and plan
 // previews. `preferredPrefix` is the card's configured prefix, which decides
 // which instance is meant; without it the first entry in the registry wins.
+// `disabled` lists the ha-evcc entities switched off in the registry: they have
+// no state, and hass.entities leaves them out, so only this call tells a
+// disabled entity from one the integration never created.
 export async function detectIntegration(hass, preferredPrefix = null) {
   try {
     const entities = await hass.callWS({ type: "config/entity_registry/list" });
     const evccEnts = entities.filter(e => e.platform === "evcc_intg");
-    if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null, instances: [] };
+    if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null, instances: [], disabled: [] };
+    const disabled = evccEnts.filter(e => e.disabled_by).map(e => e.entity_id);
 
     // One group per config entry, in registry order; the prefix of a group comes
     // from its own first site entity.
@@ -52,11 +56,36 @@ export async function detectIntegration(hass, preferredPrefix = null) {
 
     const instances = [...byEntry.values()].map(g => ({ prefix: g.prefix ?? "evcc_", entryId: g.entryId }));
     const chosen = (preferredPrefix && instances.find(i => i.prefix === preferredPrefix)) || instances[0];
-    return { prefix: chosen.prefix, entryId: chosen.entryId, instances };
+    return { prefix: chosen.prefix, entryId: chosen.entryId, instances, disabled };
   } catch (e) {
     console.warn("[evcc-card] Could not detect integration from entity registry:", e);
-    return { prefix: "evcc_", entryId: null, instances: [] };
+    return { prefix: "evcc_", entryId: null, instances: [], disabled: [] };
   }
+}
+
+// The disabled ha-evcc entities of one installation that the card would use,
+// out of detectIntegration()'s `disabled`: their id matches a DISABLED_NEEDED
+// or a FEATURES entry. `owner` is what sits between prefix and feature (a
+// loadpoint or vehicle name, empty for the site), `need` the DISABLED_NEEDED
+// entry when a control depends on the entity. One that has a state by now was
+// enabled since the registry was read and is left out. Needed ones first.
+export function disabledCardEntities(hass, disabled, prefix = "evcc_") {
+  const foreign = installedPrefixes(hass).filter(p => p.length > prefix.length && p.startsWith(prefix));
+  const candidates = [...DISABLED_NEEDED, ...SORTED_FEATURES];
+  const out = [];
+  for (const id of disabled || []) {
+    if (hass?.states?.[id]) continue;
+    const dotIdx = id.indexOf(".");
+    const domain = id.slice(0, dotIdx);
+    const slug   = id.slice(dotIdx + 1);
+    if (!slug.startsWith(prefix) || foreign.some(p => slug.startsWith(p))) continue;
+    const rest = slug.slice(prefix.length);
+    const hit  = candidates.find(f => f.domain === domain && (rest === f.suffix || rest.endsWith("_" + f.suffix)));
+    if (!hit) continue;
+    const owner = rest === hit.suffix ? "" : rest.slice(0, rest.length - hit.suffix.length - 1);
+    out.push({ id, owner, suffix: hit.suffix, need: owner && DISABLED_NEEDED.includes(hit) ? hit : null });
+  }
+  return out.sort((a, b) => (!!b.need - !!a.need) || a.id.localeCompare(b.id));
 }
 
 // Backwards-compatible thin wrapper: the editor only needs the prefix.

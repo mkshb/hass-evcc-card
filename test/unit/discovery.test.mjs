@@ -3,7 +3,7 @@
 // one, so this exercises the grouping directly, with a hand-built registry.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { detectIntegration, detectPrefix, featureKeyOf, locateEntity, installedPrefixes, selectLoadpoints, discoverEntities } from "../../src/core/entity-discovery.js";
+import { detectIntegration, detectPrefix, featureKeyOf, locateEntity, installedPrefixes, selectLoadpoints, discoverEntities, disabledCardEntities } from "../../src/core/entity-discovery.js";
 import { loadpointFilter } from "../../src/core/constants.js";
 
 // A site entity carries the prefix (pv_power is a site feature, no loadpoint).
@@ -20,6 +20,15 @@ test("a single instance yields its prefix and entry id", async () => {
   assert.deepEqual(got.instances, [{ prefix: "evcc_", entryId: "A" }]);
 });
 
+test("disabled ha-evcc entities are reported, foreign ones are not", async () => {
+  const got = await detectIntegration(hassWith([
+    ...entry("evcc_", "A"),
+    { entity_id: "button.evcc_openwb_smart_cost_limit", platform: "evcc_intg", config_entry_id: "A", disabled_by: "integration" },
+    { entity_id: "button.other_thing", platform: "other", config_entry_id: "X", disabled_by: "user" },
+  ]));
+  assert.deepEqual(got.disabled, ["button.evcc_openwb_smart_cost_limit"]);
+});
+
 test("a non-default prefix is detected from the site entity", async () => {
   const got = await detectIntegration(hassWith(entry("myevcc_", "A")));
   assert.equal(got.prefix, "myevcc_");
@@ -33,12 +42,12 @@ test("entities of other integrations are ignored", async () => {
 
 test("without any evcc entity it falls back without an entry id", async () => {
   const got = await detectIntegration(hassWith([]));
-  assert.deepEqual(got, { prefix: "evcc_", entryId: null, instances: [] });
+  assert.deepEqual(got, { prefix: "evcc_", entryId: null, instances: [], disabled: [] });
 });
 
 test("a failing registry call does not throw", async () => {
   const got = await detectIntegration({ callWS: async () => { throw new Error("nope"); } });
-  assert.deepEqual(got, { prefix: "evcc_", entryId: null, instances: [] });
+  assert.deepEqual(got, { prefix: "evcc_", entryId: null, instances: [], disabled: [] });
 });
 
 // --- two config entries ------------------------------------------------------
@@ -227,4 +236,37 @@ test("locateEntity files a demo entity under the demo installation", () => {
   const hass = hassOf("evcc_", "evcc_demo_");
   assert.deepEqual(locateEntity(hass, "select.evcc_demo_openwb_mode"), { prefix: "evcc_demo_", loadpoint: "openwb" });
   assert.deepEqual(locateEntity(hass, "select.evcc_openwb_mode"),      { prefix: "evcc_",      loadpoint: "openwb" });
+});
+
+// --- disabled entities the card uses ------------------------------------------
+
+test("disabled entities: needed ones first, with their loadpoint", () => {
+  const got = disabledCardEntities({ states: {}, entities: {} }, [
+    "sensor.evcc_grid_energy",
+    "button.evcc_openwb_smart_cost_limit",
+    "number.evcc_openwb_smart_feed_in_priority_limit",
+    "sensor.evcc_db_5_configmeter_temp",
+  ]);
+  assert.deepEqual(got.map(e => [e.id, e.owner, !!e.need]), [
+    ["button.evcc_openwb_smart_cost_limit", "openwb", true],
+    ["number.evcc_openwb_smart_feed_in_priority_limit", "openwb", true],
+    ["sensor.evcc_grid_energy", "", false],
+  ]);
+});
+
+test("disabled entities: enabled since, or under another installation, are left out", () => {
+  const hass = {
+    states: { "button.evcc_openwb_smart_cost_limit": { state: "unknown" } },
+    entities: {
+      "sensor.evcc_grid_power":      { entity_id: "sensor.evcc_grid_power",      platform: "evcc_intg" },
+      "sensor.evcc_demo_grid_power": { entity_id: "sensor.evcc_demo_grid_power", platform: "evcc_intg" },
+    },
+  };
+  const got = disabledCardEntities(hass, [
+    "button.evcc_openwb_smart_cost_limit",
+    "button.evcc_demo_carport_smart_cost_limit",
+    "sensor.evcc_openwb_phase_action",
+  ]);
+  assert.deepEqual(got.map(e => e.id), ["sensor.evcc_openwb_phase_action"]);
+  assert.deepEqual(disabledCardEntities(hass, ["button.evcc_demo_carport_smart_cost_limit"], "evcc_demo_").map(e => e.owner), ["carport"]);
 });

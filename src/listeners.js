@@ -2,7 +2,7 @@
 // is not a <button>, <input>, <select> or <a> and so gets no keyboard support
 // from the browser. They are made focusable and get the button role here,
 // once per render, instead of every view remembering to do it.
-const NON_NATIVE_CLICKABLES = "[data-more-info], [data-action], [data-lp-current-toggle], [data-lp-smart-cost-open]";
+const NON_NATIVE_CLICKABLES = "[data-more-info], [data-action], [data-lp-current-toggle], [data-lp-smart-cost-open], [data-lp-plan-open]";
 const NATIVE = "button, input, select, textarea, a[href]";
 
 // The listeners every view shares: keyboard activation, more-info, the site
@@ -86,6 +86,7 @@ export const listeners = {
 
     this._attachLoadpointListeners();
     this._attachSliderListeners();
+    this._attachDisabledListeners();
     this._attachPlanListeners();
     this._attachStatsListeners();
     this._attachBatteryListeners();

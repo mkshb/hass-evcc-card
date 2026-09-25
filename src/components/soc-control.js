@@ -33,14 +33,23 @@ export const socControl = {
     return Array.isArray(h) && h.includes(key);
   },
 
+  // A limit, once set, only goes away again through its clear button, which
+  // ha-evcc creates disabled. The card offers the limit only with that button
+  // and returns its id; null while it is missing. Whether it sits disabled in
+  // the registry is for the warning triangle (disabled-entities.js).
+  _limitClear(limitId) {
+    const id = limitId.replace(/^number\./, "button.");
+    return this._hass.states[id] ? id : null;
+  },
+
   _renderCurrentBlock(ents, lpName = "") {
     const hide          = k => this._isSettingHidden(k);
     const hasPhases     = !!ents.phases_configured && !hide("phases");
     const hasMaxCurrent = !!ents.max_current && !hide("max_current");
     const hasMinCurrent = !!ents.min_current && !hide("min_current");
     const hasCurrent    = hasMaxCurrent || hasMinCurrent;
-    const hasSmartCost  = !!ents.smart_cost_limit && !hide("smart_cost_limit");
-    const hasFeedIn     = !!ents.smart_feed_in_priority_limit && !hide("smart_feed_in_priority_limit");
+    const hasSmartCost  = !!ents.smart_cost_limit && !hide("smart_cost_limit") && !!this._limitClear(ents.smart_cost_limit);
+    const hasFeedIn     = !!ents.smart_feed_in_priority_limit && !hide("smart_feed_in_priority_limit") && !!this._limitClear(ents.smart_feed_in_priority_limit);
     const hasPriority   = !!ents.priority && !hide("priority");
     const hasBoost      = !!ents.battery_boost_limit && !hide("battery_boost");
     // Everything hidden or missing: no block, no gear button.
@@ -105,12 +114,11 @@ export const socControl = {
             const scTariffId = isCo2 ? `sensor.${this._getPrefix()}tariff_co2` : `sensor.${this._getPrefix()}tariff_grid`;
             const scTariff   = parseFloat(this._hass.states[scTariffId]?.state ?? "NaN");
             const active     = !isNaN(scTariff) && scTariff <= parseFloat(stateVal(this._hass, ents.smart_cost_limit) || 0);
-            const clearId   = ents.smart_cost_limit.replace(/^number\./, "button.");
-            const hasClear  = !!this._hass.states[clearId];
+            const clearId    = this._limitClear(ents.smart_cost_limit);
             return `<div class="smart-cost-section" data-lp-smart-cost-section="${escAttr(lpName)}">` +
               this._sliderRow(ents.smart_cost_limit, label) +
               (active ? `<div class="smart-active-hint">⚡ ${this._t("smartCostActive")}</div>` : "") +
-              (hasClear ? `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` : "") +
+              `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` +
               `</div>`;
           })() : ""}
           ${hasSmartCost && hasFeedIn ? `<hr class="settings-divider">` : ""}
@@ -123,12 +131,11 @@ export const socControl = {
             const active     = ents.smart_feed_in_priority_active
               ? isOn(this._hass, ents.smart_feed_in_priority_active)
               : false;
-            const clearId   = ents.smart_feed_in_priority_limit.replace(/^number\./, "button.");
-            const hasClear  = !!this._hass.states[clearId];
+            const clearId = this._limitClear(ents.smart_feed_in_priority_limit);
             return `<div class="smart-cost-section" data-lp-feed-in-section="${escAttr(lpName)}">` +
               this._sliderRow(ents.smart_feed_in_priority_limit, this._t("feedInPriorityLimit")) +
               (active ? `<div class="smart-active-hint">⚡ ${this._t("feedInPriorityActive")}</div>` : "") +
-              (hasClear ? `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` : "") +
+              `<div class="smart-cost-clear-row"><button class="smart-cost-clear-btn" data-entity="${clearId}">✕ ${this._t("smartCostClear")}</button></div>` +
               `</div>`;
           })() : ""}
         </div>
@@ -579,8 +586,6 @@ export const sliderCss = `
       .smart-cost-chip.active { color: var(--evcc-green); }
       .smart-cost-chip.active:hover { color: var(--evcc-green); filter: brightness(1.2); }
       .settings-divider { border: none; border-top: 1px solid var(--divider-color, #e5e7eb); margin: 8px 0; }
-      @keyframes smart-cost-pulse { 0%,100% { background: transparent; } 40% { background: color-mix(in srgb, var(--primary-color) 15%, transparent); } }
-      .smart-cost-highlight { border-radius: 6px; animation: smart-cost-pulse 1.5s ease; }
 
       .current-block {
         border-top: 1px solid var(--divider-color, #333);

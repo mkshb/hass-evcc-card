@@ -1,5 +1,5 @@
 import { EVCC_CARD_VERSION, FEATURES } from "../core/constants.js";
-import { discoverEntities } from "../core/entity-discovery.js";
+import { discoverEntities, disabledCardEntities } from "../core/entity-discovery.js";
 import { escHtml } from "../utils/html.js";
 
 // Debug mode: expected entities, config dump, debug report. Methods are mixed into EvccCard.prototype.
@@ -165,7 +165,7 @@ export const debugView = {
           </li>`;
         }).join("")}</ul>`;
 
-    const cfgSource = this._origConfig || this._config;
+    const cfgSource = this._origConfig || this._debugReturn || this._config;
     const cfgYaml = this._formatConfigYaml(cfgSource, this._debugMask === true);
     const cfgNote = this._origConfig
       ? `<div class="debug-cfg-note">${this._t("debugCfgFromEmptyState")}</div>`
@@ -176,6 +176,7 @@ export const debugView = {
         <div class="debug-header">
           <div class="debug-title">🐞 ${this._t("debugTitle")}</div>
           <div class="debug-actions">
+            ${this._debugReturn ? `<button class="debug-back">← ${this._t("debugBack")}</button>` : ""}
             <button class="debug-copy-btn">${this._t("debugCopyReport")}</button>
             <label class="debug-mask">
               <input type="checkbox" class="debug-mask-toggle" ${this._debugMask ? "checked" : ""}/>
@@ -184,6 +185,7 @@ export const debugView = {
           </div>
           <div class="debug-toast" hidden></div>
         </div>
+${this._renderDisabledSection()}
 
         <div class="debug-section">
           <div class="debug-section-title">${this._t("debugVersions")}</div>
@@ -378,9 +380,20 @@ export const debugView = {
       }
     }
     out.push(``);
+    // By feature, not by id: the ids carry loadpoint and vehicle names.
+    const disabled = disabledCardEntities(this._hass, [...this._disabledEntities], prefix);
+    out.push(`**Disabled entities the card uses** (${disabled.length})`);
+    if (disabled.length === 0) out.push(`*(none)*`);
+    const byFeature = {};
+    for (const e of disabled) {
+      const key = `${e.id.slice(0, e.id.indexOf("."))}.${e.suffix}${e.need ? " (needed)" : ""}`;
+      byFeature[key] = (byFeature[key] || 0) + 1;
+    }
+    for (const [key, n] of Object.entries(byFeature)) out.push(`- \`${key}\`${n > 1 ? ` ×${n}` : ""}`);
+    out.push(``);
     out.push(`**Card configuration**${this._origConfig ? " *(restored from empty state)*" : ""}`);
     out.push("```yaml");
-    out.push(this._formatConfigYaml(this._origConfig || this._config, maskNames));
+    out.push(this._formatConfigYaml(this._origConfig || this._debugReturn || this._config, maskNames));
     out.push("```");
     out.push(``);
     out.push(`**Translations**`);

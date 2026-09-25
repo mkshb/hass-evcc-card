@@ -52,6 +52,25 @@ export function fmtDuration(seconds) {
   return `${m} min`;
 }
 
+// A point in time as a short clock reading: "02:00" today, "Sa., 07:00" within
+// the next days, "26.09., 07:00" from six days on, where a weekday would read
+// like this week's. Empty for anything that is not a date.
+export function fmtClock(iso, lang = "en") {
+  if (!iso || iso === "unknown" || iso === "unavailable") return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const midnight = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((midnight(d) - midnight(new Date())) / 86400000);
+  const time = { hour: "2-digit", minute: "2-digit" };
+  try {
+    return d.toLocaleString(lang, days === 0 ? time
+      : days > 0 && days < 6 ? { weekday: "short", ...time }
+      : { day: "2-digit", month: "2-digit", ...time });
+  } catch (e) {
+    return "";
+  }
+}
+
 export function fmtRemainingDuration(hass, entityId) {
   if (!entityId || !hass) return "";
   const raw = parseFloat(stateVal(hass, entityId));

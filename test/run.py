@@ -110,9 +110,11 @@ def new_page(browser, width=480, height=900):
 
 
 def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="de", ws=True, set=None, disable=None,
-              rename=None, attrs=None, tariff=None, second=None, wsname=None):
+              rename=None, attrs=None, tariff=None, second=None, wsname=None, admin=True, drop=None):
     q = {"w": width, "lang": lang}
     if not ws: q["ws"] = 0
+    if not admin: q["admin"] = 0
+    if drop: q["drop"] = ",".join(drop)
     if set:     q["set"] = ",".join(f"{k}:{v}" for k, v in set.items())
     if attrs:   q["attrs"] = json.dumps(attrs)
     if disable: q["disable"] = ",".join(disable)
@@ -1329,6 +1331,17 @@ def contracts(browser, port, t):
             "priority soc → select.select_option 30", json.dumps(last()))
     page.close()
 
+    # a disabled clear button of a smart cost limit is enabled in the entity registry
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"},
+              disable=["button.evcc_openwb_smart_cost_limit"])
+    page.locator(in_card(".lp-disabled-warn")).click(); page.wait_for_timeout(300)
+    page.locator(in_card('button.disabled-enable[data-enable-entity="button.evcc_openwb_smart_cost_limit"]')).click(); page.wait_for_timeout(300)
+    ws_last = page.evaluate("window.__hass.wsCalls.at(-1)")
+    t.check(ws_last == {"type": "config/entity_registry/update", "entity_id": "button.evcc_openwb_smart_cost_limit", "disabled_by": None},
+            "enable clear button → config/entity_registry/update disabled_by=null", json.dumps(ws_last))
+    page.close()
+
 
 def tariff_modes(browser, port, t):
     """no_pv mode sets and the co2 tariff variant.
@@ -2302,9 +2315,351 @@ def unit(browser, port, t):
             t.fail(f"{f.name} contains tests", f"no testcase in the report; stderr={p.stderr[:200]}")
 
 
+def hints(browser, port, t):
+    """The chips under the loadpoint header, as in evcc's vehicle status: the
+    charge plan (start, running until, late) and the minimum charge, plus the
+    PV and phase timers, which show only while there is time to count down.
+    The fixture clock stands at 2026-09-18 13:00 Europe/Berlin."""
+    chips = lambda page: page.evaluate("""() => [...window.__card.shadowRoot.querySelectorAll('.lp-action-chip')]
+        .filter(c => !c.hidden).map(c => c.className.replace('lp-action-chip', '').trim() + ': ' + c.textContent.trim().replace(/\\s+/g, ' '))""")
+    plan = lambda page: [c for c in chips(page) if c.startswith("plan")]
+    # Changes states on the open card, as HA does with an update.
+    update = lambda page, st: page.evaluate("""(set) => { const st = { ...window.__hass.states };
+        for (const [id, v] of Object.entries(set)) st[id] = { ...st[id], state: v };
+        window.__hass.states = st; window.__card.hass = { ...window.__hass, states: st }; }""", st)
+    lp = {"mode": "loadpoint", "loadpoints": ["openwb"]}
+    planned = {"sensor.evcc_openwb_plan_projected_start": "2026-09-19T02:00:00+02:00",
+               "sensor.evcc_openwb_plan_projected_end":   "2026-09-19T06:30:00+02:00",
+               "sensor.evcc_openwb_effective_plan_time":  "2026-09-19T07:00:00+02:00"}
+    running = {"binary_sensor.evcc_openwb_plan_active": "on",
+               "sensor.evcc_openwb_plan_projected_start": "2026-09-18T12:00:00+02:00",
+               "sensor.evcc_openwb_plan_projected_end":   "2026-09-18T16:30:00+02:00",
+               "sensor.evcc_openwb_effective_plan_time":  "2026-09-18T17:00:00+02:00"}
+
+    t.group("hints - charge plan")
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, config=lp)
+    t.check(plan(page) == [], "no plan: no plan chip", str(chips(page)))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set=planned)
+    got = plan(page)
+    t.check(got == ["plan: Ladeplan startet Sa., 02:00"], "a plan for tomorrow: start with the weekday", str(got))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={**planned, "sensor.evcc_openwb_plan_projected_start": "2026-09-18T15:00:00+02:00"})
+    got = plan(page)
+    t.check(got == ["plan: Ladeplan startet 15:00"], "a plan starting today: the time alone", str(got))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set=running)
+    got = plan(page)
+    t.check(got == ["plan: Ladeplan aktiv bis 16:30"], "a running plan: until its projected end", str(got))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={**running, "sensor.evcc_openwb_plan_projected_end": "2026-09-18T18:20:00+02:00"})
+    got = plan(page)
+    t.check(got == ["plan late: Zielzeit wird 1 h 20 min später erreicht"], "projected end after the target: the late warning", str(got))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={**planned, "sensor.evcc_openwb_plan_projected_end": "2026-09-19T07:00:30+02:00"})
+    got = plan(page)
+    t.check(got == ["plan: Ladeplan startet Sa., 02:00"], "half a minute past the target is rounding, no warning", str(got))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={**lp, "no_plan": ["openwb"]}, set=planned)
+    t.check(plan(page) == [], "no_plan: no plan chip either", str(chips(page)))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["wp"]},
+              set={"binary_sensor.evcc_wp_plan_active": "on", "sensor.evcc_wp_plan_projected_end": "2026-09-18T16:30:00+02:00"})
+    t.check(plan(page) == [], "heating loadpoint: no EV plan, no plan chip", str(chips(page)))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={**planned, "sensor.evcc_openwb_plan_projected_start": "2026-09-18T12:00:00+02:00"})
+    t.check(plan(page) == [], "a start that has passed without the plan running: no chip", str(chips(page)))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={**planned, "sensor.evcc_openwb_plan_projected_start": "2026-09-18T13:00:03+02:00"})
+    t.check(plan(page) == ["plan: Ladeplan startet 13:00"], "a start seconds ahead: the chip", str(chips(page)))
+    page.clock.set_fixed_time("2026-09-18T13:00:05+02:00")
+    page.wait_for_timeout(1300)   # no render in between, only the countdown tick
+    got = plan(page)
+    t.check(got == [], "the start passes without a render: the chip leaves", str(got))
+    got = [c.split(":")[0] for c in chips(page)]
+    t.check(got == ["pv"], "the timer next to it stays, and with it the row", str(chips(page)))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set=planned, disable=["sensor.evcc_openwb_effective_plan_soc"])
+    t.check(plan(page) == [], "a start reported, but no plan block to jump to: no chip", str(chips(page)))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set=running, lang="en")
+    got = plan(page)
+    t.check(got == ["plan: Charging plan active until 04:30 PM"], "text and clock follow the card language", str(got))
+    page.close()
+
+    t.group("hints - the plan chip jumps to the plan")
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set=planned)
+    role = page.evaluate("window.__card.shadowRoot.querySelector('.lp-action-chip.plan').getAttribute('role')")
+    t.check(role == "button", "the plan chip is a keyboard target", str(role))
+    page.locator(in_card(".lp-action-chip.plan")).click()
+    page.wait_for_timeout(100)
+    lit = lambda: page.evaluate("window.__card.shadowRoot.querySelector('.plan-block[data-lp=\"openwb\"]').getAnimations().length")
+    t.check(lit() == 1, "loadpoint mode: a tap highlights the plan block", str(lit()))
+    update(page, {"sensor.evcc_openwb_charge_power": "4.2"})
+    page.wait_for_timeout(600)
+    t.check(lit() == 1, "and the highlight outlasts the next render", str(lit()))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "compact", "loadpoints": ["openwb"]}, set=planned)
+    t.check(len(plan(page)) == 1, "compact mode: the plan chip sits above the tabs", str(chips(page)))
+    page.locator(in_card(".lp-action-chip.plan")).click()
+    page.wait_for_timeout(600)
+    tab = page.evaluate("window.__card.shadowRoot.querySelector('button.compact-tab.active')?.dataset.tab")
+    visible = page.evaluate("!!window.__card.shadowRoot.querySelector('.plan-block[data-lp=\"openwb\"]')?.offsetParent")
+    t.check(tab == "2" and visible, "compact mode: a tap switches to the plan tab", f"tab={tab} visible={visible}")
+    page.close()
+
+    t.group("hints - minimum charge")
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={"select.evcc_openwb_min_soc": "80"})
+    got = [c for c in chips(page) if c.startswith("minsoc")]
+    t.check(got == ["minsoc: Mindestladung bis 80 %"], "SoC below the minimum while connected: the minimum charge", str(got))
+    role = page.evaluate("window.__card.shadowRoot.querySelector('.lp-action-chip.minsoc').dataset.moreInfo")
+    t.check(role == "select.evcc_openwb_min_soc", "and a tap opens the minimum SoC entity", str(role))
+    page.close()
+
+    for case, st in (("minimum 0", {"select.evcc_openwb_min_soc": "0"}),
+                     ("mode Off", {"select.evcc_openwb_min_soc": "80", "select.evcc_openwb_mode": "off"}),
+                     ("SoC above the minimum", {"select.evcc_openwb_min_soc": "40"}),
+                     ("not connected", {"select.evcc_openwb_min_soc": "80", "binary_sensor.evcc_openwb_connected": "off", "binary_sensor.evcc_openwb_charging": "off"})):
+        page = new_page(browser, 480, 1600)
+        open_card(page, port, config=lp, set=st)
+        got = [c for c in chips(page) if c.startswith("minsoc")]
+        t.check(got == [], f"{case}: no minimum charge chip", str(got))
+        page.close()
+
+    t.group("hints - timers only while they count")
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={"sensor.evcc_openwb_pv_remaining": "unknown"})
+    got = [c for c in chips(page) if c.startswith("pv")]
+    t.check(got == [], "pv action without a remaining time: no chip and no dash", str(got))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={"sensor.evcc_openwb_pv_remaining": "2026-09-18T13:02:00+02:00"})
+    got = [c for c in chips(page) if c.startswith("pv")]
+    t.check(got == ["pv: PV-Laden aus in 2:00"], "pv action with a remaining time: the countdown", str(got))
+    page.clock.set_fixed_time("2026-09-18T13:02:05+02:00")
+    page.wait_for_timeout(1300)   # the countdown ticks once a second
+    got = [c for c in chips(page) if c.startswith("pv")]
+    t.check(got == [], "a run-out countdown leaves", str(got))
+    height = page.evaluate("window.__card.shadowRoot.querySelector('.lp-action-row')?.getBoundingClientRect().height ?? 0")
+    t.check(height == 0, "and, as the last chip, takes its row with it", str(height))
+    page.close()
+
+    t.group("hints - the chips stay through a render")
+    page = new_page(browser, 480, 1600)
+    errors += open_card(page, port, config=lp, set={**planned, "select.evcc_openwb_min_soc": "80"})
+    page.evaluate("""() => { const r = window.__card.shadowRoot; window.__chips = [...r.querySelectorAll('.lp-action-chip')];
+        const st = { ...window.__hass.states }; const id = 'sensor.evcc_openwb_charge_power';
+        st[id] = { ...st[id], state: '4.2' }; window.__hass.states = st; window.__card.hass = { ...window.__hass, states: st }; }""")
+    page.wait_for_timeout(600)
+    kept = page.evaluate("() => { const now = [...window.__card.shadowRoot.querySelectorAll('.lp-action-chip')]; return now.length === window.__chips.length && now.every((c, i) => c === window.__chips[i]); }")
+    t.check(kept, "a value change keeps the plan and minimum chips in place", str(kept))
+    t.check(not errors, "no console errors", "; ".join(errors)[:300])
+    page.close()
+
+    t.group("hints - a chip that leaves takes its role and listener along")
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, config=lp, set={"select.evcc_openwb_min_soc": "80", "sensor.evcc_openwb_pv_action": "inactive",
+                                                   "sensor.evcc_openwb_phase_action": "scale1p", "sensor.evcc_openwb_phase_remaining": "90"})
+    t.check([c.split(":")[0] for c in chips(page)] == ["minsoc", "phase"], "minimum charge and phase timer", str(chips(page)))
+    page.evaluate("window.__phase = window.__card.shadowRoot.querySelector('.lp-action-chip.phase')")
+    update(page, {"select.evcc_openwb_min_soc": "0"})
+    page.wait_for_timeout(600)
+    got = page.evaluate("""() => { const c = window.__card.shadowRoot.querySelector('.lp-action-chip.phase');
+        return { same: c === window.__phase, role: c.getAttribute('role'), info: c.dataset.moreInfo ?? null }; }""")
+    t.check(got == {"same": True, "role": None, "info": None}, "the phase chip keeps its own element, no button role, no more-info", str(got))
+    page.close()
+
+    page = new_page(browser, 480, 1600)
+    errors += open_card(page, port, config={"mode": "compact", "loadpoints": ["openwb"]}, set={**planned, "select.evcc_openwb_min_soc": "80"})
+    update(page, {"sensor.evcc_openwb_plan_projected_start": "unknown"})
+    page.wait_for_timeout(600)
+    page.evaluate("window.__opened = []; window.__card.addEventListener('hass-more-info', e => window.__opened.push(e.detail.entityId))")
+    page.locator(in_card(".lp-action-chip.minsoc")).click()
+    page.wait_for_timeout(300)
+    got = page.evaluate("({ tab: window.__card.shadowRoot.querySelector('button.compact-tab.active')?.dataset.tab, opened: window.__opened })")
+    t.check(got == {"tab": "0", "opened": ["select.evcc_openwb_min_soc"]}, "the minimum chip after a plan chip: more-info only, no jump to the plan tab", str(got))
+    t.check(not errors, "no console errors", "; ".join(errors)[:300])
+    page.close()
+
+
+def disabled_entities(browser, port, t):
+    """ha-evcc creates some entities disabled although a control of the card
+    depends on them, the clear buttons of the limits above all: without one a
+    limit, once set, could not be removed, so the card offers the limit only
+    with its button. A missing one shows as a warning triangle in the loadpoint
+    header for administrators; the debug view and the editor list the disabled
+    entities and enable them in the registry."""
+    cfg = {"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"}
+    btn   = "button.evcc_openwb_smart_cost_limit"
+    fi    = "number.evcc_openwb_smart_feed_in_priority_limit"
+    fibtn = "button.evcc_openwb_smart_feed_in_priority_limit"
+    limit = {"number.evcc_openwb_smart_cost_limit": "0.25"}   # a set limit, so the chip shows
+    view = lambda page: page.evaluate("""() => { const r = window.__card.shadowRoot, s = r.querySelector('[data-lp-smart-cost-section]');
+        const d = r.getElementById('debug-disabled');
+        return { slider: !!s?.querySelector('input[data-entity="number.evcc_openwb_smart_cost_limit"]'),
+                 clear: !!s?.querySelector('button.smart-cost-clear-btn'),
+                 chip: !!r.querySelector('.smart-cost-chip'),
+                 feedIn: !!r.querySelector('input[data-entity="number.evcc_openwb_smart_feed_in_priority_limit"]'),
+                 warn: r.querySelector('.lp-disabled-warn')?.getAttribute('title') ?? null,
+                 debug: !!r.querySelector('.debug'), back: !!r.querySelector('.debug-back'),
+                 rows: d ? [...d.querySelectorAll('.disabled-row')].map(li => ({
+                   id: li.querySelector('.disabled-id').textContent, what: li.querySelector('.disabled-what')?.textContent.trim() ?? null,
+                   status: li.querySelector('.disabled-status')?.textContent.trim() ?? null,
+                   enable: !!li.querySelector('.disabled-enable') })) : null,
+                 all: d?.querySelector('.disabled-enable-all')?.dataset.enableEntities ?? null,
+                 intro: d?.querySelector('.disabled-intro')?.textContent.trim() ?? null }; }""")
+    updates = lambda page: page.evaluate("window.__hass.wsCalls.filter(c => c.type === 'config/entity_registry/update')")
+
+    t.group("disabled entities - the limit only with its clear button")
+    page = new_page(browser, 480, 1800)
+    errors = open_card(page, port, config=cfg, set=limit)
+    got = view(page)
+    t.check(got["slider"] and got["clear"] and got["chip"] and got["warn"] is None, "clear button there: slider, clear button and chip, no triangle", str(got))
+    page.close()
+
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config=cfg, set=limit, drop=[btn, fibtn])
+    got = view(page)
+    t.check(not got["slider"] and not got["chip"] and not got["feedIn"] and got["warn"] is None,
+            "no clear button in ha-evcc at all: no limit and nothing to enable", str(got))
+    page.close()
+
+    t.group("disabled entities - triangle, debug view and enabling")
+    page = new_page(browser, 480, 1800)
+    errors += open_card(page, port, config=cfg, set=limit, disable=[btn])
+    got = view(page)
+    t.check(not got["slider"] and not got["clear"] and not got["chip"], "clear button disabled: no slider, no chip", str(got))
+    t.check(got["feedIn"], "the feed-in limit with its own clear button stays", str(got))
+    t.check(got["warn"] == "Deaktivierte Entitäten: Preislimit (Button „Limit löschen“)", "a warning triangle in the header names what is missing", str(got["warn"]))
+    page.locator(in_card(".lp-disabled-warn")).click(); page.wait_for_timeout(300)
+    got = view(page)
+    t.check(got["debug"] and got["back"], "the triangle opens the debug view, with a way back", str(got))
+    needed = [r for r in got["rows"] or [] if r["what"]]
+    t.check(needed == [{"id": btn, "what": "Preislimit (Button „Limit löschen“) openwb", "status": None, "enable": True}],
+            "the list names the needed entity with its loadpoint and a switch", json.dumps(got["rows"], ensure_ascii=False))
+    page.locator(in_card(f'button.disabled-enable[data-enable-entity="{btn}"]')).click(); page.wait_for_timeout(300)
+    t.check(updates(page) == [{"type": "config/entity_registry/update", "entity_id": btn, "disabled_by": None}],
+            "enable → config/entity_registry/update disabled_by=null", json.dumps(updates(page)))
+    got = view(page)
+    row = next((r for r in got["rows"] or [] if r["id"] == btn), None)
+    t.check(row and row["status"] == "Aktiviert. Home Assistant lädt ha-evcc in etwa 30 s neu." and not row["enable"],
+            "after enabling: the reload HA announced, no second switch", str(row))
+    page.locator(in_card(".debug-back")).click(); page.wait_for_timeout(300)
+    got = view(page)
+    t.check(not got["debug"] and got["warn"] is None, "back on the loadpoint, the triangle is gone while HA reloads", str(got))
+    # HA reloads ha-evcc, the button gets its state
+    page.evaluate("""(id) => { const st = { ...window.__hass.states, [id]: { entity_id: id, state: "unknown", attributes: {} } };
+        window.__hass.states = st; window.__card.hass = { ...window.__hass, states: st }; }""", btn)
+    page.wait_for_timeout(600)
+    got = view(page)
+    t.check(got["slider"] and got["clear"] and got["chip"] and got["warn"] is None, "after the reload: the limit is back", str(got))
+    t.check(not errors, "no console errors", "; ".join(errors)[:300])
+    page.close()
+
+    # the feed-in limit ships disabled together with its clear button
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config=cfg, disable=[fi, fibtn])
+    got = view(page)
+    t.check(not got["feedIn"] and got["warn"] and "Einspeisepriorität-Limit, Einspeisepriorität-Limit (Button" in got["warn"],
+            "slider and clear button of the feed-in limit disabled: both in the triangle", str(got["warn"]))
+    page.locator(in_card(".lp-disabled-warn")).click(); page.wait_for_timeout(300)
+    got = view(page)
+    t.check(got["all"] == f"{fibtn},{fi}", "enable all offers the needed ones", str(got["all"]))
+    page.locator(in_card("button.disabled-enable-all")).click(); page.wait_for_timeout(300)
+    t.check(sorted(u["entity_id"] for u in updates(page)) == sorted([fi, fibtn]), "enable all → one registry update each", json.dumps(updates(page)))
+    page.close()
+
+    # the phase current sensors: named once, no hint under the power row any more
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config=cfg, disable=[f"sensor.evcc_openwb_charge_currents_{i}" for i in range(3)])
+    got = view(page)
+    t.check(got["warn"] == "Deaktivierte Entitäten: Stromwerte je Phase", "phase currents disabled: named once in the triangle", str(got["warn"]))
+    t.check(page.locator(in_card(".power-currents-hint")).count() == 0, "and no hint under the power row", "")
+    page.close()
+
+    t.group("disabled entities - who sees the triangle")
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config=cfg, disable=[btn], admin=False)
+    got = view(page)
+    t.check(got["warn"] is None, "no administrator: no triangle", str(got))
+    page.close()
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={**cfg, "mode": "debug"}, disable=[btn], admin=False)
+    got = view(page)
+    t.check((got["intro"] or "").endswith("Aktivieren kann sie ein Administrator unter Einstellungen, Entitäten.")
+            and not any(r["enable"] for r in got["rows"] or []) and got["all"] is None,
+            "no administrator: the debug view names who can enable them, no switches", str(got))
+    page.close()
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={**cfg, "hide_disabled_hint": True}, disable=[btn])
+    t.check(view(page)["warn"] is None, "hide_disabled_hint: no triangle", "")
+    page.close()
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={**cfg, "hide_settings": ["smart_cost_limit"]}, disable=[btn])
+    t.check(view(page)["warn"] is None, "a hidden setting needs nothing: no triangle", "")
+    page.close()
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "compact", "loadpoints": ["openwb"]}, disable=[btn])
+    t.check(view(page)["warn"] is not None, "the compact header carries the triangle too", "")
+    page.close()
+
+    t.group("disabled entities - editor")
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config=cfg, disable=[btn])
+    page.evaluate("""async () => {
+      const ed = document.createElement("evcc-card-editor");
+      window.__cfg = [];
+      ed.addEventListener("config-changed", e => window.__cfg.push(JSON.parse(JSON.stringify(e.detail.config))));
+      ed.setConfig({ mode: "loadpoint" });
+      ed.hass = window.__hass;
+      document.body.appendChild(ed);
+      await new Promise(r => setTimeout(r, 900));
+    }""")
+    ed = lambda sel: page.locator(f"evcc-card-editor {sel}")
+    t.check(ed(f'button.disabled-enable[data-enable-entity="{btn}"]').count() == 1, "the editor lists the disabled entity with a switch", "")
+    ed(f'button.disabled-enable[data-enable-entity="{btn}"]').click(); page.wait_for_timeout(300)
+    t.check([u["entity_id"] for u in updates(page)] == [btn], "the editor enables it in the registry", json.dumps(updates(page)))
+    t.check("30 s" in (ed(".disabled-status").first.text_content() or ""), "and shows the reload", ed(".disabled-status").first.text_content())
+    ed("#hide_disabled_hint").check(); page.wait_for_timeout(100)
+    cfgs = page.evaluate("window.__cfg")
+    t.check(cfgs and cfgs[-1].get("hide_disabled_hint") is True, "the checkbox writes hide_disabled_hint", json.dumps(cfgs[-1:] if cfgs else []))
+    ed("#hide_disabled_hint").uncheck(); page.wait_for_timeout(100)
+    cfgs = page.evaluate("window.__cfg")
+    t.check("hide_disabled_hint" not in cfgs[-1], "unchecked, the key is dropped again", json.dumps(cfgs[-1]))
+    page.close()
+
+
 GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
-          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths}
+          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities}
 
 
 def main():

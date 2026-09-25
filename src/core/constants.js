@@ -1,4 +1,4 @@
-export const EVCC_CARD_VERSION = "0.8.5";
+export const EVCC_CARD_VERSION = "0.8.6";
 
 export const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -268,6 +268,25 @@ export const HIDEABLE_SETTINGS = [
   ["priority",                     "priority"],
   ["smart_cost_limit",             "smartCostLimitPrice"],
   ["smart_feed_in_priority_limit", "feedInPriorityLimit"],
+];
+
+// ha-evcc entities that are created disabled in the entity registry although a
+// control of the loadpoint card depends on them. While one of them is off, the
+// loadpoint header shows a warning triangle to administrators (unless
+// `hide_disabled_hint`), and the debug view and the editor offer to enable it.
+//   hide:   the hide_settings key that drops the control, and the triangle with it
+//   needs:  the control only exists next to this entity, enabled or disabled
+//   energy: only while the vehicle charges by energy instead of SoC
+//   what:   translation key naming what the card is missing
+export const DISABLED_NEEDED = [
+  { domain: "button", suffix: "smart_cost_limit",             hide: "smart_cost_limit",             needs: "number.smart_cost_limit",             what: "disabledWhatSmartCostClear" },
+  { domain: "number", suffix: "smart_feed_in_priority_limit", hide: "smart_feed_in_priority_limit",                                               what: "disabledWhatFeedIn" },
+  { domain: "button", suffix: "smart_feed_in_priority_limit", hide: "smart_feed_in_priority_limit", needs: "number.smart_feed_in_priority_limit", what: "disabledWhatFeedInClear" },
+  { domain: "number", suffix: "limit_energy",                 hide: "limit_soc",                    energy: true,                                   what: "disabledWhatLimitEnergy" },
+  { domain: "sensor", suffix: "phase_action",                 needs: "select.phases_configured",                                              what: "disabledWhatPhaseAction" },
+  { domain: "sensor", suffix: "charge_currents_0",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
+  { domain: "sensor", suffix: "charge_currents_1",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
+  { domain: "sensor", suffix: "charge_currents_2",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
 ];
 
 export const CHARGE_MODES = {

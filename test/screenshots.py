@@ -32,6 +32,14 @@ SHOTS = {
     "repeatplan": {"mode": "repeatplan"},
 }
 
+# name -> states set on top of the fixture. The loadpoint views get a charge
+# plan for tomorrow morning, so the plan chip under the header is in the image.
+PLAN = {"sensor.evcc_openwb_plan_projected_start": "2026-09-19T02:00:00+02:00",
+        "sensor.evcc_openwb_plan_projected_end":   "2026-09-19T06:30:00+02:00",
+        "sensor.evcc_openwb_effective_plan_time":  "2026-09-19T07:00:00+02:00",
+        "sensor.evcc_openwb_effective_plan_soc":   "80"}
+STATES = {"loadpoint": PLAN, "compact": PLAN}
+
 
 def union(*boxes):
     x0 = min(b["x"] for b in boxes); y0 = min(b["y"] for b in boxes)
@@ -41,7 +49,7 @@ def union(*boxes):
 
 def shot_mode(browser, port, name, config, dark, out):
     page = new_page(browser, WIDTH + 50, 1600)
-    errors = open_card(page, port, dark=dark, width=WIDTH, config=config)
+    errors = open_card(page, port, dark=dark, width=WIDTH, config=config, set=STATES.get(name))
     path = out / f"{name}-{'dark' if dark else 'light'}.png"
     page.locator(in_card("ha-card")).screenshot(path=str(path), animations="disabled")
     page.close()

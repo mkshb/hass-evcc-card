@@ -1,5 +1,6 @@
 import { loadpointCss } from "./views/loadpoint-view.js";
 import { sliderCss } from "./components/soc-control.js";
+import { disabledCss } from "./components/disabled-entities.js";
 import { siteCss } from "./views/site-view.js";
 import { flowCss } from "./views/flow-view.js";
 import { gridCss } from "./views/grid-view.js";
@@ -49,7 +50,7 @@ const baseCss = `
 `;
 
 const CSS = [
-  baseCss, loadpointCss, sliderCss, siteCss, flowCss, gridCss,
+  baseCss, loadpointCss, sliderCss, disabledCss, siteCss, flowCss, gridCss,
   statsCss, batteryCss, planCss, debugCss, priorityCss,
 ].join("\n");
 
