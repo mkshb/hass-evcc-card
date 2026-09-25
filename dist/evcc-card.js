@@ -127,6 +127,28 @@ const FEATURES = [
   { suffix: "battery_grid_charge_limit",  domain: "number",        type: "slider",      lp: false },
 ];
 
+// Entities ha-evcc creates per vehicle, independent of any loadpoint:
+// <domain>.<prefix><vehicle>_<suffix>, the vehicle part being the slug of the
+// vehicle title in evcc. They are kept apart from FEATURES because that list
+// sorts an entity into a loadpoint or the site, and a vehicle is neither. The
+// configvehicle_* sensors only exist with the extended vehicle data switched on
+// in the integration, and are disabled in the registry by default.
+const VEHICLE_FEATURES = [
+  { key: "soc",       suffix: "configvehicle_soc",      domain: "sensor" },
+  { key: "range",     suffix: "configvehicle_range",    domain: "sensor" },
+  { key: "odometer",  suffix: "configvehicle_odometer", domain: "sensor" },
+  { key: "limit_soc", suffix: "configvehicle_limitsoc", domain: "sensor" },
+];
+
+// Session totals per vehicle sit under their own infix:
+// sensor.<prefix>cstotal_<vehicle>_<suffix>
+const VEHICLE_SESSION_INFIX = "cstotal_";
+const VEHICLE_SESSION_FEATURES = [
+  { key: "sessions_energy",   suffix: "charging_sessions_vehicle_chargedenergy",  domain: "sensor" },
+  { key: "sessions_duration", suffix: "charging_sessions_vehicle_chargeduration", domain: "sensor" },
+  { key: "sessions_cost",     suffix: "charging_sessions_vehicle_cost",           domain: "sensor" },
+];
+
 // Icon for the "smart" mode. Used twice: for the native 'smart' mode of evcc
 // PR 32490, and for the "pv relabelled as Smart" pseudo-mode that older evcc
 // versions need when PV is hidden but a dynamic tariff exists (Mode.vue).
@@ -215,6 +237,14 @@ function loadpointFilter(config) {
   return Array.isArray(raw) ? raw : [raw];
 }
 
+// The `vehicles` option of the vehicle mode, read the same way: a list of
+// vehicle slugs, a single slug as shorthand, null when not set.
+function vehicleFilter(config) {
+  const raw = config?.vehicles;
+  if (raw === undefined || raw === null) return null;
+  return Array.isArray(raw) ? raw : [raw];
+}
+
 // Home Assistant expects setConfig() to throw on a configuration the card cannot
 // render: it catches the error and shows its own error card with the message, so
 // a typo in the YAML is visible instead of quietly rendering something else. The
@@ -243,6 +273,11 @@ function validateCardConfig(config) {
   const list = loadpointFilter(c);
   if (list && (!list.length || list.some(lp => typeof lp !== "string" || !lp.trim()))) {
     throw new Error("evcc-card: loadpoints has to be a loadpoint name or a list of names");
+  }
+
+  const vehicles = vehicleFilter(c);
+  if (vehicles && (!vehicles.length || vehicles.some(v => typeof v !== "string" || !v.trim()))) {
+    throw new Error("evcc-card: vehicles has to be a vehicle name or a list of names");
   }
 }
 
@@ -508,6 +543,60 @@ function discoverEntities(hass, prefix = "evcc_") {
   }
 
   return { loadpoints, site, meters };
+}
+
+// The vehicles ha-evcc knows, keyed by the slug it puts into their entity ids
+// (slugify of the vehicle title in evcc). A vehicle shows up here as soon as one
+// of its own entities exists: the configvehicle_* sensors, a repeating plan
+// switch or the session totals. None of them depends on a loadpoint, so an
+// unplugged vehicle stays in the list. Per vehicle: the VEHICLE_FEATURES and
+// VEHICLE_SESSION_FEATURES keys with their entity ids, plus `repeating_plans`,
+// the plan switches in plan order.
+const REPEATING_PLAN_RE = /^(.+)_repeating_plan_(\d+)$/;
+function discoverVehicles(hass, prefix = "evcc_") {
+  const vehicles = {};
+  const foreign  = installedPrefixes(hass).filter(p => p.length > prefix.length && p.startsWith(prefix));
+  const entry    = slug => (vehicles[slug] ??= { repeating_plans: [] });
+
+  for (const entityId of Object.keys(hass.states)) {
+    const dotIdx = entityId.indexOf(".");
+    if (dotIdx < 0) continue;
+    const domain = entityId.slice(0, dotIdx);
+    const slug   = entityId.slice(dotIdx + 1);
+    if (!slug.startsWith(prefix)) continue;
+    if (foreign.some(p => slug.startsWith(p))) continue;
+    const rest = slug.slice(prefix.length);
+
+    if (domain === "switch") {
+      const m = rest.match(REPEATING_PLAN_RE);
+      if (m) entry(m[1]).repeating_plans.push({ n: parseInt(m[2], 10), entityId });
+      continue;
+    }
+
+    const session = rest.startsWith(VEHICLE_SESSION_INFIX);
+    const feats   = session ? VEHICLE_SESSION_FEATURES : VEHICLE_FEATURES;
+    const name    = session ? rest.slice(VEHICLE_SESSION_INFIX.length) : rest;
+    for (const feat of feats) {
+      if (feat.domain !== domain || !name.endsWith("_" + feat.suffix)) continue;
+      entry(name.slice(0, name.length - feat.suffix.length - 1))[feat.key] = entityId;
+      break;
+    }
+  }
+
+  for (const v of Object.values(vehicles)) {
+    v.repeating_plans = v.repeating_plans.sort((a, b) => a.n - b.n).map(p => p.entityId);
+  }
+  return vehicles;
+}
+
+// The discovered vehicles narrowed by the card's `vehicles` option, compared
+// without case like `repeating_plan_vehicles`; without the option every
+// discovered vehicle is in.
+function selectVehicles(vehicles, config) {
+  const filter = vehicleFilter(config);
+  if (!filter) return vehicles;
+  const allowed = new Set(filter.map(v => String(v).toLowerCase()));
+  return Object.fromEntries(Object.entries(vehicles).filter(([slug]) => allowed.has(slug.toLowerCase())));
 }
 
 // The prefixes of every ha-evcc installation, without a round trip: HA mirrors

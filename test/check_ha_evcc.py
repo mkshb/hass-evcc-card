@@ -43,6 +43,18 @@ def card_features():
     return feats
 
 
+def card_vehicle_features():
+    """The per-vehicle lists next to FEATURES: entries without an `lp` flag, scope 'vehicle'."""
+    src = (ROOT / "dist" / "evcc-card.js").read_text(encoding="utf-8")
+    feats = []
+    for name in ("VEHICLE_FEATURES", "VEHICLE_SESSION_FEATURES"):
+        block = src[src.index(f"const {name} = ["):]
+        block = block[:block.index("\n];")]
+        for m in re.finditer(r'suffix:\s*"([^"]+)",\s*domain:\s*"([^"]+)"', block):
+            feats.append({"suffix": m.group(1), "domain": m.group(2), "lp": False, "vehicle": True})
+    return feats
+
+
 def ha_evcc_tags(path):
     """Tag name → {"json_key": ..., "entity_key": ...} (ApiKey definitions may span lines)."""
     keys_py = (path / "custom_components/evcc_intg/pyevcc_ha/keys.py").read_text(encoding="utf-8")
@@ -70,18 +82,18 @@ def _resolve_key(expr, tags):
 
 
 def ha_evcc_entities(path, tags):
-    """(domain, snake key) pairs per scope ('site' or 'loadpoint') from const.py's description lists.
+    """(domain, snake key) pairs per scope ('site', 'loadpoint' or 'vehicle') from const.py's description lists.
 
     Entity ids are <domain>.<prefix>[<lp>_]<snake(key)> where key is the description's
     explicit `key=` (site lists) or the tag's json_key, plus `_<idx>` when a single
     json_idx is patched into the key (charge_currents_0, …)."""
     const_py = (path / "custom_components/evcc_intg/const.py").read_text(encoding="utf-8")
-    out = {"site": set(), "loadpoint": set()}
+    out = {"site": set(), "loadpoint": set(), "vehicle": set()}
     for m in re.finditer(r"^([A-Z_]+_ENTITIES[A-Z_]*)\s*(?::\s*Final\s*)?=\s*\[(.*?)^\]", const_py, re.M | re.S):
         name, body = m.group(1), m.group(2)
         domain = DOMAIN_OF.get(name.split("_")[0])
         if not domain: continue
-        scope = "loadpoint" if "PER_LOADPOINT" in name else "site"
+        scope = "loadpoint" if "PER_LOADPOINT" in name else "vehicle" if "PER_VEHICLE" in name else "site"
         for chunk in re.split(r"\n\s+Ext\w+\(", body):
             tm = re.search(r"tag\s*=\s*Tag\.([A-Z0-9_]+)", chunk)
             if not tm: continue
@@ -118,18 +130,20 @@ def main():
     registry = json.loads((ROOT / "test/fixtures/entity_registry.json").read_text(encoding="utf-8"))
     reg_ids = [e["entity_id"] for e in registry]
 
-    feats = card_features()
+    feats = card_features() + card_vehicle_features()
     rows, failures = [], []
     for f in feats:
-        scope = "loadpoint" if f["lp"] else "site"
+        scope = "vehicle" if f.get("vehicle") else "loadpoint" if f["lp"] else "site"
         suffix = f["suffix"]
-        ok = (f["domain"], suffix) in ents["site"] | ents["loadpoint"]
+        # A vehicle feature has to come from a per-vehicle list. The repeating plan
+        # switches in FEATURES are per vehicle as well, so that scope counts there too.
+        ok = (f["domain"], suffix) in (ents["vehicle"] if f.get("vehicle") else ents["site"] | ents["loadpoint"] | ents["vehicle"])
         # per-device features (pv_0_energy, battery_2_soc, …): ha-evcc derives them from the
         # device lists at runtime, so accept them when the un-indexed key exists (pv_energy, battery_soc)
         if not ok:
             base = re.sub(r"^(pv|battery)_\d+_", r"\1_", suffix)
             ok = base != suffix and (f["domain"], base) in ents["site"]
-        pat = re.compile(rf"^{f['domain']}\.evcc_(.+_)?{re.escape(f['suffix'])}$" if f["lp"] else rf"^{f['domain']}\.evcc_{re.escape(f['suffix'])}$")
+        pat = re.compile(rf"^{f['domain']}\.evcc_(.+_)?{re.escape(f['suffix'])}$" if f["lp"] or f.get("vehicle") else rf"^{f['domain']}\.evcc_{re.escape(f['suffix'])}$")
         seen = any(pat.match(i) for i in reg_ids)
         rows.append((f["domain"], f["suffix"], scope, ok, seen))
         if not ok: failures.append(f)

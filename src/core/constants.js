@@ -126,6 +126,28 @@ export const FEATURES = [
   { suffix: "battery_grid_charge_limit",  domain: "number",        type: "slider",      lp: false },
 ];
 
+// Entities ha-evcc creates per vehicle, independent of any loadpoint:
+// <domain>.<prefix><vehicle>_<suffix>, the vehicle part being the slug of the
+// vehicle title in evcc. They are kept apart from FEATURES because that list
+// sorts an entity into a loadpoint or the site, and a vehicle is neither. The
+// configvehicle_* sensors only exist with the extended vehicle data switched on
+// in the integration, and are disabled in the registry by default.
+export const VEHICLE_FEATURES = [
+  { key: "soc",       suffix: "configvehicle_soc",      domain: "sensor" },
+  { key: "range",     suffix: "configvehicle_range",    domain: "sensor" },
+  { key: "odometer",  suffix: "configvehicle_odometer", domain: "sensor" },
+  { key: "limit_soc", suffix: "configvehicle_limitsoc", domain: "sensor" },
+];
+
+// Session totals per vehicle sit under their own infix:
+// sensor.<prefix>cstotal_<vehicle>_<suffix>
+export const VEHICLE_SESSION_INFIX = "cstotal_";
+export const VEHICLE_SESSION_FEATURES = [
+  { key: "sessions_energy",   suffix: "charging_sessions_vehicle_chargedenergy",  domain: "sensor" },
+  { key: "sessions_duration", suffix: "charging_sessions_vehicle_chargeduration", domain: "sensor" },
+  { key: "sessions_cost",     suffix: "charging_sessions_vehicle_cost",           domain: "sensor" },
+];
+
 // Icon for the "smart" mode. Used twice: for the native 'smart' mode of evcc
 // PR 32490, and for the "pv relabelled as Smart" pseudo-mode that older evcc
 // versions need when PV is hidden but a dynamic tariff exists (Mode.vue).
@@ -214,6 +236,14 @@ export function loadpointFilter(config) {
   return Array.isArray(raw) ? raw : [raw];
 }
 
+// The `vehicles` option of the vehicle mode, read the same way: a list of
+// vehicle slugs, a single slug as shorthand, null when not set.
+export function vehicleFilter(config) {
+  const raw = config?.vehicles;
+  if (raw === undefined || raw === null) return null;
+  return Array.isArray(raw) ? raw : [raw];
+}
+
 // Home Assistant expects setConfig() to throw on a configuration the card cannot
 // render: it catches the error and shows its own error card with the message, so
 // a typo in the YAML is visible instead of quietly rendering something else. The
@@ -242,6 +272,11 @@ export function validateCardConfig(config) {
   const list = loadpointFilter(c);
   if (list && (!list.length || list.some(lp => typeof lp !== "string" || !lp.trim()))) {
     throw new Error("evcc-card: loadpoints has to be a loadpoint name or a list of names");
+  }
+
+  const vehicles = vehicleFilter(c);
+  if (vehicles && (!vehicles.length || vehicles.some(v => typeof v !== "string" || !v.trim()))) {
+    throw new Error("evcc-card: vehicles has to be a vehicle name or a list of names");
   }
 }
 
