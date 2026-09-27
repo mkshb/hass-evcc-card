@@ -135,6 +135,17 @@ test("the evcc title is read off ha-evcc's vehicle device, whatever slugify repl
   assert.equal(evccVehicleTitle(hass, "ex30", { repeating_plans: [] }), null);
 });
 
+test("the evcc title never comes from ha-evcc's main device, whatever the user named it", () => {
+  // One vehicle and one loadpoint: the config sensors sit on the main device,
+  // only the session totals on the vehicle's own.
+  const hass = hassOf({
+    main: { name: "evcc [evcc]", name_by_user: "Wallbox", integration: "evcc_intg", ents: [["sensor.evcc_ex30_configvehicle_soc", "50"]] },
+    veh:  { name: "evcc - Fahrzeug EX30 [evcc]", integration: "evcc_intg", ents: [["sensor.evcc_cstotal_ex30_charging_sessions_vehicle_energy", "10"]] },
+  });
+  assert.equal(evccVehicleTitle(hass, "ex30", { soc: "sensor.evcc_ex30_configvehicle_soc", sessions_energy: "sensor.evcc_cstotal_ex30_charging_sessions_vehicle_energy", repeating_plans: [] }), "EX30");
+  assert.equal(evccVehicleTitle(hass, "ex30", { soc: "sensor.evcc_ex30_configvehicle_soc", repeating_plans: [] }), null);
+});
+
 test("what the vehicle is doing: read off device classes and status options, never off names", async () => {
   const { vehicleDeviceState } = await import("../../src/core/vehicle-device.js");
   const build = (engine, charge, plug) => hassOf({ d: { name: "Car", ents: [

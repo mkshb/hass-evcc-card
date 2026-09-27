@@ -204,16 +204,19 @@ export function resolveVehicleDevice(hass, config, slug, title = null) {
 // ("evcc - Fahrzeug EX30 [evcc]"). The words around it follow the language of
 // the integration, so the title is located by the slug instead, underscores
 // standing for whatever slugify replaced: "blue_e_golf" finds "blue e-Golf".
+// Only a device whose name holds the slug is the vehicle's: with one vehicle
+// and one loadpoint ha-evcc puts the vehicle's config sensors on its main
+// device, whose name the user may have changed to "Wallbox".
 export function evccVehicleTitle(hass, slug, vehicle) {
-  const probe = vehicle && Object.values(vehicle).find(v => typeof v === "string");
-  const ids   = [probe, ...(vehicle?.repeating_plans || [])].filter(Boolean);
+  const ids = [...Object.values(vehicle || {}).filter(v => typeof v === "string"), ...(vehicle?.repeating_plans || [])];
+  const pattern = new RegExp(slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/_/g, "[^a-z0-9]+"), "i");
+  const seen = new Set();
   for (const entityId of ids) {
     const dev = hass.devices?.[hass.entities?.[entityId]?.device_id];
-    if (!dev) continue;
-    if (dev.name_by_user) return dev.name_by_user;
-    const pattern = slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/_/g, "[^a-z0-9]+");
-    const m = String(dev.name ?? "").match(new RegExp(pattern, "i"));
-    if (m) return m[0];
+    if (!dev || seen.has(dev.id)) continue;
+    seen.add(dev.id);
+    const m = String(dev.name ?? "").match(pattern);
+    if (m) return dev.name_by_user || m[0];
   }
   return null;
 }
