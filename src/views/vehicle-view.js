@@ -153,6 +153,7 @@ export const vehicleView = {
       <div class="loadpoint vehicle-block" data-vehicle="${escAttr(slug)}">
         <div class="lp-header">
           <span class="lp-name">${escHtml(title)}</span>
+          ${this._renderVehicleDisabledWarn(slug, !!dev)}
           ${lpTitle ? `<span class="vehicle-lp" title="${this._t("vehicleAtLoadpoint")}">${escHtml(lpTitle)}</span>` : ""}
           <span class="lp-badge ${statusClass}">${statusLabel}</span>
         </div>
@@ -166,7 +167,7 @@ export const vehicleView = {
           </div>
           ${socHtml}
         </div>` : ""}
-        ${!hasVehicleData ? `<div class="vehicle-hint">${this._t("vehicleExtDataHint")}</div>`
+        ${!hasVehicleData ? `<div class="vehicle-hint">${this._t(this._vehicleDataDisabled(slug) ? "vehicleDataDisabledHint" : "vehicleExtDataHint")}</div>`
           : !(soc || range || odometer) ? `<div class="vehicle-hint">${this._t("vehicleNoData")}</div>` : ""}
         ${dev ? this._renderVehicleChips(dev) : ""}
         ${dev ? this._renderVehicleActions(slug, dev) : ""}
@@ -175,6 +176,14 @@ export const vehicleView = {
         ${this._renderVehicleTotals(vehicle)}
         ${dev ? this._renderVehicleDetails(slug, dev) : ""}
       </div>`;
+  },
+
+  // Whether ha-evcc created the vehicle's sensors, only disabled. That is
+  // known from the registry, which only an administrator can read; for anyone
+  // else the sensors look missing.
+  _vehicleDataDisabled(slug) {
+    const prefix = this._getPrefix();
+    return VEHICLE_FEATURES.some(f => this._isEntityDisabled(`${f.domain}.${prefix}${slug}_${f.suffix}`));
   },
 
   // The picture of the real car: the configured one, else what the vehicle's

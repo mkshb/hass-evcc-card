@@ -561,10 +561,18 @@ def vehicle_mode(browser, port, t):
     page, errors = card(config={"mode": "vehicle", "title": "Mein Volvo", "vehicles": ["ex30"]})
     t.check(page.locator(block("ex30")).locator(".lp-name").inner_text().strip().upper() == "MEIN VOLVO", "title names a single vehicle", "")
     done(page)
-    page, errors = card(set=UNPLUGGED, vehicle_device=False, disable=[f"sensor.evcc_ex30_configvehicle_{k}" for k in ("soc", "range", "odometer", "limitsoc")])
+    CONFIGVEHICLE = [f"sensor.evcc_ex30_configvehicle_{k}" for k in ("soc", "range", "odometer", "limitsoc")]
+    page, errors = card(set=UNPLUGGED, vehicle_device=False, drop=CONFIGVEHICLE)
     ex30 = page.locator(block("ex30"))
-    t.check(ex30.count() == 1 and "erweiterten Fahrzeugdaten" in ex30.inner_text() and ex30.locator(".rplan-row").count() == 2 and not errors,
-            "without the extended vehicle data the block stays, with a hint instead of values", ex30.inner_text()[:160] if ex30.count() else "missing")
+    hint = ex30.locator(".vehicle-hint").inner_text() if ex30.count() else "missing"
+    t.check(ex30.count() == 1 and "erweiterten Fahrzeugdaten" in hint and "Admin-Passwort" in hint and ex30.locator(".rplan-row").count() == 2
+            and ex30.locator(".lp-disabled-warn").count() == 0 and not errors,
+            "without the extended vehicle data the block stays, with a hint naming option and password", hint[:200])
+    done(page)
+    page, errors = card(set=UNPLUGGED, vehicle_device=False, disable=CONFIGVEHICLE)
+    hint = page.locator(block("ex30")).locator(".vehicle-hint").inner_text()
+    t.check("deaktiviert" in hint and "Admin-Passwort" in hint and not errors,
+            "sensors created but disabled: the hint says so, and that enabling needs the password", hint[:200])
     done(page)
     page, errors = card(second={"prefix": "evcc_demo_"})
     slugs = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block')].map(b => b.dataset.vehicle)")
@@ -3040,6 +3048,33 @@ def disabled_entities(browser, port, t):
     page = new_page(browser, 480, 1800)
     open_card(page, port, config={"mode": "compact", "loadpoints": ["openwb"]}, disable=[btn])
     t.check(view(page)["warn"] is not None, "the compact header carries the triangle too", "")
+    done(page)
+
+    t.group("disabled entities - vehicle sensors")
+    CONFIGVEHICLE = [f"sensor.evcc_ex30_configvehicle_{k}" for k in ("soc", "range", "odometer", "limitsoc")]
+    warn = lambda page, slug: page.evaluate(f"window.__card.shadowRoot.querySelector('.vehicle-block[data-vehicle={slug}] .lp-disabled-warn')?.getAttribute('title') ?? null")
+    page = new_page(browser, 480, 1800)
+    errors = open_card(page, port, config={"mode": "vehicle"}, disable=CONFIGVEHICLE, vehicle_device=False)
+    t.check(warn(page, "ex30") == "Deaktivierte Entitäten: Fahrzeugwerte ohne Ladepunkt (Ladestand, Reichweite, Kilometerstand)" and warn(page, "id7") is None,
+            "disabled vehicle sensors: a triangle in the header of that vehicle only", str(warn(page, "ex30")))
+    page.locator(in_card('.vehicle-block[data-vehicle="ex30"] .lp-disabled-warn')).click(); page.wait_for_timeout(300)
+    got = view(page)
+    needed = sorted(r["id"] for r in got["rows"] or [] if r["what"] == "Fahrzeugwerte ohne Ladepunkt (Ladestand, Reichweite, Kilometerstand) ex30")
+    t.check(got["debug"] and needed == sorted(CONFIGVEHICLE) and got["all"] and sorted(got["all"].split(",")) == sorted(CONFIGVEHICLE),
+            "the debug view lists them as needed, named with the vehicle, with enable all", json.dumps(got["rows"], ensure_ascii=False)[:300])
+    t.check(not errors, "no console errors", "; ".join(errors)[:300])
+    done(page)
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "vehicle"}, disable=CONFIGVEHICLE)
+    t.check(warn(page, "ex30") is None, "a vehicle linked to its own device needs no triangle", str(warn(page, "ex30")))
+    done(page)
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "vehicle"}, disable=CONFIGVEHICLE, vehicle_device=False, admin=False)
+    t.check(warn(page, "ex30") is None, "no administrator: no triangle on the vehicle either", "")
+    done(page)
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]}, disable=CONFIGVEHICLE, vehicle_device=False)
+    t.check(view(page)["warn"] is None, "the loadpoint header ignores the vehicle sensors", str(view(page)["warn"]))
     done(page)
 
     t.group("disabled entities - editor")

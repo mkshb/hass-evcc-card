@@ -97,6 +97,7 @@ export const disabledEntities = {
     // nothing left to point at; a failed attempt keeps the triangle.
     const pending = eid => this._enabling[eid] && this._enabling[eid].status !== "failed";
     return DISABLED_NEEDED.filter(n => {
+      if (n.vehicle) return false;
       const eid = id(n.domain, n.suffix);
       if (!this._isEntityDisabled(eid) || pending(eid)) return false;
       if (n.hide && this._isSettingHidden(n.hide)) return false;
@@ -109,12 +110,34 @@ export const disabledEntities = {
     });
   },
 
+  // The disabled sensors of a vehicle, without the one enabled from the card
+  // while HA reloads ha-evcc. A vehicle linked to the device of its own
+  // integration needs none of them.
+  _vehicleNeededDisabled(slug, linked) {
+    if (linked) return [];
+    const prefix = this._getPrefix();
+    return DISABLED_NEEDED.filter(n => {
+      if (!n.vehicle) return false;
+      const eid = `${n.domain}.${prefix}${slug}_${n.suffix}`;
+      return this._isEntityDisabled(eid) && !(this._enabling[eid] && this._enabling[eid].status !== "failed");
+    });
+  },
+
   // The triangle in a loadpoint header, only for administrators (nobody else
   // can enable an entity) and switched off by `hide_disabled_hint`. A click
   // opens the list in the debug view.
   _renderDisabledWarn(ents, lpName) {
+    return this._disabledWarnButton(() => this._neededDisabled(ents, lpName));
+  },
+
+  // The same triangle in the header of a vehicle block.
+  _renderVehicleDisabledWarn(slug, linked) {
+    return this._disabledWarnButton(() => this._vehicleNeededDisabled(slug, linked));
+  },
+
+  _disabledWarnButton(neededFn) {
     if (this._config.hide_disabled_hint || !this._hass.user?.is_admin) return "";
-    const missing = this._neededDisabled(ents, lpName);
+    const missing = neededFn();
     if (!missing.length) return "";
     const title = this._t("disabledWarnTitle") + ": " + [...new Set(missing.map(n => this._t(n.what)))].join(", ");
     return `<button class="lp-disabled-warn" data-open-disabled title="${escAttr(title)}" aria-label="${escAttr(title)}">${WARN_ICON}</button>`;

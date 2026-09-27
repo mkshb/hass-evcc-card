@@ -131,8 +131,10 @@ const FEATURES = [
 // <domain>.<prefix><vehicle>_<suffix>, the vehicle part being the slug of the
 // vehicle title in evcc. They are kept apart from FEATURES because that list
 // sorts an entity into a loadpoint or the site, and a vehicle is neither. The
-// configvehicle_* sensors only exist with the extended vehicle data switched on
-// in the integration, and are disabled in the registry by default.
+// configvehicle_* sensors need evcc's configuration, which ha-evcc only reads
+// with the evcc admin password: with it they exist enabled while the extended
+// vehicle data is switched on and not at all otherwise; without it ha-evcc
+// creates them disabled, and they stay empty when enabled.
 const VEHICLE_FEATURES = [
   { key: "soc",       suffix: "configvehicle_soc",      domain: "sensor" },
   { key: "range",     suffix: "configvehicle_range",    domain: "sensor" },
@@ -356,6 +358,12 @@ const HIDEABLE_SETTINGS = [
 //   needs:  the control only exists next to this entity, enabled or disabled
 //   energy: only while the vehicle charges by energy instead of SoC
 //   what:   translation key naming what the card is missing
+//   vehicle: a sensor of a vehicle, not of a loadpoint; its triangle sits in the
+//            header of the vehicle mode, and only for a vehicle without the
+//            device of its own integration, which has the values anyway. ha-evcc
+//            creates these disabled when it cannot read evcc's configuration
+//            (no admin password), and enabled they then stay empty: the hint in
+//            the vehicle block says so.
 const DISABLED_NEEDED = [
   { domain: "button", suffix: "smart_cost_limit",             hide: "smart_cost_limit",             needs: "number.smart_cost_limit",             what: "disabledWhatSmartCostClear" },
   { domain: "number", suffix: "smart_feed_in_priority_limit", hide: "smart_feed_in_priority_limit",                                               what: "disabledWhatFeedIn" },
@@ -365,6 +373,7 @@ const DISABLED_NEEDED = [
   { domain: "sensor", suffix: "charge_currents_0",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
   { domain: "sensor", suffix: "charge_currents_1",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
   { domain: "sensor", suffix: "charge_currents_2",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
+  ...VEHICLE_FEATURES.map(f => ({ domain: f.domain, suffix: f.suffix, vehicle: true, what: "disabledWhatVehicleData" })),
 ];
 
 const CHARGE_MODES = {
@@ -1033,7 +1042,7 @@ function socTrackBg(minSoc, limitSoc) {
 // Part of every locale URL next to the card version: a hash over the locale
 // files, stamped in by the build (rollup.config.mjs). HA lets the browser cache
 // them for a month, so changed texts need a URL of their own.
-const LOCALES_VERSION = `${EVCC_CARD_VERSION}-78b0d955`;
+const LOCALES_VERSION = `${EVCC_CARD_VERSION}-5fc08dcc`;
 
 /* ── Shared translation cache (used by both EvccCard and EvccCardEditor) ── */
 let _sharedTranslations = {};
@@ -3126,6 +3135,7 @@ const disabledEntities = {
     // nothing left to point at; a failed attempt keeps the triangle.
     const pending = eid => this._enabling[eid] && this._enabling[eid].status !== "failed";
     return DISABLED_NEEDED.filter(n => {
+      if (n.vehicle) return false;
       const eid = id(n.domain, n.suffix);
       if (!this._isEntityDisabled(eid) || pending(eid)) return false;
       if (n.hide && this._isSettingHidden(n.hide)) return false;
@@ -3138,12 +3148,34 @@ const disabledEntities = {
     });
   },
 
+  // The disabled sensors of a vehicle, without the one enabled from the card
+  // while HA reloads ha-evcc. A vehicle linked to the device of its own
+  // integration needs none of them.
+  _vehicleNeededDisabled(slug, linked) {
+    if (linked) return [];
+    const prefix = this._getPrefix();
+    return DISABLED_NEEDED.filter(n => {
+      if (!n.vehicle) return false;
+      const eid = `${n.domain}.${prefix}${slug}_${n.suffix}`;
+      return this._isEntityDisabled(eid) && !(this._enabling[eid] && this._enabling[eid].status !== "failed");
+    });
+  },
+
   // The triangle in a loadpoint header, only for administrators (nobody else
   // can enable an entity) and switched off by `hide_disabled_hint`. A click
   // opens the list in the debug view.
   _renderDisabledWarn(ents, lpName) {
+    return this._disabledWarnButton(() => this._neededDisabled(ents, lpName));
+  },
+
+  // The same triangle in the header of a vehicle block.
+  _renderVehicleDisabledWarn(slug, linked) {
+    return this._disabledWarnButton(() => this._vehicleNeededDisabled(slug, linked));
+  },
+
+  _disabledWarnButton(neededFn) {
     if (this._config.hide_disabled_hint || !this._hass.user?.is_admin) return "";
-    const missing = this._neededDisabled(ents, lpName);
+    const missing = neededFn();
     if (!missing.length) return "";
     const title = this._t("disabledWarnTitle") + ": " + [...new Set(missing.map(n => this._t(n.what)))].join(", ");
     return `<button class="lp-disabled-warn" data-open-disabled title="${escAttr(title)}" aria-label="${escAttr(title)}">${WARN_ICON}</button>`;
@@ -6991,6 +7023,7 @@ const vehicleView = {
       <div class="loadpoint vehicle-block" data-vehicle="${escAttr(slug)}">
         <div class="lp-header">
           <span class="lp-name">${escHtml(title)}</span>
+          ${this._renderVehicleDisabledWarn(slug, !!dev)}
           ${lpTitle ? `<span class="vehicle-lp" title="${this._t("vehicleAtLoadpoint")}">${escHtml(lpTitle)}</span>` : ""}
           <span class="lp-badge ${statusClass}">${statusLabel}</span>
         </div>
@@ -7004,7 +7037,7 @@ const vehicleView = {
           </div>
           ${socHtml}
         </div>` : ""}
-        ${!hasVehicleData ? `<div class="vehicle-hint">${this._t("vehicleExtDataHint")}</div>`
+        ${!hasVehicleData ? `<div class="vehicle-hint">${this._t(this._vehicleDataDisabled(slug) ? "vehicleDataDisabledHint" : "vehicleExtDataHint")}</div>`
           : !(soc || range || odometer) ? `<div class="vehicle-hint">${this._t("vehicleNoData")}</div>` : ""}
         ${dev ? this._renderVehicleChips(dev) : ""}
         ${dev ? this._renderVehicleActions(slug, dev) : ""}
@@ -7013,6 +7046,14 @@ const vehicleView = {
         ${this._renderVehicleTotals(vehicle)}
         ${dev ? this._renderVehicleDetails(slug, dev) : ""}
       </div>`;
+  },
+
+  // Whether ha-evcc created the vehicle's sensors, only disabled. That is
+  // known from the registry, which only an administrator can read; for anyone
+  // else the sensors look missing.
+  _vehicleDataDisabled(slug) {
+    const prefix = this._getPrefix();
+    return VEHICLE_FEATURES.some(f => this._isEntityDisabled(`${f.domain}.${prefix}${slug}_${f.suffix}`));
   },
 
   // The picture of the real car: the configured one, else what the vehicle's

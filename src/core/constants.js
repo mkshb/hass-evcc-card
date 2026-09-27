@@ -130,8 +130,10 @@ export const FEATURES = [
 // <domain>.<prefix><vehicle>_<suffix>, the vehicle part being the slug of the
 // vehicle title in evcc. They are kept apart from FEATURES because that list
 // sorts an entity into a loadpoint or the site, and a vehicle is neither. The
-// configvehicle_* sensors only exist with the extended vehicle data switched on
-// in the integration, and are disabled in the registry by default.
+// configvehicle_* sensors need evcc's configuration, which ha-evcc only reads
+// with the evcc admin password: with it they exist enabled while the extended
+// vehicle data is switched on and not at all otherwise; without it ha-evcc
+// creates them disabled, and they stay empty when enabled.
 export const VEHICLE_FEATURES = [
   { key: "soc",       suffix: "configvehicle_soc",      domain: "sensor" },
   { key: "range",     suffix: "configvehicle_range",    domain: "sensor" },
@@ -355,6 +357,12 @@ export const HIDEABLE_SETTINGS = [
 //   needs:  the control only exists next to this entity, enabled or disabled
 //   energy: only while the vehicle charges by energy instead of SoC
 //   what:   translation key naming what the card is missing
+//   vehicle: a sensor of a vehicle, not of a loadpoint; its triangle sits in the
+//            header of the vehicle mode, and only for a vehicle without the
+//            device of its own integration, which has the values anyway. ha-evcc
+//            creates these disabled when it cannot read evcc's configuration
+//            (no admin password), and enabled they then stay empty: the hint in
+//            the vehicle block says so.
 export const DISABLED_NEEDED = [
   { domain: "button", suffix: "smart_cost_limit",             hide: "smart_cost_limit",             needs: "number.smart_cost_limit",             what: "disabledWhatSmartCostClear" },
   { domain: "number", suffix: "smart_feed_in_priority_limit", hide: "smart_feed_in_priority_limit",                                               what: "disabledWhatFeedIn" },
@@ -364,6 +372,7 @@ export const DISABLED_NEEDED = [
   { domain: "sensor", suffix: "charge_currents_0",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
   { domain: "sensor", suffix: "charge_currents_1",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
   { domain: "sensor", suffix: "charge_currents_2",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
+  ...VEHICLE_FEATURES.map(f => ({ domain: f.domain, suffix: f.suffix, vehicle: true, what: "disabledWhatVehicleData" })),
 ];
 
 export const CHARGE_MODES = {
