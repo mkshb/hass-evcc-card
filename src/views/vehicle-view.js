@@ -195,10 +195,12 @@ export const vehicleView = {
   // and again after half that time, never on a plain re-render; until the
   // answer is there the block shows no picture.
   _vehicleMediaUrl(source) {
-    const HALF_LIFE = 12 * 3600 * 1000;
+    const LIFETIME  = 24 * 3600 * 1000;
+    const HALF_LIFE = LIFETIME / 2;
+    const RETRY     = 5 * 60 * 1000;
     const hit = this._vehicleMedia[source];
     if (hit?.url && Date.now() - hit.ts < HALF_LIFE) return hit.url;
-    if (!hit?.pending) {
+    if (!hit?.pending && !(hit?.failedAt && Date.now() - hit.failedAt < RETRY)) {
       this._vehicleMedia[source] = { ...hit, pending: true };
       this._hass.callWS({ type: "media_source/resolve_media", media_content_id: source })
         .then(res => {
@@ -206,8 +208,15 @@ export const vehicleView = {
           this._vehicleMedia[source] = { url: res.url, ts: Date.now() };
         })
         .catch(() => {
-          delete this._vehicleMedia[source];
-          this._vehicleImageFailed[source] = true;
+          // A failed renewal keeps the address while it is still valid and
+          // asks again a few minutes later; only a picture that never resolved,
+          // or whose address ran out, is dropped.
+          if (hit?.url && Date.now() - hit.ts < LIFETIME) {
+            this._vehicleMedia[source] = { url: hit.url, ts: hit.ts, failedAt: Date.now() };
+          } else {
+            delete this._vehicleMedia[source];
+            this._vehicleImageFailed[source] = true;
+          }
         })
         .finally(() => { if (this._hass && this.isConnected) this._render(); });
     }
