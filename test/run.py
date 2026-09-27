@@ -1500,6 +1500,13 @@ def editor(browser, port, t):
     t.check(last().get("vehicles") == ["id7"] and last().get("mode") == "vehicle", "vehicle filter writes config.vehicles", json.dumps(last()))
     cb("vehicles", "id7").uncheck()
     t.check("vehicles" not in last(), "an empty vehicle filter drops the key again", json.dumps(last()))
+    mount({"mode": "vehicle", "vehicles": "EX30"})
+    t.check(cb("vehicles", "ex30").is_checked() and not cb("vehicles", "id7").is_checked(),
+            "a single vehicle name is shown as checked, without case", "")
+    cb("vehicles", "id7").check()
+    t.check(last().get("vehicles") == ["EX30", "id7"], "checking a second vehicle keeps the single name", json.dumps(last()))
+    cb("vehicles", "ex30").uncheck()
+    t.check(last().get("vehicles") == ["id7"], "unchecking removes the name whatever its case", json.dumps(last()))
     dev = fld('select[data-vehicle-device="ex30"]')
     auto = dev.locator("option").first.inner_text()
     t.check(fld("select[data-vehicle-device]").count() == 2 and "Volvo EX30" in auto and dev.input_value() == "",

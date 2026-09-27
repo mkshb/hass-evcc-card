@@ -8891,7 +8891,7 @@ class EvccCardEditor extends HTMLElement {
       const label = String(slug).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
       return `
       <label class="cb-row">
-        <input type="checkbox" data-field="${type}" data-lp="${this._esc(slug)}" ${selected.includes(slug) ? "checked" : ""}>
+        <input type="checkbox" data-field="${type}" data-lp="${this._esc(slug)}" data-nocase ${selected.some(v => String(v).toLowerCase() === slug.toLowerCase()) ? "checked" : ""}>
         <span>${this._esc(label)}</span>
       </label>`;
     }).join("");
@@ -9345,13 +9345,13 @@ class EvccCardEditor extends HTMLElement {
       cb.addEventListener("change", () => {
         const field = cb.dataset.field;
         const lp    = cb.dataset.lp;
-        const current = Array.isArray(this._config[field]) ? [...this._config[field]] : [];
-        if (cb.checked) {
-          if (!current.includes(lp)) current.push(lp);
-        } else {
-          const idx = current.indexOf(lp);
-          if (idx > -1) current.splice(idx, 1);
-        }
+        // A single name is the shorthand of a list with one entry; vehicle
+        // slugs are compared without case, like the card does.
+        const raw     = this._config[field];
+        const listed  = raw === undefined || raw === null ? [] : Array.isArray(raw) ? raw : [raw];
+        const same    = cb.hasAttribute("data-nocase") ? v => String(v).toLowerCase() === lp.toLowerCase() : v => v === lp;
+        const current = listed.filter(v => !same(v));
+        if (cb.checked) current.push(lp);
         this._config = { ...this._config, [field]: current.length > 0 ? current : undefined };
         this._fire();
       });
