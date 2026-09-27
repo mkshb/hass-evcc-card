@@ -89,6 +89,12 @@ test("search: a short name inside an unrelated device does not link it", () => {
   assert.equal(findVehicleDevice(hass, "id7", "id7"), null);
 });
 
+test("search: the name has to stand as whole words, a longer word does not contain it", () => {
+  const hass = hassOf({ mower: { ...car("mower", [["sensor.mower_distance", "812", km("total_increasing")]]), name: "Automower 430X" } });
+  assert.equal(findVehicleDevice(hass, "auto", "Auto"), null);
+  assert.equal(findVehicleDevice(hass, "car", "car"), null);
+});
+
 test("search: ha-evcc's own vehicle device is never the answer; of several the one with more entities", () => {
   const hass = hassOf({
     evcc:   { ...car("evcc_ex30"), name: "evcc - Fahrzeug EX30 [evcc]", integration: "evcc_intg" },

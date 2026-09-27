@@ -6631,6 +6631,11 @@ const batteryCss = `
 
 const norm = s => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
+// A name as a pattern that only matches whole words, separators between its
+// letters optional: "id7" finds "ID.7 Pro", "blue_e_golf" finds "blue e-Golf",
+// "auto" does not find "Automower".
+const wordPattern = w => new RegExp(`(?<![a-z0-9])${[...w].join("[^a-z0-9]*")}(?![a-z0-9])`, "i");
+
 const domainOf = entityId => entityId.slice(0, entityId.indexOf("."));
 
 // Words that tell entities of the same kind apart.
@@ -6744,13 +6749,14 @@ function classifyVehicleDevice(hass, deviceId) {
 // The device that belongs to an evcc vehicle. It has to be a vehicle, which the
 // card reads off what it carries, a battery level in percent and a distance,
 // and its name or model has to contain the vehicle's evcc title or the slug
-// ha-evcc made of it. Both conditions together keep short names honest: "id7"
-// is part of many device names, but hardly of another car's. The companion app
-// of a car registers a device of the same name with a tracker and nothing else,
-// and drops out on the first condition. Several matches: the one with the most
-// entities, the integration rather than a helper built on top of it.
+// ha-evcc made of it, as whole words. Both conditions together keep short
+// names honest: "id7" is part of many device names, but hardly of another
+// car's. The companion app of a car registers a device of the same name with
+// a tracker and nothing else, and drops out on the first condition. Several
+// matches: the one with the most entities, the integration rather than a
+// helper built on top of it.
 function findVehicleDevice(hass, slug, title = null) {
-  const wanted = [...new Set([norm(slug), norm(title)])].filter(w => w.length >= 2);
+  const wanted = [...new Set([norm(slug), norm(title)])].filter(w => w.length >= 2).map(wordPattern);
   if (!wanted.length) return null;
 
   const count = {};
@@ -6761,8 +6767,8 @@ function findVehicleDevice(hass, slug, title = null) {
   let best = null;
   for (const dev of Object.values(hass.devices || {})) {
     if ((dev.identifiers || []).some(([domain]) => domain === "evcc_intg")) continue;
-    const names = [dev.name_by_user, dev.name, dev.model].map(norm).filter(Boolean);
-    if (!names.some(n => wanted.some(w => n.includes(w)))) continue;
+    const names = [dev.name_by_user, dev.name, dev.model].filter(Boolean);
+    if (!names.some(n => wanted.some(w => w.test(n)))) continue;
     const ents = deviceEntities(hass, dev.id);
     if (!ents.some(isLevel) || !ents.some(isDistance)) continue;
     if (!best || (count[dev.id] || 0) > (count[best] || 0)) best = dev.id;
