@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  stepDecimals, fmtNum, evccDate, fmtDuration, fmtClock, fmtRemainingDuration,
+  stepDecimals, fmtNum, evccDate, fmtDuration, fmtClock, fmtRemainingDuration, durationSeconds,
   fmtCountdownFromISO, fmtCountdownFromTimestamp, socFillGradient, socTrackBg,
 } from "../../src/utils/format.js";
 
@@ -121,6 +121,17 @@ test("fmtDuration stays empty for what is not a duration", () => {
   for (const bad of [-1, NaN, null, undefined, "abc", Infinity]) {
     assert.equal(fmtDuration(bad), "", String(bad));
   }
+});
+
+// --- durations ---------------------------------------------------------------
+
+test("durationSeconds reads every unit HA shows a duration in", () => {
+  assert.equal(durationSeconds(3.5, "d"), 302400, "days, the suggested unit of ha-evcc's session totals");
+  assert.equal(durationSeconds(2, "h"), 7200);
+  assert.equal(durationSeconds(3, "min"), 180);
+  assert.equal(durationSeconds(42, "s"), 42);
+  assert.equal(durationSeconds(1500, "ms"), 1.5);
+  assert.equal(durationSeconds(42, null), 42, "no unit means seconds");
 });
 
 // --- fmtRemainingDuration ----------------------------------------------------

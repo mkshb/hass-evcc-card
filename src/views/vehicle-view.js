@@ -2,7 +2,7 @@ import { discoverVehicles, selectVehicles } from "../core/entity-discovery.js";
 import { classifyVehicleDevice, resolveVehicleDevice, evccVehicleTitle, vehicleDeviceState } from "../core/vehicle-device.js";
 import { VEHICLE_FEATURES, isVehicleImageUrl, isMediaSourceId } from "../core/constants.js";
 import { stateVal, unitStr, isOn } from "../utils/state.js";
-import { fmtClock, socFillGradient, socTrackBg } from "../utils/format.js";
+import { fmtClock, durationSeconds, socFillGradient, socTrackBg } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
 
 const ICON_BATTERY  = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg>`;
@@ -440,7 +440,8 @@ export const vehicleView = {
     };
     const energy   = num(vehicle.sessions_energy);
     const cost     = num(vehicle.sessions_cost);
-    const duration = num(vehicle.sessions_duration);
+    const rawDuration = num(vehicle.sessions_duration);
+    const duration = rawDuration === null ? null : durationSeconds(rawDuration, unitStr(this._hass, vehicle.sessions_duration));
     if (energy === null && cost === null && duration === null) return "";
 
     const item = (entityId, label, text) => `

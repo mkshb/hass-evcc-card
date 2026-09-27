@@ -957,14 +957,24 @@ function fmtClock(iso, lang = "en") {
   }
 }
 
+// A duration in seconds, whatever unit HA shows it in: a sensor with a native
+// unit of seconds can still report days (suggested unit) or what the user chose.
+// No unit counts as seconds.
+function durationSeconds(value, unit) {
+  const u = String(unit ?? "").trim().toLowerCase();
+  const factor = u.startsWith("d")   ? 86400
+               : u.startsWith("h")   ? 3600
+               : u.startsWith("min") ? 60
+               : u.startsWith("ms")  ? 0.001
+                                     : 1;
+  return value * factor;
+}
+
 function fmtRemainingDuration(hass, entityId) {
   if (!entityId || !hass) return "";
   const raw = parseFloat(stateVal(hass, entityId));
   if (isNaN(raw) || raw <= 0) return "";
-  const unit = (unitStr(hass, entityId) || "").toLowerCase();
-  const seconds = unit.startsWith("min") ? raw * 60
-                : unit.startsWith("h")   ? raw * 3600
-                                         : raw;
+  const seconds = durationSeconds(raw, unitStr(hass, entityId));
   if (Math.round(seconds / 60) <= 0) return "";
   return fmtDuration(seconds);
 }
@@ -7259,7 +7269,8 @@ const vehicleView = {
     };
     const energy   = num(vehicle.sessions_energy);
     const cost     = num(vehicle.sessions_cost);
-    const duration = num(vehicle.sessions_duration);
+    const rawDuration = num(vehicle.sessions_duration);
+    const duration = rawDuration === null ? null : durationSeconds(rawDuration, unitStr(this._hass, vehicle.sessions_duration));
     if (energy === null && cost === null && duration === null) return "";
 
     const item = (entityId, label, text) => `

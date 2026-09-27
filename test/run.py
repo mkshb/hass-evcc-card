@@ -316,6 +316,13 @@ def vehicle_mode(browser, port, t):
             "switching a repeating plan calls switch.turn_on on the plan entity", json.dumps(calls[-1:]))
     done(page)
 
+    # ha-evcc suggests days for the total charge duration; 60.81 d are the same 1459 h.
+    DUR = "sensor.evcc_cstotal_ex30_charging_sessions_vehicle_chargeduration"
+    page, errors = card(set={DUR: "60.81"}, attrs={DUR: {"unit_of_measurement": "d"}})
+    totals = page.locator(block("ex30")).locator(".vehicle-totals .si-value").all_inner_texts()
+    t.check(totals[-1:] == ["1459 h"] and not errors, "the total charge duration is read in the unit HA reports it in", json.dumps(totals))
+    done(page)
+
     page, errors = card(set=UNPLUGGED, vehicle_device=False)
     ex30 = page.locator(block("ex30"))
     info = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .soc-label-row [data-more-info]')].map(e => [e.dataset.moreInfo, e.textContent.trim()])")
