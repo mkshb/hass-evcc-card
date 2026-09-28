@@ -369,5 +369,6 @@
   "editorVehicleImageTitle": "Imagem do veículo",
   "editorVehicleImageHint": "Escolha uma imagem dos media do Home Assistant, ou indique um caminho (/local/...) ou um endereço. Sem imagem o cartão não mostra o veículo; uma imagem da integração do veículo é usada automaticamente.",
   "editorVehicleImagePlaceholder": "ou um caminho, p. ex. /local/ex30.png",
-  "editorVehicleImagePick": "Imagem da biblioteca multimédia"
+  "editorVehicleImagePick": "Imagem da biblioteca multimédia",
+  "editorVehicleImageRemove": "Remover imagem"
 }

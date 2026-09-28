@@ -369,5 +369,6 @@
   "editorVehicleImageTitle": "Vehicle picture",
   "editorVehicleImageHint": "Pick a picture from Home Assistant's media, or enter a path (/local/...) or an address. Without one the card shows no vehicle; a picture the vehicle's integration provides is used on its own.",
   "editorVehicleImagePlaceholder": "or a path, e.g. /local/ex30.png",
-  "editorVehicleImagePick": "Picture from the media library"
+  "editorVehicleImagePick": "Picture from the media library",
+  "editorVehicleImageRemove": "Remove picture"
 }

@@ -1042,7 +1042,7 @@ function socTrackBg(minSoc, limitSoc) {
 // Part of every locale URL next to the card version: a hash over the locale
 // files, stamped in by the build (rollup.config.mjs). HA lets the browser cache
 // them for a month, so changed texts need a URL of their own.
-const LOCALES_VERSION = `${EVCC_CARD_VERSION}-5fc08dcc`;
+const LOCALES_VERSION = `${EVCC_CARD_VERSION}-248cb284`;
 
 /* ── Shared translation cache (used by both EvccCard and EvccCardEditor) ── */
 let _sharedTranslations = {};
@@ -8134,7 +8134,7 @@ const baseCss = `
       button.debug-link:hover { background: color-mix(in srgb, var(--primary-color) 10%, transparent); }
 `;
 
-const CSS = [
+const CSS$1 = [
   baseCss, loadpointCss, sliderCss, disabledCss, siteCss, flowCss, gridCss,
   statsCss, batteryCss, planCss, debugCss, priorityCss, vehicleCss,
 ].join("\n");
@@ -8149,7 +8149,7 @@ function sharedStyleSheet() {
   if (sharedSheet !== undefined) return sharedSheet;
   try {
     sharedSheet = new CSSStyleSheet();
-    sharedSheet.replaceSync(CSS);
+    sharedSheet.replaceSync(CSS$1);
   } catch {
     sharedSheet = null;
   }
@@ -8159,7 +8159,7 @@ function sharedStyleSheet() {
 // Attached to EvccCard.prototype.
 const styles = {
   _styles() {
-    return CSS;
+    return CSS$1;
   },
 
   // Adopts the shared sheet on this card's shadow root, once, and returns the
@@ -8174,7 +8174,7 @@ const styles = {
       }
       return "";
     }
-    return `<style>${CSS}</style>`;
+    return `<style>${CSS$1}</style>`;
   },
 };
 
@@ -8819,6 +8819,9 @@ for (const m of mixins) {
 }
 Object.assign(EvccCard.prototype, ...mixins);
 
+// mdi:close
+const CLEAR_ICON = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/></svg>`;
+
 class EvccCardEditor extends HTMLElement {
   constructor() {
     super();
@@ -8977,16 +8980,31 @@ class EvccCardEditor extends HTMLElement {
   }
 
   // One picture per vehicle: HA's media picker, and a text field underneath for
-  // a path or an address (and to show what was picked).
+  // a path or an address (and to show what was picked). A set picture gets a
+  // button next to the field that removes it.
   _vehicleImageFields(vehicles) {
+    const remove = this._t("editorVehicleImageRemove");
     return Object.keys(vehicles).sort().map(slug => {
-      const title = evccVehicleTitle(this._hass, slug, vehicles[slug]) || slug;
+      const title   = evccVehicleTitle(this._hass, slug, vehicles[slug]) || slug;
+      const current = this._config.vehicle_images?.[slug] || "";
       return `
         <label class="field-label" for="vehicle-image-${this._esc(slug)}">${this._esc(title)}</label>
         <div class="vehicle-media" data-vehicle-media="${this._esc(slug)}"></div>
-        <input id="vehicle-image-${this._esc(slug)}" class="ha-input" type="text" data-vehicle-image="${this._esc(slug)}"
-               value="${this._esc(this._config.vehicle_images?.[slug] || "")}" placeholder="${this._esc(this._t("editorVehicleImagePlaceholder"))}">`;
+        <div class="vehicle-image-row">
+          <input id="vehicle-image-${this._esc(slug)}" class="ha-input" type="text" data-vehicle-image="${this._esc(slug)}"
+                 value="${this._esc(current)}" placeholder="${this._esc(this._t("editorVehicleImagePlaceholder"))}">
+          <button type="button" class="vehicle-image-clear" data-vehicle-image-clear="${this._esc(slug)}"
+                  title="${this._esc(remove)}" aria-label="${this._esc(remove)}"${current ? "" : " hidden"}>${CLEAR_ICON}</button>
+        </div>`;
     }).join("");
+  }
+
+  _setVehicleImage(slug, value) {
+    const map = { ...(this._config.vehicle_images || {}) };
+    if (value) map[slug] = value;
+    else delete map[slug];
+    this._config = { ...this._config, vehicle_images: Object.keys(map).length ? map : undefined };
+    this._fire();
   }
 
   // The picture of a vehicle is picked from Home Assistant's media library with
@@ -9013,12 +9031,8 @@ class EvccCardEditor extends HTMLElement {
       picker.value    = isMediaSourceId(current) ? { media_content_id: current, media_content_type: "image/*", metadata: {} } : undefined;
       picker.addEventListener("value-changed", (e) => {
         e.stopPropagation();
-        const id  = e.detail?.value?.media_content_id;
-        const map = { ...(this._config.vehicle_images || {}) };
-        if (isMediaSourceId(id)) map[slug] = id;
-        else delete map[slug];
-        this._config = { ...this._config, vehicle_images: Object.keys(map).length ? map : undefined };
-        this._fire();
+        const id = e.detail?.value?.media_content_id;
+        this._setVehicleImage(slug, isMediaSourceId(id) ? id : null);
         this._render();
       });
       slot.appendChild(picker);
@@ -9132,7 +9146,16 @@ class EvccCardEditor extends HTMLElement {
         .ha-select:focus, .ha-input:focus { outline: none; border-color: var(--primary-color); }
         .vehicle-media { margin-top: 6px; }
         .vehicle-media:empty { display: none; }
-        .vehicle-media + .ha-input { margin-top: 6px; }
+        .vehicle-media + .vehicle-image-row { margin-top: 6px; }
+        .vehicle-image-row { display: flex; align-items: center; gap: 4px; }
+        .vehicle-image-row .ha-input { flex: 1; min-width: 0; }
+        .vehicle-image-clear {
+          flex-shrink: 0; display: flex; padding: 8px; border: none; border-radius: 50%; cursor: pointer;
+          background: none; color: var(--secondary-text-color);
+        }
+        .vehicle-image-clear:hover, .vehicle-image-clear:focus-visible { color: var(--primary-text-color); background: var(--secondary-background-color, rgba(127,127,127,.15)); outline: none; }
+        .vehicle-image-clear[hidden] { display: none; }
+        .vehicle-image-clear svg { width: 20px; height: 20px; }
         .cb-row { display: flex; align-items: center; gap: 8px; font-size: .875rem; cursor: pointer; padding: 4px 0; }
         .cb-row input[type="checkbox"] { accent-color: var(--primary-color); width: 16px; height: 16px; cursor: pointer; }
         ${disabledListCss}
@@ -9370,15 +9393,29 @@ class EvccCardEditor extends HTMLElement {
     this._mountVehicleMediaPickers();
 
     // Written on change, not on every key: half a path is not a valid config.
+    // An emptied field is the exception, it removes the picture right away. The
+    // field is not rendered anew here, so focus and a click on the remove button
+    // survive; only the button follows the value.
     this.shadowRoot.querySelectorAll("input[data-vehicle-image]").forEach(inp => {
+      const slug  = inp.dataset.vehicleImage;
+      const clear = this.shadowRoot.querySelector(`[data-vehicle-image-clear="${CSS.escape(slug)}"]`);
+      const set = (value) => {
+        this._setVehicleImage(slug, value);
+        if (clear) clear.hidden = !value;
+        const picker = this.shadowRoot.querySelector(`[data-vehicle-media="${CSS.escape(slug)}"] ha-selector`);
+        if (picker && !isMediaSourceId(value)) picker.value = undefined;
+      };
       inp.addEventListener("change", () => {
-        const map = { ...(this._config.vehicle_images || {}) };
         const val = inp.value.trim();
-        if (val && isVehicleImage(val)) map[inp.dataset.vehicleImage] = val;
-        else { delete map[inp.dataset.vehicleImage]; if (val) inp.value = ""; }
-        this._config = { ...this._config, vehicle_images: Object.keys(map).length ? map : undefined };
-        this._fire();
+        if (val && !isVehicleImage(val)) inp.value = "";
+        set(val && isVehicleImage(val) ? val : null);
       });
+      inp.addEventListener("input", () => {
+        if (!inp.value.trim() && this._config.vehicle_images?.[slug]) set(null);
+      });
+    });
+    this.shadowRoot.querySelectorAll("[data-vehicle-image-clear]").forEach(btn => {
+      btn.addEventListener("click", () => { this._setVehicleImage(btn.dataset.vehicleImageClear, null); this._render(); });
     });
 
     this.shadowRoot.querySelectorAll("[data-vehicle-device]").forEach(sel => {

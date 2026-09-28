@@ -1529,6 +1529,17 @@ def editor(browser, port, t):
     img = fld('input[data-vehicle-image="ex30"]')
     img.fill("/local/ex30.png"); img.dispatch_event("change")
     t.check(last().get("vehicle_images") == {"ex30": "/local/ex30.png"}, "a picture path writes config.vehicle_images", json.dumps(last()))
+    clear = fld('[data-vehicle-image-clear="ex30"]')
+    t.check(clear.is_visible() and not fld('[data-vehicle-image-clear="id7"]').is_visible(),
+            "a set picture has a remove button, a vehicle without one has none", "")
+    clear.click()
+    t.check("vehicle_images" not in last() and img.input_value() == "" and not clear.is_visible(),
+            "the remove button drops the picture, empties the field and hides itself", json.dumps(last()))
+    img.fill("/local/ex30.png"); img.dispatch_event("change")
+    t.check(clear.is_visible(), "a path written by hand brings the remove button back", "")
+    img.focus(); img.fill("")
+    t.check("vehicle_images" not in last() and not clear.is_visible() and page.evaluate("document.querySelector('evcc-card-editor').shadowRoot.activeElement?.dataset.vehicleImage") == "ex30",
+            "emptying the field removes the picture at once, without leaving it", json.dumps(last()))
     img.fill("javascript:alert(1)"); img.dispatch_event("change")
     t.check("vehicle_images" not in last(), "a path the card would reject is not written, the key goes again", json.dumps(last()))
     # Home Assistant's media selector, stood in for by an element that keeps what it is given.
@@ -1544,6 +1555,10 @@ def editor(browser, port, t):
             "the pick shows in the selector and in the text field", "")
     page.evaluate(f"{pick}.dispatchEvent(new CustomEvent('value-changed', {{ detail: {{ value: undefined }} }}))")
     t.check("vehicle_images" not in last(), "clearing the selector drops the key again", json.dumps(last()))
+    page.evaluate(f"{pick}.dispatchEvent(new CustomEvent('value-changed', {{ detail: {{ value: {{ media_content_id: 'media-source://media_source/local/ex30.png', media_content_type: 'image/png' }} }} }}))")
+    fld('[data-vehicle-image-clear="ex30"]').click()
+    t.check("vehicle_images" not in last() and page.evaluate(f"{pick}.value") is None,
+            "the remove button also empties the media selector", json.dumps(last()))
     fld("#vehicle_actions").check()
     t.check(last().get("vehicle_actions") is True, "the checkbox writes vehicle_actions: true", json.dumps(last()))
     fld("#vehicle_actions").uncheck()
