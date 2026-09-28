@@ -1,5 +1,6 @@
-import { discoverVehicles, selectVehicles } from "../core/entity-discovery.js";
-import { classifyVehicleDevice, resolveVehicleDevice, evccVehicleTitle, vehicleDeviceState } from "../core/vehicle-device.js";
+import { discoverVehicles, selectVehicle } from "../core/entity-discovery.js";
+import { classifyVehicleDevice, resolveVehicleDevice, evccVehicleTitle, vehicleDeviceState,
+         vehicleOverride, hasVehicleDeviceData } from "../core/vehicle-device.js";
 import { VEHICLE_FEATURES, isVehicleImageUrl, isMediaSourceId } from "../core/constants.js";
 import { stateVal, unitStr, isOn } from "../utils/state.js";
 import { fmtClock, durationSeconds, socFillGradient, socTrackBg } from "../utils/format.js";
@@ -21,40 +22,38 @@ const NO_VALUE = new Set(["unknown", "unavailable", ""]);
 // How many open doors or warnings get a chip of their own before the rest is summed up.
 const MAX_CHIPS = 4;
 
-// Vehicle mode: one block per vehicle evcc knows, plugged in or not. Methods are mixed into EvccCard.prototype.
+// Vehicle mode: one card, one vehicle - plugged in or not. Everything the card
+// carries (the device of the vehicle's own integration, the picture, the roles,
+// the functions) belongs to that vehicle, so a household with several cars puts
+// a card next to the other instead of one card growing with every car.
+// Methods are mixed into EvccCard.prototype.
 export const vehicleView = {
   _renderVehicleMode(loadpoints) {
-    const all      = discoverVehicles(this._hass, this._getPrefix());
-    const vehicles = selectVehicles(all, this._config);
-    const slugs    = Object.keys(vehicles).sort();
-    if (slugs.length === 0) return this._renderNoVehicles(all);
-    const links = this._vehicleLinks();
-    return slugs.map(slug => this._renderVehicle(slug, vehicles[slug],
-      this._vehicleLoadpoint(slug, loadpoints), slugs.length === 1, links[slug] ?? null)).join("");
+    const all    = discoverVehicles(this._hass, this._getPrefix());
+    const chosen = selectVehicle(all, this._config);
+    if (!chosen) return this._renderNoVehicles(all);
+    const [slug, vehicle] = chosen;
+    return this._renderVehicle(slug, vehicle, this._vehicleLoadpoint(slug, loadpoints), this._vehicleLink(slug, vehicle));
   },
 
-  // Which Home Assistant device belongs to which vehicle, and the entities on
-  // it. The search walks both registries, so the answer is kept until one of
-  // the registries, the config or the set of entities changes.
-  _vehicleLinks() {
+  // The Home Assistant device of the vehicle and the entities on it. The search
+  // walks both registries, so the answer is kept until one of the registries,
+  // the config or the set of entities changes.
+  _vehicleLink(slug, vehicle) {
     const hass = this._hass;
-    if (!hass) return {};
+    if (!hass) return null;
     const c = this._vehicleLinkCache;
     const stateCount = Object.keys(hass.states).length;
-    if (c && c.entities === hass.entities && c.devices === hass.devices && c.config === this._config
-        && c.prefix === this._getPrefix() && c.stateCount === stateCount) return c.links;
+    if (c && c.slug === slug && c.entities === hass.entities && c.devices === hass.devices && c.config === this._config
+        && c.prefix === this._getPrefix() && c.stateCount === stateCount) return c.link;
 
-    const links = {};
-    const vehicles = selectVehicles(discoverVehicles(hass, this._getPrefix()), this._config);
-    for (const [slug, vehicle] of Object.entries(vehicles)) {
-      const deviceId = resolveVehicleDevice(hass, this._config, slug, evccVehicleTitle(hass, slug, vehicle));
-      if (!deviceId) continue;
-      const entityIds = Object.values(hass.entities || {}).filter(e => e.device_id === deviceId).map(e => e.entity_id);
-      links[slug] = { deviceId, entityIds };
-    }
-    this._vehicleLinkCache = { entities: hass.entities, devices: hass.devices, config: this._config,
-                               prefix: this._getPrefix(), stateCount, links };
-    return links;
+    const deviceId = resolveVehicleDevice(hass, this._config, slug, evccVehicleTitle(hass, slug, vehicle));
+    const link = deviceId
+      ? { deviceId, entityIds: Object.values(hass.entities || {}).filter(e => e.device_id === deviceId).map(e => e.entity_id) }
+      : null;
+    this._vehicleLinkCache = { slug, entities: hass.entities, devices: hass.devices, config: this._config,
+                               prefix: this._getPrefix(), stateCount, link };
+    return link;
   },
 
   // The loadpoint a vehicle is assigned to right now. ha-evcc describes the
@@ -110,10 +109,16 @@ export const vehicleView = {
     return this._t("vehicleUpdated", { val: text });
   },
 
-  _renderVehicle(slug, vehicle, lp, single, link) {
-    const title = (single && this._config.title) || lp?.title
+  _renderVehicle(slug, vehicle, lp, link) {
+    const title = this._config.title || lp?.title
       || evccVehicleTitle(this._hass, slug, vehicle) || this._vehicleNameForSlug(slug);
-    const dev   = link ? classifyVehicleDevice(this._hass, link.deviceId) : null;
+    // What the vehicle's own integration contributes: the entities of its device
+    // sorted into roles, with `vehicle_entities` having the last word. A vehicle
+    // without a device gets everything from the configuration, which is why the
+    // classification also runs without one.
+    const override = vehicleOverride(this._config);
+    const classified = link || override ? classifyVehicleDevice(this._hass, link?.deviceId ?? null, override) : null;
+    const dev   = hasVehicleDeviceData(classified) ? classified : null;
     const roles = dev?.roles ?? {};
 
     const soc      = this._vehicleValue({ vehicle: vehicle.soc,       device: roles.soc,        lp, lpKey: "vehicle_soc", min: 0 });
@@ -127,8 +132,11 @@ export const vehicleView = {
     // there; everything else (driving, charging somewhere else) only the
     // vehicle's integration can tell. Without one, a vehicle that is not at a
     // loadpoint is simply "not connected": the card does not claim it is parked.
+    // A vehicle is only called parked when something could have said otherwise:
+    // its device, or a configured entity for driving, charging or the plug.
+    const tellsState = dev && (!!link || ["driving", "charging", "plugged"].some(r => roles[r]));
     const state = lp?.charging ? "charging" : lp?.connected ? "connected"
-                : dev ? vehicleDeviceState(this._hass, roles) : "away";
+                : tellsState ? vehicleDeviceState(this._hass, roles) : "away";
     const statusClass = state === "charging" ? "charging" : state === "connected" ? "connected" : "ready";
     const statusLabel = state === "charging"  ? this._t("charging")
                       : state === "connected" ? this._t("connected")
@@ -157,7 +165,7 @@ export const vehicleView = {
           ${lpTitle ? `<span class="vehicle-lp" title="${this._t("vehicleAtLoadpoint")}">${escHtml(lpTitle)}</span>` : ""}
           <span class="lp-badge ${statusClass}">${statusLabel}</span>
         </div>
-        ${this._renderVehicleImage(slug, roles, title)}
+        ${this._renderVehicleImage(roles, title)}
         ${(soc || range || odometer) ? `
         <div class="soc-section">
           <div class="soc-label-row">
@@ -190,8 +198,8 @@ export const vehicleView = {
   // integration offers as an image entity. Returns { source, url } or null;
   // `source` is what was configured and `url` what the browser can load. One
   // that failed to load is not tried again, the block goes on without a picture.
-  _vehicleImage(slug, roles) {
-    const configured = this._config.vehicle_images?.[slug];
+  _vehicleImage(roles) {
+    const configured = this._config.vehicle_image;
     const fromEntity = roles.image ? this._hass.states[roles.image]?.attributes?.entity_picture : null;
     const source = [configured, fromEntity].find(v => isMediaSourceId(v) || isVehicleImageUrl(v))?.trim() ?? null;
     if (!source || this._vehicleImageFailed[source]) return null;
@@ -235,8 +243,8 @@ export const vehicleView = {
   // The picture above the values, only when there is one: the card draws no
   // vehicle of its own. A picture that fails to load is dropped (listener in
   // _attachVehicleListeners), keyed by what was configured.
-  _renderVehicleImage(slug, roles, title) {
-    const image = this._vehicleImage(slug, roles);
+  _renderVehicleImage(roles, title) {
+    const image = this._vehicleImage(roles);
     if (!image) return "";
     return `
       <div class="vehicle-image">
@@ -276,7 +284,8 @@ export const vehicleView = {
     const lock = dev.roles.lock && this._hass.states[dev.roles.lock];
     if (lock && !NO_VALUE.has(lock.state)) {
       const id      = dev.roles.lock;
-      const locked  = lock.state === "locked";
+      // A lock entity says "locked", a switch put into the role says "on".
+      const locked  = lock.state === "locked" || lock.state === "on";
       // HA's own transition states, or a command of the card still under way:
       // the one sent is the opposite of what the lock showed.
       const moving  = lock.state === "locking" ? "vehicleLocking" : lock.state === "unlocking" ? "vehicleUnlocking" : null;
@@ -337,17 +346,24 @@ export const vehicleView = {
         data-entity="${escAttr(entityId)}"${confirm ? ` data-confirm="1"` : ""}${pending ? " disabled" : ""}>${escHtml(pending ? this._t("vehiclePending") : label)}</button>`;
     };
 
+    // A configured entity that does not exist in Home Assistant is left out
+    // instead of drawn as a button that can only fail: an entity renamed or an
+    // integration gone is the normal reason, and a typo shows as a missing
+    // button rather than as an error on the first press.
+    const exists  = id => !!this._hass.states[id];
+    const actions = dev.actions.filter(exists);
+
     let climateHtml = "";
     const c = dev.climate;
     if (c?.entity && this._hass.states[c.entity] && !NO_VALUE.has(this._hass.states[c.entity].state)) {
       const on = this._hass.states[c.entity].state !== "off";
       climateHtml = cmd(c.entity, on ? "climate-off" : "climate-on", this._t(on ? "vehicleClimateStop" : "vehicleClimateStart"), false, on ? " active" : "");
-    } else if (c?.start && c?.stop) {
+    } else if (c?.start && c?.stop && exists(c.start) && exists(c.stop)) {
       climateHtml = cmd(c.start, "press", this._t("vehicleClimateStart")) + cmd(c.stop, "press", this._t("vehicleClimateStop"));
     }
 
     const confirm = this._vehicleConfirm;
-    const mine    = confirm && [dev.roles.lock, ...dev.actions].includes(confirm.entityId);
+    const mine    = confirm && [dev.roles.lock, ...actions].includes(confirm.entityId);
     const confirmHtml = mine ? `
       <div class="vehicle-confirm">
         <span>${escHtml(this._t("vehicleConfirm", { action: confirm.cmd === "unlock" ? this._t("vehicleUnlock") : this._vehicleEntityName(confirm.entityId) }))}</span>
@@ -356,7 +372,7 @@ export const vehicleView = {
       </div>` : "";
 
     let actionsHtml = "";
-    if (dev.actions.length) {
+    if (actions.length) {
       const open = !!this._vehicleActionsOpen[slug];
       actionsHtml = `
       <div class="vehicle-details vehicle-actions-list">
@@ -366,7 +382,7 @@ export const vehicleView = {
             ? "M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
             : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"}"/></svg>
         </button>
-        <div class="vehicle-cmd-row"${open ? "" : " hidden"}>${dev.actions.map(id => cmd(id, "press", this._vehicleEntityName(id), true)).join("")}</div>
+        <div class="vehicle-cmd-row"${open ? "" : " hidden"}>${actions.map(id => cmd(id, "press", this._vehicleEntityName(id), true)).join("")}</div>
       </div>`;
     }
 
@@ -525,6 +541,8 @@ export const vehicleView = {
     });
   },
 
+  // Nothing to show: either evcc knows no vehicle, or it knows several and the
+  // card has not been told which one it is for. Both name what there is.
   _renderNoVehicles(allVehicles = {}) {
     const available = Object.keys(allVehicles);
     const hint = available.length > 0
@@ -532,7 +550,7 @@ export const vehicleView = {
       : "";
     return `
       <div class="empty">
-        <p>${this._t("noVehicles")}</p>
+        <p>${this._t(available.length > 0 ? "vehiclePickOne" : "noVehicles")}</p>
         ${hint}
       </div>`;
   },

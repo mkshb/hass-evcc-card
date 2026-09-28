@@ -1,10 +1,14 @@
-import { HIDEABLE_SETTINGS, vehicleFilter, isVehicleImage, isMediaSourceId } from "./core/constants.js";
-import { detectIntegration, discoverEntities, discoverVehicles, disabledCardEntities } from "./core/entity-discovery.js";
+import { HIDEABLE_SETTINGS, vehicleSlug, isVehicleImage, isMediaSourceId } from "./core/constants.js";
+import { detectIntegration, discoverEntities, discoverVehicles, selectVehicle, disabledCardEntities } from "./core/entity-discovery.js";
 import { enableEntity } from "./core/actions.js";
 import { disabledEntitiesHtml, disabledListCss, enableEntities } from "./components/disabled-entities.js";
 import { loadSharedTranslations, sharedTranslations, sharedTranslationsReady } from "./utils/translations.js";
 import { escHtml } from "./utils/html.js";
-import { listVehicleDevices, findVehicleDevice, evccVehicleTitle } from "./core/vehicle-device.js";
+import { listVehicleDevices, findVehicleDevice, evccVehicleTitle, resolveVehicleDevice, classifyVehicleDevice,
+         vehicleOverride, vehicleRoleCandidates, vehicleActionCandidates, VEHICLE_ROLES } from "./core/vehicle-device.js";
+
+// mdi:eye-off
+const EYE_OFF_ICON = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.56 9,11.77 9,12A3,3 0 0,0 12,15C12.22,15 12.44,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17A5,5 0 0,1 7,12C7,11.21 7.2,10.47 7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,12C2.73,16.39 7,19.5 12,19.5C13.55,19.5 15.03,19.2 16.38,18.66L18.74,21L20,19.73L3.27,3M12,7A5,5 0 0,1 17,12C17,12.64 16.87,13.26 16.64,13.82L19.57,16.75C21.07,15.5 22.27,13.86 23,12C21.27,7.61 17,4.5 12,4.5C10.6,4.5 9.26,4.75 8,5.2L10.17,7.35C10.74,7.13 11.35,7 12,7Z"/></svg>`;
 
 // mdi:close
 const CLEAR_ICON = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/></svg>`;
@@ -22,6 +26,7 @@ export class EvccCardEditor extends HTMLElement {
     this._disabled  = [];   // ha-evcc entities disabled in the registry
     this._enabling  = {};   // entity id -> outcome of enabling it here (disabled-entities.js)
     this._disabledOptionalOpen = false;
+    this._vehicleMapOpen = false;   // the entity mapping of the card's vehicle unfolded
   }
 
   _t(key, replacements = {}) {
@@ -137,60 +142,266 @@ export class EvccCardEditor extends HTMLElement {
     }).join("");
   }
 
-  // One device select per vehicle. The first option is what the card does on
-  // its own and names the device it found, so nobody has to pick what is
-  // already right; a choice is written to `vehicle_devices`, the automatic one
-  // removes the vehicle from it again.
-  _vehicleDeviceFields(vehicles) {
+  // The vehicle this card is for. One card shows one vehicle, so this is a plain
+  // choice: with a single vehicle in the installation the card takes it by
+  // itself and the first option says so, with several one has to be picked.
+  _vehicleChooser(vehicles) {
     const slugs = Object.keys(vehicles).sort();
-    if (slugs.length === 0) return `<div class="hint">${this._t("editorVehiclesNoneFound")}</div>`;
-    const devices = listVehicleDevices(this._hass);
-    const chosen  = this._config.vehicle_devices && typeof this._config.vehicle_devices === "object" ? this._config.vehicle_devices : {};
-    const option  = (val, label, cur) => `<option value="${this._esc(val)}"${cur === val ? " selected" : ""}>${this._esc(label)}</option>`;
-
-    return slugs.map(slug => {
-      const title = evccVehicleTitle(this._hass, slug, vehicles[slug]) || slug;
-      const found = devices.find(d => d.id === findVehicleDevice(this._hass, slug, title));
-      const cur   = chosen[slug] === false ? "none" : (chosen[slug] || "");
-      const like  = devices.filter(d => d.vehicleLike);
-      const other = devices.filter(d => !d.vehicleLike);
-      return `
-        <label class="field-label" for="vehicle-device-${this._esc(slug)}">${this._esc(title)}</label>
-        <select id="vehicle-device-${this._esc(slug)}" class="ha-select" data-vehicle-device="${this._esc(slug)}">
-          ${option("", this._t("editorVehicleDeviceAuto", { val: found ? found.name : this._t("editorVehicleDeviceNotFound") }), cur)}
-          ${option("none", this._t("editorVehicleDeviceNone"), cur)}
-          ${like.length ? `<optgroup label="${this._esc(this._t("editorVehicleDeviceGroupVehicles"))}">${like.map(d => option(d.id, d.name, cur)).join("")}</optgroup>` : ""}
-          ${other.length ? `<optgroup label="${this._esc(this._t("editorVehicleDeviceGroupOther"))}">${other.map(d => option(d.id, d.name, cur)).join("")}</optgroup>` : ""}
-          ${cur && cur !== "none" && !devices.some(d => d.id === cur) ? option(cur, cur, cur) : ""}
-        </select>`;
-    }).join("");
+    if (!slugs.length) return `<div class="hint">${this._t("editorVehiclesNoneFound")}</div>`;
+    const cur    = vehicleSlug(this._config) || "";
+    const isCur  = slug => cur && slug.toLowerCase() === cur.toLowerCase();
+    const first  = slugs.length === 1
+      ? this._t("editorVehicleAuto", { val: this._vehicleTitle(slugs[0], vehicles[slugs[0]]) })
+      : this._t("editorVehiclePick");
+    return `
+      <select id="vehicle" class="ha-select" data-vehicle-choose>
+        <option value=""${cur ? "" : " selected"}>${this._esc(first)}</option>
+        ${slugs.map(slug => `<option value="${this._esc(slug)}"${isCur(slug) ? " selected" : ""}>${this._esc(this._vehicleTitle(slug, vehicles[slug]))}</option>`).join("")}
+        ${cur && !slugs.some(isCur) ? `<option value="${this._esc(cur)}" selected>${this._esc(cur)}</option>` : ""}
+      </select>`;
   }
 
-  // One picture per vehicle: HA's media picker, and a text field underneath for
-  // a path or an address (and to show what was picked). A set picture gets a
-  // button next to the field that removes it.
-  _vehicleImageFields(vehicles) {
-    const remove = this._t("editorVehicleImageRemove");
-    return Object.keys(vehicles).sort().map(slug => {
-      const title   = evccVehicleTitle(this._hass, slug, vehicles[slug]) || slug;
-      const current = this._config.vehicle_images?.[slug] || "";
+  _vehicleTitle(slug, vehicle) {
+    return evccVehicleTitle(this._hass, slug, vehicle) || slug;
+  }
+
+  // The device of the vehicle's own integration. The first option is what the
+  // card does by itself and names the device it found, so nobody has to pick
+  // what is already right; a choice is written to `vehicle_device`, the
+  // automatic one removes the option again.
+  _vehicleDeviceField(slug, vehicle) {
+    const devices = listVehicleDevices(this._hass);
+    const option  = (val, label, cur) => `<option value="${this._esc(val)}"${cur === val ? " selected" : ""}>${this._esc(label)}</option>`;
+    const title   = this._vehicleTitle(slug, vehicle);
+    const found   = devices.find(d => d.id === findVehicleDevice(this._hass, slug, title));
+    const chosen  = this._config.vehicle_device;
+    const cur     = chosen === false ? "none" : (typeof chosen === "string" ? chosen : "");
+    const like    = devices.filter(d => d.vehicleLike);
+    const other   = devices.filter(d => !d.vehicleLike);
+    return `
+      <select id="vehicle-device" class="ha-select" data-vehicle-device>
+        ${option("", this._t("editorVehicleDeviceAuto", { val: found ? found.name : this._t("editorVehicleDeviceNotFound") }), cur)}
+        ${option("none", this._t("editorVehicleDeviceNone"), cur)}
+        ${like.length ? `<optgroup label="${this._esc(this._t("editorVehicleDeviceGroupVehicles"))}">${like.map(d => option(d.id, d.name, cur)).join("")}</optgroup>` : ""}
+        ${other.length ? `<optgroup label="${this._esc(this._t("editorVehicleDeviceGroupOther"))}">${other.map(d => option(d.id, d.name, cur)).join("")}</optgroup>` : ""}
+        ${cur && cur !== "none" && !devices.some(d => d.id === cur) ? option(cur, cur, cur) : ""}
+      </select>
+      ${this._vehicleMapFields(slug, resolveVehicleDevice(this._hass, this._config, slug, title))}`;
+  }
+
+  // The entity mapping of one vehicle, folded away: one field per role and the
+  // list of functions. Where Home Assistant's own entity picker is there, each
+  // role gets it, with its search and narrowed down to the entities that could
+  // fill the role; without it a plain select stands in, the entities of the
+  // vehicle's device first. Empty means the card decides by itself, and the
+  // button next to the field switches a role off for good.
+  // Rendered only while it is unfolded, so an installation with many entities
+  // pays for the fields only when someone looks at them.
+  _vehicleMapFields(slug, deviceId) {
+    const ov    = vehicleOverride(this._config) || {};
+    const set   = VEHICLE_ROLES.filter(r => r.key in ov).length + ("actions" in ov ? 1 : 0);
+    const open  = !!this._vehicleMapOpen;
+    const head  = `
+      <button type="button" class="vehicle-map-toggle" data-vehicle-map aria-expanded="${open}">
+        <span>${this._esc(this._t("editorVehicleMapToggle"))}${set ? ` (${this._esc(this._t("editorVehicleMapSet", { val: set }))})` : ""}</span>
+      </button>`;
+    if (!open) return head;
+
+    const search = this._haSelectorReady();
+    const auto   = classifyVehicleDevice(this._hass, deviceId, null);
+    const hide   = this._t("editorVehicleRoleNone");
+    const rows = VEHICLE_ROLES.map(role => {
+      const cur   = typeof ov[role.key] === "string" ? ov[role.key] : (ov[role.key] === false ? "none" : "");
+      const off   = cur === "none";
+      const label = this._t("vehicleRole_" + role.key);
+      const field = search
+        ? `<div class="vehicle-role-pick" data-vehicle-role-pick data-role="${role.key}"></div>`
+        : this._vehicleRoleSelect(role, deviceId, cur, auto);
       return `
-        <label class="field-label" for="vehicle-image-${this._esc(slug)}">${this._esc(title)}</label>
-        <div class="vehicle-media" data-vehicle-media="${this._esc(slug)}"></div>
-        <div class="vehicle-image-row">
-          <input id="vehicle-image-${this._esc(slug)}" class="ha-input" type="text" data-vehicle-image="${this._esc(slug)}"
-                 value="${this._esc(current)}" placeholder="${this._esc(this._t("editorVehicleImagePlaceholder"))}">
-          <button type="button" class="vehicle-image-clear" data-vehicle-image-clear="${this._esc(slug)}"
-                  title="${this._esc(remove)}" aria-label="${this._esc(remove)}"${current ? "" : " hidden"}>${CLEAR_ICON}</button>
+        <div class="vehicle-map-row">
+          ${search ? "" : `<label class="field-label" for="vehicle-role-${role.key}">${this._esc(label)}</label>`}
+          <div class="vehicle-role-row">
+            ${field}
+            <button type="button" class="vehicle-role-none" data-vehicle-role-none data-role="${role.key}"
+                    aria-pressed="${off}" title="${this._esc(hide)}" aria-label="${this._esc(`${label}: ${hide}`)}">${EYE_OFF_ICON}</button>
+          </div>
         </div>`;
     }).join("");
+
+    return head + `
+      <div class="vehicle-map">
+        <div class="hint">${this._esc(this._t("editorVehicleMapHint"))}</div>
+        ${rows}
+        ${this._vehicleFunctionFields(deviceId)}
+      </div>`;
   }
 
-  _setVehicleImage(slug, value) {
-    const map = { ...(this._config.vehicle_images || {}) };
-    if (value) map[slug] = value;
-    else delete map[slug];
-    this._config = { ...this._config, vehicle_images: Object.keys(map).length ? map : undefined };
+  // The select that stands in for the picker: the automatic choice, "do not
+  // show", then the entities of the vehicle's device and everything else that
+  // fits the role.
+  _vehicleRoleSelect(role, deviceId, cur, auto) {
+    const cand   = vehicleRoleCandidates(this._hass, role.key, deviceId);
+    const autoId = this._vehicleAutoRole(auto, role.key);
+    const opt    = (val, label) => `<option value="${this._esc(val)}"${cur === val ? " selected" : ""}>${this._esc(label)}</option>`;
+    const group  = (label, list) => list.length ? `<optgroup label="${this._esc(label)}">${list.map(e => opt(e.entityId, `${e.name} (${e.entityId})`)).join("")}</optgroup>` : "";
+    const known  = [...cand.device, ...cand.other].some(e => e.entityId === cur);
+    return `
+      <select id="vehicle-role-${role.key}" class="ha-select" data-vehicle-role data-role="${role.key}">
+        ${opt("", autoId ? this._t("editorVehicleRoleAuto", { val: autoId }) : this._t("editorVehicleRoleAutoNone"))}
+        ${opt("none", this._t("editorVehicleRoleNone"))}
+        ${group(this._deviceName(deviceId) || this._t("editorVehicleRoleGroupDevice"), cand.device)}
+        ${group(this._t("editorVehicleRoleGroupAll"), cand.other)}
+        ${cur && cur !== "none" && !known ? opt(cur, cur) : ""}
+      </select>`;
+  }
+
+  // What the card takes for a role on its own: an entity from the device, or one
+  // of the three that make up the preconditioning.
+  _vehicleAutoRole(auto, key) {
+    const slot = VEHICLE_ROLES.find(r => r.key === key)?.climate;
+    return slot ? (auto.climate?.[slot] ?? null) : (auto.roles[key] ?? null);
+  }
+
+  // Home Assistant's entity picker per role: it searches, and it only offers
+  // what could fill the role. Empty is the automatic choice, which the helper
+  // line under the field names; a role switched off keeps the field empty and
+  // disabled, the button beside it says so.
+  _mountVehicleRolePickers() {
+    const slots = this.shadowRoot.querySelectorAll("[data-vehicle-role-pick]");
+    if (!slots.length || !this._haSelectorReady()) return;
+    slots.forEach(slot => {
+      const key      = slot.dataset.role;
+      const deviceId = this._vehicleDeviceFor();
+      const ov       = vehicleOverride(this._config) || {};
+      const cur      = typeof ov[key] === "string" ? ov[key] : (ov[key] === false ? "none" : "");
+      const cand     = vehicleRoleCandidates(this._hass, key, deviceId);
+      const ids      = [...cand.device, ...cand.other].map(e => e.entityId);
+      const autoId   = this._vehicleAutoRole(classifyVehicleDevice(this._hass, deviceId, null), key);
+      const picker   = document.createElement("ha-selector");
+      picker.hass     = this._hass;
+      // A configured entity that fits no longer, or none of this installation,
+      // still belongs in the list or the picker would drop it silently.
+      picker.selector = { entity: { include_entities: cur && cur !== "none" && !ids.includes(cur) ? [...ids, cur] : ids } };
+      picker.label    = this._t("vehicleRole_" + key);
+      picker.helper   = autoId ? this._t("editorVehicleRoleAuto", { val: autoId }) : this._t("editorVehicleRoleAutoNone");
+      picker.disabled = cur === "none";
+      picker.value    = cur && cur !== "none" ? cur : undefined;
+      picker.addEventListener("value-changed", (e) => {
+        e.stopPropagation();
+        const id = e.detail?.value;
+        this._setVehicleRole(key, typeof id === "string" ? id : "");
+        this._render();
+      });
+      slot.appendChild(picker);
+    });
+  }
+
+  // The functions of a vehicle: what the card shows as buttons today, each with
+  // a remove button, and one field to add another one.
+  _vehicleFunctionFields(deviceId) {
+    const ov      = vehicleOverride(this._config) || {};
+    const current = classifyVehicleDevice(this._hass, deviceId, ov).actions;
+    const cand    = vehicleActionCandidates(this._hass, deviceId);
+    const known   = [...cand.device, ...cand.other];
+    const name    = id => known.find(e => e.entityId === id)?.name || id;
+    const remove  = this._t("editorVehicleFunctionRemove");
+    const free    = list => list.filter(e => !current.includes(e.entityId));
+    const group   = (label, list) => list.length ? `<optgroup label="${this._esc(label)}">${list.map(e =>
+      `<option value="${this._esc(e.entityId)}">${this._esc(`${e.name} (${e.entityId})`)}</option>`).join("")}</optgroup>` : "";
+    const add = this._haSelectorReady()
+      ? `<div class="vehicle-func-add" data-vehicle-func-pick></div>`
+      : `<select class="ha-select" data-vehicle-func-add>
+          <option value="">${this._esc(this._t("editorVehicleFunctionAdd"))}</option>
+          ${group(this._deviceName(deviceId) || this._t("editorVehicleRoleGroupDevice"), free(cand.device))}
+          ${group(this._t("editorVehicleRoleGroupAll"), free(cand.other))}
+        </select>`;
+    return `
+      <div class="vehicle-funcs">
+        <div class="field-label">${this._esc(this._t("editorVehicleFunctionsTitle"))}</div>
+        <div class="hint">${this._esc(this._t("editorVehicleFunctionsHint"))}</div>
+        ${current.length ? current.map(id => `
+          <div class="vehicle-func-row">
+            <span class="vehicle-func-name" title="${this._esc(id)}">${this._esc(name(id))}</span>
+            <button type="button" class="vehicle-image-clear" data-vehicle-func-remove data-entity="${this._esc(id)}"
+                    title="${this._esc(remove)}" aria-label="${this._esc(remove)}">${CLEAR_ICON}</button>
+          </div>`).join("") : `<div class="hint">${this._esc(this._t("editorVehicleFunctionsNone"))}</div>`}
+        ${add}
+      </div>`;
+  }
+
+  // Adding a function through the picker: the ones already listed stay out of
+  // it, and after the pick the field is empty again for the next one.
+  _mountVehicleFunctionPickers() {
+    const slots = this.shadowRoot.querySelectorAll("[data-vehicle-func-pick]");
+    if (!slots.length || !this._haSelectorReady()) return;
+    slots.forEach(slot => {
+      const deviceId = this._vehicleDeviceFor();
+      const current  = classifyVehicleDevice(this._hass, deviceId, vehicleOverride(this._config)).actions;
+      const cand     = vehicleActionCandidates(this._hass, deviceId);
+      const picker   = document.createElement("ha-selector");
+      picker.hass     = this._hass;
+      picker.selector = { entity: { include_entities: [...cand.device, ...cand.other]
+        .map(e => e.entityId).filter(id => !current.includes(id)) } };
+      picker.label    = this._t("editorVehicleFunctionAdd");
+      picker.value    = undefined;
+      picker.addEventListener("value-changed", (e) => {
+        e.stopPropagation();
+        const id = e.detail?.value;
+        if (typeof id !== "string" || !id) return;
+        this._setVehicleFunctions([...current, id]);
+        this._render();
+      });
+      slot.appendChild(picker);
+    });
+  }
+
+  // The device of a vehicle the way the card sees it: the configured one, else
+  // the one the search finds for the evcc title.
+  _vehicleDeviceFor() {
+    const chosen = selectVehicle(discoverVehicles(this._hass, this._getPrefix()), this._config);
+    if (!chosen) return null;
+    const [slug, vehicle] = chosen;
+    return resolveVehicleDevice(this._hass, this._config, slug, evccVehicleTitle(this._hass, slug, vehicle));
+  }
+
+  _deviceName(deviceId) {
+    const dev = deviceId ? this._hass?.devices?.[deviceId] : null;
+    return dev ? (dev.name_by_user || dev.name || deviceId) : null;
+  }
+
+  // Writing one role: an entity id or "none" is kept, the empty choice
+  // (automatic) removes the role again, and a vehicle without a single setting
+  // drops out of the option, as the option itself does when it is empty.
+  _setVehicleRole(role, value) {
+    const entry = { ...(vehicleOverride(this._config) || {}) };
+    if (value) entry[role] = value;
+    else delete entry[role];
+    this._config = { ...this._config, vehicle_entities: Object.keys(entry).length ? entry : undefined };
+    this._fire();
+  }
+
+  _setVehicleFunctions(list) {
+    this._setVehicleRole("actions", list);
+  }
+
+  // The picture of the card's vehicle: HA's media picker, and a text field
+  // underneath for a path or an address (and to show what was picked). A set
+  // picture gets a button next to the field that removes it.
+  _vehicleImageField() {
+    const remove  = this._t("editorVehicleImageRemove");
+    const current = this._config.vehicle_image || "";
+    return `
+      <div class="vehicle-media" data-vehicle-media></div>
+      <div class="vehicle-image-row">
+        <input id="vehicle-image" class="ha-input" type="text" data-vehicle-image
+               value="${this._esc(current)}" placeholder="${this._esc(this._t("editorVehicleImagePlaceholder"))}">
+        <button type="button" class="vehicle-image-clear" data-vehicle-image-clear
+                title="${this._esc(remove)}" aria-label="${this._esc(remove)}"${current ? "" : " hidden"}>${CLEAR_ICON}</button>
+      </div>`;
+  }
+
+  _setVehicleImage(value) {
+    this._config = { ...this._config, vehicle_image: value || undefined };
     this._fire();
   }
 
@@ -198,19 +409,23 @@ export class EvccCardEditor extends HTMLElement {
   // HA's own media selector, narrowed to images. The element belongs to the HA
   // frontend and is loaded on demand there, so it is created once it is defined;
   // the text field underneath works without it and shows what was picked.
+  // Whether HA's own selector element is there. The frontend loads it on demand,
+  // so the first render can come before it; the editor asks once to be told and
+  // renders again, and until then the plain fields stand in.
+  _haSelectorReady() {
+    if (customElements.get("ha-selector")) return true;
+    if (!this._waitingForSelector) {
+      this._waitingForSelector = true;
+      customElements.whenDefined("ha-selector").then(() => { this._waitingForSelector = false; this._render(); });
+    }
+    return false;
+  }
+
   _mountVehicleMediaPickers() {
     const slots = this.shadowRoot.querySelectorAll("[data-vehicle-media]");
-    if (!slots.length) return;
-    if (!customElements.get("ha-selector")) {
-      if (!this._waitingForSelector) {
-        this._waitingForSelector = true;
-        customElements.whenDefined("ha-selector").then(() => { this._waitingForSelector = false; this._render(); });
-      }
-      return;
-    }
+    if (!slots.length || !this._haSelectorReady()) return;
     slots.forEach(slot => {
-      const slug    = slot.dataset.vehicleMedia;
-      const current = this._config.vehicle_images?.[slug];
+      const current = this._config.vehicle_image;
       const picker  = document.createElement("ha-selector");
       picker.hass     = this._hass;
       picker.selector = { media: { accept: ["image/*"] } };
@@ -219,7 +434,7 @@ export class EvccCardEditor extends HTMLElement {
       picker.addEventListener("value-changed", (e) => {
         e.stopPropagation();
         const id = e.detail?.value?.media_content_id;
-        this._setVehicleImage(slug, isMediaSourceId(id) ? id : null);
+        this._setVehicleImage(isMediaSourceId(id) ? id : null);
         this._render();
       });
       slot.appendChild(picker);
@@ -254,7 +469,10 @@ export class EvccCardEditor extends HTMLElement {
     const showStatsPeriod   = ["stats", "site", "flow", "grid"].includes(mode);
     const showVehicleFilter = mode === "repeatplan";
     const showVehicles      = mode === "vehicle";
-    const selVehicles       = vehicleFilter(c) || [];
+    // The vehicle the card is for, resolved the way the card does it: what is
+    // configured, or the only vehicle there is.
+    const allVehicles       = showVehicles && this._hass ? discoverVehicles(this._hass, this._getPrefix()) : {};
+    const ownVehicle        = showVehicles ? selectVehicle(allVehicles, c) : null;
     const rplanVehicles     = Array.isArray(c.repeating_plan_vehicles) ? c.repeating_plan_vehicles : [];
     const instanceOptions   = this._instanceOptions();
     const disabledEntries   = this._disabledEntries();
@@ -343,6 +561,27 @@ export class EvccCardEditor extends HTMLElement {
         .vehicle-image-clear:hover, .vehicle-image-clear:focus-visible { color: var(--primary-text-color); background: var(--secondary-background-color, rgba(127,127,127,.15)); outline: none; }
         .vehicle-image-clear[hidden] { display: none; }
         .vehicle-image-clear svg { width: 20px; height: 20px; }
+        .vehicle-map-toggle {
+          margin: 6px 0 0; padding: 4px 0; background: none; border: none; cursor: pointer;
+          color: var(--primary-color); font: inherit; font-size: .85rem; text-align: left;
+        }
+        .vehicle-map-toggle::before { content: "▸ "; }
+        .vehicle-map-toggle[aria-expanded="true"]::before { content: "▾ "; }
+        .vehicle-map { margin: 2px 0 10px; padding: 8px 10px; border-left: 2px solid var(--divider-color, rgba(127,127,127,.3)); }
+        .vehicle-map-row { margin-bottom: 6px; }
+        .vehicle-map-row .field-label { margin-bottom: 2px; }
+        .vehicle-role-row { display: flex; align-items: center; gap: 4px; }
+        .vehicle-role-row .ha-select, .vehicle-role-pick { flex: 1; min-width: 0; }
+        .vehicle-role-none {
+          flex: none; background: none; border: none; padding: 2px; border-radius: 50%; cursor: pointer;
+          color: var(--secondary-text-color); line-height: 0;
+        }
+        .vehicle-role-none:hover, .vehicle-role-none:focus-visible { color: var(--primary-text-color); background: var(--secondary-background-color, rgba(127,127,127,.15)); outline: none; }
+        .vehicle-role-none[aria-pressed="true"] { color: var(--error-color, #db4437); }
+        .vehicle-role-none svg { width: 20px; height: 20px; }
+        .vehicle-funcs { margin-top: 10px; }
+        .vehicle-func-row { display: flex; align-items: center; gap: 4px; margin: 4px 0; }
+        .vehicle-func-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9rem; }
         .cb-row { display: flex; align-items: center; gap: 8px; font-size: .875rem; cursor: pointer; padding: 4px 0; }
         .cb-row input[type="checkbox"] { accent-color: var(--primary-color); width: 16px; height: 16px; cursor: pointer; }
         ${disabledListCss}
@@ -427,14 +666,15 @@ export class EvccCardEditor extends HTMLElement {
         ` : ""}
         ${showVehicles ? `
         <div class="field">
-          <div class="section-title">${this._t("editorVehicleFilterTitle")}</div>
-          <div class="hint">${this._t("editorVehicleFilterHint")}</div>
-          ${this._vehicleCheckboxes("vehicles", selVehicles, this._hass ? Object.keys(discoverVehicles(this._hass, this._getPrefix())).sort() : [], "editorVehiclesNoneFound")}
+          <div class="section-title">${this._t("editorVehicleTitle")}</div>
+          <div class="hint">${this._t("editorVehicleHint")}</div>
+          ${this._vehicleChooser(allVehicles)}
         </div>
+        ${ownVehicle ? `
         <div class="field">
           <div class="section-title">${this._t("editorVehicleDeviceTitle")}</div>
           <div class="hint">${this._t("editorVehicleDeviceHint")}</div>
-          ${this._hass ? this._vehicleDeviceFields(discoverVehicles(this._hass, this._getPrefix())) : ""}
+          ${this._vehicleDeviceField(ownVehicle[0], ownVehicle[1])}
           <label class="cb-row">
             <input type="checkbox" id="vehicle_actions" ${c.vehicle_actions === true ? "checked" : ""}>
             <span>${this._t("editorVehicleActions")}</span>
@@ -443,8 +683,9 @@ export class EvccCardEditor extends HTMLElement {
         <div class="field">
           <div class="section-title">${this._t("editorVehicleImageTitle")}</div>
           <div class="hint">${this._t("editorVehicleImageHint")}</div>
-          ${this._hass ? this._vehicleImageFields(discoverVehicles(this._hass, this._getPrefix())) : ""}
+          ${this._vehicleImageField()}
         </div>
+        ` : ""}
         ` : ""}
         ${showNoPlan ? `
         <div class="field">
@@ -533,7 +774,8 @@ export class EvccCardEditor extends HTMLElement {
         this._config = {
           ...this._config,
           prefix: isDefault ? undefined : chosen,
-          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined, vehicles: undefined, vehicle_devices: undefined, vehicle_images: undefined,
+          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined,
+          vehicle: undefined, vehicles: undefined, vehicle_device: undefined, vehicle_image: undefined, vehicle_entities: undefined,
         };
         this._discoverLoadpoints();
         this._fire();
@@ -578,18 +820,19 @@ export class EvccCardEditor extends HTMLElement {
     if (optEl) optEl.addEventListener("toggle", () => { this._disabledOptionalOpen = optEl.open; });
 
     this._mountVehicleMediaPickers();
+    this._mountVehicleRolePickers();
+    this._mountVehicleFunctionPickers();
 
     // Written on change, not on every key: half a path is not a valid config.
     // An emptied field is the exception, it removes the picture right away. The
     // field is not rendered anew here, so focus and a click on the remove button
     // survive; only the button follows the value.
     this.shadowRoot.querySelectorAll("input[data-vehicle-image]").forEach(inp => {
-      const slug  = inp.dataset.vehicleImage;
-      const clear = this.shadowRoot.querySelector(`[data-vehicle-image-clear="${CSS.escape(slug)}"]`);
+      const clear = this.shadowRoot.querySelector("[data-vehicle-image-clear]");
       const set = (value) => {
-        this._setVehicleImage(slug, value);
+        this._setVehicleImage(value);
         if (clear) clear.hidden = !value;
-        const picker = this.shadowRoot.querySelector(`[data-vehicle-media="${CSS.escape(slug)}"] ha-selector`);
+        const picker = this.shadowRoot.querySelector("[data-vehicle-media] ha-selector");
         if (picker && !isMediaSourceId(value)) picker.value = undefined;
       };
       inp.addEventListener("change", () => {
@@ -598,21 +841,70 @@ export class EvccCardEditor extends HTMLElement {
         set(val && isVehicleImage(val) ? val : null);
       });
       inp.addEventListener("input", () => {
-        if (!inp.value.trim() && this._config.vehicle_images?.[slug]) set(null);
+        if (!inp.value.trim() && this._config.vehicle_image) set(null);
       });
     });
     this.shadowRoot.querySelectorAll("[data-vehicle-image-clear]").forEach(btn => {
-      btn.addEventListener("click", () => { this._setVehicleImage(btn.dataset.vehicleImageClear, null); this._render(); });
+      btn.addEventListener("click", () => { this._setVehicleImage(null); this._render(); });
+    });
+
+    // Unfolding the mapping is the editor's own state: it survives the re-render
+    // the way the disabled list does, without touching the config.
+    this.shadowRoot.querySelectorAll("[data-vehicle-map]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._vehicleMapOpen = !this._vehicleMapOpen;
+        this._render();
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("[data-vehicle-role-none]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const off = btn.getAttribute("aria-pressed") === "true";
+        this._setVehicleRole(btn.dataset.role, off ? "" : "none");
+        this._render();
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("select[data-vehicle-role]").forEach(sel => {
+      sel.addEventListener("change", () => {
+        this._setVehicleRole(sel.dataset.role, sel.value);
+        this._render();
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("[data-vehicle-func-add]").forEach(sel => {
+      sel.addEventListener("change", () => {
+        if (!sel.value) return;
+        const current = classifyVehicleDevice(this._hass, this._vehicleDeviceFor(), vehicleOverride(this._config)).actions;
+        this._setVehicleFunctions([...current, sel.value]);
+        this._render();
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("[data-vehicle-func-remove]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const current = classifyVehicleDevice(this._hass, this._vehicleDeviceFor(), vehicleOverride(this._config)).actions;
+        this._setVehicleFunctions(current.filter(id => id !== btn.dataset.entity));
+        this._render();
+      });
     });
 
     this.shadowRoot.querySelectorAll("[data-vehicle-device]").forEach(sel => {
       sel.addEventListener("change", () => {
-        const map = { ...(this._config.vehicle_devices && typeof this._config.vehicle_devices === "object" ? this._config.vehicle_devices : {}) };
-        if (sel.value) map[sel.dataset.vehicleDevice] = sel.value;
-        else delete map[sel.dataset.vehicleDevice];
-        this._config = { ...this._config, vehicle_devices: Object.keys(map).length ? map : undefined };
+        this._config = { ...this._config, vehicle_device: sel.value || undefined };
         this._fire();
+        this._render();
       });
+    });
+
+    // Another vehicle means another device, another picture and another
+    // mapping: what was set belonged to the vehicle before it, so it goes.
+    const chooser = this.shadowRoot.querySelector("[data-vehicle-choose]");
+    if (chooser) chooser.addEventListener("change", () => {
+      this._config = { ...this._config, vehicle: chooser.value || undefined, vehicles: undefined,
+                       vehicle_device: undefined, vehicle_image: undefined, vehicle_entities: undefined };
+      this._fire();
+      this._render();
     });
 
     this.shadowRoot.querySelectorAll("input[type=checkbox][data-field]").forEach(cb => {

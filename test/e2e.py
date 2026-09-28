@@ -139,10 +139,14 @@ def ha_state(page, entity_id):
 
 
 def dashboard_config():
-    return {"views": [
-        {"title": mode, "path": mode, "cards": [{"type": "custom:evcc-card", "mode": mode, "prefix": PREFIX}]}
-        for mode in MODES
-    ]}
+    """One view per mode. The vehicle mode shows one vehicle per card, so its view
+    carries a card per demo vehicle instead of one card for all of them."""
+    slugs = sorted(slug for _, slug in demo_vehicles().values())
+    def cards(mode):
+        if mode == "vehicle" and slugs:
+            return [{"type": "custom:evcc-card", "mode": "vehicle", "prefix": PREFIX, "vehicle": slug} for slug in slugs]
+        return [{"type": "custom:evcc-card", "mode": mode, "prefix": PREFIX}]
+    return {"views": [{"title": mode, "path": mode, "cards": cards(mode)} for mode in MODES]}
 
 
 def ensure_dashboard(page):
@@ -292,8 +296,9 @@ DURATION = {"d": 86400, "h": 3600, "min": 60, "s": 1}
 
 
 def vehicle_blocks(page):
-    """What the vehicle view shows per vehicle, read from the card's shadow root."""
-    return page.locator("evcc-card").first.evaluate("""el => Object.fromEntries([...el.shadowRoot.querySelectorAll('.vehicle-block')].map(b => [b.dataset.vehicle, {
+    """What the vehicle view shows per vehicle, read from the shadow root of every
+    card in it - one card per vehicle."""
+    return page.locator("evcc-card").evaluate_all("""els => Object.fromEntries(els.flatMap(el => [...el.shadowRoot.querySelectorAll('.vehicle-block')]).map(b => [b.dataset.vehicle, {
         title:  b.querySelector('.lp-name')?.textContent.trim() ?? null,
         lp:     b.querySelector('.vehicle-lp')?.textContent.trim() ?? null,
         badge:  b.querySelector('.lp-badge')?.textContent.trim() ?? null,
@@ -306,9 +311,9 @@ def vehicle_blocks(page):
 
 
 def vehicle_view(page, t):
-    """The vehicle mode against the real ha-evcc entities of the demo: one block per
-    evcc vehicle with the title of its ha-evcc device, the loadpoint it is plugged
-    into, values and session totals as HA reports them, and the hint for the
+    """The vehicle mode against the real ha-evcc entities of the demo: one card per
+    evcc vehicle, each with the title of its ha-evcc device, the loadpoint it is
+    plugged into, values and session totals as HA reports them, and the hint for the
     configvehicle sensors, which the demo entry (no evcc password) has disabled."""
     t.group("e2e vehicle - the demo vehicles in the vehicle mode")
     reset_demo()
@@ -318,7 +323,7 @@ def vehicle_view(page, t):
     open_view(page, "vehicle")
     blocks = vehicle_blocks(page)
     want = sorted(slug for _, slug in vehicles.values())
-    t.check(sorted(blocks) == want, "one block per evcc vehicle", f"{sorted(blocks)} vs {want}")
+    t.check(sorted(blocks) == want, "one card per evcc vehicle, each showing its own", f"{sorted(blocks)} vs {want}")
     titles = {slug: blocks.get(slug, {}).get("title") for _, slug in vehicles.values()}
     t.check(all(titles[slug] == title for title, slug in vehicles.values()),
             "each block carries the evcc title, read off the ha-evcc vehicle device", json.dumps(titles, ensure_ascii=False))
@@ -368,13 +373,15 @@ def vehicle_view(page, t):
 
     warned = [slug for slug, b in blocks.items() if b.get("warn")]
     if warned:
-        card = page.locator("evcc-card").first
         page.locator(f'evcc-card .vehicle-block[data-vehicle="{warned[0]}"] .lp-disabled-warn').click()
         page.wait_for_timeout(800)
-        rows = card.evaluate("""el => [...el.shadowRoot.querySelectorAll('#debug-disabled .disabled-row')]
+        # The debug view opens in the card whose triangle was clicked, so the rows
+        # are collected over every card of the view.
+        rows = page.locator("evcc-card").evaluate_all("""els => els.flatMap(el =>
+            [...el.shadowRoot.querySelectorAll('#debug-disabled .disabled-row')])
             .filter(r => r.querySelector('.disabled-what')).map(r => r.querySelector('.disabled-id').textContent)""")
         mine = [r for r in rows if f"{PREFIX}{warned[0]}_configvehicle_" in r]
-        t.check(len(mine) >= 1 and card.evaluate("el => !!el.shadowRoot.querySelector('.debug-back')"),
+        t.check(len(mine) >= 1 and page.locator("evcc-card .debug-back").count() == 1,
                 "the triangle opens the debug view, the vehicle's sensors listed as needed", f"{mine}")
         page.locator("evcc-card .debug-back").click()
         page.wait_for_timeout(500)
@@ -476,18 +483,33 @@ def editor(page, t):
         await customElements.whenDefined('ha-selector');
         await new Promise(r => setTimeout(r, 1500)); }""", PREFIX)
     ed = page.locator("#e2e-editor")
-    slugs = ed.locator('input[data-field="vehicles"]').evaluate_all("l => l.map(e => e.dataset.lp)")
-    t.check(slugs == sorted(s for _, s in vehicles.values()), "the editor offers every demo vehicle", str(slugs))
-    labels = ed.locator("[data-vehicle-media]").evaluate_all("l => l.map(e => e.previousElementSibling.textContent)")
-    t.check(sorted(labels) == sorted(title for title, _ in vehicles.values()), "pictures are named with the evcc titles", str(labels))
-    media = ed.locator("[data-vehicle-media] ha-selector ha-selector-media").count()
-    t.check(media == len(vehicles), "HA's own media selector per vehicle", f"{media} ha-selector-media")
+    slugs = ed.locator("#vehicle option").evaluate_all("l => l.map(e => e.value).filter(Boolean)")
+    t.check(slugs == sorted(s for _, s in vehicles.values()), "the editor offers every demo vehicle to pick from", str(slugs))
+    titles = ed.locator("#vehicle option").evaluate_all("l => l.map(e => e.textContent.trim())")
+    t.check(all(title in titles for title, _ in vehicles.values()), "named with their evcc titles", str(titles))
+    t.check(ed.locator("select[data-vehicle-device]").count() == 0,
+            "without a vehicle picked the settings of one stay away", "")
+
     first = slugs[0] if slugs else None
     if first:
-        ed.locator(f'input[data-field="vehicles"][data-lp="{first}"]').check()
+        ed.locator("#vehicle").select_option(first)
+        page.wait_for_timeout(1200)
         cfg = page.evaluate("window.__e2eCfg.at(-1) ?? null")
-        t.check(cfg and cfg.get("vehicles") == [first] and cfg.get("prefix") == PREFIX,
-                "a checked vehicle writes the whole config", json.dumps(cfg))
+        t.check(cfg and cfg.get("vehicle") == first and cfg.get("prefix") == PREFIX,
+                "the picked vehicle writes the whole config", json.dumps(cfg))
+        t.check(ed.locator("select[data-vehicle-device]").count() == 1,
+                "now the device of that vehicle can be picked", "")
+        media = ed.locator("[data-vehicle-media] ha-selector ha-selector-media").count()
+        t.check(media == 1, "HA's own media selector for the picture", f"{media} ha-selector-media")
+        ed.locator("[data-vehicle-map]").click()
+        page.wait_for_timeout(1200)
+        pickers = ed.locator("[data-vehicle-role-pick] ha-selector ha-selector-entity").count()
+        t.check(pickers == 14, "and HA's own entity picker for every role of the mapping", f"{pickers} ha-selector-entity")
+        ids = page.evaluate("""() => { const ed = document.getElementById('e2e-editor');
+            const p = ed.shadowRoot.querySelector('[data-vehicle-role-pick][data-role="soc"] ha-selector');
+            return p ? p.selector.entity.include_entities : null; }""")
+        t.check(isinstance(ids, list) and all(i.startswith(("sensor.", "number.")) for i in ids),
+                "the picker of a role is handed only entities that fit it", json.dumps((ids or [])[:5]))
     page.evaluate("() => document.getElementById('e2e-editor')?.remove()")
     t.check(not ERRORS, "no card errors", "; ".join(ERRORS)[:200])
 

@@ -3,7 +3,8 @@
 // leave a choice. Hand-built registries, one trap per test.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyVehicleDevice, findVehicleDevice, resolveVehicleDevice, listVehicleDevices, evccVehicleTitle } from "../../src/core/vehicle-device.js";
+import { classifyVehicleDevice, findVehicleDevice, resolveVehicleDevice, listVehicleDevices, evccVehicleTitle,
+         vehicleOverride, hasVehicleDeviceData, vehicleRoleCandidates, vehicleActionCandidates } from "../../src/core/vehicle-device.js";
 
 // ent: [entity_id, state, attributes, translation_key]
 function hassOf(devices) {
@@ -72,6 +73,91 @@ test("groups: doors and warnings are collected, the rest are details, nothing tw
   assert.deepEqual(got.details, ["binary_sensor.car_engine", "sensor.car_consumption"]);
 });
 
+// A vehicle whose values sit somewhere else: `vehicle_entities` names them by
+// hand, role by role, and the functions as a list.
+function withLoose(hass, entities) {
+  for (const [entityId, state, attributes = {}] of entities) {
+    hass.entities[entityId] = { entity_id: entityId, device_id: null };
+    hass.states[entityId] = { state, attributes };
+  }
+  return hass;
+}
+
+test("vehicle_entities: what the config names takes the role, \"none\" switches it off", () => {
+  const hass = withLoose(hassOf({ d: { name: "Car", ents: [
+    ["sensor.car_battery", "70", pct], ["sensor.car_range", "250", km()],
+    ["sensor.car_odo", "11500", km("total_increasing"), "odometer"],
+    ["device_tracker.car", "home", { source_type: "gps" }],
+  ] } }), [["sensor.loose_soc", "66", { unit_of_measurement: "%" }]]);
+
+  const got = classifyVehicleDevice(hass, "d", { soc: "sensor.loose_soc", location: "none" });
+  assert.equal(got.roles.soc, "sensor.loose_soc", "an entity outside the device does just as well");
+  assert.equal(got.roles.location, undefined, "\"none\" leaves the role empty");
+  assert.equal(got.roles.range, "sensor.car_range", "a role the config says nothing about stays as it was");
+  assert.ok(got.details.includes("sensor.car_battery"), "the sensor the role let go turns up in the details");
+  assert.ok(!got.details.includes("sensor.loose_soc"), "the details are the device's, nothing is added to them");
+});
+
+test("vehicle_entities: the functions are exactly the configured list, in its order", () => {
+  const btn = (name, tk) => [`button.car_${name}`, "unknown", {}, tk];
+  const hass = withLoose(hassOf({ d: car("car", [btn("hupen", "honk"), btn("blinken", "flash"), btn("aktualisieren", "refresh")]) }),
+                         [["script.fenster_zu", "off"]]);
+  assert.deepEqual(classifyVehicleDevice(hass, "d").actions,
+    ["button.car_aktualisieren", "button.car_blinken", "button.car_hupen"], "found by itself: every button of the device");
+  assert.deepEqual(classifyVehicleDevice(hass, "d", { actions: ["button.car_hupen", "script.fenster_zu"] }).actions,
+    ["button.car_hupen", "script.fenster_zu"], "the list replaces what was found, its order included");
+  assert.deepEqual(classifyVehicleDevice(hass, "d", { actions: [] }).actions, [], "an empty list means no functions at all");
+});
+
+test("vehicle_entities: preconditioning as one entity or as a configured pair of commands", () => {
+  const btn = name => [`button.car_${name}`, "unknown", {}];
+  const hass = hassOf({ d: car("car", [btn("w1"), btn("w2"), ["switch.car_heizung", "off", {}]]) });
+  assert.equal(classifyVehicleDevice(hass, "d").climate, null, "nothing in the words points at preconditioning");
+  assert.deepEqual(classifyVehicleDevice(hass, "d", { climate: "switch.car_heizung" }).climate, { entity: "switch.car_heizung" });
+
+  const pair = classifyVehicleDevice(hass, "d", { climate_start: "button.car_w1", climate_stop: "button.car_w2" });
+  assert.deepEqual(pair.climate, { start: "button.car_w1", stop: "button.car_w2" });
+  assert.deepEqual(pair.actions, [], "a command that preconditions is no plain function any more");
+
+  const off = classifyVehicleDevice(hassOf({ d: car("car", [["climate.car", "off", {}]]) }), "d", { climate: "none" });
+  assert.equal(off.climate, null, "\"none\" switches off the preconditioning found by itself");
+});
+
+test("vehicle_entities: without a device the config alone makes up the vehicle", () => {
+  const hass = withLoose({ devices: {}, entities: {}, states: {} },
+    [["sensor.ex30_soc", "55", { unit_of_measurement: "%" }], ["lock.ex30", "locked"]]);
+  const got = classifyVehicleDevice(hass, null, { soc: "sensor.ex30_soc", lock: "lock.ex30" });
+  assert.deepEqual(got.roles, { soc: "sensor.ex30_soc", lock: "lock.ex30" });
+  assert.deepEqual(got.details, []);
+  assert.equal(hasVehicleDeviceData(got), true);
+  assert.equal(hasVehicleDeviceData(classifyVehicleDevice(hass, null, {})), false, "nothing configured, nothing to show");
+});
+
+test("vehicle_entities: the roles of the card's vehicle, anything else is no mapping", () => {
+  assert.deepEqual(vehicleOverride({ vehicle_entities: { soc: "sensor.a" } }), { soc: "sensor.a" });
+  for (const bad of [undefined, null, {}, { vehicle_entities: "x" }, { vehicle_entities: ["x"] }, { vehicle_entities: null }]) {
+    assert.equal(vehicleOverride(bad), null, JSON.stringify(bad));
+  }
+});
+
+test("the editor's lists: entities that fit the role, the vehicle's device first", () => {
+  const hass = withLoose(hassOf({ d: car("car", [["button.car_honk", "unknown"], ["lock.car", "locked"]]) }),
+    [["sensor.loose_soc", "66", { unit_of_measurement: "%" }], ["sensor.loose_power", "3400", { unit_of_measurement: "W" }],
+     ["script.fenster_zu", "off"]]);
+
+  const soc = vehicleRoleCandidates(hass, "soc", "d");
+  assert.deepEqual(soc.device.map(e => e.entityId), ["sensor.car_battery"]);
+  assert.deepEqual(soc.other.map(e => e.entityId), ["sensor.loose_soc"], "a power sensor is no charge level");
+
+  const lock = vehicleRoleCandidates(hass, "lock", "d");
+  assert.deepEqual(lock.device.map(e => e.entityId), ["lock.car"]);
+
+  const funcs = vehicleActionCandidates(hass, "d");
+  assert.deepEqual(funcs.device.map(e => e.entityId), ["button.car_honk"]);
+  assert.deepEqual(funcs.other.map(e => e.entityId), ["script.fenster_zu"], "a script is a function as well");
+  assert.deepEqual(vehicleRoleCandidates(hass, "made_up", "d"), { device: [], other: [] });
+});
+
 test("search: title or slug in name or model, and the device has to be a vehicle", () => {
   const hass = hassOf({
     app:   { name: "EX30", ents: [["device_tracker.ex30", "home"]] },
@@ -104,14 +190,13 @@ test("search: ha-evcc's own vehicle device is never the answer; of several the o
   assert.equal(findVehicleDevice(hass, "ex30", "EX30"), "volvo");
 });
 
-test("vehicle_devices: override, none, off, and a device that is gone", () => {
+test("vehicle_device: override, none, off, and a device that is gone", () => {
   const hass = hassOf({ volvo: { ...car("volvo_ex30"), name: "Volvo EX30" }, app: { name: "EX30", ents: [["device_tracker.ex30", "home"]] } });
   assert.equal(resolveVehicleDevice(hass, {}, "ex30", "EX30"), "volvo");
-  assert.equal(resolveVehicleDevice(hass, { vehicle_devices: { ex30: "app" } }, "ex30", "EX30"), "app", "the user's pick needs no vehicle check");
-  assert.equal(resolveVehicleDevice(hass, { vehicle_devices: { ex30: "none" } }, "ex30", "EX30"), null);
-  assert.equal(resolveVehicleDevice(hass, { vehicle_devices: false }, "ex30", "EX30"), null);
-  assert.equal(resolveVehicleDevice(hass, { vehicle_devices: { ex30: "deleted" } }, "ex30", "EX30"), null, "no silent fallback to another device");
-  assert.equal(resolveVehicleDevice(hass, { vehicle_devices: { id7: "app" } }, "ex30", "EX30"), "volvo", "other vehicles stay automatic");
+  assert.equal(resolveVehicleDevice(hass, { vehicle_device: "app" }, "ex30", "EX30"), "app", "the user's pick needs no vehicle check");
+  assert.equal(resolveVehicleDevice(hass, { vehicle_device: "none" }, "ex30", "EX30"), null);
+  assert.equal(resolveVehicleDevice(hass, { vehicle_device: false }, "ex30", "EX30"), null);
+  assert.equal(resolveVehicleDevice(hass, { vehicle_device: "deleted" }, "ex30", "EX30"), null, "no silent fallback to another device");
 });
 
 test("editor list: vehicles first, ha-evcc devices and devices without entities left out", () => {

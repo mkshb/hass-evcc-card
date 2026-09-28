@@ -78,8 +78,11 @@ export const actions = {
   // may refuse or never answer, so the control shows that the command is
   // running (_commandPending) instead of claiming it has been done.
 
+  // A lock entity, or a switch that `vehicle_entities` put into the lock role.
   _setLock(entityId, lock) {
-    return this._command(entityId, this._hass.callService("lock", lock ? "lock" : "unlock", { entity_id: entityId }), true);
+    const domain  = entityId.slice(0, entityId.indexOf("."));
+    const service = domain === "lock" ? (lock ? "lock" : "unlock") : (lock ? "turn_on" : "turn_off");
+    return this._command(entityId, this._hass.callService(domain, service, { entity_id: entityId }), true);
   },
 
   // A climate entity or a switch; `on` is the state wanted.
@@ -88,8 +91,15 @@ export const actions = {
     return this._command(entityId, this._hass.callService(domain, on ? "turn_on" : "turn_off", { entity_id: entityId }), true);
   },
 
+  // A function of the vehicle: a button of its integration, or a script or scene
+  // a configuration named in `vehicle_entities.actions`. All three are pressed
+  // and nothing is read back.
   _pressVehicleButton(entityId) {
-    return this._command(entityId, this._pressButton(entityId), false);
+    const domain = entityId.slice(0, entityId.indexOf("."));
+    const call = domain === "button"
+      ? this._pressButton(entityId)
+      : this._hass.callService(domain, "turn_on", { entity_id: entityId });
+    return this._command(entityId, call, false);
   },
 
   // Runs while the call is in flight and, with `untilState`, until HA reports

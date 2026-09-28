@@ -30,6 +30,44 @@ const HINTS = {
   stop:       /stop|deactivate|_off$|cancel|end$/,
 };
 
+// The roles the card fills from the vehicle's own integration, and what an
+// entity has to look like to be offered for one in the editor. The sorting
+// below finds them on its own; `vehicle_entities` names one by hand where the
+// sorting has no chance, because an integration words its entities differently
+// or keeps them on another device. `climate` marks the three roles that make up
+// the preconditioning, which is not a plain role but an entity or a pair of
+// commands.
+const isCommand = e => ["button", "script", "scene"].includes(e.domain);
+export const VEHICLE_ROLES = [
+  { key: "soc",           fits: e => e.domain === "sensor" && e.unit === "%" },
+  { key: "range",         fits: e => isDistance(e) },
+  { key: "odometer",      fits: e => isDistance(e) },
+  { key: "capacity",      fits: e => e.domain === "sensor" && (e.unit === "kWh" || e.deviceClass === "energy_storage") },
+  { key: "target_soc",    fits: e => ["sensor", "number"].includes(e.domain) && e.unit === "%" },
+  { key: "lock",          fits: e => ["lock", "switch"].includes(e.domain) },
+  { key: "location",      fits: e => ["device_tracker", "sensor"].includes(e.domain) },
+  { key: "image",         fits: e => ["image", "camera"].includes(e.domain) },
+  { key: "driving",       fits: e => ["binary_sensor", "sensor"].includes(e.domain) },
+  { key: "charging",      fits: e => ["binary_sensor", "sensor"].includes(e.domain) },
+  { key: "plugged",       fits: e => ["binary_sensor", "sensor"].includes(e.domain) },
+  { key: "climate",       fits: e => ["climate", "switch"].includes(e.domain), climate: "entity" },
+  { key: "climate_start", fits: isCommand, climate: "start" },
+  { key: "climate_stop",  fits: isCommand, climate: "stop" },
+];
+
+// What can be a function of the vehicle: something that is pressed and does not
+// have to be read back. A switch that stays on is the preconditioning, not a
+// function.
+export const VEHICLE_ACTION_DOMAINS = ["button", "script", "scene"];
+
+// The `vehicle_entities` of the card, or null. One card shows one vehicle, so the
+// option names its roles directly. Reading it happens here only, so the card,
+// the editor and the validation agree on the shape.
+export function vehicleOverride(config) {
+  const opt = config?.vehicle_entities;
+  return opt && typeof opt === "object" && !Array.isArray(opt) ? opt : null;
+}
+
 // The entities of a device, enabled and visible, each with what the sorting
 // below looks at.
 function deviceEntities(hass, deviceId) {
@@ -63,11 +101,18 @@ const isLevel    = e => e.domain === "sensor" && e.unit === "%" && e.deviceClass
 //   openings  doors, windows, lids
 //   problems  warning flags
 //   climate   how to precondition: { entity } for a climate entity or a switch
-//             to toggle, { start, stop } for a pair of buttons, or null
-//   actions   the other buttons (flash, honk, refresh, ...)
+//             to toggle, { start, stop } for a pair of commands, or null
+//   actions   the other buttons (flash, honk, refresh, ...), in the order the
+//             config gives them, else by entity id
 //   details   every other sensor and binary sensor
-export function classifyVehicleDevice(hass, deviceId) {
-  const ents  = deviceEntities(hass, deviceId);
+// `override` is the `vehicle_entities` entry of the vehicle and has the last
+// word: it is applied before the rest is sorted, so an entity the config takes
+// out of a role lands in the details and one it puts into a role leaves them.
+// Without a device the sorting has nothing to look at and the override alone
+// makes up the roles: a vehicle whose values come from single entities needs no
+// device at all.
+export function classifyVehicleDevice(hass, deviceId, override = null) {
+  const ents  = deviceId ? deviceEntities(hass, deviceId) : [];
   const roles = {};
   const take  = (role, found) => { if (found && !roles[role]) roles[role] = found.entityId; };
 
@@ -98,13 +143,6 @@ export function classifyVehicleDevice(hass, deviceId) {
   take("charging", binary(["battery_charging"]) ?? status("charging"));
   take("plugged",  binary(["plug"]) ?? status("connected", "disconnected"));
 
-  // The status entities stay in the details: the picture sums them up, it does
-  // not replace "charge status: done".
-  const STATUS   = ["driving", "charging", "plugged"];
-  const used     = new Set(Object.entries(roles).filter(([role]) => !STATUS.includes(role)).map(([, id]) => id));
-  const openings = ents.filter(e => e.domain === "binary_sensor" && ["door", "window", "opening", "garage_door"].includes(e.deviceClass));
-  const problems = ents.filter(e => e.domain === "binary_sensor" && e.deviceClass === "problem");
-
   // Preconditioning. A climate entity says it by its domain; a switch or a
   // pair of buttons only by words, as buttons carry no device class. A lone
   // start button without its stop counterpart stays an ordinary action.
@@ -113,15 +151,63 @@ export function classifyVehicleDevice(hass, deviceId) {
   const stop  = climateButtons.find(e => HINTS.stop.test(e.hint));
   const climateEntity = ents.find(e => e.domain === "climate")
     ?? ents.find(e => e.domain === "switch" && HINTS.climate.test(e.hint));
-  const climate = climateEntity ? { entity: climateEntity.entityId }
-                : start && stop ? { start: start.entityId, stop: stop.entityId } : null;
+  let climate = climateEntity ? { entity: climateEntity.entityId }
+              : start && stop ? { start: start.entityId, stop: stop.entityId } : null;
+
+  // What the config says, role by role: an entity id takes the role, "none"
+  // switches it off, and a role the config does not mention keeps what the
+  // sorting found. The three climate roles are collected first and decide
+  // together, because an entity to toggle and a pair of commands are two ways
+  // to say the same thing and the entity is the shorter one.
+  if (override) {
+    const climateOv = {};
+    for (const { key, climate: slot } of VEHICLE_ROLES) {
+      if (!(key in override)) continue;
+      const raw = override[key];
+      const id  = typeof raw === "string" && raw.trim() && raw.trim() !== "none" ? raw.trim() : null;
+      if (slot) climateOv[slot] = id;
+      else if (id) roles[key] = id;
+      else delete roles[key];
+    }
+    if (Object.keys(climateOv).length) {
+      const entity  = "entity" in climateOv ? climateOv.entity : (climate?.entity ?? null);
+      const startId = "start"  in climateOv ? climateOv.start  : (climate?.start  ?? null);
+      const stopId  = "stop"   in climateOv ? climateOv.stop   : (climate?.stop   ?? null);
+      climate = entity ? { entity } : (startId && stopId ? { start: startId, stop: stopId } : null);
+    }
+  }
+
   const climateIds = new Set(climate ? Object.values(climate) : []);
-  const actions  = ents.filter(e => e.domain === "button" && !climateIds.has(e.entityId));
+  // The functions: the buttons of the device, or exactly what the config lists,
+  // in its order. An empty list means the vehicle is to show none.
+  let actions = ents.filter(e => e.domain === "button" && !climateIds.has(e.entityId)).map(e => e.entityId).sort();
+  if (override && "actions" in override) {
+    const raw  = override.actions;
+    const list = Array.isArray(raw) ? raw : (raw === "none" || raw === false ? [] : null);
+    if (list) actions = list.filter(id => typeof id === "string" && id.trim()).map(id => id.trim());
+  }
+
+  // The status entities stay in the details: the picture sums them up, it does
+  // not replace "charge status: done".
+  const STATUS   = ["driving", "charging", "plugged"];
+  const used     = new Set([
+    ...Object.entries(roles).filter(([role]) => !STATUS.includes(role)).map(([, id]) => id),
+    ...climateIds, ...actions,
+  ]);
+  const openings = ents.filter(e => e.domain === "binary_sensor" && ["door", "window", "opening", "garage_door"].includes(e.deviceClass) && !used.has(e.entityId));
+  const problems = ents.filter(e => e.domain === "binary_sensor" && e.deviceClass === "problem" && !used.has(e.entityId));
   const grouped  = new Set([...openings, ...problems].map(e => e.entityId));
   const details  = ents.filter(e => (e.domain === "sensor" || e.domain === "binary_sensor") && !used.has(e.entityId) && !grouped.has(e.entityId));
 
   const ids = list => list.map(e => e.entityId).sort();
-  return { roles, climate, openings: ids(openings), problems: ids(problems), actions: ids(actions), details: ids(details) };
+  return { roles, climate, openings: ids(openings), problems: ids(problems), actions, details: ids(details) };
+}
+
+// Whether a classification says anything at all. A vehicle without a device and
+// without a single configured entity has nothing of its own to show.
+export function hasVehicleDeviceData(dev) {
+  return !!dev && (Object.keys(dev.roles).length > 0 || !!dev.climate
+    || dev.actions.length > 0 || dev.openings.length > 0 || dev.problems.length > 0 || dev.details.length > 0);
 }
 
 // The device that belongs to an evcc vehicle. It has to be a vehicle, which the
@@ -188,13 +274,11 @@ export function vehicleDeviceState(hass, roles = {}) {
   return "parked";
 }
 
-// `vehicle_devices` decides per vehicle: a device id overrides the search,
-// "none" switches the link off for that vehicle, and `vehicle_devices: false`
-// switches it off for the card. Returns the device id or null.
+// `vehicle_device` decides: a device id overrides the search, "none" (or false)
+// leaves the card without one, and without the option the search answers.
+// Returns the device id or null.
 export function resolveVehicleDevice(hass, config, slug, title = null) {
-  const opt = config?.vehicle_devices;
-  if (opt === false) return null;
-  const chosen = opt && typeof opt === "object" ? opt[slug] : undefined;
+  const chosen = config?.vehicle_device;
   if (chosen === "none" || chosen === false) return null;
   if (typeof chosen === "string" && chosen) return hass.devices?.[chosen] ? chosen : null;
   return findVehicleDevice(hass, slug, title);
@@ -219,4 +303,40 @@ export function evccVehicleTitle(hass, slug, vehicle) {
     if (m) return dev.name_by_user || m[0];
   }
   return null;
+}
+
+// Every entity the editor can offer for a role or for a function: the ones on
+// the vehicle's own device first, then everything else that would fit. The
+// filter is what keeps the lists short enough for a plain select - a charge
+// level is looked for among the percentages, not among thousands of entities.
+// A configuration is free to name something outside these lists, the card only
+// ever reads the state.
+function vehicleEntityCandidates(hass, fits, deviceId) {
+  const device = [];
+  const other  = [];
+  for (const entityId of Object.keys(hass?.states || {})) {
+    const reg = hass.entities?.[entityId];
+    if (reg?.hidden) continue;
+    const a = hass.states[entityId].attributes || {};
+    const e = {
+      entityId,
+      domain:      domainOf(entityId),
+      deviceClass: a.device_class ?? null,
+      unit:        a.unit_of_measurement ?? null,
+    };
+    if (!fits(e)) continue;
+    const name = reg?.name || a.friendly_name || entityId;
+    (deviceId && reg?.device_id === deviceId ? device : other).push({ entityId, name });
+  }
+  const byName = (a, b) => a.name.localeCompare(b.name) || a.entityId.localeCompare(b.entityId);
+  return { device: device.sort(byName), other: other.sort(byName) };
+}
+
+export function vehicleRoleCandidates(hass, roleKey, deviceId = null) {
+  const role = VEHICLE_ROLES.find(r => r.key === roleKey);
+  return vehicleEntityCandidates(hass, role ? role.fits : () => false, deviceId);
+}
+
+export function vehicleActionCandidates(hass, deviceId = null) {
+  return vehicleEntityCandidates(hass, e => VEHICLE_ACTION_DOMAINS.includes(e.domain), deviceId);
 }

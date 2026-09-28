@@ -1,4 +1,4 @@
-import { FEATURES, DISABLED_NEEDED, VEHICLE_FEATURES, VEHICLE_SESSION_INFIX, VEHICLE_SESSION_FEATURES, loadpointFilter, vehicleFilter } from "./constants.js";
+import { FEATURES, DISABLED_NEEDED, VEHICLE_FEATURES, VEHICLE_SESSION_INFIX, VEHICLE_SESSION_FEATURES, loadpointFilter, vehicleSlug } from "./constants.js";
 import { isOn } from "../utils/state.js";
 
 // Longest suffix first: `limit_soc` has to win over `soc` for the same entity.
@@ -226,14 +226,16 @@ export function discoverVehicles(hass, prefix = "evcc_") {
   return vehicles;
 }
 
-// The discovered vehicles narrowed by the card's `vehicles` option, compared
-// without case like `repeating_plan_vehicles`; without the option every
-// discovered vehicle is in.
-export function selectVehicles(vehicles, config) {
-  const filter = vehicleFilter(config);
-  if (!filter) return vehicles;
-  const allowed = new Set(filter.map(v => String(v).toLowerCase()));
-  return Object.fromEntries(Object.entries(vehicles).filter(([slug]) => allowed.has(slug.toLowerCase())));
+// The vehicle a `vehicle` card shows, out of the discovered ones: the configured
+// one, compared without case like `repeating_plan_vehicles`, or the only one
+// there is when nothing is configured. Returns [slug, vehicle] or null - null
+// meaning the card has to ask, not that something is broken.
+export function selectVehicle(vehicles, config) {
+  const slugs = Object.keys(vehicles).sort();
+  const want  = vehicleSlug(config);
+  if (!want) return slugs.length === 1 ? [slugs[0], vehicles[slugs[0]]] : null;
+  const hit = slugs.find(slug => slug.toLowerCase() === want.toLowerCase());
+  return hit ? [hit, vehicles[hit]] : null;
 }
 
 // The prefixes of every ha-evcc installation, without a round trip: HA mirrors

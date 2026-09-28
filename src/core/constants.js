@@ -239,12 +239,19 @@ export function loadpointFilter(config) {
   return Array.isArray(raw) ? raw : [raw];
 }
 
-// The `vehicles` option of the vehicle mode, read the same way: a list of
-// vehicle slugs, a single slug as shorthand, null when not set.
-export function vehicleFilter(config) {
-  const raw = config?.vehicles;
-  if (raw === undefined || raw === null) return null;
-  return Array.isArray(raw) ? raw : [raw];
+// The vehicle a `vehicle` card shows. One card shows one vehicle: everything it
+// carries (device, picture, roles, functions) belongs to that one, and a
+// household with several cars puts a card next to the other. `vehicles` was the
+// list this mode started with and stays readable with a single entry, so an
+// early configuration keeps working; several entries are rejected in
+// validateCardConfig() rather than quietly showing one of them.
+export function vehicleSlug(config) {
+  const one = config?.vehicle;
+  if (typeof one === "string" && one.trim()) return one.trim();
+  const list = config?.vehicles;
+  if (typeof list === "string" && list.trim()) return list.trim();
+  if (Array.isArray(list) && list.length === 1 && typeof list[0] === "string" && list[0].trim()) return list[0].trim();
+  return null;
 }
 
 // A picture of the real vehicle, per vehicle: an item of Home Assistant's media
@@ -292,28 +299,58 @@ export function validateCardConfig(config) {
     throw new Error("evcc-card: loadpoints has to be a loadpoint name or a list of names");
   }
 
-  const vehicles = vehicleFilter(c);
-  if (vehicles && (!vehicles.length || vehicles.some(v => typeof v !== "string" || !v.trim()))) {
-    throw new Error("evcc-card: vehicles has to be a vehicle name or a list of names");
+  if (c.vehicle !== undefined && c.vehicle !== null && (typeof c.vehicle !== "string" || !c.vehicle.trim())) {
+    throw new Error("evcc-card: vehicle has to be the name of one vehicle");
+  }
+  // The mode showed a block per vehicle at first. It shows one, so a list of
+  // several says something the card no longer does, and saying so is better
+  // than showing the first of them.
+  const many = c.vehicles;
+  if (many !== undefined && many !== null) {
+    if (Array.isArray(many) && many.length > 1) {
+      throw new Error(`evcc-card: mode vehicle shows one vehicle. Use vehicle: ${many[0]} and a card per vehicle instead of vehicles: [${many.join(", ")}]`);
+    }
+    if (!vehicleSlug(c)) throw new Error("evcc-card: vehicles has to be the name of one vehicle; use vehicle instead");
+  }
+  for (const [gone, now] of [["vehicle_devices", "vehicle_device"], ["vehicle_images", "vehicle_image"]]) {
+    if (c[gone] !== undefined) throw new Error(`evcc-card: ${gone} is gone, one card shows one vehicle. Use ${now} for this card's vehicle`);
   }
 
   if (c.vehicle_actions !== undefined && typeof c.vehicle_actions !== "boolean") {
     throw new Error("evcc-card: vehicle_actions has to be true or false");
   }
 
-  const images = c.vehicle_images;
-  if (images !== undefined && images !== null) {
-    const ok = typeof images === "object" && !Array.isArray(images) && Object.values(images).every(isVehicleImage);
-    if (!ok) throw new Error("evcc-card: vehicle_images has to be a map of vehicle name to a media item (media-source://...), an image path (/local/...) or an http(s) address");
+  const image = c.vehicle_image;
+  if (image !== undefined && image !== null && !isVehicleImage(image)) {
+    throw new Error("evcc-card: vehicle_image has to be a media item (media-source://...), an image path (/local/...) or an http(s) address");
   }
 
-  // vehicle_devices: false switches the device link off, a map names the device
-  // per vehicle ("none" for a vehicle that is to stay without one).
-  const links = c.vehicle_devices;
-  if (links !== undefined && links !== null && links !== false) {
-    const ok = typeof links === "object" && !Array.isArray(links)
-      && Object.values(links).every(v => v === false || (typeof v === "string" && v.trim()));
-    if (!ok) throw new Error("evcc-card: vehicle_devices has to be false or a map of vehicle name to device id or \"none\"");
+  // vehicle_entities: the roles of the vehicle by hand, a map of role to entity
+  // id ("none" switches a role off) plus `actions`, the list of functions. The
+  // role names are not checked here: a name the card does not know does nothing,
+  // and rejecting the whole card for it would be worse than ignoring it.
+  const roles = c.vehicle_entities;
+  if (roles !== undefined && roles !== null) {
+    const entityId = v => typeof v === "string" && /^[a-z_]+\.[a-z0-9_]+$/.test(v.trim());
+    const okRole = v => v === "none" || v === false || entityId(v);
+    const ok = roles && typeof roles === "object" && !Array.isArray(roles)
+      && Object.entries(roles).every(([key, v]) => key === "actions"
+        ? (v === "none" || v === false || (Array.isArray(v) && v.every(entityId)))
+        : okRole(v));
+    if (!ok) {
+      const perVehicle = roles && typeof roles === "object" && Object.values(roles).some(v => v && typeof v === "object" && !Array.isArray(v));
+      throw new Error(perVehicle
+        ? "evcc-card: vehicle_entities names the roles of this card's vehicle directly now, no longer one map per vehicle"
+        : "evcc-card: vehicle_entities has to be a map of role to entity id (or \"none\"), with `actions` a list of entity ids");
+    }
+  }
+
+  // vehicle_device: the device of the vehicle's own integration, "none" (or
+  // false) for a vehicle that is to stay without one.
+  const device = c.vehicle_device;
+  if (device !== undefined && device !== null && device !== false
+      && !(typeof device === "string" && device.trim())) {
+    throw new Error("evcc-card: vehicle_device has to be a device id or \"none\"");
   }
 }
 

@@ -2,8 +2,8 @@
 // none of which depends on a loadpoint: an unplugged vehicle has to stay in.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { discoverVehicles, selectVehicles } from "../../src/core/entity-discovery.js";
-import { vehicleFilter, validateCardConfig } from "../../src/core/constants.js";
+import { discoverVehicles, selectVehicle } from "../../src/core/entity-discovery.js";
+import { vehicleSlug, validateCardConfig } from "../../src/core/constants.js";
 
 const hassOf = (ids, entities = {}) => ({ states: Object.fromEntries(ids.map(id => [id, { state: "1" }])), entities });
 
@@ -65,19 +65,31 @@ test("vehicles of an installation with a longer prefix stay out", () => {
   assert.deepEqual(Object.keys(discoverVehicles(hass, "evcc_demo_")), ["vehicle_1"]);
 });
 
-test("vehicles option: list, single name, not set", () => {
-  assert.equal(vehicleFilter({}), null);
-  assert.deepEqual(vehicleFilter({ vehicles: "ex30" }), ["ex30"]);
-  const found = { ex30: {}, id7: {} };
-  assert.deepEqual(Object.keys(selectVehicles(found, {})), ["ex30", "id7"]);
-  assert.deepEqual(Object.keys(selectVehicles(found, { vehicles: ["ID7"] })), ["id7"], "compared without case");
-  assert.deepEqual(selectVehicles(found, { vehicles: "tesla" }), {});
+test("the vehicle of a card: the name, the list of one the mode started with, or nothing", () => {
+  assert.equal(vehicleSlug({}), null);
+  assert.equal(vehicleSlug({ vehicle: "ex30" }), "ex30");
+  assert.equal(vehicleSlug({ vehicles: "ex30" }), "ex30");
+  assert.equal(vehicleSlug({ vehicles: ["id7"] }), "id7");
+  assert.equal(vehicleSlug({ vehicle: " ex30 " }), "ex30");
 });
 
-test("vehicles option is validated like loadpoints", () => {
+test("which vehicle a card shows: the named one, or the only one there is", () => {
+  const found = { ex30: { a: 1 }, id7: { b: 2 } };
+  assert.equal(selectVehicle(found, {}), null, "several vehicles and no name: the card has to ask");
+  assert.deepEqual(selectVehicle({ ex30: { a: 1 } }, {}), ["ex30", { a: 1 }], "one vehicle needs no name");
+  assert.deepEqual(selectVehicle(found, { vehicle: "ID7" }), ["id7", { b: 2 }], "compared without case");
+  assert.equal(selectVehicle(found, { vehicle: "tesla" }), null, "a name that is not there is no vehicle");
+  assert.equal(selectVehicle({}, { vehicle: "ex30" }), null);
+});
+
+test("one card, one vehicle: a list of several is rejected, the options of the first shape too", () => {
+  assert.doesNotThrow(() => validateCardConfig({ vehicle: "ex30" }));
   assert.doesNotThrow(() => validateCardConfig({ vehicles: ["ex30"] }));
   assert.doesNotThrow(() => validateCardConfig({ vehicles: "ex30" }));
+  assert.throws(() => validateCardConfig({ vehicles: ["ex30", "id7"] }), /one vehicle/);
   for (const bad of [[], [""], 5]) {
-    assert.throws(() => validateCardConfig({ vehicles: bad }), /vehicles/);
+    assert.throws(() => validateCardConfig({ vehicles: bad }), /vehicle/);
   }
+  assert.throws(() => validateCardConfig({ vehicle_devices: { ex30: "none" } }), /vehicle_device/);
+  assert.throws(() => validateCardConfig({ vehicle_images: { ex30: "/local/a.png" } }), /vehicle_image/);
 });

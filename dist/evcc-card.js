@@ -240,12 +240,19 @@ function loadpointFilter(config) {
   return Array.isArray(raw) ? raw : [raw];
 }
 
-// The `vehicles` option of the vehicle mode, read the same way: a list of
-// vehicle slugs, a single slug as shorthand, null when not set.
-function vehicleFilter(config) {
-  const raw = config?.vehicles;
-  if (raw === undefined || raw === null) return null;
-  return Array.isArray(raw) ? raw : [raw];
+// The vehicle a `vehicle` card shows. One card shows one vehicle: everything it
+// carries (device, picture, roles, functions) belongs to that one, and a
+// household with several cars puts a card next to the other. `vehicles` was the
+// list this mode started with and stays readable with a single entry, so an
+// early configuration keeps working; several entries are rejected in
+// validateCardConfig() rather than quietly showing one of them.
+function vehicleSlug(config) {
+  const one = config?.vehicle;
+  if (typeof one === "string" && one.trim()) return one.trim();
+  const list = config?.vehicles;
+  if (typeof list === "string" && list.trim()) return list.trim();
+  if (Array.isArray(list) && list.length === 1 && typeof list[0] === "string" && list[0].trim()) return list[0].trim();
+  return null;
 }
 
 // A picture of the real vehicle, per vehicle: an item of Home Assistant's media
@@ -293,28 +300,58 @@ function validateCardConfig(config) {
     throw new Error("evcc-card: loadpoints has to be a loadpoint name or a list of names");
   }
 
-  const vehicles = vehicleFilter(c);
-  if (vehicles && (!vehicles.length || vehicles.some(v => typeof v !== "string" || !v.trim()))) {
-    throw new Error("evcc-card: vehicles has to be a vehicle name or a list of names");
+  if (c.vehicle !== undefined && c.vehicle !== null && (typeof c.vehicle !== "string" || !c.vehicle.trim())) {
+    throw new Error("evcc-card: vehicle has to be the name of one vehicle");
+  }
+  // The mode showed a block per vehicle at first. It shows one, so a list of
+  // several says something the card no longer does, and saying so is better
+  // than showing the first of them.
+  const many = c.vehicles;
+  if (many !== undefined && many !== null) {
+    if (Array.isArray(many) && many.length > 1) {
+      throw new Error(`evcc-card: mode vehicle shows one vehicle. Use vehicle: ${many[0]} and a card per vehicle instead of vehicles: [${many.join(", ")}]`);
+    }
+    if (!vehicleSlug(c)) throw new Error("evcc-card: vehicles has to be the name of one vehicle; use vehicle instead");
+  }
+  for (const [gone, now] of [["vehicle_devices", "vehicle_device"], ["vehicle_images", "vehicle_image"]]) {
+    if (c[gone] !== undefined) throw new Error(`evcc-card: ${gone} is gone, one card shows one vehicle. Use ${now} for this card's vehicle`);
   }
 
   if (c.vehicle_actions !== undefined && typeof c.vehicle_actions !== "boolean") {
     throw new Error("evcc-card: vehicle_actions has to be true or false");
   }
 
-  const images = c.vehicle_images;
-  if (images !== undefined && images !== null) {
-    const ok = typeof images === "object" && !Array.isArray(images) && Object.values(images).every(isVehicleImage);
-    if (!ok) throw new Error("evcc-card: vehicle_images has to be a map of vehicle name to a media item (media-source://...), an image path (/local/...) or an http(s) address");
+  const image = c.vehicle_image;
+  if (image !== undefined && image !== null && !isVehicleImage(image)) {
+    throw new Error("evcc-card: vehicle_image has to be a media item (media-source://...), an image path (/local/...) or an http(s) address");
   }
 
-  // vehicle_devices: false switches the device link off, a map names the device
-  // per vehicle ("none" for a vehicle that is to stay without one).
-  const links = c.vehicle_devices;
-  if (links !== undefined && links !== null && links !== false) {
-    const ok = typeof links === "object" && !Array.isArray(links)
-      && Object.values(links).every(v => v === false || (typeof v === "string" && v.trim()));
-    if (!ok) throw new Error("evcc-card: vehicle_devices has to be false or a map of vehicle name to device id or \"none\"");
+  // vehicle_entities: the roles of the vehicle by hand, a map of role to entity
+  // id ("none" switches a role off) plus `actions`, the list of functions. The
+  // role names are not checked here: a name the card does not know does nothing,
+  // and rejecting the whole card for it would be worse than ignoring it.
+  const roles = c.vehicle_entities;
+  if (roles !== undefined && roles !== null) {
+    const entityId = v => typeof v === "string" && /^[a-z_]+\.[a-z0-9_]+$/.test(v.trim());
+    const okRole = v => v === "none" || v === false || entityId(v);
+    const ok = roles && typeof roles === "object" && !Array.isArray(roles)
+      && Object.entries(roles).every(([key, v]) => key === "actions"
+        ? (v === "none" || v === false || (Array.isArray(v) && v.every(entityId)))
+        : okRole(v));
+    if (!ok) {
+      const perVehicle = roles && typeof roles === "object" && Object.values(roles).some(v => v && typeof v === "object" && !Array.isArray(v));
+      throw new Error(perVehicle
+        ? "evcc-card: vehicle_entities names the roles of this card's vehicle directly now, no longer one map per vehicle"
+        : "evcc-card: vehicle_entities has to be a map of role to entity id (or \"none\"), with `actions` a list of entity ids");
+    }
+  }
+
+  // vehicle_device: the device of the vehicle's own integration, "none" (or
+  // false) for a vehicle that is to stay without one.
+  const device = c.vehicle_device;
+  if (device !== undefined && device !== null && device !== false
+      && !(typeof device === "string" && device.trim())) {
+    throw new Error("evcc-card: vehicle_device has to be a device id or \"none\"");
   }
 }
 
@@ -634,14 +671,16 @@ function discoverVehicles(hass, prefix = "evcc_") {
   return vehicles;
 }
 
-// The discovered vehicles narrowed by the card's `vehicles` option, compared
-// without case like `repeating_plan_vehicles`; without the option every
-// discovered vehicle is in.
-function selectVehicles(vehicles, config) {
-  const filter = vehicleFilter(config);
-  if (!filter) return vehicles;
-  const allowed = new Set(filter.map(v => String(v).toLowerCase()));
-  return Object.fromEntries(Object.entries(vehicles).filter(([slug]) => allowed.has(slug.toLowerCase())));
+// The vehicle a `vehicle` card shows, out of the discovered ones: the configured
+// one, compared without case like `repeating_plan_vehicles`, or the only one
+// there is when nothing is configured. Returns [slug, vehicle] or null - null
+// meaning the card has to ask, not that something is broken.
+function selectVehicle(vehicles, config) {
+  const slugs = Object.keys(vehicles).sort();
+  const want  = vehicleSlug(config);
+  if (!want) return slugs.length === 1 ? [slugs[0], vehicles[slugs[0]]] : null;
+  const hit = slugs.find(slug => slug.toLowerCase() === want.toLowerCase());
+  return hit ? [hit, vehicles[hit]] : null;
 }
 
 // The prefixes of every ha-evcc installation, without a round trip: HA mirrors
@@ -1042,7 +1081,7 @@ function socTrackBg(minSoc, limitSoc) {
 // Part of every locale URL next to the card version: a hash over the locale
 // files, stamped in by the build (rollup.config.mjs). HA lets the browser cache
 // them for a month, so changed texts need a URL of their own.
-const LOCALES_VERSION = `${EVCC_CARD_VERSION}-248cb284`;
+const LOCALES_VERSION = `${EVCC_CARD_VERSION}-2cef5b34`;
 
 /* ── Shared translation cache (used by both EvccCard and EvccCardEditor) ── */
 let _sharedTranslations = {};
@@ -1167,8 +1206,11 @@ const actions = {
   // may refuse or never answer, so the control shows that the command is
   // running (_commandPending) instead of claiming it has been done.
 
+  // A lock entity, or a switch that `vehicle_entities` put into the lock role.
   _setLock(entityId, lock) {
-    return this._command(entityId, this._hass.callService("lock", lock ? "lock" : "unlock", { entity_id: entityId }), true);
+    const domain  = entityId.slice(0, entityId.indexOf("."));
+    const service = domain === "lock" ? (lock ? "lock" : "unlock") : (lock ? "turn_on" : "turn_off");
+    return this._command(entityId, this._hass.callService(domain, service, { entity_id: entityId }), true);
   },
 
   // A climate entity or a switch; `on` is the state wanted.
@@ -1177,8 +1219,15 @@ const actions = {
     return this._command(entityId, this._hass.callService(domain, on ? "turn_on" : "turn_off", { entity_id: entityId }), true);
   },
 
+  // A function of the vehicle: a button of its integration, or a script or scene
+  // a configuration named in `vehicle_entities.actions`. All three are pressed
+  // and nothing is read back.
   _pressVehicleButton(entityId) {
-    return this._command(entityId, this._pressButton(entityId), false);
+    const domain = entityId.slice(0, entityId.indexOf("."));
+    const call = domain === "button"
+      ? this._pressButton(entityId)
+      : this._hass.callService(domain, "turn_on", { entity_id: entityId });
+    return this._command(entityId, call, false);
   },
 
   // Runs while the call is in flight and, with `untilState`, until HA reports
@@ -6684,6 +6733,44 @@ const HINTS = {
   stop:       /stop|deactivate|_off$|cancel|end$/,
 };
 
+// The roles the card fills from the vehicle's own integration, and what an
+// entity has to look like to be offered for one in the editor. The sorting
+// below finds them on its own; `vehicle_entities` names one by hand where the
+// sorting has no chance, because an integration words its entities differently
+// or keeps them on another device. `climate` marks the three roles that make up
+// the preconditioning, which is not a plain role but an entity or a pair of
+// commands.
+const isCommand = e => ["button", "script", "scene"].includes(e.domain);
+const VEHICLE_ROLES = [
+  { key: "soc",           fits: e => e.domain === "sensor" && e.unit === "%" },
+  { key: "range",         fits: e => isDistance(e) },
+  { key: "odometer",      fits: e => isDistance(e) },
+  { key: "capacity",      fits: e => e.domain === "sensor" && (e.unit === "kWh" || e.deviceClass === "energy_storage") },
+  { key: "target_soc",    fits: e => ["sensor", "number"].includes(e.domain) && e.unit === "%" },
+  { key: "lock",          fits: e => ["lock", "switch"].includes(e.domain) },
+  { key: "location",      fits: e => ["device_tracker", "sensor"].includes(e.domain) },
+  { key: "image",         fits: e => ["image", "camera"].includes(e.domain) },
+  { key: "driving",       fits: e => ["binary_sensor", "sensor"].includes(e.domain) },
+  { key: "charging",      fits: e => ["binary_sensor", "sensor"].includes(e.domain) },
+  { key: "plugged",       fits: e => ["binary_sensor", "sensor"].includes(e.domain) },
+  { key: "climate",       fits: e => ["climate", "switch"].includes(e.domain), climate: "entity" },
+  { key: "climate_start", fits: isCommand, climate: "start" },
+  { key: "climate_stop",  fits: isCommand, climate: "stop" },
+];
+
+// What can be a function of the vehicle: something that is pressed and does not
+// have to be read back. A switch that stays on is the preconditioning, not a
+// function.
+const VEHICLE_ACTION_DOMAINS = ["button", "script", "scene"];
+
+// The `vehicle_entities` of the card, or null. One card shows one vehicle, so the
+// option names its roles directly. Reading it happens here only, so the card,
+// the editor and the validation agree on the shape.
+function vehicleOverride(config) {
+  const opt = config?.vehicle_entities;
+  return opt && typeof opt === "object" && !Array.isArray(opt) ? opt : null;
+}
+
 // The entities of a device, enabled and visible, each with what the sorting
 // below looks at.
 function deviceEntities(hass, deviceId) {
@@ -6717,11 +6804,18 @@ const isLevel    = e => e.domain === "sensor" && e.unit === "%" && e.deviceClass
 //   openings  doors, windows, lids
 //   problems  warning flags
 //   climate   how to precondition: { entity } for a climate entity or a switch
-//             to toggle, { start, stop } for a pair of buttons, or null
-//   actions   the other buttons (flash, honk, refresh, ...)
+//             to toggle, { start, stop } for a pair of commands, or null
+//   actions   the other buttons (flash, honk, refresh, ...), in the order the
+//             config gives them, else by entity id
 //   details   every other sensor and binary sensor
-function classifyVehicleDevice(hass, deviceId) {
-  const ents  = deviceEntities(hass, deviceId);
+// `override` is the `vehicle_entities` entry of the vehicle and has the last
+// word: it is applied before the rest is sorted, so an entity the config takes
+// out of a role lands in the details and one it puts into a role leaves them.
+// Without a device the sorting has nothing to look at and the override alone
+// makes up the roles: a vehicle whose values come from single entities needs no
+// device at all.
+function classifyVehicleDevice(hass, deviceId, override = null) {
+  const ents  = deviceId ? deviceEntities(hass, deviceId) : [];
   const roles = {};
   const take  = (role, found) => { if (found && !roles[role]) roles[role] = found.entityId; };
 
@@ -6752,13 +6846,6 @@ function classifyVehicleDevice(hass, deviceId) {
   take("charging", binary(["battery_charging"]) ?? status("charging"));
   take("plugged",  binary(["plug"]) ?? status("connected", "disconnected"));
 
-  // The status entities stay in the details: the picture sums them up, it does
-  // not replace "charge status: done".
-  const STATUS   = ["driving", "charging", "plugged"];
-  const used     = new Set(Object.entries(roles).filter(([role]) => !STATUS.includes(role)).map(([, id]) => id));
-  const openings = ents.filter(e => e.domain === "binary_sensor" && ["door", "window", "opening", "garage_door"].includes(e.deviceClass));
-  const problems = ents.filter(e => e.domain === "binary_sensor" && e.deviceClass === "problem");
-
   // Preconditioning. A climate entity says it by its domain; a switch or a
   // pair of buttons only by words, as buttons carry no device class. A lone
   // start button without its stop counterpart stays an ordinary action.
@@ -6767,15 +6854,63 @@ function classifyVehicleDevice(hass, deviceId) {
   const stop  = climateButtons.find(e => HINTS.stop.test(e.hint));
   const climateEntity = ents.find(e => e.domain === "climate")
     ?? ents.find(e => e.domain === "switch" && HINTS.climate.test(e.hint));
-  const climate = climateEntity ? { entity: climateEntity.entityId }
-                : start && stop ? { start: start.entityId, stop: stop.entityId } : null;
+  let climate = climateEntity ? { entity: climateEntity.entityId }
+              : start && stop ? { start: start.entityId, stop: stop.entityId } : null;
+
+  // What the config says, role by role: an entity id takes the role, "none"
+  // switches it off, and a role the config does not mention keeps what the
+  // sorting found. The three climate roles are collected first and decide
+  // together, because an entity to toggle and a pair of commands are two ways
+  // to say the same thing and the entity is the shorter one.
+  if (override) {
+    const climateOv = {};
+    for (const { key, climate: slot } of VEHICLE_ROLES) {
+      if (!(key in override)) continue;
+      const raw = override[key];
+      const id  = typeof raw === "string" && raw.trim() && raw.trim() !== "none" ? raw.trim() : null;
+      if (slot) climateOv[slot] = id;
+      else if (id) roles[key] = id;
+      else delete roles[key];
+    }
+    if (Object.keys(climateOv).length) {
+      const entity  = "entity" in climateOv ? climateOv.entity : (climate?.entity ?? null);
+      const startId = "start"  in climateOv ? climateOv.start  : (climate?.start  ?? null);
+      const stopId  = "stop"   in climateOv ? climateOv.stop   : (climate?.stop   ?? null);
+      climate = entity ? { entity } : (startId && stopId ? { start: startId, stop: stopId } : null);
+    }
+  }
+
   const climateIds = new Set(climate ? Object.values(climate) : []);
-  const actions  = ents.filter(e => e.domain === "button" && !climateIds.has(e.entityId));
+  // The functions: the buttons of the device, or exactly what the config lists,
+  // in its order. An empty list means the vehicle is to show none.
+  let actions = ents.filter(e => e.domain === "button" && !climateIds.has(e.entityId)).map(e => e.entityId).sort();
+  if (override && "actions" in override) {
+    const raw  = override.actions;
+    const list = Array.isArray(raw) ? raw : (raw === "none" || raw === false ? [] : null);
+    if (list) actions = list.filter(id => typeof id === "string" && id.trim()).map(id => id.trim());
+  }
+
+  // The status entities stay in the details: the picture sums them up, it does
+  // not replace "charge status: done".
+  const STATUS   = ["driving", "charging", "plugged"];
+  const used     = new Set([
+    ...Object.entries(roles).filter(([role]) => !STATUS.includes(role)).map(([, id]) => id),
+    ...climateIds, ...actions,
+  ]);
+  const openings = ents.filter(e => e.domain === "binary_sensor" && ["door", "window", "opening", "garage_door"].includes(e.deviceClass) && !used.has(e.entityId));
+  const problems = ents.filter(e => e.domain === "binary_sensor" && e.deviceClass === "problem" && !used.has(e.entityId));
   const grouped  = new Set([...openings, ...problems].map(e => e.entityId));
   const details  = ents.filter(e => (e.domain === "sensor" || e.domain === "binary_sensor") && !used.has(e.entityId) && !grouped.has(e.entityId));
 
   const ids = list => list.map(e => e.entityId).sort();
-  return { roles, climate, openings: ids(openings), problems: ids(problems), actions: ids(actions), details: ids(details) };
+  return { roles, climate, openings: ids(openings), problems: ids(problems), actions, details: ids(details) };
+}
+
+// Whether a classification says anything at all. A vehicle without a device and
+// without a single configured entity has nothing of its own to show.
+function hasVehicleDeviceData(dev) {
+  return !!dev && (Object.keys(dev.roles).length > 0 || !!dev.climate
+    || dev.actions.length > 0 || dev.openings.length > 0 || dev.problems.length > 0 || dev.details.length > 0);
 }
 
 // The device that belongs to an evcc vehicle. It has to be a vehicle, which the
@@ -6842,13 +6977,11 @@ function vehicleDeviceState(hass, roles = {}) {
   return "parked";
 }
 
-// `vehicle_devices` decides per vehicle: a device id overrides the search,
-// "none" switches the link off for that vehicle, and `vehicle_devices: false`
-// switches it off for the card. Returns the device id or null.
+// `vehicle_device` decides: a device id overrides the search, "none" (or false)
+// leaves the card without one, and without the option the search answers.
+// Returns the device id or null.
 function resolveVehicleDevice(hass, config, slug, title = null) {
-  const opt = config?.vehicle_devices;
-  if (opt === false) return null;
-  const chosen = opt && typeof opt === "object" ? opt[slug] : undefined;
+  const chosen = config?.vehicle_device;
   if (chosen === "none" || chosen === false) return null;
   if (typeof chosen === "string" && chosen) return hass.devices?.[chosen] ? chosen : null;
   return findVehicleDevice(hass, slug, title);
@@ -6875,6 +7008,42 @@ function evccVehicleTitle(hass, slug, vehicle) {
   return null;
 }
 
+// Every entity the editor can offer for a role or for a function: the ones on
+// the vehicle's own device first, then everything else that would fit. The
+// filter is what keeps the lists short enough for a plain select - a charge
+// level is looked for among the percentages, not among thousands of entities.
+// A configuration is free to name something outside these lists, the card only
+// ever reads the state.
+function vehicleEntityCandidates(hass, fits, deviceId) {
+  const device = [];
+  const other  = [];
+  for (const entityId of Object.keys(hass?.states || {})) {
+    const reg = hass.entities?.[entityId];
+    if (reg?.hidden) continue;
+    const a = hass.states[entityId].attributes || {};
+    const e = {
+      entityId,
+      domain:      domainOf(entityId),
+      deviceClass: a.device_class ?? null,
+      unit:        a.unit_of_measurement ?? null,
+    };
+    if (!fits(e)) continue;
+    const name = reg?.name || a.friendly_name || entityId;
+    (deviceId && reg?.device_id === deviceId ? device : other).push({ entityId, name });
+  }
+  const byName = (a, b) => a.name.localeCompare(b.name) || a.entityId.localeCompare(b.entityId);
+  return { device: device.sort(byName), other: other.sort(byName) };
+}
+
+function vehicleRoleCandidates(hass, roleKey, deviceId = null) {
+  const role = VEHICLE_ROLES.find(r => r.key === roleKey);
+  return vehicleEntityCandidates(hass, role ? role.fits : () => false, deviceId);
+}
+
+function vehicleActionCandidates(hass, deviceId = null) {
+  return vehicleEntityCandidates(hass, e => VEHICLE_ACTION_DOMAINS.includes(e.domain), deviceId);
+}
+
 const ICON_BATTERY  = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg>`;
 const ICON_RANGE    = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M11.5 0L9 8H11V16H13V8H15L11.5 0M3 18V20H21V18L11.5 16L3 18Z"/></svg>`;
 const ICON_ODOMETER = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M12,16A3,3 0 0,1 9,13C9,11.88 9.61,10.9 10.5,10.39L20.21,4.77L14.68,14.35C14.18,15.33 13.17,16 12,16M12,3C13.81,3 15.5,3.5 16.97,4.32L14.87,5.53C14,5.19 13,5 12,5A8,8 0 0,0 4,13C4,15.21 4.89,17.21 6.34,18.65H6.35C6.74,19.04 6.74,19.67 6.35,20.06C5.96,20.45 5.32,20.45 4.93,20.07V20.07C3.12,18.26 2,15.76 2,13A10,10 0 0,1 12,3M22,13C22,15.76 20.88,18.26 19.07,20.07V20.07C18.68,20.45 18.05,20.45 17.66,20.06C17.27,19.67 17.27,19.04 17.66,18.65V18.65C19.11,17.2 20,15.21 20,13C20,12 19.81,11 19.46,10.1L20.67,8C21.5,9.5 22,11.18 22,13Z"/></svg>`;
@@ -6891,40 +7060,38 @@ const NO_VALUE = new Set(["unknown", "unavailable", ""]);
 // How many open doors or warnings get a chip of their own before the rest is summed up.
 const MAX_CHIPS = 4;
 
-// Vehicle mode: one block per vehicle evcc knows, plugged in or not. Methods are mixed into EvccCard.prototype.
+// Vehicle mode: one card, one vehicle - plugged in or not. Everything the card
+// carries (the device of the vehicle's own integration, the picture, the roles,
+// the functions) belongs to that vehicle, so a household with several cars puts
+// a card next to the other instead of one card growing with every car.
+// Methods are mixed into EvccCard.prototype.
 const vehicleView = {
   _renderVehicleMode(loadpoints) {
-    const all      = discoverVehicles(this._hass, this._getPrefix());
-    const vehicles = selectVehicles(all, this._config);
-    const slugs    = Object.keys(vehicles).sort();
-    if (slugs.length === 0) return this._renderNoVehicles(all);
-    const links = this._vehicleLinks();
-    return slugs.map(slug => this._renderVehicle(slug, vehicles[slug],
-      this._vehicleLoadpoint(slug, loadpoints), slugs.length === 1, links[slug] ?? null)).join("");
+    const all    = discoverVehicles(this._hass, this._getPrefix());
+    const chosen = selectVehicle(all, this._config);
+    if (!chosen) return this._renderNoVehicles(all);
+    const [slug, vehicle] = chosen;
+    return this._renderVehicle(slug, vehicle, this._vehicleLoadpoint(slug, loadpoints), this._vehicleLink(slug, vehicle));
   },
 
-  // Which Home Assistant device belongs to which vehicle, and the entities on
-  // it. The search walks both registries, so the answer is kept until one of
-  // the registries, the config or the set of entities changes.
-  _vehicleLinks() {
+  // The Home Assistant device of the vehicle and the entities on it. The search
+  // walks both registries, so the answer is kept until one of the registries,
+  // the config or the set of entities changes.
+  _vehicleLink(slug, vehicle) {
     const hass = this._hass;
-    if (!hass) return {};
+    if (!hass) return null;
     const c = this._vehicleLinkCache;
     const stateCount = Object.keys(hass.states).length;
-    if (c && c.entities === hass.entities && c.devices === hass.devices && c.config === this._config
-        && c.prefix === this._getPrefix() && c.stateCount === stateCount) return c.links;
+    if (c && c.slug === slug && c.entities === hass.entities && c.devices === hass.devices && c.config === this._config
+        && c.prefix === this._getPrefix() && c.stateCount === stateCount) return c.link;
 
-    const links = {};
-    const vehicles = selectVehicles(discoverVehicles(hass, this._getPrefix()), this._config);
-    for (const [slug, vehicle] of Object.entries(vehicles)) {
-      const deviceId = resolveVehicleDevice(hass, this._config, slug, evccVehicleTitle(hass, slug, vehicle));
-      if (!deviceId) continue;
-      const entityIds = Object.values(hass.entities || {}).filter(e => e.device_id === deviceId).map(e => e.entity_id);
-      links[slug] = { deviceId, entityIds };
-    }
-    this._vehicleLinkCache = { entities: hass.entities, devices: hass.devices, config: this._config,
-                               prefix: this._getPrefix(), stateCount, links };
-    return links;
+    const deviceId = resolveVehicleDevice(hass, this._config, slug, evccVehicleTitle(hass, slug, vehicle));
+    const link = deviceId
+      ? { deviceId, entityIds: Object.values(hass.entities || {}).filter(e => e.device_id === deviceId).map(e => e.entity_id) }
+      : null;
+    this._vehicleLinkCache = { slug, entities: hass.entities, devices: hass.devices, config: this._config,
+                               prefix: this._getPrefix(), stateCount, link };
+    return link;
   },
 
   // The loadpoint a vehicle is assigned to right now. ha-evcc describes the
@@ -6980,10 +7147,16 @@ const vehicleView = {
     return this._t("vehicleUpdated", { val: text });
   },
 
-  _renderVehicle(slug, vehicle, lp, single, link) {
-    const title = (single && this._config.title) || lp?.title
+  _renderVehicle(slug, vehicle, lp, link) {
+    const title = this._config.title || lp?.title
       || evccVehicleTitle(this._hass, slug, vehicle) || this._vehicleNameForSlug(slug);
-    const dev   = link ? classifyVehicleDevice(this._hass, link.deviceId) : null;
+    // What the vehicle's own integration contributes: the entities of its device
+    // sorted into roles, with `vehicle_entities` having the last word. A vehicle
+    // without a device gets everything from the configuration, which is why the
+    // classification also runs without one.
+    const override = vehicleOverride(this._config);
+    const classified = link || override ? classifyVehicleDevice(this._hass, link?.deviceId ?? null, override) : null;
+    const dev   = hasVehicleDeviceData(classified) ? classified : null;
     const roles = dev?.roles ?? {};
 
     const soc      = this._vehicleValue({ vehicle: vehicle.soc,       device: roles.soc,        lp, lpKey: "vehicle_soc", min: 0 });
@@ -6997,8 +7170,11 @@ const vehicleView = {
     // there; everything else (driving, charging somewhere else) only the
     // vehicle's integration can tell. Without one, a vehicle that is not at a
     // loadpoint is simply "not connected": the card does not claim it is parked.
+    // A vehicle is only called parked when something could have said otherwise:
+    // its device, or a configured entity for driving, charging or the plug.
+    const tellsState = dev && (!!link || ["driving", "charging", "plugged"].some(r => roles[r]));
     const state = lp?.charging ? "charging" : lp?.connected ? "connected"
-                : dev ? vehicleDeviceState(this._hass, roles) : "away";
+                : tellsState ? vehicleDeviceState(this._hass, roles) : "away";
     const statusClass = state === "charging" ? "charging" : state === "connected" ? "connected" : "ready";
     const statusLabel = state === "charging"  ? this._t("charging")
                       : state === "connected" ? this._t("connected")
@@ -7027,7 +7203,7 @@ const vehicleView = {
           ${lpTitle ? `<span class="vehicle-lp" title="${this._t("vehicleAtLoadpoint")}">${escHtml(lpTitle)}</span>` : ""}
           <span class="lp-badge ${statusClass}">${statusLabel}</span>
         </div>
-        ${this._renderVehicleImage(slug, roles, title)}
+        ${this._renderVehicleImage(roles, title)}
         ${(soc || range || odometer) ? `
         <div class="soc-section">
           <div class="soc-label-row">
@@ -7060,8 +7236,8 @@ const vehicleView = {
   // integration offers as an image entity. Returns { source, url } or null;
   // `source` is what was configured and `url` what the browser can load. One
   // that failed to load is not tried again, the block goes on without a picture.
-  _vehicleImage(slug, roles) {
-    const configured = this._config.vehicle_images?.[slug];
+  _vehicleImage(roles) {
+    const configured = this._config.vehicle_image;
     const fromEntity = roles.image ? this._hass.states[roles.image]?.attributes?.entity_picture : null;
     const source = [configured, fromEntity].find(v => isMediaSourceId(v) || isVehicleImageUrl(v))?.trim() ?? null;
     if (!source || this._vehicleImageFailed[source]) return null;
@@ -7105,8 +7281,8 @@ const vehicleView = {
   // The picture above the values, only when there is one: the card draws no
   // vehicle of its own. A picture that fails to load is dropped (listener in
   // _attachVehicleListeners), keyed by what was configured.
-  _renderVehicleImage(slug, roles, title) {
-    const image = this._vehicleImage(slug, roles);
+  _renderVehicleImage(roles, title) {
+    const image = this._vehicleImage(roles);
     if (!image) return "";
     return `
       <div class="vehicle-image">
@@ -7146,7 +7322,8 @@ const vehicleView = {
     const lock = dev.roles.lock && this._hass.states[dev.roles.lock];
     if (lock && !NO_VALUE.has(lock.state)) {
       const id      = dev.roles.lock;
-      const locked  = lock.state === "locked";
+      // A lock entity says "locked", a switch put into the role says "on".
+      const locked  = lock.state === "locked" || lock.state === "on";
       // HA's own transition states, or a command of the card still under way:
       // the one sent is the opposite of what the lock showed.
       const moving  = lock.state === "locking" ? "vehicleLocking" : lock.state === "unlocking" ? "vehicleUnlocking" : null;
@@ -7207,17 +7384,24 @@ const vehicleView = {
         data-entity="${escAttr(entityId)}"${confirm ? ` data-confirm="1"` : ""}${pending ? " disabled" : ""}>${escHtml(pending ? this._t("vehiclePending") : label)}</button>`;
     };
 
+    // A configured entity that does not exist in Home Assistant is left out
+    // instead of drawn as a button that can only fail: an entity renamed or an
+    // integration gone is the normal reason, and a typo shows as a missing
+    // button rather than as an error on the first press.
+    const exists  = id => !!this._hass.states[id];
+    const actions = dev.actions.filter(exists);
+
     let climateHtml = "";
     const c = dev.climate;
     if (c?.entity && this._hass.states[c.entity] && !NO_VALUE.has(this._hass.states[c.entity].state)) {
       const on = this._hass.states[c.entity].state !== "off";
       climateHtml = cmd(c.entity, on ? "climate-off" : "climate-on", this._t(on ? "vehicleClimateStop" : "vehicleClimateStart"), false, on ? " active" : "");
-    } else if (c?.start && c?.stop) {
+    } else if (c?.start && c?.stop && exists(c.start) && exists(c.stop)) {
       climateHtml = cmd(c.start, "press", this._t("vehicleClimateStart")) + cmd(c.stop, "press", this._t("vehicleClimateStop"));
     }
 
     const confirm = this._vehicleConfirm;
-    const mine    = confirm && [dev.roles.lock, ...dev.actions].includes(confirm.entityId);
+    const mine    = confirm && [dev.roles.lock, ...actions].includes(confirm.entityId);
     const confirmHtml = mine ? `
       <div class="vehicle-confirm">
         <span>${escHtml(this._t("vehicleConfirm", { action: confirm.cmd === "unlock" ? this._t("vehicleUnlock") : this._vehicleEntityName(confirm.entityId) }))}</span>
@@ -7226,7 +7410,7 @@ const vehicleView = {
       </div>` : "";
 
     let actionsHtml = "";
-    if (dev.actions.length) {
+    if (actions.length) {
       const open = !!this._vehicleActionsOpen[slug];
       actionsHtml = `
       <div class="vehicle-details vehicle-actions-list">
@@ -7236,7 +7420,7 @@ const vehicleView = {
             ? "M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
             : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"}"/></svg>
         </button>
-        <div class="vehicle-cmd-row"${open ? "" : " hidden"}>${dev.actions.map(id => cmd(id, "press", this._vehicleEntityName(id), true)).join("")}</div>
+        <div class="vehicle-cmd-row"${open ? "" : " hidden"}>${actions.map(id => cmd(id, "press", this._vehicleEntityName(id), true)).join("")}</div>
       </div>`;
     }
 
@@ -7395,6 +7579,8 @@ const vehicleView = {
     });
   },
 
+  // Nothing to show: either evcc knows no vehicle, or it knows several and the
+  // card has not been told which one it is for. Both name what there is.
   _renderNoVehicles(allVehicles = {}) {
     const available = Object.keys(allVehicles);
     const hint = available.length > 0
@@ -7402,7 +7588,7 @@ const vehicleView = {
       : "";
     return `
       <div class="empty">
-        <p>${this._t("noVehicles")}</p>
+        <p>${this._t(available.length > 0 ? "vehiclePickOne" : "noVehicles")}</p>
         ${hint}
       </div>`;
   },
@@ -8134,7 +8320,7 @@ const baseCss = `
       button.debug-link:hover { background: color-mix(in srgb, var(--primary-color) 10%, transparent); }
 `;
 
-const CSS$1 = [
+const CSS = [
   baseCss, loadpointCss, sliderCss, disabledCss, siteCss, flowCss, gridCss,
   statsCss, batteryCss, planCss, debugCss, priorityCss, vehicleCss,
 ].join("\n");
@@ -8149,7 +8335,7 @@ function sharedStyleSheet() {
   if (sharedSheet !== undefined) return sharedSheet;
   try {
     sharedSheet = new CSSStyleSheet();
-    sharedSheet.replaceSync(CSS$1);
+    sharedSheet.replaceSync(CSS);
   } catch {
     sharedSheet = null;
   }
@@ -8159,7 +8345,7 @@ function sharedStyleSheet() {
 // Attached to EvccCard.prototype.
 const styles = {
   _styles() {
-    return CSS$1;
+    return CSS;
   },
 
   // Adopts the shared sheet on this card's shadow root, once, and returns the
@@ -8174,7 +8360,7 @@ const styles = {
       }
       return "";
     }
-    return `<style>${CSS$1}</style>`;
+    return `<style>${CSS}</style>`;
   },
 };
 
@@ -8819,6 +9005,9 @@ for (const m of mixins) {
 }
 Object.assign(EvccCard.prototype, ...mixins);
 
+// mdi:eye-off
+const EYE_OFF_ICON = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.56 9,11.77 9,12A3,3 0 0,0 12,15C12.22,15 12.44,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17A5,5 0 0,1 7,12C7,11.21 7.2,10.47 7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,12C2.73,16.39 7,19.5 12,19.5C13.55,19.5 15.03,19.2 16.38,18.66L18.74,21L20,19.73L3.27,3M12,7A5,5 0 0,1 17,12C17,12.64 16.87,13.26 16.64,13.82L19.57,16.75C21.07,15.5 22.27,13.86 23,12C21.27,7.61 17,4.5 12,4.5C10.6,4.5 9.26,4.75 8,5.2L10.17,7.35C10.74,7.13 11.35,7 12,7Z"/></svg>`;
+
 // mdi:close
 const CLEAR_ICON = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/></svg>`;
 
@@ -8835,6 +9024,7 @@ class EvccCardEditor extends HTMLElement {
     this._disabled  = [];   // ha-evcc entities disabled in the registry
     this._enabling  = {};   // entity id -> outcome of enabling it here (disabled-entities.js)
     this._disabledOptionalOpen = false;
+    this._vehicleMapOpen = false;   // the entity mapping of the card's vehicle unfolded
   }
 
   _t(key, replacements = {}) {
@@ -8950,60 +9140,266 @@ class EvccCardEditor extends HTMLElement {
     }).join("");
   }
 
-  // One device select per vehicle. The first option is what the card does on
-  // its own and names the device it found, so nobody has to pick what is
-  // already right; a choice is written to `vehicle_devices`, the automatic one
-  // removes the vehicle from it again.
-  _vehicleDeviceFields(vehicles) {
+  // The vehicle this card is for. One card shows one vehicle, so this is a plain
+  // choice: with a single vehicle in the installation the card takes it by
+  // itself and the first option says so, with several one has to be picked.
+  _vehicleChooser(vehicles) {
     const slugs = Object.keys(vehicles).sort();
-    if (slugs.length === 0) return `<div class="hint">${this._t("editorVehiclesNoneFound")}</div>`;
-    const devices = listVehicleDevices(this._hass);
-    const chosen  = this._config.vehicle_devices && typeof this._config.vehicle_devices === "object" ? this._config.vehicle_devices : {};
-    const option  = (val, label, cur) => `<option value="${this._esc(val)}"${cur === val ? " selected" : ""}>${this._esc(label)}</option>`;
-
-    return slugs.map(slug => {
-      const title = evccVehicleTitle(this._hass, slug, vehicles[slug]) || slug;
-      const found = devices.find(d => d.id === findVehicleDevice(this._hass, slug, title));
-      const cur   = chosen[slug] === false ? "none" : (chosen[slug] || "");
-      const like  = devices.filter(d => d.vehicleLike);
-      const other = devices.filter(d => !d.vehicleLike);
-      return `
-        <label class="field-label" for="vehicle-device-${this._esc(slug)}">${this._esc(title)}</label>
-        <select id="vehicle-device-${this._esc(slug)}" class="ha-select" data-vehicle-device="${this._esc(slug)}">
-          ${option("", this._t("editorVehicleDeviceAuto", { val: found ? found.name : this._t("editorVehicleDeviceNotFound") }), cur)}
-          ${option("none", this._t("editorVehicleDeviceNone"), cur)}
-          ${like.length ? `<optgroup label="${this._esc(this._t("editorVehicleDeviceGroupVehicles"))}">${like.map(d => option(d.id, d.name, cur)).join("")}</optgroup>` : ""}
-          ${other.length ? `<optgroup label="${this._esc(this._t("editorVehicleDeviceGroupOther"))}">${other.map(d => option(d.id, d.name, cur)).join("")}</optgroup>` : ""}
-          ${cur && cur !== "none" && !devices.some(d => d.id === cur) ? option(cur, cur, cur) : ""}
-        </select>`;
-    }).join("");
+    if (!slugs.length) return `<div class="hint">${this._t("editorVehiclesNoneFound")}</div>`;
+    const cur    = vehicleSlug(this._config) || "";
+    const isCur  = slug => cur && slug.toLowerCase() === cur.toLowerCase();
+    const first  = slugs.length === 1
+      ? this._t("editorVehicleAuto", { val: this._vehicleTitle(slugs[0], vehicles[slugs[0]]) })
+      : this._t("editorVehiclePick");
+    return `
+      <select id="vehicle" class="ha-select" data-vehicle-choose>
+        <option value=""${cur ? "" : " selected"}>${this._esc(first)}</option>
+        ${slugs.map(slug => `<option value="${this._esc(slug)}"${isCur(slug) ? " selected" : ""}>${this._esc(this._vehicleTitle(slug, vehicles[slug]))}</option>`).join("")}
+        ${cur && !slugs.some(isCur) ? `<option value="${this._esc(cur)}" selected>${this._esc(cur)}</option>` : ""}
+      </select>`;
   }
 
-  // One picture per vehicle: HA's media picker, and a text field underneath for
-  // a path or an address (and to show what was picked). A set picture gets a
-  // button next to the field that removes it.
-  _vehicleImageFields(vehicles) {
-    const remove = this._t("editorVehicleImageRemove");
-    return Object.keys(vehicles).sort().map(slug => {
-      const title   = evccVehicleTitle(this._hass, slug, vehicles[slug]) || slug;
-      const current = this._config.vehicle_images?.[slug] || "";
+  _vehicleTitle(slug, vehicle) {
+    return evccVehicleTitle(this._hass, slug, vehicle) || slug;
+  }
+
+  // The device of the vehicle's own integration. The first option is what the
+  // card does by itself and names the device it found, so nobody has to pick
+  // what is already right; a choice is written to `vehicle_device`, the
+  // automatic one removes the option again.
+  _vehicleDeviceField(slug, vehicle) {
+    const devices = listVehicleDevices(this._hass);
+    const option  = (val, label, cur) => `<option value="${this._esc(val)}"${cur === val ? " selected" : ""}>${this._esc(label)}</option>`;
+    const title   = this._vehicleTitle(slug, vehicle);
+    const found   = devices.find(d => d.id === findVehicleDevice(this._hass, slug, title));
+    const chosen  = this._config.vehicle_device;
+    const cur     = chosen === false ? "none" : (typeof chosen === "string" ? chosen : "");
+    const like    = devices.filter(d => d.vehicleLike);
+    const other   = devices.filter(d => !d.vehicleLike);
+    return `
+      <select id="vehicle-device" class="ha-select" data-vehicle-device>
+        ${option("", this._t("editorVehicleDeviceAuto", { val: found ? found.name : this._t("editorVehicleDeviceNotFound") }), cur)}
+        ${option("none", this._t("editorVehicleDeviceNone"), cur)}
+        ${like.length ? `<optgroup label="${this._esc(this._t("editorVehicleDeviceGroupVehicles"))}">${like.map(d => option(d.id, d.name, cur)).join("")}</optgroup>` : ""}
+        ${other.length ? `<optgroup label="${this._esc(this._t("editorVehicleDeviceGroupOther"))}">${other.map(d => option(d.id, d.name, cur)).join("")}</optgroup>` : ""}
+        ${cur && cur !== "none" && !devices.some(d => d.id === cur) ? option(cur, cur, cur) : ""}
+      </select>
+      ${this._vehicleMapFields(slug, resolveVehicleDevice(this._hass, this._config, slug, title))}`;
+  }
+
+  // The entity mapping of one vehicle, folded away: one field per role and the
+  // list of functions. Where Home Assistant's own entity picker is there, each
+  // role gets it, with its search and narrowed down to the entities that could
+  // fill the role; without it a plain select stands in, the entities of the
+  // vehicle's device first. Empty means the card decides by itself, and the
+  // button next to the field switches a role off for good.
+  // Rendered only while it is unfolded, so an installation with many entities
+  // pays for the fields only when someone looks at them.
+  _vehicleMapFields(slug, deviceId) {
+    const ov    = vehicleOverride(this._config) || {};
+    const set   = VEHICLE_ROLES.filter(r => r.key in ov).length + ("actions" in ov ? 1 : 0);
+    const open  = !!this._vehicleMapOpen;
+    const head  = `
+      <button type="button" class="vehicle-map-toggle" data-vehicle-map aria-expanded="${open}">
+        <span>${this._esc(this._t("editorVehicleMapToggle"))}${set ? ` (${this._esc(this._t("editorVehicleMapSet", { val: set }))})` : ""}</span>
+      </button>`;
+    if (!open) return head;
+
+    const search = this._haSelectorReady();
+    const auto   = classifyVehicleDevice(this._hass, deviceId, null);
+    const hide   = this._t("editorVehicleRoleNone");
+    const rows = VEHICLE_ROLES.map(role => {
+      const cur   = typeof ov[role.key] === "string" ? ov[role.key] : (ov[role.key] === false ? "none" : "");
+      const off   = cur === "none";
+      const label = this._t("vehicleRole_" + role.key);
+      const field = search
+        ? `<div class="vehicle-role-pick" data-vehicle-role-pick data-role="${role.key}"></div>`
+        : this._vehicleRoleSelect(role, deviceId, cur, auto);
       return `
-        <label class="field-label" for="vehicle-image-${this._esc(slug)}">${this._esc(title)}</label>
-        <div class="vehicle-media" data-vehicle-media="${this._esc(slug)}"></div>
-        <div class="vehicle-image-row">
-          <input id="vehicle-image-${this._esc(slug)}" class="ha-input" type="text" data-vehicle-image="${this._esc(slug)}"
-                 value="${this._esc(current)}" placeholder="${this._esc(this._t("editorVehicleImagePlaceholder"))}">
-          <button type="button" class="vehicle-image-clear" data-vehicle-image-clear="${this._esc(slug)}"
-                  title="${this._esc(remove)}" aria-label="${this._esc(remove)}"${current ? "" : " hidden"}>${CLEAR_ICON}</button>
+        <div class="vehicle-map-row">
+          ${search ? "" : `<label class="field-label" for="vehicle-role-${role.key}">${this._esc(label)}</label>`}
+          <div class="vehicle-role-row">
+            ${field}
+            <button type="button" class="vehicle-role-none" data-vehicle-role-none data-role="${role.key}"
+                    aria-pressed="${off}" title="${this._esc(hide)}" aria-label="${this._esc(`${label}: ${hide}`)}">${EYE_OFF_ICON}</button>
+          </div>
         </div>`;
     }).join("");
+
+    return head + `
+      <div class="vehicle-map">
+        <div class="hint">${this._esc(this._t("editorVehicleMapHint"))}</div>
+        ${rows}
+        ${this._vehicleFunctionFields(deviceId)}
+      </div>`;
   }
 
-  _setVehicleImage(slug, value) {
-    const map = { ...(this._config.vehicle_images || {}) };
-    if (value) map[slug] = value;
-    else delete map[slug];
-    this._config = { ...this._config, vehicle_images: Object.keys(map).length ? map : undefined };
+  // The select that stands in for the picker: the automatic choice, "do not
+  // show", then the entities of the vehicle's device and everything else that
+  // fits the role.
+  _vehicleRoleSelect(role, deviceId, cur, auto) {
+    const cand   = vehicleRoleCandidates(this._hass, role.key, deviceId);
+    const autoId = this._vehicleAutoRole(auto, role.key);
+    const opt    = (val, label) => `<option value="${this._esc(val)}"${cur === val ? " selected" : ""}>${this._esc(label)}</option>`;
+    const group  = (label, list) => list.length ? `<optgroup label="${this._esc(label)}">${list.map(e => opt(e.entityId, `${e.name} (${e.entityId})`)).join("")}</optgroup>` : "";
+    const known  = [...cand.device, ...cand.other].some(e => e.entityId === cur);
+    return `
+      <select id="vehicle-role-${role.key}" class="ha-select" data-vehicle-role data-role="${role.key}">
+        ${opt("", autoId ? this._t("editorVehicleRoleAuto", { val: autoId }) : this._t("editorVehicleRoleAutoNone"))}
+        ${opt("none", this._t("editorVehicleRoleNone"))}
+        ${group(this._deviceName(deviceId) || this._t("editorVehicleRoleGroupDevice"), cand.device)}
+        ${group(this._t("editorVehicleRoleGroupAll"), cand.other)}
+        ${cur && cur !== "none" && !known ? opt(cur, cur) : ""}
+      </select>`;
+  }
+
+  // What the card takes for a role on its own: an entity from the device, or one
+  // of the three that make up the preconditioning.
+  _vehicleAutoRole(auto, key) {
+    const slot = VEHICLE_ROLES.find(r => r.key === key)?.climate;
+    return slot ? (auto.climate?.[slot] ?? null) : (auto.roles[key] ?? null);
+  }
+
+  // Home Assistant's entity picker per role: it searches, and it only offers
+  // what could fill the role. Empty is the automatic choice, which the helper
+  // line under the field names; a role switched off keeps the field empty and
+  // disabled, the button beside it says so.
+  _mountVehicleRolePickers() {
+    const slots = this.shadowRoot.querySelectorAll("[data-vehicle-role-pick]");
+    if (!slots.length || !this._haSelectorReady()) return;
+    slots.forEach(slot => {
+      const key      = slot.dataset.role;
+      const deviceId = this._vehicleDeviceFor();
+      const ov       = vehicleOverride(this._config) || {};
+      const cur      = typeof ov[key] === "string" ? ov[key] : (ov[key] === false ? "none" : "");
+      const cand     = vehicleRoleCandidates(this._hass, key, deviceId);
+      const ids      = [...cand.device, ...cand.other].map(e => e.entityId);
+      const autoId   = this._vehicleAutoRole(classifyVehicleDevice(this._hass, deviceId, null), key);
+      const picker   = document.createElement("ha-selector");
+      picker.hass     = this._hass;
+      // A configured entity that fits no longer, or none of this installation,
+      // still belongs in the list or the picker would drop it silently.
+      picker.selector = { entity: { include_entities: cur && cur !== "none" && !ids.includes(cur) ? [...ids, cur] : ids } };
+      picker.label    = this._t("vehicleRole_" + key);
+      picker.helper   = autoId ? this._t("editorVehicleRoleAuto", { val: autoId }) : this._t("editorVehicleRoleAutoNone");
+      picker.disabled = cur === "none";
+      picker.value    = cur && cur !== "none" ? cur : undefined;
+      picker.addEventListener("value-changed", (e) => {
+        e.stopPropagation();
+        const id = e.detail?.value;
+        this._setVehicleRole(key, typeof id === "string" ? id : "");
+        this._render();
+      });
+      slot.appendChild(picker);
+    });
+  }
+
+  // The functions of a vehicle: what the card shows as buttons today, each with
+  // a remove button, and one field to add another one.
+  _vehicleFunctionFields(deviceId) {
+    const ov      = vehicleOverride(this._config) || {};
+    const current = classifyVehicleDevice(this._hass, deviceId, ov).actions;
+    const cand    = vehicleActionCandidates(this._hass, deviceId);
+    const known   = [...cand.device, ...cand.other];
+    const name    = id => known.find(e => e.entityId === id)?.name || id;
+    const remove  = this._t("editorVehicleFunctionRemove");
+    const free    = list => list.filter(e => !current.includes(e.entityId));
+    const group   = (label, list) => list.length ? `<optgroup label="${this._esc(label)}">${list.map(e =>
+      `<option value="${this._esc(e.entityId)}">${this._esc(`${e.name} (${e.entityId})`)}</option>`).join("")}</optgroup>` : "";
+    const add = this._haSelectorReady()
+      ? `<div class="vehicle-func-add" data-vehicle-func-pick></div>`
+      : `<select class="ha-select" data-vehicle-func-add>
+          <option value="">${this._esc(this._t("editorVehicleFunctionAdd"))}</option>
+          ${group(this._deviceName(deviceId) || this._t("editorVehicleRoleGroupDevice"), free(cand.device))}
+          ${group(this._t("editorVehicleRoleGroupAll"), free(cand.other))}
+        </select>`;
+    return `
+      <div class="vehicle-funcs">
+        <div class="field-label">${this._esc(this._t("editorVehicleFunctionsTitle"))}</div>
+        <div class="hint">${this._esc(this._t("editorVehicleFunctionsHint"))}</div>
+        ${current.length ? current.map(id => `
+          <div class="vehicle-func-row">
+            <span class="vehicle-func-name" title="${this._esc(id)}">${this._esc(name(id))}</span>
+            <button type="button" class="vehicle-image-clear" data-vehicle-func-remove data-entity="${this._esc(id)}"
+                    title="${this._esc(remove)}" aria-label="${this._esc(remove)}">${CLEAR_ICON}</button>
+          </div>`).join("") : `<div class="hint">${this._esc(this._t("editorVehicleFunctionsNone"))}</div>`}
+        ${add}
+      </div>`;
+  }
+
+  // Adding a function through the picker: the ones already listed stay out of
+  // it, and after the pick the field is empty again for the next one.
+  _mountVehicleFunctionPickers() {
+    const slots = this.shadowRoot.querySelectorAll("[data-vehicle-func-pick]");
+    if (!slots.length || !this._haSelectorReady()) return;
+    slots.forEach(slot => {
+      const deviceId = this._vehicleDeviceFor();
+      const current  = classifyVehicleDevice(this._hass, deviceId, vehicleOverride(this._config)).actions;
+      const cand     = vehicleActionCandidates(this._hass, deviceId);
+      const picker   = document.createElement("ha-selector");
+      picker.hass     = this._hass;
+      picker.selector = { entity: { include_entities: [...cand.device, ...cand.other]
+        .map(e => e.entityId).filter(id => !current.includes(id)) } };
+      picker.label    = this._t("editorVehicleFunctionAdd");
+      picker.value    = undefined;
+      picker.addEventListener("value-changed", (e) => {
+        e.stopPropagation();
+        const id = e.detail?.value;
+        if (typeof id !== "string" || !id) return;
+        this._setVehicleFunctions([...current, id]);
+        this._render();
+      });
+      slot.appendChild(picker);
+    });
+  }
+
+  // The device of a vehicle the way the card sees it: the configured one, else
+  // the one the search finds for the evcc title.
+  _vehicleDeviceFor() {
+    const chosen = selectVehicle(discoverVehicles(this._hass, this._getPrefix()), this._config);
+    if (!chosen) return null;
+    const [slug, vehicle] = chosen;
+    return resolveVehicleDevice(this._hass, this._config, slug, evccVehicleTitle(this._hass, slug, vehicle));
+  }
+
+  _deviceName(deviceId) {
+    const dev = deviceId ? this._hass?.devices?.[deviceId] : null;
+    return dev ? (dev.name_by_user || dev.name || deviceId) : null;
+  }
+
+  // Writing one role: an entity id or "none" is kept, the empty choice
+  // (automatic) removes the role again, and a vehicle without a single setting
+  // drops out of the option, as the option itself does when it is empty.
+  _setVehicleRole(role, value) {
+    const entry = { ...(vehicleOverride(this._config) || {}) };
+    if (value) entry[role] = value;
+    else delete entry[role];
+    this._config = { ...this._config, vehicle_entities: Object.keys(entry).length ? entry : undefined };
+    this._fire();
+  }
+
+  _setVehicleFunctions(list) {
+    this._setVehicleRole("actions", list);
+  }
+
+  // The picture of the card's vehicle: HA's media picker, and a text field
+  // underneath for a path or an address (and to show what was picked). A set
+  // picture gets a button next to the field that removes it.
+  _vehicleImageField() {
+    const remove  = this._t("editorVehicleImageRemove");
+    const current = this._config.vehicle_image || "";
+    return `
+      <div class="vehicle-media" data-vehicle-media></div>
+      <div class="vehicle-image-row">
+        <input id="vehicle-image" class="ha-input" type="text" data-vehicle-image
+               value="${this._esc(current)}" placeholder="${this._esc(this._t("editorVehicleImagePlaceholder"))}">
+        <button type="button" class="vehicle-image-clear" data-vehicle-image-clear
+                title="${this._esc(remove)}" aria-label="${this._esc(remove)}"${current ? "" : " hidden"}>${CLEAR_ICON}</button>
+      </div>`;
+  }
+
+  _setVehicleImage(value) {
+    this._config = { ...this._config, vehicle_image: value || undefined };
     this._fire();
   }
 
@@ -9011,19 +9407,23 @@ class EvccCardEditor extends HTMLElement {
   // HA's own media selector, narrowed to images. The element belongs to the HA
   // frontend and is loaded on demand there, so it is created once it is defined;
   // the text field underneath works without it and shows what was picked.
+  // Whether HA's own selector element is there. The frontend loads it on demand,
+  // so the first render can come before it; the editor asks once to be told and
+  // renders again, and until then the plain fields stand in.
+  _haSelectorReady() {
+    if (customElements.get("ha-selector")) return true;
+    if (!this._waitingForSelector) {
+      this._waitingForSelector = true;
+      customElements.whenDefined("ha-selector").then(() => { this._waitingForSelector = false; this._render(); });
+    }
+    return false;
+  }
+
   _mountVehicleMediaPickers() {
     const slots = this.shadowRoot.querySelectorAll("[data-vehicle-media]");
-    if (!slots.length) return;
-    if (!customElements.get("ha-selector")) {
-      if (!this._waitingForSelector) {
-        this._waitingForSelector = true;
-        customElements.whenDefined("ha-selector").then(() => { this._waitingForSelector = false; this._render(); });
-      }
-      return;
-    }
+    if (!slots.length || !this._haSelectorReady()) return;
     slots.forEach(slot => {
-      const slug    = slot.dataset.vehicleMedia;
-      const current = this._config.vehicle_images?.[slug];
+      const current = this._config.vehicle_image;
       const picker  = document.createElement("ha-selector");
       picker.hass     = this._hass;
       picker.selector = { media: { accept: ["image/*"] } };
@@ -9032,7 +9432,7 @@ class EvccCardEditor extends HTMLElement {
       picker.addEventListener("value-changed", (e) => {
         e.stopPropagation();
         const id = e.detail?.value?.media_content_id;
-        this._setVehicleImage(slug, isMediaSourceId(id) ? id : null);
+        this._setVehicleImage(isMediaSourceId(id) ? id : null);
         this._render();
       });
       slot.appendChild(picker);
@@ -9067,7 +9467,10 @@ class EvccCardEditor extends HTMLElement {
     const showStatsPeriod   = ["stats", "site", "flow", "grid"].includes(mode);
     const showVehicleFilter = mode === "repeatplan";
     const showVehicles      = mode === "vehicle";
-    const selVehicles       = vehicleFilter(c) || [];
+    // The vehicle the card is for, resolved the way the card does it: what is
+    // configured, or the only vehicle there is.
+    const allVehicles       = showVehicles && this._hass ? discoverVehicles(this._hass, this._getPrefix()) : {};
+    const ownVehicle        = showVehicles ? selectVehicle(allVehicles, c) : null;
     const rplanVehicles     = Array.isArray(c.repeating_plan_vehicles) ? c.repeating_plan_vehicles : [];
     const instanceOptions   = this._instanceOptions();
     const disabledEntries   = this._disabledEntries();
@@ -9156,6 +9559,27 @@ class EvccCardEditor extends HTMLElement {
         .vehicle-image-clear:hover, .vehicle-image-clear:focus-visible { color: var(--primary-text-color); background: var(--secondary-background-color, rgba(127,127,127,.15)); outline: none; }
         .vehicle-image-clear[hidden] { display: none; }
         .vehicle-image-clear svg { width: 20px; height: 20px; }
+        .vehicle-map-toggle {
+          margin: 6px 0 0; padding: 4px 0; background: none; border: none; cursor: pointer;
+          color: var(--primary-color); font: inherit; font-size: .85rem; text-align: left;
+        }
+        .vehicle-map-toggle::before { content: "▸ "; }
+        .vehicle-map-toggle[aria-expanded="true"]::before { content: "▾ "; }
+        .vehicle-map { margin: 2px 0 10px; padding: 8px 10px; border-left: 2px solid var(--divider-color, rgba(127,127,127,.3)); }
+        .vehicle-map-row { margin-bottom: 6px; }
+        .vehicle-map-row .field-label { margin-bottom: 2px; }
+        .vehicle-role-row { display: flex; align-items: center; gap: 4px; }
+        .vehicle-role-row .ha-select, .vehicle-role-pick { flex: 1; min-width: 0; }
+        .vehicle-role-none {
+          flex: none; background: none; border: none; padding: 2px; border-radius: 50%; cursor: pointer;
+          color: var(--secondary-text-color); line-height: 0;
+        }
+        .vehicle-role-none:hover, .vehicle-role-none:focus-visible { color: var(--primary-text-color); background: var(--secondary-background-color, rgba(127,127,127,.15)); outline: none; }
+        .vehicle-role-none[aria-pressed="true"] { color: var(--error-color, #db4437); }
+        .vehicle-role-none svg { width: 20px; height: 20px; }
+        .vehicle-funcs { margin-top: 10px; }
+        .vehicle-func-row { display: flex; align-items: center; gap: 4px; margin: 4px 0; }
+        .vehicle-func-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9rem; }
         .cb-row { display: flex; align-items: center; gap: 8px; font-size: .875rem; cursor: pointer; padding: 4px 0; }
         .cb-row input[type="checkbox"] { accent-color: var(--primary-color); width: 16px; height: 16px; cursor: pointer; }
         ${disabledListCss}
@@ -9240,14 +9664,15 @@ class EvccCardEditor extends HTMLElement {
         ` : ""}
         ${showVehicles ? `
         <div class="field">
-          <div class="section-title">${this._t("editorVehicleFilterTitle")}</div>
-          <div class="hint">${this._t("editorVehicleFilterHint")}</div>
-          ${this._vehicleCheckboxes("vehicles", selVehicles, this._hass ? Object.keys(discoverVehicles(this._hass, this._getPrefix())).sort() : [], "editorVehiclesNoneFound")}
+          <div class="section-title">${this._t("editorVehicleTitle")}</div>
+          <div class="hint">${this._t("editorVehicleHint")}</div>
+          ${this._vehicleChooser(allVehicles)}
         </div>
+        ${ownVehicle ? `
         <div class="field">
           <div class="section-title">${this._t("editorVehicleDeviceTitle")}</div>
           <div class="hint">${this._t("editorVehicleDeviceHint")}</div>
-          ${this._hass ? this._vehicleDeviceFields(discoverVehicles(this._hass, this._getPrefix())) : ""}
+          ${this._vehicleDeviceField(ownVehicle[0], ownVehicle[1])}
           <label class="cb-row">
             <input type="checkbox" id="vehicle_actions" ${c.vehicle_actions === true ? "checked" : ""}>
             <span>${this._t("editorVehicleActions")}</span>
@@ -9256,8 +9681,9 @@ class EvccCardEditor extends HTMLElement {
         <div class="field">
           <div class="section-title">${this._t("editorVehicleImageTitle")}</div>
           <div class="hint">${this._t("editorVehicleImageHint")}</div>
-          ${this._hass ? this._vehicleImageFields(discoverVehicles(this._hass, this._getPrefix())) : ""}
+          ${this._vehicleImageField()}
         </div>
+        ` : ""}
         ` : ""}
         ${showNoPlan ? `
         <div class="field">
@@ -9346,7 +9772,8 @@ class EvccCardEditor extends HTMLElement {
         this._config = {
           ...this._config,
           prefix: isDefault ? undefined : chosen,
-          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined, vehicles: undefined, vehicle_devices: undefined, vehicle_images: undefined,
+          loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined,
+          vehicle: undefined, vehicles: undefined, vehicle_device: undefined, vehicle_image: undefined, vehicle_entities: undefined,
         };
         this._discoverLoadpoints();
         this._fire();
@@ -9391,18 +9818,19 @@ class EvccCardEditor extends HTMLElement {
     if (optEl) optEl.addEventListener("toggle", () => { this._disabledOptionalOpen = optEl.open; });
 
     this._mountVehicleMediaPickers();
+    this._mountVehicleRolePickers();
+    this._mountVehicleFunctionPickers();
 
     // Written on change, not on every key: half a path is not a valid config.
     // An emptied field is the exception, it removes the picture right away. The
     // field is not rendered anew here, so focus and a click on the remove button
     // survive; only the button follows the value.
     this.shadowRoot.querySelectorAll("input[data-vehicle-image]").forEach(inp => {
-      const slug  = inp.dataset.vehicleImage;
-      const clear = this.shadowRoot.querySelector(`[data-vehicle-image-clear="${CSS.escape(slug)}"]`);
+      const clear = this.shadowRoot.querySelector("[data-vehicle-image-clear]");
       const set = (value) => {
-        this._setVehicleImage(slug, value);
+        this._setVehicleImage(value);
         if (clear) clear.hidden = !value;
-        const picker = this.shadowRoot.querySelector(`[data-vehicle-media="${CSS.escape(slug)}"] ha-selector`);
+        const picker = this.shadowRoot.querySelector("[data-vehicle-media] ha-selector");
         if (picker && !isMediaSourceId(value)) picker.value = undefined;
       };
       inp.addEventListener("change", () => {
@@ -9411,21 +9839,70 @@ class EvccCardEditor extends HTMLElement {
         set(val && isVehicleImage(val) ? val : null);
       });
       inp.addEventListener("input", () => {
-        if (!inp.value.trim() && this._config.vehicle_images?.[slug]) set(null);
+        if (!inp.value.trim() && this._config.vehicle_image) set(null);
       });
     });
     this.shadowRoot.querySelectorAll("[data-vehicle-image-clear]").forEach(btn => {
-      btn.addEventListener("click", () => { this._setVehicleImage(btn.dataset.vehicleImageClear, null); this._render(); });
+      btn.addEventListener("click", () => { this._setVehicleImage(null); this._render(); });
+    });
+
+    // Unfolding the mapping is the editor's own state: it survives the re-render
+    // the way the disabled list does, without touching the config.
+    this.shadowRoot.querySelectorAll("[data-vehicle-map]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._vehicleMapOpen = !this._vehicleMapOpen;
+        this._render();
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("[data-vehicle-role-none]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const off = btn.getAttribute("aria-pressed") === "true";
+        this._setVehicleRole(btn.dataset.role, off ? "" : "none");
+        this._render();
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("select[data-vehicle-role]").forEach(sel => {
+      sel.addEventListener("change", () => {
+        this._setVehicleRole(sel.dataset.role, sel.value);
+        this._render();
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("[data-vehicle-func-add]").forEach(sel => {
+      sel.addEventListener("change", () => {
+        if (!sel.value) return;
+        const current = classifyVehicleDevice(this._hass, this._vehicleDeviceFor(), vehicleOverride(this._config)).actions;
+        this._setVehicleFunctions([...current, sel.value]);
+        this._render();
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("[data-vehicle-func-remove]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const current = classifyVehicleDevice(this._hass, this._vehicleDeviceFor(), vehicleOverride(this._config)).actions;
+        this._setVehicleFunctions(current.filter(id => id !== btn.dataset.entity));
+        this._render();
+      });
     });
 
     this.shadowRoot.querySelectorAll("[data-vehicle-device]").forEach(sel => {
       sel.addEventListener("change", () => {
-        const map = { ...(this._config.vehicle_devices && typeof this._config.vehicle_devices === "object" ? this._config.vehicle_devices : {}) };
-        if (sel.value) map[sel.dataset.vehicleDevice] = sel.value;
-        else delete map[sel.dataset.vehicleDevice];
-        this._config = { ...this._config, vehicle_devices: Object.keys(map).length ? map : undefined };
+        this._config = { ...this._config, vehicle_device: sel.value || undefined };
         this._fire();
+        this._render();
       });
+    });
+
+    // Another vehicle means another device, another picture and another
+    // mapping: what was set belonged to the vehicle before it, so it goes.
+    const chooser = this.shadowRoot.querySelector("[data-vehicle-choose]");
+    if (chooser) chooser.addEventListener("change", () => {
+      this._config = { ...this._config, vehicle: chooser.value || undefined, vehicles: undefined,
+                       vehicle_device: undefined, vehicle_image: undefined, vehicle_entities: undefined };
+      this._fire();
+      this._render();
     });
 
     this.shadowRoot.querySelectorAll("input[type=checkbox][data-field]").forEach(cb => {
