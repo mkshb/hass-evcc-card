@@ -20,6 +20,13 @@ from xml.sax.saxutils import escape as xml_escape
 ROOT = Path(__file__).resolve().parent.parent
 OUT  = ROOT / "test" / "out"
 MODES = ["loadpoint", "compact", "battery", "vehicle", "site", "flow", "grid", "stats", "plan", "repeatplan", "priority", "debug"]
+# What a mode needs beyond its name to show anything: the vehicle mode shows one
+# vehicle per card and asks which one when it is not told.
+MODE_CONFIG = {"vehicle": {"vehicle": "ex30"}}
+
+
+def mode_config(mode, **extra):
+    return {"mode": mode, **MODE_CONFIG.get(mode, {}), **extra}
 
 # The browser clock is frozen at the capture time of the fixtures so every run
 # renders the same pixels (hour labels, plan times, "current month"). Timezone
@@ -190,7 +197,7 @@ def render_smoke(browser, port, t):
     for mode in MODES:
         for dark in (False, True):
             page = new_page(browser, 480, 900)
-            errors = open_card(page, port, mode=mode, dark=dark)
+            errors = open_card(page, port, config=mode_config(mode), dark=dark)
             has_card = page.locator(in_card("ha-card")).count() > 0
             name = f"render {mode}{' dark' if dark else ''}"
             shot = OUT / f"{mode}{'-dark' if dark else ''}.png"
@@ -939,14 +946,14 @@ def renderkey(browser, port, t):
           has(target, k) { if (typeof k === 'string') reads.add(k); return k in target; },
         }),
       }]));
-      for (const mode of modes) {
-        c.setConfig({ mode, charge_current_settings: 'expanded' });
+      for (const cfg of modes) {
+        c.setConfig({ ...cfg, charge_current_settings: 'expanded' });
         c.hass = { ...hass, states };
         c._lastRenderKey = null;
         c._render();
       }
       return [...reads];
-    }""", MODES)
+    }""", [mode_config(m) for m in MODES])
     unknown = sorted(set(read) - set(declared))
     t.check(not unknown, "no attribute is read that the render key ignores", f"read {len(read)}, missing from RENDER_ATTRS: {unknown}")
     unused = sorted(set(declared) - set(read))

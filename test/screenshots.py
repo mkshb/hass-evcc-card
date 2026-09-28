@@ -30,6 +30,9 @@ SHOTS = {
     "battery":    {"mode": "battery"},
     "priority":   {"mode": "priority"},
     "repeatplan": {"mode": "repeatplan"},
+    # The vehicle mode shows one vehicle per card, so the image has to name it;
+    # `ex30` is the fixture's car, the one with a device of its own behind it.
+    "vehicle":    {"mode": "vehicle", "vehicle": "ex30"},
 }
 
 # name -> states set on top of the fixture. The loadpoint views get a charge
@@ -38,7 +41,9 @@ PLAN = {"sensor.evcc_openwb_plan_projected_start": "2026-09-19T02:00:00+02:00",
         "sensor.evcc_openwb_plan_projected_end":   "2026-09-19T06:30:00+02:00",
         "sensor.evcc_openwb_effective_plan_time":  "2026-09-19T07:00:00+02:00",
         "sensor.evcc_openwb_effective_plan_soc":   "80"}
-STATES = {"loadpoint": PLAN, "compact": PLAN}
+# The vehicle in the image is plugged into that loadpoint, so its block carries
+# the plan as well.
+STATES = {"loadpoint": PLAN, "compact": PLAN, "vehicle": PLAN}
 
 
 def open_steady(page, port, **kw):
