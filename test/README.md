@@ -70,7 +70,7 @@ run by hand before a release, not in CI:
 E2E_HA_USER=e2e
 E2E_HA_PASSWORD=...
 
-python3 test/e2e.py                 # smoke + roundtrip + solar_share, report in test/out/e2e/
+python3 test/e2e.py                 # every group below, report in test/out/e2e/
 python3 test/e2e.py --only smoke    # one group; --headed shows the browser
 ```
 
@@ -79,6 +79,10 @@ python3 test/e2e.py --only smoke    # one group; --headed shows the browser
 | `smoke` | Every mode renders on the real dashboard without card errors; the loadpoint modes show every demo loadpoint by name, the debug mode the prefix. One screenshot per mode in `test/out/e2e/` |
 | `roundtrip` | Garage starts off; a click on "now" in the card arrives at evcc (card → HA service → ha-evcc → evcc API), the state comes back into the card, and a change made in evcc itself reaches the card. The demo is reset to its shipped modes before and after |
 | `solar_share` | Garage starts at evcc's default of 100 %; Home on the slider arrives at evcc as 0, and 0.5 set in evcc itself shows as 50 % in the card. Needs evcc 0.316 and ha-evcc 2026.9.5. The demo's solar share is reset to 1 with the modes |
+| `vehicle` | The vehicle mode against the real ha-evcc entities: one block per evcc vehicle with the title of its ha-evcc device, Carport and Garage vehicles with their loadpoint, badge and charge level, session totals in the unit HA reports. The demo entry has no evcc password, so its configvehicle sensors are disabled: every block without a device of its own shows the triangle and the hint, and the triangle opens the debug list |
+| `vehicle_switch` | A vehicle picked in the plan view's select arrives at evcc, and a vehicle evcc assigns to the Garage moves its block there while the one before is "not connected". The demo's vehicles are reset with the modes |
+| `charge_plan` | A plan of 80 % for tomorrow 07:00 set in the plan view arrives at evcc (evcc_intg.set_vehicle_plan), the delete button follows once HA reports it and removes it in evcc again. Leftover plans are deleted by the reset |
+| `editor` | The editor of the vehicle mode inside the real frontend: the demo vehicles, their evcc titles and HA's own media selector per vehicle, and a checked vehicle writes the whole config. Mounted straight into the HA page, as the dashboard's card edit dialog does not open in the headless browser |
 
 Two things to know when timing interactions here: a fresh browser context reloads
 the page once about two seconds after the first render (the first activation of

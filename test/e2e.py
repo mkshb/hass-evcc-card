@@ -4,8 +4,10 @@
 Usage:  python3 test/e2e.py [--headed] [--only NAME]
 Logs into HA-Dev with a browser, writes its own dashboard (one view per card mode,
 every card with `prefix: evcc_demo_`), renders each mode against the real ha-evcc
-entities and drives a mode change through the whole stack: card, HA service,
-ha-evcc, evcc API, and back. Exit code 1 on failure, 2 when the setup is missing.
+entities and drives changes through the whole stack: card, HA service,
+ha-evcc, evcc API, and back (mode, solar share, vehicle at a loadpoint, charge
+plan). The vehicle mode and its editor are checked against the demo vehicles.
+Exit code 1 on failure, 2 when the setup is missing.
 
 This is not the mock suite (test/run.py). It needs the running stack and is run
 by hand before a release; nothing here is deterministic enough for CI. Every
@@ -62,16 +64,27 @@ def evcc_state():
     return st.get("result", st)
 
 
+def slugify(s):
+    """ha-evcc's entity slug of an evcc title: "blue e-Golf" -> "blue_e_golf"."""
+    return "_".join(filter(None, "".join(c if c.isalnum() else " " for c in s.lower()).split()))
+
+
 def demo_loadpoints():
     """[(1-based api index, title, slug)] of the demo loadpoints. ha-evcc slugifies the title."""
-    slug = lambda s: "".join(c if c.isalnum() else "_" for c in s.lower()).strip("_")
-    return [(i + 1, lp["title"], slug(lp["title"])) for i, lp in enumerate(evcc_state()["loadpoints"])]
+    return [(i + 1, lp["title"], slugify(lp["title"])) for i, lp in enumerate(evcc_state()["loadpoints"])]
+
+
+def demo_vehicles():
+    """{evcc name: (title, slug)} of the demo vehicles; ha-evcc builds the vehicle entities from the slug."""
+    return {name: (v["title"], slugify(v["title"])) for name, v in (evcc_state().get("vehicles") or {}).items()}
 
 
 # Known starting point: what cmd/demo.yaml ships with ("pv" there, which evcc
 # 0.316 normalizes to "smart"). The garage is the one the round trip flips, so
 # it starts off.
 DEMO_MODES = {"Carport": "smart", "Garage": "off", "Heat pump": "smart"}
+# and the vehicles it plugs in
+DEMO_VEHICLES = {"Carport": "vehicle_1", "Garage": "vehicle_2"}
 
 
 def reset_demo():
@@ -83,6 +96,15 @@ def reset_demo():
     for i, lp in enumerate(evcc_state()["loadpoints"], 1):
         if lp.get("solarShare") not in (None, 1):
             evcc(f"loadpoints/{i}/solarshare/1", "POST")
+    st = evcc_state()
+    for idx, title, _ in demo_loadpoints():
+        name = DEMO_VEHICLES.get(title)
+        if name and st["loadpoints"][idx - 1].get("vehicleName") != name:
+            evcc(f"loadpoints/{idx}/vehicle/{name}", "POST")
+    # no charge plans left over from a run that broke off
+    for name, v in (st.get("vehicles") or {}).items():
+        if v.get("plan"):
+            evcc(f"vehicles/{name}/plan/soc", "DELETE")
 
 
 def wait_for(pred, timeout=20, step=0.5):
@@ -264,7 +286,214 @@ def solar_share(page, t):
     reset_demo()
 
 
-GROUPS = {"smoke": smoke, "roundtrip": roundtrip, "solar_share": solar_share}
+# --- vehicle mode ----------------------------------------------------------------------
+
+DURATION = {"d": 86400, "h": 3600, "min": 60, "s": 1}
+
+
+def vehicle_blocks(page):
+    """What the vehicle view shows per vehicle, read from the card's shadow root."""
+    return page.locator("evcc-card").first.evaluate("""el => Object.fromEntries([...el.shadowRoot.querySelectorAll('.vehicle-block')].map(b => [b.dataset.vehicle, {
+        title:  b.querySelector('.lp-name')?.textContent.trim() ?? null,
+        lp:     b.querySelector('.vehicle-lp')?.textContent.trim() ?? null,
+        badge:  b.querySelector('.lp-badge')?.textContent.trim() ?? null,
+        warn:   b.querySelector('.lp-disabled-warn')?.getAttribute('title') ?? null,
+        hint:   b.querySelector('.vehicle-hint')?.textContent.trim() ?? null,
+        device: !!b.querySelector('[data-vehicle-details]'),
+        values: [...b.querySelectorAll('.soc-label-row [data-more-info]')].map(e => [e.dataset.moreInfo, e.textContent.trim()]),
+        totals: Object.fromEntries([...b.querySelectorAll('.vehicle-totals .session-item')].map(e => [e.dataset.moreInfo, e.querySelector('.si-value').textContent.trim()])),
+      }]))""")
+
+
+def vehicle_view(page, t):
+    """The vehicle mode against the real ha-evcc entities of the demo: one block per
+    evcc vehicle with the title of its ha-evcc device, the loadpoint it is plugged
+    into, values and session totals as HA reports them, and the hint for the
+    configvehicle sensors, which the demo entry (no evcc password) has disabled."""
+    t.group("e2e vehicle - the demo vehicles in the vehicle mode")
+    reset_demo()
+    vehicles = demo_vehicles()
+    lps = {title: (idx, slug) for idx, title, slug in demo_loadpoints()}
+    st = evcc_state()
+    open_view(page, "vehicle")
+    blocks = vehicle_blocks(page)
+    want = sorted(slug for _, slug in vehicles.values())
+    t.check(sorted(blocks) == want, "one block per evcc vehicle", f"{sorted(blocks)} vs {want}")
+    titles = {slug: blocks.get(slug, {}).get("title") for _, slug in vehicles.values()}
+    t.check(all(titles[slug] == title for title, slug in vehicles.values()),
+            "each block carries the evcc title, read off the ha-evcc vehicle device", json.dumps(titles, ensure_ascii=False))
+
+    for lp_title, name in DEMO_VEHICLES.items():
+        idx, lp_slug = lps[lp_title]
+        lp = st["loadpoints"][idx - 1]
+        title, slug = vehicles[name]
+        b = blocks.get(slug, {})
+        badge = "Lädt" if lp.get("charging") else "Verbunden"
+        soc_id = f"sensor.{PREFIX}{lp_slug}_vehicle_soc"
+        soc = ha_state(page, soc_id)
+        soc_txt = f"{round(float(soc))} %" if soc not in (None, "unknown", "unavailable") else None
+        got_soc = next((txt for eid, txt in b.get("values", []) if eid == soc_id), None)
+        t.check(b.get("lp") == lp_title and b.get("badge") == badge and got_soc == soc_txt,
+                f"{title}: plugged in at {lp_title}, badge and charge level from the loadpoint",
+                f"lp={b.get('lp')} badge={b.get('badge')} soc={got_soc} (HA {soc_txt})")
+
+    # Session totals as HA reports them, in the unit it reports them in.
+    checked = []
+    for title, slug in vehicles.values():
+        dur_id = f"sensor.{PREFIX}cstotal_{slug}_charging_sessions_vehicle_chargeduration"
+        st_dur = page.evaluate("(id) => { const s = document.querySelector('home-assistant').hass.states[id]; return s ? [s.state, s.attributes.unit_of_measurement] : null; }", dur_id)
+        if not st_dur or st_dur[0] in ("unknown", "unavailable"):
+            continue
+        want_h = f"{round(float(st_dur[0]) * DURATION.get(st_dur[1] or 's', 1) / 3600)} h"
+        got = blocks.get(slug, {}).get("totals", {}).get(dur_id)
+        checked.append(f"{slug}: {got} (HA {st_dur[0]} {st_dur[1]})")
+        t.check(got == want_h, f"{title}: total charge duration in hours, whatever unit HA reports", checked[-1])
+    if not checked:
+        t.fail("the demo has session totals for at least one vehicle", "none with a value")
+
+    # The configvehicle sensors: disabled in the registry means the new hint and,
+    # for an administrator, the triangle.
+    registry = {e["entity_id"]: e for e in ws(page, {"type": "config/entity_registry/list"})}
+    for title, slug in vehicles.values():
+        ids = [f"sensor.{PREFIX}{slug}_configvehicle_{k}" for k in ("soc", "range", "odometer", "limitsoc")]
+        disabled = [i for i in ids if registry.get(i, {}).get("disabled_by")]
+        b = blocks.get(slug, {})
+        if b.get("device"):
+            t.check(b.get("warn") is None, f"{title}: linked to a device of its own, no triangle", "")
+        elif disabled:
+            t.check(b.get("warn") and "Fahrzeugwerte ohne Ladepunkt" in b["warn"] and "deaktiviert" in (b.get("hint") or ""),
+                    f"{title}: sensors disabled in HA-Dev, triangle and the hint that says so", f"warn={b.get('warn')} hint={(b.get('hint') or '')[:60]}")
+        else:
+            t.ok(f"{title}: configvehicle sensors enabled or missing, nothing to point at", f"warn={b.get('warn')}")
+
+    warned = [slug for slug, b in blocks.items() if b.get("warn")]
+    if warned:
+        card = page.locator("evcc-card").first
+        page.locator(f'evcc-card .vehicle-block[data-vehicle="{warned[0]}"] .lp-disabled-warn').click()
+        page.wait_for_timeout(800)
+        rows = card.evaluate("""el => [...el.shadowRoot.querySelectorAll('#debug-disabled .disabled-row')]
+            .filter(r => r.querySelector('.disabled-what')).map(r => r.querySelector('.disabled-id').textContent)""")
+        mine = [r for r in rows if f"{PREFIX}{warned[0]}_configvehicle_" in r]
+        t.check(len(mine) >= 1 and card.evaluate("el => !!el.shadowRoot.querySelector('.debug-back')"),
+                "the triangle opens the debug view, the vehicle's sensors listed as needed", f"{mine}")
+        page.locator("evcc-card .debug-back").click()
+        page.wait_for_timeout(500)
+        t.check(len(vehicle_blocks(page)) == len(vehicles), "and the way back leads to the vehicles", "")
+    t.check(not ERRORS, "no card errors", "; ".join(ERRORS)[:200])
+
+
+def vehicle_switch(page, t):
+    """Which vehicle sits at a loadpoint travels both ways: the card's vehicle select
+    in the plan view reaches evcc, and a vehicle evcc assigns moves its block in the
+    vehicle view to that loadpoint."""
+    t.group("e2e vehicle switch - a vehicle changes loadpoint")
+    garage = next(((i, s) for i, title, s in demo_loadpoints() if title == "Garage"), None)
+    vehicles = demo_vehicles()
+    if not garage or not {"vehicle_2", "vehicle_3", "vehicle_4"} <= set(vehicles):
+        t.fail("the demo has a Garage and vehicle_2..4", f"{garage} {sorted(vehicles)}")
+        return
+    idx, slug = garage
+    at_garage = lambda: evcc_state()["loadpoints"][idx - 1].get("vehicleName")
+    reset_demo()
+
+    open_view(page, "plan")
+    select = page.locator(f'evcc-card .plan-block[data-lp="{slug}"] select.plan-vehicle-select')
+    t.check(select.count() == 1, "the Garage plan block has its vehicle select", f"{select.count()}")
+    select.select_option("vehicle_4")
+    got = wait_for(lambda: at_garage() == "vehicle_4" and "vehicle_4", timeout=20)
+    t.check(got == "vehicle_4", "a vehicle picked in the card arrives at evcc (card -> HA -> ha-evcc -> evcc)", f"evcc={at_garage()}")
+
+    evcc(f"loadpoints/{idx}/vehicle/vehicle_3", "POST")
+    open_view(page, "vehicle")
+    new, old = vehicles["vehicle_3"][1], vehicles["vehicle_2"][1]
+    moved = wait_for(lambda: (b := vehicle_blocks(page)) and b.get(new, {}).get("lp") == "Garage" and b, timeout=40)
+    t.check(bool(moved), f"a vehicle evcc assigns shows the Garage in its block ({vehicles['vehicle_3'][0]})",
+            json.dumps({k: v.get("lp") for k, v in (moved or vehicle_blocks(page)).items()}, ensure_ascii=False))
+    b = moved or vehicle_blocks(page)
+    t.check(b.get(old, {}).get("lp") is None and b.get(old, {}).get("badge") == "Nicht verbunden",
+            f"and {vehicles['vehicle_2'][0]}, no longer there, is not connected", json.dumps(b.get(old, {}), ensure_ascii=False)[:200])
+    t.check(not ERRORS, "no card errors", "; ".join(ERRORS)[:200])
+    reset_demo()
+
+
+def charge_plan(page, t):
+    """A charge plan set in the card lands in evcc through the evcc_intg service and is
+    deleted the same way; the plan write path of ha-evcc is the fragile one."""
+    t.group("e2e charge plan - set and delete through the whole stack")
+    from datetime import datetime, timedelta, timezone
+    from zoneinfo import ZoneInfo
+    garage = next(((i, s) for i, title, s in demo_loadpoints() if title == "Garage"), None)
+    if not garage:
+        t.fail("the demo has a Garage loadpoint", str(demo_loadpoints()))
+        return
+    idx, slug = garage
+    name = DEMO_VEHICLES["Garage"]
+    plan = lambda: (evcc_state().get("vehicles") or {}).get(name, {}).get("plan")
+    reset_demo()
+    open_view(page, "plan")
+    block = page.locator(f'evcc-card .plan-block[data-lp="{slug}"]')
+    t.check(block.count() == 1 and not plan(), "starting point: the Garage plan block, no plan in evcc", f"plan={plan()}")
+
+    local = (datetime.now(ZoneInfo("Europe/Berlin")) + timedelta(days=1)).replace(hour=7, minute=0, second=0, microsecond=0)
+    block.locator("button.plan-soc-val").click()
+    page.locator("evcc-card .slider-edit-input").fill("80")
+    page.locator("evcc-card [data-edit-ok]").click()
+    block.locator("input.plan-time-input").fill(local.strftime("%Y-%m-%dT%H:%M"))
+    page.wait_for_timeout(300)
+    block.locator("button.plan-btn.save").click()
+    got = wait_for(plan, timeout=20)
+    want_time = local.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    t.check(got and got.get("soc") == 80 and got.get("time") == want_time,
+            "the plan arrives at evcc: 80 % tomorrow 07:00 (card -> evcc_intg.set_vehicle_plan -> evcc)", f"evcc plan={got}, want {want_time}")
+
+    delete = block.locator("button.plan-btn.delete")
+    shown = wait_for(lambda: delete.count() == 1, timeout=40)
+    t.check(bool(shown), "the card offers to delete it once HA reports the plan", "")
+    if shown:
+        delete.click()
+        gone = wait_for(lambda: not plan() and "gone", timeout=20)
+        t.check(gone == "gone", "delete removes it in evcc (evcc_intg.del_vehicle_plan)", f"evcc plan={plan()}")
+    t.check(not ERRORS, "no card errors", "; ".join(ERRORS)[:200])
+    reset_demo()
+
+
+def editor(page, t):
+    """The visual editor of the vehicle mode with the real hass and HA's own elements.
+    It is mounted straight into the HA page: the card edit dialog of the dashboard
+    does not open in the headless browser. Checks the vehicle list, the evcc titles
+    and HA's media selector for the vehicle pictures."""
+    t.group("e2e editor - vehicle mode in the real frontend")
+    vehicles = demo_vehicles()
+    open_view(page, "vehicle")
+    page.evaluate("""async (prefix) => {
+        document.getElementById('e2e-editor')?.remove();
+        const ed = document.createElement('evcc-card-editor'); ed.id = 'e2e-editor';
+        window.__e2eCfg = [];
+        ed.addEventListener('config-changed', e => window.__e2eCfg.push(JSON.parse(JSON.stringify(e.detail.config))));
+        ed.setConfig({ type: 'custom:evcc-card', mode: 'vehicle', prefix });
+        ed.hass = document.querySelector('home-assistant').hass;
+        document.body.appendChild(ed);
+        await customElements.whenDefined('ha-selector');
+        await new Promise(r => setTimeout(r, 1500)); }""", PREFIX)
+    ed = page.locator("#e2e-editor")
+    slugs = ed.locator('input[data-field="vehicles"]').evaluate_all("l => l.map(e => e.dataset.lp)")
+    t.check(slugs == sorted(s for _, s in vehicles.values()), "the editor offers every demo vehicle", str(slugs))
+    labels = ed.locator("[data-vehicle-media]").evaluate_all("l => l.map(e => e.previousElementSibling.textContent)")
+    t.check(sorted(labels) == sorted(title for title, _ in vehicles.values()), "pictures are named with the evcc titles", str(labels))
+    media = ed.locator("[data-vehicle-media] ha-selector ha-selector-media").count()
+    t.check(media == len(vehicles), "HA's own media selector per vehicle", f"{media} ha-selector-media")
+    first = slugs[0] if slugs else None
+    if first:
+        ed.locator(f'input[data-field="vehicles"][data-lp="{first}"]').check()
+        cfg = page.evaluate("window.__e2eCfg.at(-1) ?? null")
+        t.check(cfg and cfg.get("vehicles") == [first] and cfg.get("prefix") == PREFIX,
+                "a checked vehicle writes the whole config", json.dumps(cfg))
+    page.evaluate("() => document.getElementById('e2e-editor')?.remove()")
+    t.check(not ERRORS, "no card errors", "; ".join(ERRORS)[:200])
+
+
+GROUPS = {"smoke": smoke, "roundtrip": roundtrip, "solar_share": solar_share,
+          "vehicle": vehicle_view, "vehicle_switch": vehicle_switch, "charge_plan": charge_plan, "editor": editor}
 
 
 def main():
