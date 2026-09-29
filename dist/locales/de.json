@@ -406,5 +406,6 @@
   "editorAdvancedTitle": "Erweitert",
   "editorSliderStep": "Schrittweite: {val}",
   "editorSliderStepHint": "Leer nimmt die Schrittweite der Entität.",
-  "vehicleRplanSummary": "{active} von {total} aktiv"
+  "vehicleRplanSummary": "{active} von {total} aktiv",
+  "vehicleNotFound": "Ein Fahrzeug {val} kennt evcc nicht. Vielleicht wurde es in evcc umbenannt, dann ändert sich auch sein Name hier."
 }

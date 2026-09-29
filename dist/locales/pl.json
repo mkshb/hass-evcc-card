@@ -406,5 +406,6 @@
   "editorAdvancedTitle": "Zaawansowane",
   "editorSliderStep": "Krok: {val}",
   "editorSliderStepHint": "Puste używa kroku encji.",
-  "vehicleRplanSummary": "{active} z {total} aktywne"
+  "vehicleRplanSummary": "{active} z {total} aktywne",
+  "vehicleNotFound": "evcc nie zna pojazdu {val}. Być może zmieniono jego nazwę w evcc, co zmienia też nazwę tutaj."
 }

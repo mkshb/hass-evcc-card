@@ -406,5 +406,6 @@
   "editorAdvancedTitle": "Geavanceerd",
   "editorSliderStep": "Stap: {val}",
   "editorSliderStepHint": "Leeg gebruikt de stap van de entiteit.",
-  "vehicleRplanSummary": "{active} van {total} actief"
+  "vehicleRplanSummary": "{active} van {total} actief",
+  "vehicleNotFound": "evcc kent geen voertuig {val}. Misschien is het in evcc hernoemd, waardoor ook de naam hier verandert."
 }

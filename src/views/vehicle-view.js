@@ -1,7 +1,7 @@
 import { discoverVehicles, selectVehicle } from "../core/entity-discovery.js";
 import { classifyVehicleDevice, resolveVehicleDevice, evccVehicleTitle, vehicleDeviceState,
          vehicleOverride, hasVehicleDeviceData } from "../core/vehicle-device.js";
-import { VEHICLE_FEATURES, isVehicleImageUrl, isMediaSourceId } from "../core/constants.js";
+import { VEHICLE_FEATURES, isVehicleImageUrl, isMediaSourceId, vehicleSlug } from "../core/constants.js";
 import { stateVal, unitStr, isOn } from "../utils/state.js";
 import { fmtClock, durationSeconds, socFillGradient, socTrackBg } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
@@ -583,16 +583,20 @@ export const vehicleView = {
     });
   },
 
-  // Nothing to show: either evcc knows no vehicle, or it knows several and the
-  // card has not been told which one it is for. Both name what there is.
+  // No vehicle to show: none in evcc, several and none picked, or a picked
+  // one evcc does not know (a typo, or a vehicle renamed in evcc, which
+  // changes the name in its entity ids). The last one is said as such.
   _renderNoVehicles(allVehicles = {}) {
     const available = Object.keys(allVehicles);
+    const wanted    = vehicleSlug(this._config);
     const hint = available.length > 0
       ? `<p>${this._t("availableVehicles", { list: `<code>${available.map(escHtml).join(", ")}</code>` })}</p>`
       : "";
+    const text = wanted ? this._t("vehicleNotFound", { val: `<code>${escHtml(wanted)}</code>` })
+               : this._t(available.length > 0 ? "vehiclePickOne" : "noVehicles");
     return `
       <div class="empty">
-        <p>${this._t(available.length > 0 ? "vehiclePickOne" : "noVehicles")}</p>
+        <p>${text}</p>
         ${hint}
       </div>`;
   },

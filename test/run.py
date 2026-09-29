@@ -752,7 +752,8 @@ def vehicle_mode(browser, port, t):
     done(page)
     page, errors = card(config={"mode": "vehicle", "vehicle": "tesla"})
     empty = page.locator(in_card(".empty")).inner_text()
-    t.check("ex30" in empty and "id7" in empty, "an unknown vehicle names the ones that exist", empty[:150])
+    t.check("ex30" in empty and "id7" in empty and "tesla" in empty and "kennt evcc nicht" in empty and "Wähle das Fahrzeug" not in empty,
+            "an unknown vehicle is said as such, naming the ones that exist, instead of asking to pick one", empty[:200])
     done(page)
     page, errors = card(config={"mode": "vehicle", "vehicle": "ex30", "title": "Mein Volvo"})
     t.check(page.locator(block("ex30")).locator(".lp-name").inner_text().strip().upper() == "MEIN VOLVO", "title names the vehicle", "")

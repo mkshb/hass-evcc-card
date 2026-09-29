@@ -406,5 +406,6 @@
   "editorAdvancedTitle": "Avançado",
   "editorSliderStep": "Passo: {val}",
   "editorSliderStepHint": "Vazio usa o passo da entidade.",
-  "vehicleRplanSummary": "{active} de {total} ativos"
+  "vehicleRplanSummary": "{active} de {total} ativos",
+  "vehicleNotFound": "O evcc não conhece nenhum veículo {val}. Talvez tenha sido renomeado no evcc, o que também muda o nome aqui."
 }

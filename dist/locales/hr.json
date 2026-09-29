@@ -406,5 +406,6 @@
   "editorAdvancedTitle": "Napredno",
   "editorSliderStep": "Korak: {val}",
   "editorSliderStepHint": "Prazno koristi korak entiteta.",
-  "vehicleRplanSummary": "{active} od {total} aktivno"
+  "vehicleRplanSummary": "{active} od {total} aktivno",
+  "vehicleNotFound": "evcc ne poznaje vozilo {val}. Možda je preimenovano u evcc-u, čime se mijenja i njegovo ime ovdje."
 }

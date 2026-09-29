@@ -406,5 +406,6 @@
   "editorAdvancedTitle": "Avancé",
   "editorSliderStep": "Pas : {val}",
   "editorSliderStepHint": "Vide utilise le pas de l'entité.",
-  "vehicleRplanSummary": "{active} sur {total} actifs"
+  "vehicleRplanSummary": "{active} sur {total} actifs",
+  "vehicleNotFound": "evcc ne connaît aucun véhicule {val}. Il a peut-être été renommé dans evcc, ce qui change aussi son nom ici."
 }

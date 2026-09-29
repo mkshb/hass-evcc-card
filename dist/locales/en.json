@@ -406,5 +406,6 @@
   "editorAdvancedTitle": "Advanced",
   "editorSliderStep": "Step: {val}",
   "editorSliderStepHint": "Empty uses the step of the entity.",
-  "vehicleRplanSummary": "{active} of {total} on"
+  "vehicleRplanSummary": "{active} of {total} on",
+  "vehicleNotFound": "evcc knows no vehicle {val}. It may have been renamed in evcc, which changes its name here as well."
 }
