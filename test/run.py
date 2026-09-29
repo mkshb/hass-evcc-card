@@ -137,10 +137,14 @@ def new_page(browser, width=480, height=900):
 
 def done(page):
     """Hands a test's page back to the pool: the listeners open_card attached
-    removed, the document replaced by about:blank."""
+    removed, the browser storage of the harness emptied (the pages of a pool
+    share it, and the card keeps its vehicle pictures there), the document
+    replaced by about:blank."""
     for event, fn in getattr(page, "_evcc_listeners", []):
         page.remove_listener(event, fn)
     page._evcc_listeners = []
+    try: page.evaluate("localStorage.clear()")
+    except Exception: pass
     page.goto("about:blank")
     page._evcc_pool["free"].append(page)
 
@@ -471,6 +475,28 @@ def vehicle_mode(browser, port, t):
     page.evaluate("window.__card._lastRenderKey = null; window.__card._render(); window.__card._render()")
     settle(page)
     t.check(page.evaluate(resolves) == 1, "the address is asked for once, not on every render", str(page.evaluate(resolves)))
+    # The next page load starts with what the card kept: the signed address, so
+    # the picture is in the first render without asking HA again and the
+    # browser can take it from its cache, and the height the picture took, so
+    # its place is kept free instead of the card jumping when it arrives.
+    page.wait_for_timeout(300)
+    kept = page.evaluate("JSON.parse(localStorage.getItem('evcc-card-vehicle-picture') || '{}')")
+    entry = kept.get(MEDIA, {})
+    t.check(entry.get("url") == "/test/fixtures/car.png?authSig=mock" and entry.get("height", 0) > 0,
+            "the card keeps the signed address and the height the picture took", json.dumps(entry))
+    first = page.evaluate("""async (media) => {
+        const c = document.createElement('evcc-card');
+        c.setConfig({ mode: 'vehicle', vehicle: 'ex30', vehicle_image: media });
+        c.hass = window.__hass; document.body.appendChild(c);
+        for (let i = 0; i < 40 && !c.shadowRoot.querySelector('.vehicle-block'); i++) await new Promise(r => setTimeout(r, 50));
+        const box = c.shadowRoot.querySelector('.vehicle-image');
+        return { src: box?.querySelector('img')?.getAttribute('src') ?? null, style: box?.getAttribute('style') ?? null,
+                 lazy: box?.querySelector('img')?.getAttribute('loading') ?? null,
+                 resolves: window.__hass.wsCalls.filter(c => c.type === 'media_source/resolve_media').length }; }""", MEDIA)
+    t.check(first["src"] == "/test/fixtures/car.png?authSig=mock" and first["resolves"] == 1,
+            "a card created later has the picture in its first render, without asking HA again", json.dumps(first))
+    t.check(bool(re.fullmatch(r"min-height: \d+px", first["style"] or "")) and first["lazy"] is None,
+            "its place is kept free, and the picture is not lazy loaded", json.dumps(first))
     done(page)
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "vehicle", "vehicle": "ex30", "vehicle_image": "media-source://media_source/local/gone.png"})
