@@ -2634,6 +2634,8 @@ def setconfig(browser, port, t):
         ({"mode": "vehicle", "vehicle_entities": {"soc": "sensor.a", "location": "none", "actions": ["button.b"]}}, "the entity mapping"),
         ({"slider_steps": {"limit_soc": 5, "smart_cost_limit": 0.01}}, "slider steps"),
         ({"slider_steps": {"smart_cost_limit": "0.005"}}, "a slider step written as a string"),
+        ({"slider_steps": {"limit_soc": "5 %"}}, "a slider step with its unit, read like the slider reads it"),
+        ({"slider_steps": {"min_soc": None}}, "an empty slider step"),
     ]
     INVALID = [
         ({"mode": "quatsch"}, "mode", "an unknown mode"),

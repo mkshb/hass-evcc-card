@@ -346,13 +346,14 @@ export function validateCardConfig(config) {
   }
 
   // slider_steps: a map of feature key to step. Keys are not checked, like the
-  // roles above; a step that is not a positive number would leave the slider
-  // on the entity's own step without a word, so that one is rejected.
+  // roles above. A step is read the way the slider reads it (parseFloat, so
+  // "5 %" is 5) and an empty one is skipped; one that can never be a step
+  // would leave the slider on the entity's own step without a word, so that
+  // one is rejected.
   const steps = c.slider_steps;
   if (steps !== undefined && steps !== null) {
     const ok = typeof steps === "object" && !Array.isArray(steps)
-      && Object.values(steps).every(v => (typeof v === "number" || (typeof v === "string" && v.trim() !== ""))
-                                         && Number(v) > 0);
+      && Object.values(steps).every(v => v === null || v === undefined || parseFloat(v) > 0);
     if (!ok) throw new Error("evcc-card: slider_steps has to be a map of slider to a step above 0, e.g. { limit_soc: 5 }");
   }
 

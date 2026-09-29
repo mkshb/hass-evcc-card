@@ -685,7 +685,7 @@ export class EvccCardEditor extends HTMLElement {
     if (showChargeCurrent) {
       const steps = c.slider_steps && typeof c.slider_steps === "object" ? c.slider_steps : {};
       const known = SLIDER_STEP_KEYS.map(([key]) => key);
-      const value = Object.fromEntries(known.filter(k => Number(steps[k]) > 0).map(k => [k, Number(steps[k])]));
+      const value = Object.fromEntries(known.filter(k => parseFloat(steps[k]) > 0).map(k => [k, parseFloat(steps[k])]));
       fields.push({
         name: "slider_steps", value,
         schema: { type: "expandable", name: "slider_steps", title: this._t("editorAdvancedTitle"),
