@@ -192,8 +192,13 @@ export class EvccCardEditor extends HTMLElement {
     this._availableLoadpoints = Object.keys(loadpoints).sort();
   }
 
+  // The vehicle sensors count as needed for the card's own vehicle only, and
+  // only while it has no device of its own (see disabledCardEntities).
   _disabledEntries() {
-    return this._hass ? disabledCardEntities(this._hass, this._disabled, this._getPrefix()) : [];
+    if (!this._hass) return [];
+    const vehicle = this._config.mode === "vehicle" && !this._vehicleDeviceFor()
+      ? selectVehicle(discoverVehicles(this._hass, this._getPrefix()), this._config)?.[0] ?? null : null;
+    return disabledCardEntities(this._hass, this._disabled, this._getPrefix(), { vehicle });
   }
 
   _esc(str) {

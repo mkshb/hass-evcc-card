@@ -145,7 +145,7 @@ export const disabledEntities = {
 
   // The section of the debug view.
   _renderDisabledSection() {
-    const entries = disabledCardEntities(this._hass, [...this._disabledEntities], this._getPrefix());
+    const entries = disabledCardEntities(this._hass, [...this._disabledEntities], this._getPrefix(), { vehicle: this._vehicleSensorsOwner() });
     return `
         <div class="debug-section" id="debug-disabled">
           <div class="debug-section-title">${this._t("disabledTitle")}</div>
@@ -175,7 +175,7 @@ export const disabledEntities = {
     });
 
     const rerender = () => { this._lastRenderKey = null; this._render(); };
-    const entriesFor = ids => disabledCardEntities(this._hass, ids, this._getPrefix());
+    const entriesFor = ids => disabledCardEntities(this._hass, ids, this._getPrefix(), { vehicle: this._vehicleSensorsOwner() });
     this._fresh("button.disabled-enable").forEach(btn => {
       btn.addEventListener("click", () => {
         btn.disabled = true;

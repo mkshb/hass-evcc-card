@@ -39,6 +39,18 @@ export const vehicleView = {
     return this._renderVehicle(slug, vehicle, this._vehicleLoadpoint(slug, loadpoints), this._vehicleLink(slug, vehicle));
   },
 
+  // The vehicle whose evcc sensors this card depends on: the vehicle of a
+  // vehicle card that is not linked to a device of its own, which would bring
+  // charge level, range and odometer. Null for every other card, where the
+  // vehicle sensors are optional. Seen from the debug view it is the card the
+  // triangle was clicked in.
+  _vehicleSensorsOwner() {
+    const config = this._debugReturn || this._config;
+    if (config.mode !== "vehicle" || !this._hass) return null;
+    const chosen = selectVehicle(discoverVehicles(this._hass, this._getPrefix()), config);
+    return chosen && !this._vehicleLink(chosen[0], chosen[1]) ? chosen[0] : null;
+  },
+
   // The Home Assistant device of the vehicle and the entities on it. The search
   // walks both registries, so the answer is kept until one of the registries,
   // the config or the set of entities changes.
@@ -164,7 +176,7 @@ export const vehicleView = {
       <div class="loadpoint vehicle-block" data-vehicle="${escAttr(slug)}">
         <div class="lp-header">
           <span class="lp-name">${escHtml(title)}</span>
-          ${this._renderVehicleDisabledWarn(slug, !!dev)}
+          ${this._renderVehicleDisabledWarn(slug, !!link)}
           ${lpTitle ? `<span class="vehicle-lp" title="${this._t("vehicleAtLoadpoint")}">${escHtml(lpTitle)}</span>` : ""}
           <span class="lp-badge ${statusClass}">${statusLabel}</span>
         </div>

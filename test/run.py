@@ -3450,6 +3450,18 @@ def disabled_entities(browser, port, t):
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]}, disable=CONFIGVEHICLE, vehicle_device=False)
     t.check(view(page)["warn"] is None, "the loadpoint header ignores the vehicle sensors", str(view(page)["warn"]))
     done(page)
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "debug"}, disable=CONFIGVEHICLE, vehicle_device=False)
+    rows = view(page)["rows"] or []
+    t.check(sorted(r["id"] for r in rows if r["id"] in CONFIGVEHICLE) == sorted(CONFIGVEHICLE) and not any(r["what"] for r in rows if r["id"] in CONFIGVEHICLE),
+            "outside a vehicle card the vehicle sensors are listed, but not as needed", json.dumps(rows, ensure_ascii=False)[:300])
+    done(page)
+    page = new_page(browser, 480, 1800)
+    open_card(page, port, config={"mode": "vehicle", "vehicle": "ex30", "vehicle_entities": {"lock": "lock.volvo_ex30_schloss"}},
+              disable=CONFIGVEHICLE, vehicle_device=False)
+    t.check(warn(page, "ex30") is not None,
+            "one role set by hand is no device: charge level, range and odometer still need the sensors, the triangle stays", str(warn(page, "ex30")))
+    done(page)
 
     t.group("disabled entities - editor")
     page = new_page(browser, 480, 1800)

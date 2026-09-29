@@ -67,9 +67,12 @@ export async function detectIntegration(hass, preferredPrefix = null) {
 // out of detectIntegration()'s `disabled`: their id matches a DISABLED_NEEDED
 // or a FEATURES entry. `owner` is what sits between prefix and feature (a
 // loadpoint or vehicle name, empty for the site), `need` the DISABLED_NEEDED
-// entry when a control depends on the entity. One that has a state by now was
-// enabled since the registry was read and is left out. Needed ones first.
-export function disabledCardEntities(hass, disabled, prefix = "evcc_") {
+// entry when a control depends on the entity. The sensors of a vehicle are
+// needed only by the card of that vehicle (`vehicle`, its slug, or null), and
+// only while it has no device of its own; everywhere else they are optional.
+// One that has a state by now was enabled since the registry was read and is
+// left out. Needed ones first.
+export function disabledCardEntities(hass, disabled, prefix = "evcc_", { vehicle = null } = {}) {
   const foreign = installedPrefixes(hass).filter(p => p.length > prefix.length && p.startsWith(prefix));
   const candidates = [...DISABLED_NEEDED, ...SORTED_FEATURES];
   const out = [];
@@ -83,7 +86,8 @@ export function disabledCardEntities(hass, disabled, prefix = "evcc_") {
     const hit  = candidates.find(f => f.domain === domain && (rest === f.suffix || rest.endsWith("_" + f.suffix)));
     if (!hit) continue;
     const owner = rest === hit.suffix ? "" : rest.slice(0, rest.length - hit.suffix.length - 1);
-    out.push({ id, owner, suffix: hit.suffix, need: owner && DISABLED_NEEDED.includes(hit) ? hit : null });
+    const needed = owner && DISABLED_NEEDED.includes(hit) && (!hit.vehicle || owner === vehicle);
+    out.push({ id, owner, suffix: hit.suffix, need: needed ? hit : null });
   }
   return out.sort((a, b) => (!!b.need - !!a.need) || a.id.localeCompare(b.id));
 }

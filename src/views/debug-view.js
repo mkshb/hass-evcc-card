@@ -381,7 +381,7 @@ ${this._renderDisabledSection()}
     }
     out.push(``);
     // By feature, not by id: the ids carry loadpoint and vehicle names.
-    const disabled = disabledCardEntities(this._hass, [...this._disabledEntities], prefix);
+    const disabled = disabledCardEntities(this._hass, [...this._disabledEntities], prefix, { vehicle: this._vehicleSensorsOwner() });
     out.push(`**Disabled entities the card uses** (${disabled.length})`);
     if (disabled.length === 0) out.push(`*(none)*`);
     const byFeature = {};
