@@ -1,4 +1,4 @@
-import { FEATURES, DISABLED_NEEDED, loadpointFilter } from "./constants.js";
+import { FEATURES, DISABLED_NEEDED, VEHICLE_FEATURES, VEHICLE_SESSION_INFIX, VEHICLE_SESSION_FEATURES, loadpointFilter, vehicleSlug } from "./constants.js";
 import { isOn } from "../utils/state.js";
 
 // Longest suffix first: `limit_soc` has to win over `soc` for the same entity.
@@ -67,9 +67,12 @@ export async function detectIntegration(hass, preferredPrefix = null) {
 // out of detectIntegration()'s `disabled`: their id matches a DISABLED_NEEDED
 // or a FEATURES entry. `owner` is what sits between prefix and feature (a
 // loadpoint or vehicle name, empty for the site), `need` the DISABLED_NEEDED
-// entry when a control depends on the entity. One that has a state by now was
-// enabled since the registry was read and is left out. Needed ones first.
-export function disabledCardEntities(hass, disabled, prefix = "evcc_") {
+// entry when a control depends on the entity. The sensors of a vehicle are
+// needed only by the card of that vehicle (`vehicle`, its slug, or null), and
+// only while it has no device of its own; everywhere else they are optional.
+// One that has a state by now was enabled since the registry was read and is
+// left out. Needed ones first.
+export function disabledCardEntities(hass, disabled, prefix = "evcc_", { vehicle = null } = {}) {
   const foreign = installedPrefixes(hass).filter(p => p.length > prefix.length && p.startsWith(prefix));
   const candidates = [...DISABLED_NEEDED, ...SORTED_FEATURES];
   const out = [];
@@ -83,7 +86,8 @@ export function disabledCardEntities(hass, disabled, prefix = "evcc_") {
     const hit  = candidates.find(f => f.domain === domain && (rest === f.suffix || rest.endsWith("_" + f.suffix)));
     if (!hit) continue;
     const owner = rest === hit.suffix ? "" : rest.slice(0, rest.length - hit.suffix.length - 1);
-    out.push({ id, owner, suffix: hit.suffix, need: owner && DISABLED_NEEDED.includes(hit) ? hit : null });
+    const needed = owner && DISABLED_NEEDED.includes(hit) && (!hit.vehicle || owner === vehicle);
+    out.push({ id, owner, suffix: hit.suffix, need: needed ? hit : null });
   }
   return out.sort((a, b) => (!!b.need - !!a.need) || a.id.localeCompare(b.id));
 }
@@ -180,6 +184,62 @@ export function discoverEntities(hass, prefix = "evcc_") {
   }
 
   return { loadpoints, site, meters };
+}
+
+// The vehicles ha-evcc knows, keyed by the slug it puts into their entity ids
+// (slugify of the vehicle title in evcc). A vehicle shows up here as soon as one
+// of its own entities exists: the configvehicle_* sensors, a repeating plan
+// switch or the session totals. None of them depends on a loadpoint, so an
+// unplugged vehicle stays in the list. Per vehicle: the VEHICLE_FEATURES and
+// VEHICLE_SESSION_FEATURES keys with their entity ids, plus `repeating_plans`,
+// the plan switches in plan order.
+const REPEATING_PLAN_RE = /^(.+)_repeating_plan_(\d+)$/;
+export function discoverVehicles(hass, prefix = "evcc_") {
+  const vehicles = {};
+  const foreign  = installedPrefixes(hass).filter(p => p.length > prefix.length && p.startsWith(prefix));
+  const entry    = slug => (vehicles[slug] ??= { repeating_plans: [] });
+
+  for (const entityId of Object.keys(hass.states)) {
+    const dotIdx = entityId.indexOf(".");
+    if (dotIdx < 0) continue;
+    const domain = entityId.slice(0, dotIdx);
+    const slug   = entityId.slice(dotIdx + 1);
+    if (!slug.startsWith(prefix)) continue;
+    if (foreign.some(p => slug.startsWith(p))) continue;
+    const rest = slug.slice(prefix.length);
+
+    if (domain === "switch") {
+      const m = rest.match(REPEATING_PLAN_RE);
+      if (m) entry(m[1]).repeating_plans.push({ n: parseInt(m[2], 10), entityId });
+      continue;
+    }
+
+    const session = rest.startsWith(VEHICLE_SESSION_INFIX);
+    const feats   = session ? VEHICLE_SESSION_FEATURES : VEHICLE_FEATURES;
+    const name    = session ? rest.slice(VEHICLE_SESSION_INFIX.length) : rest;
+    for (const feat of feats) {
+      if (feat.domain !== domain || !name.endsWith("_" + feat.suffix)) continue;
+      entry(name.slice(0, name.length - feat.suffix.length - 1))[feat.key] = entityId;
+      break;
+    }
+  }
+
+  for (const v of Object.values(vehicles)) {
+    v.repeating_plans = v.repeating_plans.sort((a, b) => a.n - b.n).map(p => p.entityId);
+  }
+  return vehicles;
+}
+
+// The vehicle a `vehicle` card shows, out of the discovered ones: the configured
+// one, compared without case like `repeating_plan_vehicles`, or the only one
+// there is when nothing is configured. Returns [slug, vehicle] or null - null
+// meaning the card has to ask, not that something is broken.
+export function selectVehicle(vehicles, config) {
+  const slugs = Object.keys(vehicles).sort();
+  const want  = vehicleSlug(config);
+  if (!want) return slugs.length === 1 ? [slugs[0], vehicles[slugs[0]]] : null;
+  const hit = slugs.find(slug => slug.toLowerCase() === want.toLowerCase());
+  return hit ? [hit, vehicles[hit]] : null;
 }
 
 // The prefixes of every ha-evcc installation, without a round trip: HA mirrors

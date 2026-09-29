@@ -9,6 +9,7 @@ import { batteryCss } from "./views/battery-view.js";
 import { planCss } from "./views/planning-view.js";
 import { debugCss } from "./views/debug-view.js";
 import { priorityCss } from "./views/priority-view.js";
+import { vehicleCss } from "./views/vehicle-view.js";
 
 // The card stylesheet. What every mode needs sits here; each view exports the
 // CSS of its own markup, and the pieces are joined in this order into one
@@ -51,7 +52,7 @@ const baseCss = `
 
 const CSS = [
   baseCss, loadpointCss, sliderCss, disabledCss, siteCss, flowCss, gridCss,
-  statsCss, batteryCss, planCss, debugCss, priorityCss,
+  statsCss, batteryCss, planCss, debugCss, priorityCss, vehicleCss,
 ].join("\n");
 
 // _render() replaces the shadow root's innerHTML on every update, and a <style>

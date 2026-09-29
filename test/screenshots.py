@@ -13,7 +13,7 @@ element itself (470 px wide) for each mode, plus the slider-input crop.
 import argparse, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from run import serve, open_card, in_card, new_page, done, OUT, T, launch
+from run import serve, open_card, settle, in_card, new_page, done, OUT, T, launch
 
 WIDTH = 470
 LP = ["openwb"]   # the EV loadpoint; "wp" is a heating loadpoint and would double the height
@@ -30,6 +30,11 @@ SHOTS = {
     "battery":    {"mode": "battery"},
     "priority":   {"mode": "priority"},
     "repeatplan": {"mode": "repeatplan"},
+    # The vehicle mode shows one vehicle per card, so the image has to name it;
+    # `ex30` is the fixture's car, the one with a device of its own behind it.
+    # Its picture comes from the HA media, which the mock resolves to
+    # test/fixtures/ex30_off.png.
+    "vehicle":    {"mode": "vehicle", "vehicle": "ex30", "vehicle_image": "media-source://media_source/local/ex30_off.png"},
 }
 
 # name -> states set on top of the fixture. The loadpoint views get a charge
@@ -38,7 +43,19 @@ PLAN = {"sensor.evcc_openwb_plan_projected_start": "2026-09-19T02:00:00+02:00",
         "sensor.evcc_openwb_plan_projected_end":   "2026-09-19T06:30:00+02:00",
         "sensor.evcc_openwb_effective_plan_time":  "2026-09-19T07:00:00+02:00",
         "sensor.evcc_openwb_effective_plan_soc":   "80"}
-STATES = {"loadpoint": PLAN, "compact": PLAN}
+# The vehicle in the image is plugged into that loadpoint, so its block carries
+# the plan as well.
+STATES = {"loadpoint": PLAN, "compact": PLAN, "vehicle": PLAN}
+
+
+def open_steady(page, port, **kw):
+    """open_card, then the first tick of the card's countdown interval, which
+    comes up to a second after the mount and rewrites the timer chips: the
+    image shows the card as it stands, not the moment before that tick."""
+    errors = open_card(page, port, **kw)
+    page.evaluate("window.__card._tickCountdowns()")
+    settle(page)
+    return errors
 
 
 def union(*boxes):
@@ -49,7 +66,7 @@ def union(*boxes):
 
 def shot_mode(browser, port, name, config, dark, out):
     page = new_page(browser, WIDTH + 50, 1600)
-    errors = open_card(page, port, dark=dark, width=WIDTH, config=config, set=STATES.get(name))
+    errors = open_steady(page, port, dark=dark, width=WIDTH, config=config, set=STATES.get(name))
     path = out / f"{name}-{'dark' if dark else 'light'}.png"
     page.locator(in_card("ha-card")).screenshot(path=str(path), animations="disabled")
     done(page)
@@ -58,8 +75,8 @@ def shot_mode(browser, port, name, config, dark, out):
 
 def shot_slider_input(browser, port, dark, out):
     page = new_page(browser, WIDTH + 50, 1600)
-    errors = open_card(page, port, dark=dark, width=WIDTH,
-                       config={"mode": "loadpoint", "loadpoints": LP, "charge_current_settings": "expanded"})
+    errors = open_steady(page, port, dark=dark, width=WIDTH,
+                         config={"mode": "loadpoint", "loadpoints": LP, "charge_current_settings": "expanded"})
     page.locator(in_card('input[data-entity="number.evcc_openwb_limit_soc"] + button.slider-val')).click()
     page.locator(in_card(".slider-edit-input")).fill("85")
     page.wait_for_timeout(150)

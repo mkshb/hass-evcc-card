@@ -1,4 +1,4 @@
-export const EVCC_CARD_VERSION = "0.8.7";
+export const EVCC_CARD_VERSION = "0.9.0";
 
 export const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -126,6 +126,30 @@ export const FEATURES = [
   { suffix: "battery_grid_charge_limit",  domain: "number",        type: "slider",      lp: false },
 ];
 
+// Entities ha-evcc creates per vehicle, independent of any loadpoint:
+// <domain>.<prefix><vehicle>_<suffix>, the vehicle part being the slug of the
+// vehicle title in evcc. They are kept apart from FEATURES because that list
+// sorts an entity into a loadpoint or the site, and a vehicle is neither. The
+// configvehicle_* sensors need evcc's configuration, which ha-evcc only reads
+// with the evcc admin password: with it they exist enabled while the extended
+// vehicle data is switched on and not at all otherwise; without it ha-evcc
+// creates them disabled, and they stay empty when enabled.
+export const VEHICLE_FEATURES = [
+  { key: "soc",       suffix: "configvehicle_soc",      domain: "sensor" },
+  { key: "range",     suffix: "configvehicle_range",    domain: "sensor" },
+  { key: "odometer",  suffix: "configvehicle_odometer", domain: "sensor" },
+  { key: "limit_soc", suffix: "configvehicle_limitsoc", domain: "sensor" },
+];
+
+// Session totals per vehicle sit under their own infix:
+// sensor.<prefix>cstotal_<vehicle>_<suffix>
+export const VEHICLE_SESSION_INFIX = "cstotal_";
+export const VEHICLE_SESSION_FEATURES = [
+  { key: "sessions_energy",   suffix: "charging_sessions_vehicle_chargedenergy",  domain: "sensor" },
+  { key: "sessions_duration", suffix: "charging_sessions_vehicle_chargeduration", domain: "sensor" },
+  { key: "sessions_cost",     suffix: "charging_sessions_vehicle_cost",           domain: "sensor" },
+];
+
 // Icon for the "smart" mode. Used twice: for the native 'smart' mode of evcc
 // PR 32490, and for the "pv relabelled as Smart" pseudo-mode that older evcc
 // versions need when PV is hidden but a dynamic tariff exists (Mode.vue).
@@ -183,6 +207,7 @@ export const CARD_SIZES = {
   site2:       7,   // legacy alias of grid
   stats:      10,
   battery:     7,
+  vehicle:     8,
   debug:      20,
 };
 
@@ -198,7 +223,7 @@ export const CARD_SIZE_FOOTER  = { site: 1, flow: 1, grid: 1, site2: 1 };
 // former name of `grid` and stays valid so dashboards carrying it keep working.
 export const CARD_MODES = [
   "loadpoint", "compact", "plan", "repeatplan", "priority",
-  "site", "flow", "grid", "site2", "stats", "battery", "debug",
+  "site", "flow", "grid", "site2", "stats", "battery", "vehicle", "debug",
 ];
 export const CARD_SIZE_OPTIONS        = ["small", "medium", "large"];
 export const DISABLED_LOADPOINT_MODES = ["hide", "dim", "show"];
@@ -212,6 +237,36 @@ export function loadpointFilter(config) {
   const raw = config?.loadpoints;
   if (raw === undefined || raw === null) return null;
   return Array.isArray(raw) ? raw : [raw];
+}
+
+// The vehicle a `vehicle` card shows. One card shows one vehicle: everything it
+// carries (device, picture, roles, functions) belongs to that one, and a
+// household with several cars puts a card next to the other. `vehicles` was the
+// list this mode started with and stays readable with a single entry, so an
+// early configuration keeps working; several entries are rejected in
+// validateCardConfig() rather than quietly showing one of them.
+export function vehicleSlug(config) {
+  const one = config?.vehicle;
+  if (typeof one === "string" && one.trim()) return one.trim();
+  const list = config?.vehicles;
+  if (typeof list === "string" && list.trim()) return list.trim();
+  if (Array.isArray(list) && list.length === 1 && typeof list[0] === "string" && list[0].trim()) return list[0].trim();
+  return null;
+}
+
+// A picture of the real vehicle, per vehicle: an item of Home Assistant's media
+// library (media-source://..., what the media picker in the editor writes), a
+// path Home Assistant serves (/local/..., /api/image/serve/...) or an http(s)
+// address. Nothing else, so a dashboard YAML cannot smuggle another scheme into
+// the card.
+export function isMediaSourceId(value) {
+  return typeof value === "string" && /^media-source:\/\/\S+$/.test(value.trim());
+}
+export function isVehicleImageUrl(value) {
+  return typeof value === "string" && /^(\/(?!\/)|https?:\/\/)\S+$/.test(value.trim());
+}
+export function isVehicleImage(value) {
+  return isMediaSourceId(value) || isVehicleImageUrl(value);
 }
 
 // Home Assistant expects setConfig() to throw on a configuration the card cannot
@@ -243,6 +298,72 @@ export function validateCardConfig(config) {
   if (list && (!list.length || list.some(lp => typeof lp !== "string" || !lp.trim()))) {
     throw new Error("evcc-card: loadpoints has to be a loadpoint name or a list of names");
   }
+
+  if (c.vehicle !== undefined && c.vehicle !== null && (typeof c.vehicle !== "string" || !c.vehicle.trim())) {
+    throw new Error("evcc-card: vehicle has to be the name of one vehicle");
+  }
+  // The mode showed a block per vehicle at first. It shows one, so a list of
+  // several says something the card no longer does, and saying so is better
+  // than showing the first of them.
+  const many = c.vehicles;
+  if (many !== undefined && many !== null) {
+    if (Array.isArray(many) && many.length > 1) {
+      throw new Error(`evcc-card: mode vehicle shows one vehicle. Use vehicle: ${many[0]} and a card per vehicle instead of vehicles: [${many.join(", ")}]`);
+    }
+    if (!vehicleSlug(c)) throw new Error("evcc-card: vehicles has to be the name of one vehicle; use vehicle instead");
+  }
+  for (const [gone, now] of [["vehicle_devices", "vehicle_device"], ["vehicle_images", "vehicle_image"]]) {
+    if (c[gone] !== undefined) throw new Error(`evcc-card: ${gone} is gone, one card shows one vehicle. Use ${now} for this card's vehicle`);
+  }
+
+  if (c.vehicle_actions !== undefined && typeof c.vehicle_actions !== "boolean") {
+    throw new Error("evcc-card: vehicle_actions has to be true or false");
+  }
+
+  const image = c.vehicle_image;
+  if (image !== undefined && image !== null && !isVehicleImage(image)) {
+    throw new Error("evcc-card: vehicle_image has to be a media item (media-source://...), an image path (/local/...) or an http(s) address");
+  }
+
+  // vehicle_entities: the roles of the vehicle by hand, a map of role to entity
+  // id ("none" switches a role off) plus `actions`, the list of functions. The
+  // role names are not checked here: a name the card does not know does nothing,
+  // and rejecting the whole card for it would be worse than ignoring it.
+  const roles = c.vehicle_entities;
+  if (roles !== undefined && roles !== null) {
+    const entityId = v => typeof v === "string" && /^[a-z_]+\.[a-z0-9_]+$/.test(v.trim());
+    const okRole = v => v === "none" || v === false || entityId(v);
+    const ok = roles && typeof roles === "object" && !Array.isArray(roles)
+      && Object.entries(roles).every(([key, v]) => key === "actions"
+        ? (v === "none" || v === false || (Array.isArray(v) && v.every(entityId)))
+        : okRole(v));
+    if (!ok) {
+      const perVehicle = roles && typeof roles === "object" && Object.values(roles).some(v => v && typeof v === "object" && !Array.isArray(v));
+      throw new Error(perVehicle
+        ? "evcc-card: vehicle_entities names the roles of this card's vehicle directly now, no longer one map per vehicle"
+        : "evcc-card: vehicle_entities has to be a map of role to entity id (or \"none\"), with `actions` a list of entity ids");
+    }
+  }
+
+  // slider_steps: a map of feature key to step. Keys are not checked, like the
+  // roles above. A step is read the way the slider reads it (parseFloat, so
+  // "5 %" is 5) and an empty one is skipped; one that can never be a step
+  // would leave the slider on the entity's own step without a word, so that
+  // one is rejected.
+  const steps = c.slider_steps;
+  if (steps !== undefined && steps !== null) {
+    const ok = typeof steps === "object" && !Array.isArray(steps)
+      && Object.values(steps).every(v => v === null || v === undefined || parseFloat(v) > 0);
+    if (!ok) throw new Error("evcc-card: slider_steps has to be a map of slider to a step above 0, e.g. { limit_soc: 5 }");
+  }
+
+  // vehicle_device: the device of the vehicle's own integration, "none" (or
+  // false) for a vehicle that is to stay without one.
+  const device = c.vehicle_device;
+  if (device !== undefined && device !== null && device !== false
+      && !(typeof device === "string" && device.trim())) {
+    throw new Error("evcc-card: vehicle_device has to be a device id or \"none\"");
+  }
 }
 
 // Entity attributes the card reads while rendering. The render key is built from
@@ -258,6 +379,7 @@ export function validateCardConfig(config) {
 export const RENDER_ATTRS = [
   "options", "min", "max", "step", "unit_of_measurement", "device_class",
   "title", "loadpoint_title", "vehicle", "soc", "time", "weekdays",
+  "state_class", "source_type", "entity_picture",
 ];
 
 // Settings the user can drop from the loadpoint/compact card via
@@ -276,6 +398,17 @@ export const HIDEABLE_SETTINGS = [
   ["smart_feed_in_priority_limit", "feedInPriorityLimit"],
 ];
 
+// The sliders `slider_steps` can set a step for, with the label keys of the
+// card. ha-evcc provides min and max current as selects, whose slider walks the
+// option list, so a step does not apply to them.
+export const SLIDER_STEP_KEYS = [
+  ["limit_soc",                    "targetSoc"],
+  ["min_soc",                      "minSoc"],
+  ["priority",                     "priority"],
+  ["smart_cost_limit",             "smartCostLimitPrice"],
+  ["smart_feed_in_priority_limit", "feedInPriorityLimit"],
+];
+
 // ha-evcc entities that are created disabled in the entity registry although a
 // control of the loadpoint card depends on them. While one of them is off, the
 // loadpoint header shows a warning triangle to administrators (unless
@@ -284,6 +417,12 @@ export const HIDEABLE_SETTINGS = [
 //   needs:  the control only exists next to this entity, enabled or disabled
 //   energy: only while the vehicle charges by energy instead of SoC
 //   what:   translation key naming what the card is missing
+//   vehicle: a sensor of a vehicle, not of a loadpoint; its triangle sits in the
+//            header of the vehicle mode, and only for a vehicle without the
+//            device of its own integration, which has the values anyway. ha-evcc
+//            creates these disabled when it cannot read evcc's configuration
+//            (no admin password), and enabled they then stay empty: the hint in
+//            the vehicle block says so.
 export const DISABLED_NEEDED = [
   { domain: "button", suffix: "smart_cost_limit",             hide: "smart_cost_limit",             needs: "number.smart_cost_limit",             what: "disabledWhatSmartCostClear" },
   { domain: "number", suffix: "smart_feed_in_priority_limit", hide: "smart_feed_in_priority_limit",                                               what: "disabledWhatFeedIn" },
@@ -293,6 +432,7 @@ export const DISABLED_NEEDED = [
   { domain: "sensor", suffix: "charge_currents_0",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
   { domain: "sensor", suffix: "charge_currents_1",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
   { domain: "sensor", suffix: "charge_currents_2",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
+  ...VEHICLE_FEATURES.map(f => ({ domain: f.domain, suffix: f.suffix, vehicle: true, what: "disabledWhatVehicleData" })),
 ];
 
 export const CHARGE_MODES = {

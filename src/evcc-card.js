@@ -19,6 +19,7 @@ import { gridView } from "./views/grid-view.js";
 import { statisticsLegacy } from "./views/statistics-legacy.js";
 import { statisticsView } from "./views/statistics-view.js";
 import { batteryView } from "./views/battery-view.js";
+import { vehicleView } from "./views/vehicle-view.js";
 import { debugView } from "./views/debug-view.js";
 import { listeners } from "./listeners.js";
 import { styles } from "./styles.js";
@@ -54,6 +55,13 @@ export class EvccCard extends HTMLElement {
 
     this._siteTableExpanded = undefined; // undefined = use config default
     this._currentBlockExpanded = {};
+    this._vehicleDetailsOpen = {};     // vehicle slug -> detail list unfolded
+    this._vehicleActionsOpen = {};     // vehicle slug -> action list unfolded
+    this._vehicleFoldOpen    = {};     // "plan" / "rplan" -> that block of the vehicle unfolded
+    this._vehicleImageFailed = {};     // configured picture -> true once it failed to load
+    this._vehicleMedia = {};           // media-source id -> { url, ts } signed address from HA
+    this._vehicleConfirm = null;       // { entityId, cmd } waiting for the user's yes
+    this._commands      = {};     // entity id -> vehicle command still running (actions.js)
     this._detectedPrefix = null;
     this._cachedEntities   = null;  // { loadpoints, site } — invalidated when entity IDs change
     this._cachedEntityIdKey = null; // sorted join of evcc entity IDs + prefix
@@ -184,6 +192,11 @@ export class EvccCard extends HTMLElement {
       this._updateLiveValues();
       return;
     }
+    // The vehicle mode finds the device of the vehicle's own integration in
+    // HA's entity and device registries. They can arrive after the states (on
+    // page load) or change while no state moves, so a new registry starts the
+    // render over; the state check below would not see it.
+    if (this._registriesMoved(hass)) this._lastRenderKey = null;
     // Home Assistant sets `hass` on every state change anywhere in the system,
     // and the key below walks every evcc entity with its attributes. HA keeps
     // the state object of an entity that did not change, so when no evcc
@@ -236,6 +249,16 @@ export class EvccCard extends HTMLElement {
     return true;
   }
 
+  // Whether the entity or device registry is a new object since the last
+  // update, for a card that reads them to render (the vehicle mode). HA keeps
+  // both objects as they are until the registry itself changes.
+  _registriesMoved(hass) {
+    const moved = this._seenRegistries !== undefined
+      && (hass.entities !== this._seenRegistries.entities || hass.devices !== this._seenRegistries.devices);
+    this._seenRegistries = { entities: hass.entities, devices: hass.devices };
+    return moved && this._config.mode === "vehicle";
+  }
+
   // True when a hass update can change what the card shows: an entity the last
   // render read carries a new state object, the set of evcc entities moved,
   // the language changed, or no key has been built yet. The snapshot is the previous `states` table;
@@ -265,9 +288,18 @@ export class EvccCard extends HTMLElement {
     this._refreshEvccIds(hass);
 
     const lang = this._config.language || (hass.language ?? "en");
+    // Entities outside the evcc prefix that the last render read (the vehicle's
+    // own integration, for one) count as well: _evccStatesChanged sees them
+    // move through the read set, and the key has to see it too, or it stays
+    // the same and the update is dropped. Sorted, so the order of the reads
+    // does not change the key.
+    const prefix = this._getPrefix();
+    const ids = this._readIds
+      ? this._evccIds.concat([...this._readIds].filter(id => !id.split(".")[1]?.startsWith(prefix)).sort())
+      : this._evccIds;
     // \u001f (unit separator) keeps attribute values from colliding with the
     // key's own delimiters; a title or an option may contain anything else.
-    return lang + "|" + this._evccIds.map(id => {
+    return lang + "|" + ids.map(id => {
       const s = hass.states[id];
       if (!s) return `${id}=`;
       let part = `${id}=${s.state}`;
@@ -541,6 +573,8 @@ export class EvccCard extends HTMLElement {
             ? this._renderDebugBlock(loadpoints, site, meters)
             : this._config.mode === "battery"
             ? this._renderBatteryBlock(site)
+            : this._config.mode === "vehicle"
+            ? this._renderVehicleMode(lpEnabled)
             : this._config.mode === "site"
               ? this._renderSiteBlock(site, loadpoints)
               : this._config.mode === "flow"
@@ -639,7 +673,7 @@ export class EvccCard extends HTMLElement {
 
 // Mode views, components and shared behaviour are plain objects of methods
 // (no framework): mix them into the prototype, refusing silent overrides.
-const mixins = [actions, evccApi, loadpointView, socControl, disabledEntities, planningView, priorityView, siteView, flowView, gridView, statisticsLegacy, statisticsView, batteryView, debugView, listeners, styles];
+const mixins = [actions, evccApi, loadpointView, socControl, disabledEntities, planningView, priorityView, siteView, flowView, gridView, statisticsLegacy, statisticsView, batteryView, vehicleView, debugView, listeners, styles];
 for (const m of mixins) {
   for (const key of Object.keys(m)) {
     if (key in EvccCard.prototype) throw new Error(`evcc-card: duplicate method ${key}`);

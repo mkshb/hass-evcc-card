@@ -62,7 +62,8 @@ All charge points and site entities are **automatically discovered** via the HA 
 <tr>
 <td align="center"><b>Priority</b></td>
 <td align="center"><b>Repeat plan</b></td>
-<td></td><td></td>
+<td align="center"><b>Vehicle</b></td>
+<td></td>
 </tr>
 <tr>
 <td>
@@ -73,7 +74,11 @@ All charge points and site entities are **automatically discovered** via the HA 
 <a href="#repeatplan"><img src="images/repeatplan-dark.png" width="200"></a>
 <a href="#repeatplan"><img src="images/repeatplan-light.png" width="200"></a>
 </td>
-<td></td><td></td>
+<td>
+<a href="#vehicle"><img src="images/vehicle-dark.png" width="200"></a>
+<a href="#vehicle"><img src="images/vehicle-light.png" width="200"></a>
+</td>
+<td></td>
 </tr>
 </table>
 
@@ -92,6 +97,7 @@ All charge points and site entities are **automatically discovered** via the HA 
 | **Phase switching** | Auto / 1-phase / 3-phase control built in |
 | **Plan strategies** | Continuous charging and battery preconditioning settings inline in the plan block |
 | **Repeating plans** | `repeatplan` mode lists evcc's weekly repeating charge plans per vehicle and toggles them on/off (ha-evcc 2026.6.1+) |
+| **Vehicle view** | `vehicle` mode shows one vehicle, plugged in or not: charge level, range, odometer, plans and totals from evcc, plus lock, doors, location and commands from the vehicle's own integration |
 | **Live plan preview** | In `plan` mode, a live chart previews the planned charging window over the upcoming tariff/forecast, with duration, power and average price/CO₂ (ha-evcc 2026.6.x+) |
 | **Session statistics** | `stats` mode is powered directly by evcc's charging-session history: no helper sensors or recorder setup, with metric (energy / cost / CO₂) and grouping (solar / charge point / vehicle) toggles (ha-evcc 2026.6.x+) |
 | **Heating loadpoints** | Heat-pump / heating loadpoints are detected automatically: no EV charge plan, and the target/limit is shown as a temperature |
@@ -178,13 +184,18 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan`, `repeatplan`, `priority`, `debug` |
+| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan`, `repeatplan`, `priority`, `vehicle`, `debug` |
 | `title` | `string` | *(auto)* | Replaces the default card header |
 | `loadpoints` | `list` | *(all)* | Filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language |
 | `size` | `string` | *(auto)* | Fixed card scale: `small`, `medium` or `large`. When unset, the card auto-scales to its container width |
 | `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
 | `repeating_plan_vehicles` | `list` | *(all)* | Limit the `repeatplan` mode to specific vehicles |
+| `vehicle` | `string` | *(the only one)* | The vehicle of the `vehicle` mode, by the name ha-evcc uses in its entity ids (`ex30` for `sensor.evcc_ex30_configvehicle_soc`). Can be left out when evcc knows just one vehicle. See [`vehicle`](#vehicle) |
+| `vehicle_device` | `string` | *(auto)* | `vehicle` mode: the Home Assistant device of the vehicle's own integration, as a device id; `none` keeps the card without one |
+| `vehicle_image` | `string` | *(none)* | `vehicle` mode: a picture of the car, from the HA media (`media-source://...`), a path (`/local/ex30.png`) or an http(s) address |
+| `vehicle_actions` | `boolean` | `false` | `vehicle` mode: `true` lets the card send commands to the vehicle (lock, climate, the device's buttons) |
+| `vehicle_entities` | `map` | *(auto)* | `vehicle` mode: assigns entities to the roles of the vehicle by hand, see [Assigning entities](#assigning-entities) |
 | `plan_loadpoint_index` | `map` | *(auto)* | **YAML only** — Override the evcc loadpoint index (1-based) used for the plan preview, e.g. `{ openwb: 1, wp: 2 }`. Only needed if the auto-detected order does not match evcc |
 | `no_pv` | `list` | *(none)* | Treat specific charge points as having **no PV system**, mirroring evcc's own mode logic: the **Smart** mode is offered only when a dynamic tariff is configured (otherwise only **Off** / **Fast** remain). See [Charge modes](#charge-modes) below |
 | `disabled_loadpoints` | `string` | `hide` | How to treat charge points disabled in the evcc configuration (ha-evcc 2026.8.8+): `hide` removes them from the card, `dim` shows them grayed out with a "Disabled" badge, `show` keeps the previous behavior |
@@ -192,7 +203,7 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 | `charge_current_settings` | `string` | `collapsed` | `expanded` to show charge settings expanded by default |
 | `hide_settings` | `list` | *(none)* | Remove individual settings from the `loadpoint` / `compact` card: `limit_soc`, `min_soc`, `phases`, `max_current`, `min_current`, `battery_boost`, `solar_share`, `priority`, `smart_cost_limit`, `smart_feed_in_priority_limit`. See [Slider settings](#slider-settings) |
 | `hide_disabled_hint` | `boolean` | `false` | `true` hides the warning triangle that the `loadpoint` / `compact` card shows administrators while an entity it needs is disabled in Home Assistant. See [Disabled entities](#disabled-entities) |
-| `slider_steps` | `map` | *(entity)* | **YAML only** — Override the step of a number slider per setting, e.g. `{ smart_cost_limit: 0.01, limit_soc: 5 }`. Keys are ha-evcc feature names and are matched exactly. Also sets the increment of the − / + buttons in the direct-input panel. Number entities only. See [Slider settings](#slider-settings) |
+| `slider_steps` | `map` | *(entity)* | Override the step of a number slider per setting (visual editor: **Advanced**), e.g. `{ smart_cost_limit: 0.01, limit_soc: 5 }`. Keys are ha-evcc feature names and are matched exactly. Also sets the increment of the − / + buttons in the direct-input panel. Number entities only. See [Slider settings](#slider-settings) |
 | `stats_period` | `string` | *(see note)* | Statistics period: `month`, `year`, `total`, `none`. Unconfigured, the `stats` mode opens on the most recent month and the footer under `site`/`grid`/`flow` summarises everything; `none` hides that footer. The older values `30d`, `365d` and `thisYear` still work |
 | `prefix` | `string` | *(auto)* | Entity prefix, auto-detected from ha-evcc. With more than one ha-evcc entry the visual editor offers the instance to use; the first entry is the default and needs no `prefix` |
 
@@ -259,7 +270,7 @@ Every slider in the card (target SoC, min SoC, current limits, battery boost, so
 
 - **Direct input** - tap the value next to the slider. A touch-sized row opens below it with **−** and **+** buttons, a number field with the unit, and apply / cancel. The buttons walk the slider step (for the current sliders: the next available option), the field accepts an exact value with either a comma or a dot and is clamped to the slider range. **Enter** or **✓** writes the value, **Escape** or **✕** discards it. Only one panel is open at a time.
 - **Keyboard** - with the slider focused, the arrow keys, Home / End and PageUp / PageDown change the value and write it as well. Everything else that reacts to a tap (the more-info rows, the flow graphic that folds the detail table, the buttons and chips) is reachable with Tab and fires on Enter or Space.
-- **Step size** - the step comes from the ha-evcc entity (for example 0.005 for the smart charging limit). Use `slider_steps` to make a slider coarser or finer per setting; the − / + buttons follow the same step:
+- **Step size** - the step comes from the ha-evcc entity (for example 0.005 for the smart charging limit). Use `slider_steps` to make a slider coarser or finer per setting; the − / + buttons follow the same step. The visual editor has a field per slider in its folded **Advanced** section, in YAML it reads:
 
   ```yaml
   type: custom:evcc-card
@@ -270,7 +281,7 @@ Every slider in the card (target SoC, min SoC, current limits, battery boost, so
 
   The key is the ha-evcc feature name and has to match it exactly: `limit_soc` steers the target SoC and nothing else, `soc` steers nothing at all. `slider_steps` applies to settings ha-evcc provides as a `number` entity. The current limits and, depending on the ha-evcc version, min SoC and target SoC come as a `select`; their sliders walk the option list, so a step configured for them has no effect and the card says so in the browser console.
 
-- **Hide settings** - settings you never touch can be removed from the card with `hide_settings` (also available as checkboxes in the visual editor). The list applies to every charge point on the card; use separate cards with a `loadpoints` filter if charge points need different sets. When everything in the charge settings section is hidden, the section and its gear button disappear:
+- **Hide settings** - settings you never touch can be removed from the card with `hide_settings` (also available in the visual editor). The list applies to every charge point on the card; use separate cards with a `loadpoints` filter if charge points need different sets. When everything in the charge settings section is hidden, the section and its gear button disappear:
 
   ```yaml
   type: custom:evcc-card
@@ -465,6 +476,88 @@ Repeating charge plans per vehicle - evcc's weekly departure schedules:
 > **Note:** Repeating plans can only be **created and edited in evcc itself** - the card only switches them on or off (an info icon in the header points this out). Requires the repeating plan entities from **ha-evcc 2026.6.1+** (`repeating_plan_*`); on older integration versions the entities do not exist yet and the mode shows an empty state.
 
 <img src="images/repeatplan-dark.png" width="400"> <img src="images/repeatplan-light.png" width="400">
+
+---
+
+### `vehicle`
+
+One card shows one vehicle, whether it is plugged in or parked somewhere else. A household with several cars puts one card per vehicle next to each other.
+
+```yaml
+type: custom:evcc-card
+mode: vehicle
+vehicle: ex30
+```
+
+`vehicle` is the name ha-evcc uses for the vehicle in its entity ids. When evcc knows only one vehicle, the option can be left out; with several the card asks and lists the names it found. In the visual editor the vehicle is picked from a list.
+
+What the card shows:
+
+- **Header** with the vehicle title from evcc, the charge point it is plugged into and a status badge: *Charging* or *Connected* at an evcc charge point, *Driving* or *Parked* when the vehicle's own integration says so, otherwise *Not connected*
+- **Picture** of the real car, when one is configured (`vehicle_image`) or the vehicle's integration offers an image entity. The card draws no vehicle of its own
+- **Charge level, range and odometer**, with the vehicle's charge limit as a marker on the bar. The tooltip tells how old a value is; a tap opens the entity
+- **Chips** for the lock, open doors and windows, warnings and the location
+- **Charge plan** while the vehicle is plugged into an evcc charge point, folded to one line with the planned time, the target and whether it charges by plan. Unfolded: target time, target in % (or in kWh for a vehicle evcc plans on the charge point), plan strategy, live preview, set and delete, the same block as in the [`plan`](#plan) mode but without its vehicle selector. A vehicle that is not plugged in shows no plan: ha-evcc reports the plan of a vehicle only through the charge point it is at
+- **Repeating plans** of the vehicle, folded to one line that says how many are on; unfolded with the on/off toggle of the [`repeatplan`](#repeatplan) mode
+- **Charged in total**: energy, cost and charging time of all sessions of the vehicle
+- **Vehicle details**: everything else the vehicle's device reports, folded away
+
+<img src="images/vehicle-dark.png" width="400"> <img src="images/vehicle-light.png" width="400">
+
+#### Where the values come from
+
+While the vehicle is plugged into an evcc charge point, charge level, range and odometer come from that charge point, as evcc polls a charging vehicle far more often. Unplugged, two sources are left: the vehicle sensors of ha-evcc (`sensor.evcc_<vehicle>_configvehicle_soc`, `_range`, `_odometer`, `_limitsoc`) and the device of the vehicle's own integration. The value that changed last wins.
+
+> **Extended vehicle data:** ha-evcc only fills its vehicle sensors when the integration has the evcc admin password and the option for extended vehicle data is switched on. Without the password the sensors are created disabled. While they are disabled, the vehicle header shows administrators the **warning triangle** described under [Disabled entities](#disabled-entities), unless a device of the vehicle's own integration supplies the values. A vehicle with neither gets a hint in place of the values.
+
+#### The vehicle's own integration
+
+Most cars have an integration of their own in Home Assistant. The card finds its device on its own: a device whose name or model contains the vehicle's evcc title and that reports a charge level and a distance. `vehicle_device` names the device by hand (device id), `vehicle_device: none` keeps the card without one. The visual editor offers a list of devices.
+
+From the device the card sorts the entities into roles: charge level, range, odometer, capacity, charge limit, lock, location, picture, driving, charging, plugged in and climate. Doors and windows become the *All closed* chip, warning flags the *No warnings* chip. The remaining buttons of the device are the vehicle's **actions**.
+
+#### Commands to the vehicle
+
+With `vehicle_actions: true` the card sends commands to the vehicle's integration:
+
+- The **lock chip** becomes a switch. Locking happens at once, unlocking asks first
+- **Climate** starts and stops preconditioning, through a climate entity, a switch or a pair of start and stop buttons
+- **Actions** lists the other buttons of the device (flash lights, honk, refresh, ...). Each one asks before it is pressed
+
+The option is off by default, so a card on a wall tablet cannot unlock the car by a stray tap. Charging itself stays with evcc: the card sends no charge commands to the vehicle's integration.
+
+#### Assigning entities
+
+Where the automatic sorting picks the wrong entity, or a vehicle has no device at all, `vehicle_entities` assigns the roles by hand. Every role takes an entity id, or `none` to switch the role off. `actions` is the list of functions; it replaces the buttons of the device, and an empty list shows none. Buttons, scripts and scenes can be actions, and a switch can take the lock role.
+
+```yaml
+type: custom:evcc-card
+mode: vehicle
+vehicle: ex30
+vehicle_actions: true
+vehicle_entities:
+  location: device_tracker.ex30
+  odometer: none
+  climate_start: button.ex30_start_climate
+  climate_stop: button.ex30_stop_climate
+  actions:
+    - button.ex30_flash
+    - script.car_find_me
+```
+
+| Role | Takes |
+|---|---|
+| `soc`, `target_soc` | a sensor in % (`target_soc` also a number) |
+| `range`, `odometer` | a distance sensor |
+| `capacity` | an energy sensor in kWh |
+| `lock` | a lock or a switch |
+| `location` | a device tracker or a sensor |
+| `image` | an image or camera entity |
+| `driving`, `charging`, `plugged` | a binary sensor or a sensor |
+| `climate` | a climate entity or a switch |
+| `climate_start`, `climate_stop` | a button, script or scene |
+
+The visual editor has a block **Adjust mapping** with a searchable picker per role and a button beside each field that switches the role off. It offers the entities of the vehicle's device first, but any fitting entity in Home Assistant can be chosen. For evcc's own values (charge level, range, odometer) `none` only switches off the device's entity; the ha-evcc sensor stays the source.
 
 ---
 
