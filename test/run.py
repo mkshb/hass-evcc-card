@@ -682,6 +682,23 @@ def vehicle_mode(browser, port, t):
             "unplugged there is no plan block: ha-evcc reports the plan only through the loadpoint", "")
     done(page)
 
+    t.group("vehicle - registries that change while no state does")
+    # HA delivers the states before the entity and device registries on page
+    # load; the vehicle's device is found in the registries, so a new registry
+    # has to reach the card even though no state moved.
+    page, errors = card(set=UNPLUGGED)
+    chips = lambda: page.locator(block("ex30")).locator(".vehicle-chip").count()
+    before = chips()
+    page.evaluate("""() => { const h = window.__hass; window.__reg = { entities: h.entities, devices: h.devices };
+        window.__card.hass = { ...h, entities: {}, devices: {} }; }""")
+    page.wait_for_timeout(700)
+    without = chips()
+    page.evaluate("() => { window.__card.hass = { ...window.__hass, ...window.__reg }; }")
+    page.wait_for_timeout(700)
+    t.check(before > 0 and without == 0 and chips() == before and not errors,
+            "the device goes with its registry entry and comes back with it, with the same states", f"{before} -> {without} -> {chips()} chips")
+    done(page)
+
     t.group("vehicle - which vehicle, missing data, second instance")
     # A card that does not name its vehicle: with one vehicle it is clear, with
     # several the card asks instead of picking one of them.

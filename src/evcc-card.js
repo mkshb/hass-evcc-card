@@ -192,6 +192,11 @@ export class EvccCard extends HTMLElement {
       this._updateLiveValues();
       return;
     }
+    // The vehicle mode finds the device of the vehicle's own integration in
+    // HA's entity and device registries. They can arrive after the states (on
+    // page load) or change while no state moves, so a new registry starts the
+    // render over; the state check below would not see it.
+    if (this._registriesMoved(hass)) this._lastRenderKey = null;
     // Home Assistant sets `hass` on every state change anywhere in the system,
     // and the key below walks every evcc entity with its attributes. HA keeps
     // the state object of an entity that did not change, so when no evcc
@@ -242,6 +247,16 @@ export class EvccCard extends HTMLElement {
     this._evccIdsPrefix = prefix;
     this._evccIds       = Object.keys(hass.states).filter(id => id.split(".")[1]?.startsWith(prefix));
     return true;
+  }
+
+  // Whether the entity or device registry is a new object since the last
+  // update, for a card that reads them to render (the vehicle mode). HA keeps
+  // both objects as they are until the registry itself changes.
+  _registriesMoved(hass) {
+    const moved = this._seenRegistries !== undefined
+      && (hass.entities !== this._seenRegistries.entities || hass.devices !== this._seenRegistries.devices);
+    this._seenRegistries = { entities: hass.entities, devices: hass.devices };
+    return moved && this._config.mode === "vehicle";
   }
 
   // True when a hass update can change what the card shows: an entity the last
