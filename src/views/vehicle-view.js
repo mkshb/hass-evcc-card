@@ -137,8 +137,10 @@ export const vehicleView = {
     const roles = dev?.roles ?? {};
 
     const soc      = this._vehicleValue({ vehicle: vehicle.soc,       device: roles.soc,        lp, lpKey: "vehicle_soc", min: 0 });
-    const range    = this._vehicleValue({ vehicle: vehicle.range,     device: roles.range,      lp, lpKey: "vehicle_range" });
-    const odometer = this._vehicleValue({ vehicle: vehicle.odometer,  device: roles.odometer,   lp, lpKey: "vehicle_odometer" });
+    // Range and odometer the same way: evcc reports 0 for a vehicle it cannot
+    // reach, which would hide the reading of the vehicle's own integration.
+    const range    = this._vehicleValue({ vehicle: vehicle.range,     device: roles.range,      lp, lpKey: "vehicle_range",    min: 0 });
+    const odometer = this._vehicleValue({ vehicle: vehicle.odometer,  device: roles.odometer,   lp, lpKey: "vehicle_odometer", min: 0 });
     // evcc reports a limit of 0 for a vehicle that has none.
     const limit    = this._vehicleValue({ vehicle: vehicle.limit_soc, device: roles.target_soc, lp, lpKey: "effective_limit_soc", min: 0 });
     const limitSoc = limit ? limit.value : null;

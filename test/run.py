@@ -390,6 +390,15 @@ def vehicle_mode(browser, port, t):
     t.check("Aktualisiert" in tip and "Stunde" in tip, "the tooltip tells the age of a value", tip)
     done(page)
 
+    # Plugged in, but evcc cannot reach the vehicle: the loadpoint reports 0 for
+    # range and odometer, which must not hide the integration's readings.
+    page, errors = card(set={"sensor.evcc_openwb_vehicle_range": "0", "sensor.evcc_openwb_vehicle_odometer": "0"})
+    info = dict(page.evaluate(values))
+    t.check(info.get("sensor.volvo_ex30_reichweite_bis_batterie_leer") == "257 km" and info.get("sensor.volvo_ex30_kilometerstand") == "11503 km"
+            and "sensor.evcc_openwb_vehicle_range" not in info and not errors,
+            "plugged in with 0 km from evcc: range and odometer come from the vehicle's integration", json.dumps(info))
+    done(page)
+
     page, errors = card(set=dict(UNPLUGGED, **{"binary_sensor.volvo_ex30_reifen_vorne_links": "on", "lock.volvo_ex30_schloss": "unlocked"}))
     got = page.evaluate(chips)
     t.check(["warn", "Entriegelt", "lock.volvo_ex30_schloss"] in got and ["alert", "Reifen vorne links", "binary_sensor.volvo_ex30_reifen_vorne_links"] in got
