@@ -214,14 +214,24 @@ export const vehicleView = {
   // The picture of the real car: the configured one, else what the vehicle's
   // integration offers as an image entity. Returns { source, url } or null;
   // `source` is what was configured and `url` what the browser can load. One
-  // that failed to load is not tried again, the block goes on without a picture.
+  // that failed to load is not tried again: the next one takes its place, and
+  // without one the block goes on without a picture. A media item still being
+  // resolved holds its place, so the picture does not switch on the way; one
+  // that could not be resolved lets the next one stand in meanwhile.
   _vehicleImage(roles) {
     const configured = this._config.vehicle_image;
     const fromEntity = roles.image ? this._hass.states[roles.image]?.attributes?.entity_picture : null;
-    const source = [configured, fromEntity].find(v => isMediaSourceId(v) || isVehicleImageUrl(v))?.trim() ?? null;
-    if (!source || this._vehicleImageFailed[source]) return null;
-    const url = isMediaSourceId(source) ? this._vehicleMediaUrl(source) : source;
-    return url ? { source, url } : null;
+    const sources = [configured, fromEntity].filter(v => isMediaSourceId(v) || isVehicleImageUrl(v)).map(v => v.trim());
+    for (const source of sources) {
+      if (this._vehicleImageFailed[source]) continue;
+      if (!isMediaSourceId(source)) return { source, url: source };
+      const url = this._vehicleMediaUrl(source);
+      if (url) return { source, url };
+      // Not resolvable for now: the next picture stands in until a later
+      // attempt succeeds. Still being resolved for the first time: wait.
+      if (!this._vehicleMedia[source]?.failedAt) return null;
+    }
+    return null;
   },
 
   // An item of the media library has no address of its own: Home Assistant
@@ -242,15 +252,11 @@ export const vehicleView = {
           this._vehicleMedia[source] = { url: res.url, ts: Date.now() };
         })
         .catch(() => {
-          // A failed renewal keeps the address while it is still valid and
-          // asks again a few minutes later; only a picture that never resolved,
-          // or whose address ran out, is dropped.
-          if (hit?.url && Date.now() - hit.ts < LIFETIME) {
-            this._vehicleMedia[source] = { url: hit.url, ts: hit.ts, failedAt: Date.now() };
-          } else {
-            delete this._vehicleMedia[source];
-            this._vehicleImageFailed[source] = true;
-          }
+          // A failed request is asked again a few minutes later: right after
+          // a restart of HA the first one can fail for a picture that is
+          // there. A renewal keeps the address meanwhile while it is valid.
+          const valid = hit?.url && Date.now() - hit.ts < LIFETIME;
+          this._vehicleMedia[source] = valid ? { url: hit.url, ts: hit.ts, failedAt: Date.now() } : { failedAt: Date.now() };
         })
         .finally(() => { if (this._hass && this.isConnected) this._render(); });
     }

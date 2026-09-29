@@ -474,8 +474,30 @@ def vehicle_mode(browser, port, t):
     done(page)
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "vehicle", "vehicle": "ex30", "vehicle_image": "media-source://media_source/local/gone.png"})
-    t.check(pic(page) is None and page.evaluate(resolves) == 1, "a media item that is gone shows nothing and is not asked for again", json.dumps(pic(page)))
+    t.check(pic(page) is None and page.evaluate(resolves) == 1, "a media item that cannot be resolved shows nothing and is not asked for on every render", json.dumps(pic(page)))
+    # Right after a restart of HA the first request can fail for a picture that
+    # is there: a few minutes later it is asked for again.
+    page.evaluate("""() => { const c = window.__card, m = c._vehicleMedia['media-source://media_source/local/gone.png'];
+        m.failedAt -= 6 * 60 * 1000; c._lastRenderKey = null; c._render(); }""")
+    settle(page)
+    t.check(page.evaluate(resolves) == 2, "a failed request is asked again after a few minutes, the picture is not dropped for good", str(page.evaluate(resolves)))
     done(page)
+
+    # A configured picture that cannot be shown leaves the place to the one of
+    # the vehicle's image entity.
+    add_image = """() => { const h = window.__hass, id = 'image.volvo_ex30_bild';
+        h.entities = { ...h.entities, [id]: { entity_id: id, platform: 'volvo', device_id: 'f1c0de00volvoex30fixture000000001' } };
+        h.states = { ...h.states, [id]: { entity_id: id, state: '2026-09-18T10:00:00+00:00', attributes: { entity_picture: '/test/fixtures/car.png?token=abc' } } };
+        window.__card.hass = { ...h }; }"""
+    for image, label in (("/test/fixtures/missing.png", "a configured path that does not load"),
+                         ("media-source://media_source/local/gone.png", "a media item that cannot be resolved")):
+        page = new_page(browser, 480, 1400)
+        open_card(page, port, config={"mode": "vehicle", "vehicle": "ex30", "vehicle_image": image})
+        page.wait_for_timeout(400); settle(page)
+        page.evaluate(add_image); page.wait_for_timeout(400); settle(page)
+        got = pic(page)
+        t.check(got and got["src"] == "/test/fixtures/car.png?token=abc", f"{label}: the picture of the image entity stands in", json.dumps(got))
+        done(page)
 
     # A picture the vehicle's integration offers as an image entity is used on its own.
     page, errors = card()
