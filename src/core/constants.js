@@ -397,6 +397,17 @@ export const HIDEABLE_SETTINGS = [
   ["smart_feed_in_priority_limit", "feedInPriorityLimit"],
 ];
 
+// The sliders `slider_steps` can set a step for, with the label keys of the
+// card. ha-evcc provides min and max current as selects, whose slider walks the
+// option list, so a step does not apply to them.
+export const SLIDER_STEP_KEYS = [
+  ["limit_soc",                    "targetSoc"],
+  ["min_soc",                      "minSoc"],
+  ["priority",                     "priority"],
+  ["smart_cost_limit",             "smartCostLimitPrice"],
+  ["smart_feed_in_priority_limit", "feedInPriorityLimit"],
+];
+
 // ha-evcc entities that are created disabled in the entity registry although a
 // control of the loadpoint card depends on them. While one of them is off, the
 // loadpoint header shows a warning triangle to administrators (unless

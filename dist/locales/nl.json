@@ -402,5 +402,8 @@
   "editorVehicleImageHint": "Kies een afbeelding uit de media van Home Assistant, of voer een pad (/local/...) of adres in. Zonder afbeelding toont de kaart geen voertuig; een afbeelding van de voertuigintegratie wordt vanzelf gebruikt.",
   "editorVehicleImagePlaceholder": "of een pad, bijv. /local/ex30.png",
   "editorVehicleImagePick": "Afbeelding uit de mediabibliotheek",
-  "editorVehicleImageRemove": "Afbeelding verwijderen"
+  "editorVehicleImageRemove": "Afbeelding verwijderen",
+  "editorAdvancedTitle": "Geavanceerd",
+  "editorSliderStep": "Stap: {val}",
+  "editorSliderStepHint": "Leeg gebruikt de stap van de entiteit."
 }

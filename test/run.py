@@ -1515,33 +1515,41 @@ def editor(browser, port, t):
     last  = lambda: page.evaluate("window.__cfg.length ? window.__cfg[window.__cfg.length - 1] : {}")
     count = lambda: page.evaluate("window.__cfg.length")
     fld   = lambda sel: page.locator(f"evcc-card-editor {sel}")
-    cb    = lambda field, lp: page.locator(f'evcc-card-editor input[data-field="{field}"][data-lp="{lp}"]')
+    fm    = lambda name: page.locator(f'evcc-card-editor ha-form [data-name="{name}"]')
+    cb    = lambda field, lp: page.locator(f'evcc-card-editor ha-form input[data-name="{field}"][value="{lp}"]')
 
     mount({"mode": "loadpoint", "hide_settings": ["priority"]})
     boxes = page.evaluate("""() => {
-      const b = [...document.querySelector("evcc-card-editor").shadowRoot.querySelectorAll('input[data-field="hide_settings"]')];
-      return { count: b.length, checked: b.filter(x => x.checked).map(x => x.dataset.lp) };
+      const b = [...document.querySelector("evcc-card-editor").shadowRoot.querySelectorAll('ha-form input[data-name="hide_settings"]')];
+      return { count: b.length, checked: b.filter(x => x.checked).map(x => x.value) };
     }""")
     t.check(boxes["count"] == 10 and boxes["checked"] == ["priority"], "existing config is reflected in the checkboxes", json.dumps(boxes))
     t.check(count() == 0, "mounting alone emits nothing", f"{count()} events")
 
     # --- free text ---------------------------------------------------------------
-    fld("#title").fill("Garage")
+    form_before = page.evaluate("window.__form = document.querySelector('evcc-card-editor').shadowRoot.querySelector('ha-form'), !!window.__form")
+    fm("title").fill("Garage")
     t.check(last().get("title") == "Garage", "title input writes config.title", json.dumps(last()))
     t.check(last().get("mode") == "loadpoint" and last().get("hide_settings") == ["priority"],
             "the emitted config is complete, not just the changed key", json.dumps(last()))
-    fld("#title").fill("   ")
+    before = count()
+    fm("title").press_sequentially(" 2")
+    t.check(last().get("title") == "Garage 2" and count() == before + 1 and fm("title").input_value() == "Garage 2",
+            "typing on keeps the space between the words, the space alone writes nothing", f"{json.dumps(last())}, {count() - before} events")
+    t.check(form_before and page.evaluate("document.querySelector('evcc-card-editor').shadowRoot.querySelector('ha-form') === window.__form"),
+            "HA's form is the same element after the changes, so focus and an open section survive", "")
+    fm("title").fill("   ")
     t.check("title" not in last(), "a blank title drops the key instead of storing an empty string", json.dumps(last()))
 
     # --- selects -----------------------------------------------------------------
     for sel, value in (("language", "en"), ("size", "large"), ("disabled_loadpoints", "dim"),
                        ("charge_current_settings", "expanded")):
         before = count()
-        fld(f"#{sel}").select_option(value)
+        fm(sel).select_option(value)
         t.check(last().get(sel) == value and count() == before + 1,
                 f"{sel} writes config.{sel} in one event", json.dumps({k: last().get(k) for k in (sel,)}))
     for sel in ("language", "size", "disabled_loadpoints"):
-        fld(f"#{sel}").select_option("")
+        fm(sel).select_option("__unset")
         t.check(sel not in last(), f"{sel} back to its default drops the key", json.dumps(last()))
 
     # --- checkbox groups ---------------------------------------------------------
@@ -1559,17 +1567,42 @@ def editor(browser, port, t):
     t.check("no_pv" not in last(), "emptying a checkbox group drops the key", json.dumps(last()))
 
     # --- mode switch re-renders the form -----------------------------------------
-    fld("#mode").select_option("site")
+    # --- advanced: slider steps, folded away ---------------------------------------
+    t.check(fld('ha-form details[data-section="slider_steps"]').count() == 1
+            and fld('ha-form details[data-section="slider_steps"] [data-name^="slider_steps."]').count() == 5,
+            "the advanced section holds a step field per number slider", "")
+    fld('ha-form details[data-section="slider_steps"] summary').click()
+    before = count()
+    fm("slider_steps.smart_cost_limit").fill("0")
+    t.check(count() == before and fm("slider_steps.smart_cost_limit").input_value() == "0",
+            "a 0 on the way to 0.01 writes nothing and stays in the field", f"{count() - before} events, {fm('slider_steps.smart_cost_limit').input_value()!r}")
+    fm("slider_steps.smart_cost_limit").fill("0.01")
+    t.check(last().get("slider_steps") == {"smart_cost_limit": 0.01}, "a step writes config.slider_steps.<slider>", json.dumps(last()))
+    fm("slider_steps.limit_soc").fill("5")
+    t.check(last().get("slider_steps") == {"smart_cost_limit": 0.01, "limit_soc": 5}, "a second step adds to the map", json.dumps(last()))
+    for key in ("smart_cost_limit", "limit_soc"):
+        fm(f"slider_steps.{key}").fill("")
+    t.check("slider_steps" not in last(), "emptied, the steps drop the option", json.dumps(last()))
+    mount({"mode": "loadpoint", "slider_steps": {"limit_soc": 5, "max_current": 2}})
+    t.check(fm("slider_steps.limit_soc").input_value() == "5" and count() == 0, "a configured step shows in its field", fm("slider_steps.limit_soc").input_value())
+    fld('ha-form details[data-section="slider_steps"] summary').click()
+    fm("slider_steps.min_soc").fill("10")
+    t.check(last().get("slider_steps") == {"max_current": 2, "limit_soc": 5, "min_soc": 10},
+            "a key without a field in the editor stays in the map", json.dumps(last()))
+
+    # --- mode switch re-renders the form -----------------------------------------
+    fm("mode").select_option("site")
     page.wait_for_timeout(400)
     t.check(last().get("mode") == "site", "mode select writes config.mode", json.dumps(last().get("mode")))
-    t.check(fld("#site_details").count() == 1 and fld("#charge_current_settings").count() == 0,
+    t.check(fm("site_details").count() == 1 and fm("charge_current_settings").count() == 0
+            and fld('ha-form details[data-section="slider_steps"]').count() == 0,
             "the form re-renders with the fields of the new mode",
-            f"site_details={fld('#site_details').count()} charge_current={fld('#charge_current_settings').count()}")
-    fld("#site_details").select_option("collapsed")
+            f"site_details={fm('site_details').count()} charge_current={fm('charge_current_settings').count()}")
+    fm("site_details").select_option("collapsed")
     t.check(last().get("site_details") == "collapsed", "site_details writes config.site_details", json.dumps(last()))
-    fld("#stats_period").select_option("month")
+    fm("stats_period").select_option("month")
     t.check(last().get("stats_period") == "month", "stats_period writes config.stats_period", json.dumps(last()))
-    fld("#stats_period").select_option("")
+    fm("stats_period").select_option("__unset")
     t.check("stats_period" not in last(), "stats_period back to its default drops the key", json.dumps(last()))
     done(page)
 
@@ -1580,15 +1613,16 @@ def editor(browser, port, t):
     t.group("editor - stats_period reflects the card")
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "stats"})
-    sel_val = lambda: page.evaluate("document.querySelector('evcc-card-editor').shadowRoot.getElementById('stats_period').value")
-    opts    = lambda: page.evaluate("[...document.querySelector('evcc-card-editor').shadowRoot.getElementById('stats_period').options].map(o => o.value)")
+    STATS   = "document.querySelector('evcc-card-editor').shadowRoot.querySelector('ha-form [data-name=stats_period]')"
+    sel_val = lambda: page.evaluate(f"{STATS}.value")
+    opts    = lambda: page.evaluate(f"[...{STATS}.options].map(o => o.value)")
     loc_ed  = json.loads((ROOT / "dist/locales/en.json").read_text(encoding="utf-8"))
     for mode, default_key in (("stats", "statsPeriodMonth"), ("site", "editorStatsPeriodTotal")):
         mount({"mode": mode, "language": "en"})
         want = loc_ed["editorStatsPeriodDefault"].replace("{val}", loc_ed[default_key])
-        got  = page.evaluate("""() => { const s = document.querySelector('evcc-card-editor').shadowRoot.getElementById('stats_period');
-                                        return { value: s.value, label: s.options[s.selectedIndex].textContent.trim() }; }""")
-        t.check(got["value"] == "" and got["label"] == want,
+        got  = page.evaluate(f"""() => {{ const s = {STATS};
+                                        return {{ value: s.value, label: s.options[s.selectedIndex].textContent.trim() }}; }}""")
+        t.check(got["value"] == "__unset" and got["label"] == want,
                 f"{mode}: unconfigured shows \"{want}\", not a preselected period", json.dumps(got))
         t.check(count() == 0, f"{mode}: showing the default emits nothing", f"{count()} events")
     for value in ("30d", "365d", "thisYear"):
@@ -1597,25 +1631,31 @@ def editor(browser, port, t):
                 f"value {sel_val()} in {opts()}")
         t.check(count() == 0, f"legacy value {value} is not rewritten on open", json.dumps(page.evaluate("window.__cfg")))
     mount({"mode": "stats", "language": "en", "stats_period": "month"})
-    t.check(opts() == ["", "month", "year", "total", "none"],
+    t.check(opts() == ["__unset", "month", "year", "total", "none"],
             "without a legacy value the list stays on the current vocabulary", json.dumps(opts()))
 
-    fld("#mode").select_option("repeatplan")
+    fm("mode").select_option("repeatplan")
     page.wait_for_timeout(400)
-    t.check(fld('input[data-field="repeating_plan_vehicles"]').count() == 2,
+    t.check(fm("repeating_plan_vehicles").count() == 2,
             "repeatplan offers the vehicles discovered from the registry",
-            str(fld('input[data-field="repeating_plan_vehicles"]').count()))
+            str(fm("repeating_plan_vehicles").count()))
     cb("repeating_plan_vehicles", "ex30").check()
     t.check(last().get("repeating_plan_vehicles") == ["ex30"], "vehicle filter writes config.repeating_plan_vehicles", json.dumps(last()))
 
-    fld("#mode").select_option("vehicle")
+    mount({"mode": "repeatplan", "repeating_plan_vehicles": "EX30"})
+    t.check(cb("repeating_plan_vehicles", "ex30").is_checked() and count() == 0,
+            "a single name is shown as a list of one, without case and without rewriting it", "")
+    cb("repeating_plan_vehicles", "id7").check()
+    t.check(last().get("repeating_plan_vehicles") == ["ex30", "id7"], "and a second vehicle makes it a list", json.dumps(last()))
+
+    fm("mode").select_option("vehicle")
     page.wait_for_timeout(400)
-    veh = fld("#vehicle")
-    t.check(veh.count() == 1 and fld('input[data-field="repeating_plan_vehicles"]').count() == 0
+    veh = fm("vehicle")
+    t.check(veh.count() == 1 and fm("repeating_plan_vehicles").count() == 0
             and veh.locator("option").count() == 3,
             "the vehicle mode asks which vehicle the card is for, one option per discovered vehicle",
             f"{veh.count()} select, {veh.locator('option').count()} options")
-    t.check(veh.input_value() == "" and veh.locator("option").first.get_attribute("value") == "",
+    t.check(veh.input_value() == "__unset" and veh.locator("option").first.get_attribute("value") == "__unset",
             "with several vehicles nothing is preselected, the first option asks to pick one",
             veh.locator("option").first.inner_text())
     t.check(fld("select[data-vehicle-device]").count() == 0 and fld("[data-vehicle-map]").count() == 0
@@ -1627,9 +1667,11 @@ def editor(browser, port, t):
     t.check(fld("select[data-vehicle-device]").count() == 1 and fld("input[data-vehicle-image]").count() == 1,
             "now the device, the mapping and the picture belong to that vehicle", "")
     mount({"mode": "vehicle", "vehicles": "EX30"})
-    t.check(fld("#vehicle").input_value().lower() == "ex30" and count() == 0,
+    t.check(fm("vehicle").input_value().lower() == "ex30" and count() == 0,
             "the list of one the mode started with is shown as that vehicle, without case and without rewriting it",
-            fld("#vehicle").input_value())
+            fm("vehicle").input_value())
+    fm("vehicle").select_option("__unset")
+    t.check("vehicle" not in last() and "vehicles" not in last(), "back to automatic drops the old list as well", json.dumps(last()))
 
     mount({"mode": "vehicle", "vehicle": "ex30"})
     dev = fld("select[data-vehicle-device]")
@@ -1676,9 +1718,9 @@ def editor(browser, port, t):
     fld("[data-vehicle-image-clear]").click()
     t.check("vehicle_image" not in last() and page.evaluate(f"{pick}.value") is None,
             "the remove button also empties the media selector", json.dumps(last()))
-    fld("#vehicle_actions").check()
+    fm("vehicle_actions").check()
     t.check(last().get("vehicle_actions") is True, "the checkbox writes vehicle_actions: true", json.dumps(last()))
-    fld("#vehicle_actions").uncheck()
+    fm("vehicle_actions").uncheck()
     t.check("vehicle_actions" not in last(), "unchecked, the key is dropped again", json.dumps(last()))
     done(page)
 
@@ -2721,7 +2763,7 @@ def editor_instances(browser, port, t):
           await new Promise(r => setTimeout(r, 900));
         }""", config)
     last = lambda page: page.evaluate("window.__cfg.length ? window.__cfg[window.__cfg.length - 1] : {}")
-    opts = lambda page: page.evaluate("""() => { const s = document.querySelector('evcc-card-editor').shadowRoot.getElementById('prefix');
+    opts = lambda page: page.evaluate("""() => { const s = document.querySelector('evcc-card-editor').shadowRoot.querySelector('ha-form [data-name=prefix]');
       return s ? [...s.options].map(o => o.value) : null; }""")
 
     page = new_page(browser, 480, 1400)
@@ -2734,18 +2776,18 @@ def editor_instances(browser, port, t):
     open_card(page, port, config={"mode": "loadpoint"}, second={"prefix": "evcc_demo_"})
     mount(page, {"mode": "loadpoint", "loadpoints": ["openwb"]})
     t.check(opts(page) == ["evcc_", "evcc_demo_"], "two entries: the instance field lists both prefixes", json.dumps(opts(page)))
-    sel = page.locator("evcc-card-editor #prefix")
+    sel = page.locator('evcc-card-editor ha-form [data-name="prefix"]')
     sel.select_option("evcc_demo_"); page.wait_for_timeout(200)
     got = last(page)
     t.check(got.get("prefix") == "evcc_demo_" and "loadpoints" not in got,
             "picking the second instance writes its prefix and clears the loadpoint filter", json.dumps(got))
-    t.check(page.evaluate("document.querySelector('evcc-card-editor').shadowRoot.getElementById('prefix').value") == "evcc_demo_",
+    t.check(page.evaluate("document.querySelector('evcc-card-editor').shadowRoot.querySelector('ha-form [data-name=prefix]').value") == "evcc_demo_",
             "the field keeps the selection after the re-render")
-    page.locator("evcc-card-editor #prefix").select_option("evcc_"); page.wait_for_timeout(200)
+    page.locator('evcc-card-editor ha-form [data-name="prefix"]').select_option("evcc_"); page.wait_for_timeout(200)
     got = last(page)
     t.check("prefix" not in got, "picking the first instance drops the prefix again (auto-detection)", json.dumps(got))
     mount(page, {"mode": "loadpoint", "prefix": "evcc_demo_"})
-    t.check(page.evaluate("document.querySelector('evcc-card-editor').shadowRoot.getElementById('prefix').value") == "evcc_demo_",
+    t.check(page.evaluate("document.querySelector('evcc-card-editor').shadowRoot.querySelector('ha-form [data-name=prefix]').value") == "evcc_demo_",
             "a configured prefix is preselected")
     done(page)
 
@@ -2916,7 +2958,7 @@ def keyboard(browser, port, t):
       const ed = document.createElement('evcc-card-editor'); ed.setConfig({ mode: 'loadpoint' });
       ed.hass = { ...window.__hass, language: undefined, locale: {} }; document.body.appendChild(ed);
       await new Promise(r => setTimeout(r, 700));
-      return ed.shadowRoot.querySelector('label[for=mode]')?.textContent.trim();
+      return ed.shadowRoot.querySelector('ha-form [data-label-for=mode]')?.textContent.trim();
     }""")
     t.check(ed == "Mode", "without a language from HA the editor falls back to English", str(ed))
     done(page)
@@ -3369,10 +3411,10 @@ def disabled_entities(browser, port, t):
     ed(f'button.disabled-enable[data-enable-entity="{btn}"]').click(); page.wait_for_timeout(300)
     t.check([u["entity_id"] for u in updates(page)] == [btn], "the editor enables it in the registry", json.dumps(updates(page)))
     t.check("30 s" in (ed(".disabled-status").first.text_content() or ""), "and shows the reload", ed(".disabled-status").first.text_content())
-    ed("#hide_disabled_hint").check(); page.wait_for_timeout(100)
+    ed('ha-form [data-name="hide_disabled_hint"]').check(); page.wait_for_timeout(100)
     cfgs = page.evaluate("window.__cfg")
     t.check(cfgs and cfgs[-1].get("hide_disabled_hint") is True, "the checkbox writes hide_disabled_hint", json.dumps(cfgs[-1:] if cfgs else []))
-    ed("#hide_disabled_hint").uncheck(); page.wait_for_timeout(100)
+    ed('ha-form [data-name="hide_disabled_hint"]').uncheck(); page.wait_for_timeout(100)
     cfgs = page.evaluate("window.__cfg")
     t.check("hide_disabled_hint" not in cfgs[-1], "unchecked, the key is dropped again", json.dumps(cfgs[-1]))
     done(page)

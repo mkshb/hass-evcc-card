@@ -203,7 +203,7 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 | `charge_current_settings` | `string` | `collapsed` | `expanded` to show charge settings expanded by default |
 | `hide_settings` | `list` | *(none)* | Remove individual settings from the `loadpoint` / `compact` card: `limit_soc`, `min_soc`, `phases`, `max_current`, `min_current`, `battery_boost`, `solar_share`, `priority`, `smart_cost_limit`, `smart_feed_in_priority_limit`. See [Slider settings](#slider-settings) |
 | `hide_disabled_hint` | `boolean` | `false` | `true` hides the warning triangle that the `loadpoint` / `compact` card shows administrators while an entity it needs is disabled in Home Assistant. See [Disabled entities](#disabled-entities) |
-| `slider_steps` | `map` | *(entity)* | **YAML only** — Override the step of a number slider per setting, e.g. `{ smart_cost_limit: 0.01, limit_soc: 5 }`. Keys are ha-evcc feature names and are matched exactly. Also sets the increment of the − / + buttons in the direct-input panel. Number entities only. See [Slider settings](#slider-settings) |
+| `slider_steps` | `map` | *(entity)* | Override the step of a number slider per setting (visual editor: **Advanced**), e.g. `{ smart_cost_limit: 0.01, limit_soc: 5 }`. Keys are ha-evcc feature names and are matched exactly. Also sets the increment of the − / + buttons in the direct-input panel. Number entities only. See [Slider settings](#slider-settings) |
 | `stats_period` | `string` | *(see note)* | Statistics period: `month`, `year`, `total`, `none`. Unconfigured, the `stats` mode opens on the most recent month and the footer under `site`/`grid`/`flow` summarises everything; `none` hides that footer. The older values `30d`, `365d` and `thisYear` still work |
 | `prefix` | `string` | *(auto)* | Entity prefix, auto-detected from ha-evcc. With more than one ha-evcc entry the visual editor offers the instance to use; the first entry is the default and needs no `prefix` |
 
@@ -270,7 +270,7 @@ Every slider in the card (target SoC, min SoC, current limits, battery boost, so
 
 - **Direct input** - tap the value next to the slider. A touch-sized row opens below it with **−** and **+** buttons, a number field with the unit, and apply / cancel. The buttons walk the slider step (for the current sliders: the next available option), the field accepts an exact value with either a comma or a dot and is clamped to the slider range. **Enter** or **✓** writes the value, **Escape** or **✕** discards it. Only one panel is open at a time.
 - **Keyboard** - with the slider focused, the arrow keys, Home / End and PageUp / PageDown change the value and write it as well. Everything else that reacts to a tap (the more-info rows, the flow graphic that folds the detail table, the buttons and chips) is reachable with Tab and fires on Enter or Space.
-- **Step size** - the step comes from the ha-evcc entity (for example 0.005 for the smart charging limit). Use `slider_steps` to make a slider coarser or finer per setting; the − / + buttons follow the same step:
+- **Step size** - the step comes from the ha-evcc entity (for example 0.005 for the smart charging limit). Use `slider_steps` to make a slider coarser or finer per setting; the − / + buttons follow the same step. The visual editor has a field per slider in its folded **Advanced** section, in YAML it reads:
 
   ```yaml
   type: custom:evcc-card
@@ -281,7 +281,7 @@ Every slider in the card (target SoC, min SoC, current limits, battery boost, so
 
   The key is the ha-evcc feature name and has to match it exactly: `limit_soc` steers the target SoC and nothing else, `soc` steers nothing at all. `slider_steps` applies to settings ha-evcc provides as a `number` entity. The current limits and, depending on the ha-evcc version, min SoC and target SoC come as a `select`; their sliders walk the option list, so a step configured for them has no effect and the card says so in the browser console.
 
-- **Hide settings** - settings you never touch can be removed from the card with `hide_settings` (also available as checkboxes in the visual editor). The list applies to every charge point on the card; use separate cards with a `loadpoints` filter if charge points need different sets. When everything in the charge settings section is hidden, the section and its gear button disappear:
+- **Hide settings** - settings you never touch can be removed from the card with `hide_settings` (also available in the visual editor). The list applies to every charge point on the card; use separate cards with a `loadpoints` filter if charge points need different sets. When everything in the charge settings section is hidden, the section and its gear button disappear:
 
   ```yaml
   type: custom:evcc-card

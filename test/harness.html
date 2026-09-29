@@ -79,6 +79,118 @@
       });
     }
 
+    // HA's form, stood in for by an element that keeps its contract: `schema`,
+    // `data`, `computeLabel`, `computeHelper` in, a `value-changed` event with
+    // the whole data on every change out. It draws one native field per schema
+    // entry, marked with data-name (a field of a named section as
+    // "section.key"), and keeps the fields when only the data changes, as HA's
+    // form does. A multiple select appends a checked value, like HA's list.
+    if (!customElements.get("ha-form")) {
+      customElements.define("ha-form", class extends HTMLElement {
+        set schema(v) { const key = JSON.stringify(v); this._schema = v; if (key !== this._schemaKey) { this._schemaKey = key; this._build(); } }
+        get schema() { return this._schema; }
+        set data(v) { this._data = v || {}; this._sync(); }
+        get data() { return this._data || {}; }
+        set computeLabel(f) { this._computeLabel = f; this._texts(); }
+        get computeLabel() { return this._computeLabel; }
+        set computeHelper(f) { this._computeHelper = f; this._texts(); }
+        get computeHelper() { return this._computeHelper; }
+        _get(path) { return path.reduce((o, k) => (o == null ? undefined : o[k]), this.data); }
+        _emit(path, value) {
+          const data = { ...this.data };
+          if (path.length === 2) data[path[0]] = { ...(data[path[0]] || {}), [path[1]]: value };
+          else data[path[0]] = value;
+          this.dispatchEvent(new CustomEvent("value-changed", { detail: { value: data } }));
+        }
+        _build() {
+          this.replaceChildren();
+          this._fields = [];
+          const walk = (schema, parent, path) => {
+            for (const s of schema || []) {
+              if (s.type === "expandable") {
+                const box = document.createElement("details");
+                box.dataset.section = s.name;
+                const head = document.createElement("summary");
+                head.textContent = s.title || "";
+                box.append(head);
+                parent.append(box);
+                walk(s.schema, box, [...path, s.name]);
+                continue;
+              }
+              const p = [...path, s.name];
+              const name = p.join(".");
+              const wrap = document.createElement("div");
+              wrap.dataset.field = name;
+              const label = document.createElement("label");
+              label.dataset.labelFor = name;
+              const helper = document.createElement("div");
+              helper.dataset.helperFor = name;
+              const sel = s.selector || {};
+              wrap.append(label);
+              if (sel.select && sel.select.multiple) {
+                for (const o of sel.select.options) {
+                  const row = document.createElement("label");
+                  const cb = document.createElement("input");
+                  cb.type = "checkbox"; cb.dataset.name = name; cb.value = o.value;
+                  cb.addEventListener("change", () => {
+                    const cur = this._get(p) || [];
+                    this._emit(p, cb.checked ? [...cur.filter(v => v !== o.value), o.value] : cur.filter(v => v !== o.value));
+                  });
+                  row.append(cb, document.createTextNode(o.label));
+                  wrap.append(row);
+                }
+              } else if (sel.select) {
+                const el = document.createElement("select");
+                el.dataset.name = name;
+                for (const o of sel.select.options) el.append(new Option(o.label, o.value));
+                el.addEventListener("change", () => this._emit(p, el.value));
+                wrap.append(el);
+              } else if (sel.boolean) {
+                const el = document.createElement("input");
+                el.type = "checkbox"; el.dataset.name = name;
+                el.addEventListener("change", () => this._emit(p, el.checked));
+                wrap.append(el);
+              } else if (sel.number) {
+                const el = document.createElement("input");
+                el.type = "number"; el.dataset.name = name;
+                // HA's number field reports while typing, not on change.
+                el.addEventListener("input", () => this._emit(p, el.value === "" ? undefined : Number(el.value)));
+                wrap.append(el);
+              } else {
+                const el = document.createElement("input");
+                el.type = "text"; el.dataset.name = name;
+                el.addEventListener("input", () => this._emit(p, el.value));
+                wrap.append(el);
+              }
+              wrap.append(helper);
+              parent.append(wrap);
+              this._fields.push({ s, p, name });
+            }
+          };
+          walk(this._schema, this, []);
+          this._texts();
+          this._sync();
+        }
+        _texts() {
+          for (const f of this._fields || []) {
+            const label = this.querySelector(`[data-label-for="${f.name}"]`);
+            const helper = this.querySelector(`[data-helper-for="${f.name}"]`);
+            if (label) label.textContent = this._computeLabel ? (this._computeLabel(f.s) ?? f.s.name) : f.s.name;
+            if (helper) helper.textContent = (this._computeHelper && this._computeHelper(f.s)) || "";
+          }
+        }
+        _sync() {
+          for (const f of this._fields || []) {
+            const v = this._get(f.p);
+            const els = [...this.querySelectorAll(`[data-name="${f.name}"]`)];
+            if (f.s.selector?.select?.multiple) els.forEach(cb => { cb.checked = (v || []).includes(cb.value); });
+            else if (f.s.selector?.boolean) els[0].checked = !!v;
+            else { const want = v === undefined || v === null ? "" : String(v); if (els[0].value !== want) els[0].value = want; }
+          }
+        }
+      });
+    }
+
     import("../dist/evcc-card.js");
 
     const q      = new URLSearchParams(location.search);

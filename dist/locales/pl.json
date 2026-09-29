@@ -402,5 +402,8 @@
   "editorVehicleImageHint": "Wybierz obraz z mediów Home Assistanta lub wpisz ścieżkę (/local/...) albo adres. Bez obrazu karta nie pokazuje pojazdu; obraz z integracji pojazdu jest używany automatycznie.",
   "editorVehicleImagePlaceholder": "lub ścieżka, np. /local/ex30.png",
   "editorVehicleImagePick": "Obraz z biblioteki multimediów",
-  "editorVehicleImageRemove": "Usuń obraz"
+  "editorVehicleImageRemove": "Usuń obraz",
+  "editorAdvancedTitle": "Zaawansowane",
+  "editorSliderStep": "Krok: {val}",
+  "editorSliderStepHint": "Puste używa kroku encji."
 }

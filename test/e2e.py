@@ -483,16 +483,22 @@ def editor(page, t):
         await customElements.whenDefined('ha-selector');
         await new Promise(r => setTimeout(r, 1500)); }""", PREFIX)
     ed = page.locator("#e2e-editor")
-    slugs = ed.locator("#vehicle option").evaluate_all("l => l.map(e => e.value).filter(Boolean)")
+    form = page.evaluate(f"""() => {{ const f = {FORM};
+        return f ? {{ selectors: f.shadowRoot ? f.shadowRoot.querySelectorAll('ha-selector').length : 0,
+                     options: f.schema.find(s => s.name === 'vehicle')?.selector.select.options || [] }} : null; }}""")
+    t.check(bool(form) and form["selectors"] > 0, "HA's own form draws the fields of the editor", json.dumps(form)[:200])
+    options = (form or {}).get("options", [])
+    slugs = [o["value"] for o in options if o["value"] != "__unset"]
     t.check(slugs == sorted(s for _, s in vehicles.values()), "the editor offers every demo vehicle to pick from", str(slugs))
-    titles = ed.locator("#vehicle option").evaluate_all("l => l.map(e => e.textContent.trim())")
+    titles = [o["label"] for o in options]
     t.check(all(title in titles for title, _ in vehicles.values()), "named with their evcc titles", str(titles))
     t.check(ed.locator("select[data-vehicle-device]").count() == 0,
             "without a vehicle picked the settings of one stay away", "")
 
     first = slugs[0] if slugs else None
     if first:
-        ed.locator("#vehicle").select_option(first)
+        picked = form_pick(page, "vehicle", first)
+        t.check(picked, "the vehicle field is one of HA's selectors inside the form", "")
         page.wait_for_timeout(1200)
         cfg = page.evaluate("window.__e2eCfg.at(-1) ?? null")
         t.check(cfg and cfg.get("vehicle") == first and cfg.get("prefix") == PREFIX,
@@ -510,8 +516,31 @@ def editor(page, t):
             return p ? p.selector.entity.include_entities : null; }""")
         t.check(isinstance(ids, list) and all(i.startswith(("sensor.", "number.")) for i in ids),
                 "the picker of a role is handed only entities that fit it", json.dumps((ids or [])[:5]))
+    # The loadpoint fields and the advanced section with the slider steps.
+    picked = form_pick(page, "mode", "loadpoint")
+    page.wait_for_timeout(1200)
+    cfg = page.evaluate("window.__e2eCfg.at(-1) ?? null")
+    t.check(picked and cfg and cfg.get("mode") == "loadpoint" and cfg.get("prefix") == PREFIX,
+            "a mode switch through HA's form writes the whole config", json.dumps(cfg))
+    adv = page.evaluate(f"""() => {{ const f = {FORM}; return f && f.shadowRoot ? f.shadowRoot.querySelectorAll('ha-form-expandable').length : -1; }}""")
+    t.check(adv == 1, "the loadpoint mode has the folded advanced section", f"{adv} ha-form-expandable")
     page.evaluate("() => document.getElementById('e2e-editor')?.remove()")
     t.check(not ERRORS, "no card errors", "; ".join(ERRORS)[:200])
+
+
+FORM = "document.getElementById('e2e-editor')?.shadowRoot.querySelector('ha-form')"
+
+
+def form_pick(page, name, value):
+    """A choice in a field of HA's form, made where the select element reports it:
+    the selector of that field fires value-changed and the real form passes the
+    whole data on. The menu of HA's select itself is left alone, it changes
+    between frontend versions."""
+    return page.evaluate(f"""([name, value]) => {{ const f = {FORM};
+        const sel = [...(f?.shadowRoot?.querySelectorAll('ha-selector') || [])].find(e => (e.schema?.name ?? e.name) === name);
+        if (!sel) return false;
+        sel.dispatchEvent(new CustomEvent('value-changed', {{ detail: {{ value }}, bubbles: true, composed: true }}));
+        return true; }}""", [name, value])
 
 
 GROUPS = {"smoke": smoke, "roundtrip": roundtrip, "solar_share": solar_share,

@@ -402,5 +402,8 @@
   "editorVehicleImageHint": "Bild aus den Medien von Home Assistant wählen, oder einen Pfad (/local/...) bzw. eine Adresse eingeben. Ohne Bild zeigt die Karte kein Fahrzeug; ein Bild der Fahrzeug-Integration wird von selbst genutzt.",
   "editorVehicleImagePlaceholder": "oder ein Pfad, z. B. /local/ex30.png",
   "editorVehicleImagePick": "Bild aus den Medien",
-  "editorVehicleImageRemove": "Bild entfernen"
+  "editorVehicleImageRemove": "Bild entfernen",
+  "editorAdvancedTitle": "Erweitert",
+  "editorSliderStep": "Schrittweite: {val}",
+  "editorSliderStepHint": "Leer nimmt die Schrittweite der Entität."
 }
