@@ -335,14 +335,17 @@ export class EvccCardEditor extends HTMLElement {
   _mountVehicleRolePickers() {
     const slots = this.shadowRoot.querySelectorAll("[data-vehicle-role-pick]");
     if (!slots.length || !this._haSelectorReady()) return;
+    // The device and what the card picks by itself are the same for every
+    // role; each search walks the registries, so it runs once, not per role.
+    const deviceId = this._vehicleDeviceFor();
+    const ov       = vehicleOverride(this._config) || {};
+    const auto     = classifyVehicleDevice(this._hass, deviceId, null);
     slots.forEach(slot => {
       const key      = slot.dataset.role;
-      const deviceId = this._vehicleDeviceFor();
-      const ov       = vehicleOverride(this._config) || {};
       const cur      = typeof ov[key] === "string" ? ov[key] : (ov[key] === false ? "none" : "");
       const cand     = vehicleRoleCandidates(this._hass, key, deviceId);
       const ids      = [...cand.device, ...cand.other].map(e => e.entityId);
-      const autoId   = this._vehicleAutoRole(classifyVehicleDevice(this._hass, deviceId, null), key);
+      const autoId   = this._vehicleAutoRole(auto, key);
       const picker   = document.createElement("ha-selector");
       picker.hass     = this._hass;
       // A configured entity that fits no longer, or none of this installation,
@@ -400,8 +403,8 @@ export class EvccCardEditor extends HTMLElement {
   _mountVehicleFunctionPickers() {
     const slots = this.shadowRoot.querySelectorAll("[data-vehicle-func-pick]");
     if (!slots.length || !this._haSelectorReady()) return;
+    const deviceId = this._vehicleDeviceFor();
     slots.forEach(slot => {
-      const deviceId = this._vehicleDeviceFor();
       const current  = classifyVehicleDevice(this._hass, deviceId, vehicleOverride(this._config)).actions;
       const cand     = vehicleActionCandidates(this._hass, deviceId);
       const picker   = document.createElement("ha-selector");
