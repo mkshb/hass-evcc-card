@@ -2502,6 +2502,8 @@ def setconfig(browser, port, t):
         ({"mode": "vehicle", "vehicles": ["ex30"]}, "a list of one, the shape the mode started with"),
         ({"mode": "vehicle", "vehicle_image": "media-source://media_source/local/ex30.png"}, "a picture from the media library"),
         ({"mode": "vehicle", "vehicle_entities": {"soc": "sensor.a", "location": "none", "actions": ["button.b"]}}, "the entity mapping"),
+        ({"slider_steps": {"limit_soc": 5, "smart_cost_limit": 0.01}}, "slider steps"),
+        ({"slider_steps": {"smart_cost_limit": "0.005"}}, "a slider step written as a string"),
     ]
     INVALID = [
         ({"mode": "quatsch"}, "mode", "an unknown mode"),
@@ -2524,6 +2526,9 @@ def setconfig(browser, port, t):
         ({"vehicle_image": "javascript:alert(1)"}, "vehicle_image", "a picture with another scheme"),
         ({"vehicle_entities": {"ex30": {"soc": "sensor.a"}}}, "vehicle_entities", "the mapping per vehicle the mode started with"),
         ({"vehicle_entities": {"soc": "not an entity"}}, "vehicle_entities", "a role that is no entity id"),
+        ({"slider_steps": [5]}, "slider_steps", "slider steps as a list"),
+        ({"slider_steps": {"limit_soc": 0}}, "slider_steps", "a slider step of 0"),
+        ({"slider_steps": {"limit_soc": "fast"}}, "slider_steps", "a slider step that is no number"),
     ]
 
     t.group("setconfig - invalid configuration is rejected")
