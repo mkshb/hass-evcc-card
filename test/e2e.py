@@ -307,6 +307,7 @@ def vehicle_blocks(page):
         device: !!b.querySelector('[data-vehicle-details]'),
         values: [...b.querySelectorAll('.soc-label-row [data-more-info]')].map(e => [e.dataset.moreInfo, e.textContent.trim()]),
         totals: Object.fromEntries([...b.querySelectorAll('.vehicle-totals .session-item')].map(e => [e.dataset.moreInfo, e.querySelector('.si-value').textContent.trim()])),
+        plan:   b.querySelector('[data-vehicle-fold="plan"] .vehicle-fold-summary')?.textContent.trim() ?? null,
       }]))""")
 
 
@@ -341,6 +342,45 @@ def vehicle_view(page, t):
         t.check(b.get("lp") == lp_title and b.get("badge") == badge and got_soc == soc_txt,
                 f"{title}: plugged in at {lp_title}, badge and charge level from the loadpoint",
                 f"lp={b.get('lp')} badge={b.get('badge')} soc={got_soc} (HA {soc_txt})")
+        t.check(b.get("plan") is not None, f"{title}: the folded charge plan line of {lp_title}", str(b.get("plan")))
+    plugged = {vehicles[name][1] for name in DEMO_VEHICLES.values()}
+    parked = [slug for _, slug in vehicles.values() if slug not in plugged]
+    t.check(all(blocks.get(slug, {}).get("plan") is None for slug in parked),
+            "a vehicle at no loadpoint has no charge plan line", json.dumps({slug: blocks.get(slug, {}).get("plan") for slug in parked}))
+
+    # The plan set in the vehicle card reaches evcc on this vehicle and is deleted
+    # again, the same path as in the plan mode.
+    from datetime import datetime, timedelta, timezone
+    from zoneinfo import ZoneInfo
+    name = DEMO_VEHICLES["Garage"]
+    title, slug = vehicles[name]
+    plan = lambda: (evcc_state().get("vehicles") or {}).get(name, {}).get("plan")
+    page.locator(f'evcc-card .vehicle-block[data-vehicle="{slug}"] [data-vehicle-fold="plan"]').click()
+    page.wait_for_timeout(500)
+    block = page.locator(f'evcc-card .vehicle-block[data-vehicle="{slug}"] .plan-block[data-lp]')
+    garage_slug = next(s for _, t_, s in demo_loadpoints() if t_ == "Garage")
+    t.check(block.count() == 1 and block.get_attribute("data-lp") == garage_slug and block.locator("select.plan-vehicle-select").count() == 0,
+            f"{title}: unfolded, the plan block of the Garage without a vehicle select", "")
+    local = (datetime.now(ZoneInfo("Europe/Berlin")) + timedelta(days=1)).replace(hour=7, minute=0, second=0, microsecond=0)
+    block.locator("button.plan-soc-val").click()
+    page.locator("evcc-card .slider-edit-input").fill("80")
+    page.locator("evcc-card [data-edit-ok]").click()
+    block.locator("input.plan-time-input").fill(local.strftime("%Y-%m-%dT%H:%M"))
+    page.wait_for_timeout(300)
+    block.locator("button.plan-btn.save").click()
+    got = wait_for(plan, timeout=20)
+    want_time = local.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    t.check(got and got.get("soc") == 80 and got.get("time") == want_time,
+            f"{title}: a plan set in the vehicle card arrives at evcc on this vehicle", f"evcc plan={got}, want {want_time}")
+    delete = block.locator("button.plan-btn.delete")
+    if wait_for(lambda: delete.count() == 1, timeout=40):
+        delete.click()
+        gone = wait_for(lambda: not plan() and "gone", timeout=20)
+        t.check(gone == "gone", f"{title}: and the delete button removes it again", f"evcc plan={plan()}")
+    else:
+        t.fail(f"{title}: the card offers to delete the plan once HA reports it", "")
+    reset_demo()
+    open_view(page, "vehicle")
 
     # Session totals as HA reports them, in the unit it reports them in.
     checked = []

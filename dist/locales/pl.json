@@ -405,5 +405,6 @@
   "editorVehicleImageRemove": "Usuń obraz",
   "editorAdvancedTitle": "Zaawansowane",
   "editorSliderStep": "Krok: {val}",
-  "editorSliderStepHint": "Puste używa kroku encji."
+  "editorSliderStepHint": "Puste używa kroku encji.",
+  "vehicleRplanSummary": "{active} z {total} aktywne"
 }

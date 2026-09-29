@@ -19,6 +19,9 @@ const ICON_CLIMATE  = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 2
 const ICON_CHECK    = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/></svg>`;
 
 const NO_VALUE = new Set(["unknown", "unavailable", ""]);
+const chevron = open => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="${open
+  ? "M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
+  : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"}"/></svg>`;
 // How many open doors or warnings get a chip of their own before the rest is summed up.
 const MAX_CHIPS = 4;
 
@@ -418,51 +421,63 @@ export const vehicleView = {
       <div class="vehicle-details">
         <button class="vehicle-details-toggle" data-vehicle-details="${escAttr(slug)}" aria-expanded="${open}">
           <span class="session-title">${this._t("vehicleDetails")}</span>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="${open
-            ? "M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
-            : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"}"/></svg>
+          ${chevron(open)}
         </button>
         <div class="vehicle-detail-list"${open ? "" : " hidden"}>${rows.join("")}</div>
       </div>`;
   },
 
 
-  // The plan evcc is working on, read only. It hangs on the loadpoint, so there
-  // is nothing to show for a vehicle that is parked somewhere else. A vehicle
-  // evcc plans in kWh (no SoC, or no known capacity) shows its energy goal.
-  _renderVehiclePlan(lp) {
-    if (!lp?.connected || this._isHeatingLoadpoint(lp.ents)) return "";
-    const ents = lp.ents;
-    const time = ents.effective_plan_time ? stateVal(this._hass, ents.effective_plan_time) : null;
-    const lang = this._config.language || this._hass?.language || "en";
-    const when = fmtClock(time, lang);
-    if (!when) return "";
-
-    const active = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
-    const num    = id => id ? parseFloat(stateVal(this._hass, id)) : NaN;
-    const energy = this._planKind(ents) === "energy";
-    const goal   = energy ? num(ents.plan_energy) : num(ents.effective_plan_soc);
-    const item   = (label, text) =>
-      `<div class="session-item"><span class="si-label">${label}</span><span class="si-value">${text}</span></div>`;
+  // A block of the vehicle folded to one line: the toggle names the block and
+  // says in a few words what is in it, the content is only rendered unfolded
+  // (a folded plan asks ha-evcc for no preview). The fold state is the card's,
+  // so the morph keeps it.
+  _renderVehicleFold(key, title, summary, body) {
+    const open = !!this._vehicleFoldOpen[key];
     return `
-      <div class="plan-block vehicle-plan">
-        <div class="plan-header">
-          <span class="session-title">${this._t("chargePlan")}</span>
-          <span class="plan-badge ${active ? "active" : "planned"}">${active ? this._t("chargingByPlan") : this._t("planned")}</span>
-        </div>
-        <div class="session-grid">
-          ${item(this._t("finishBy"), escHtml(when))}
-          ${goal > 0 ? item(this._t(energy ? "planTargetEnergy" : "targetSoc"), energy ? `${Math.round(goal)} kWh` : `${Math.round(goal)} %`) : ""}
-        </div>
+      <div class="vehicle-details vehicle-fold" data-fold="${key}">
+        <button class="vehicle-details-toggle" data-vehicle-fold="${key}" aria-expanded="${open}">
+          <span class="session-title">${title}</span>
+          <span class="vehicle-fold-summary">${summary}</span>
+          ${chevron(open)}
+        </button>
+        ${open ? `<div class="vehicle-fold-body">${body()}</div>` : ""}
       </div>`;
   },
 
+  // The charge plan while the vehicle is plugged in, folded: the line says what
+  // is planned, unfolded it is the plan block of the plan mode, set, previewed
+  // and deleted the same way. evcc keeps a SoC plan on the vehicle and a kWh
+  // plan on the loadpoint, and ha-evcc reports either only through the
+  // loadpoint the vehicle is at, so a vehicle parked somewhere else has no plan
+  // to show. The vehicle select stays out, this card is about one vehicle.
+  _renderVehiclePlan(lp) {
+    if (!lp?.connected || !this._hasPlanBlock(lp.ents, true)) return "";
+    const ents   = lp.ents;
+    const time   = ents.effective_plan_time ? stateVal(this._hass, ents.effective_plan_time) : null;
+    const when   = fmtClock(time, this._config.language || this._hass?.language || "en");
+    const active = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
+    const energy = this._planKind(ents) === "energy";
+    const goalId = energy ? ents.plan_energy : ents.effective_plan_soc;
+    const goal   = goalId ? parseFloat(stateVal(this._hass, goalId)) : NaN;
+    const badge  = active ? `<span class="plan-badge active">${this._t("chargingByPlan")}</span>`
+                 : when   ? `<span class="plan-badge planned">${this._t("planned")}</span>`
+                 : `<span class="plan-badge">${this._t("noPlan")}</span>`;
+    const summary = when ? `<span>${escHtml(when)}</span>${goal > 0 ? `<span>${Math.round(goal)} ${energy ? "kWh" : "%"}</span>` : ""}${badge}` : badge;
+    return this._renderVehicleFold("plan", this._t("chargePlan"), summary,
+      () => this._renderPlanBlock(lp.lpName, ents, true, { vehicleSelect: false }));
+  },
+
+  // The repeating plans of the vehicle, folded: the line says how many are on.
   _renderVehicleRepeatPlans(vehicle) {
     const re    = /_repeating_plan_(\d+)$/;
     const plans = vehicle.repeating_plans
       .map(entityId => this._readRepeatingPlan(entityId, parseInt(entityId.match(re)[1], 10)))
       .filter(Boolean);
-    return plans.length ? this._renderRepeatPlansBlock({ plans }) : "";
+    if (!plans.length) return "";
+    const summary = `<span>${this._t("vehicleRplanSummary", { active: plans.filter(p => p.active).length, total: plans.length })}</span>`;
+    return this._renderVehicleFold("rplan", `${this._t("repeatingPlans")}${this._repeatPlansHint()}`, summary,
+      () => this._renderRepeatPlansBlock({ plans }));
   },
 
   // Everything the vehicle ever charged, from the session totals of ha-evcc.
@@ -507,6 +522,13 @@ export const vehicleView = {
       btn.addEventListener("click", () => {
         const slug = btn.dataset.vehicleDetails;
         this._vehicleDetailsOpen[slug] = !this._vehicleDetailsOpen[slug];
+        this._render();
+      });
+    });
+    this._fresh("[data-vehicle-fold]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const key = btn.dataset.vehicleFold;
+        this._vehicleFoldOpen[key] = !this._vehicleFoldOpen[key];
         this._render();
       });
     });
@@ -581,6 +603,11 @@ export const vehicleCss = `
         background: none; border: none; color: var(--secondary-text-color); cursor: pointer; font: inherit;
       }
       .vehicle-detail-list { margin-top: 6px; }
+      .vehicle-fold .session-title { display: inline-flex; align-items: center; gap: 6px; }
+      .vehicle-fold-summary { display: flex; align-items: center; gap: 8px; margin: 0 6px 0 auto; font-size: .8rem; font-weight: 600; color: var(--primary-text-color); }
+      .vehicle-fold-body { margin-top: 8px; }
+      .vehicle-fold-body > .plan-block { border-top: none; margin-top: 0; padding-top: 0; }
+      .vehicle-fold-body > .plan-block > .plan-header { display: none; }
       .vehicle-detail { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: .85rem; border-bottom: 1px solid var(--divider-color, #e5e7eb); }
       .vehicle-detail:last-child { border-bottom: none; }
       .vehicle-detail-label { color: var(--secondary-text-color); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

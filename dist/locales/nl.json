@@ -405,5 +405,6 @@
   "editorVehicleImageRemove": "Afbeelding verwijderen",
   "editorAdvancedTitle": "Geavanceerd",
   "editorSliderStep": "Stap: {val}",
-  "editorSliderStepHint": "Leeg gebruikt de stap van de entiteit."
+  "editorSliderStepHint": "Leeg gebruikt de stap van de entiteit.",
+  "vehicleRplanSummary": "{active} van {total} actief"
 }

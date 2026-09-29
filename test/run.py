@@ -306,8 +306,12 @@ def vehicle_mode(browser, port, t):
     info = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .soc-label-row [data-more-info]')].map(e => [e.dataset.moreInfo, e.textContent.trim()])")
     t.check(info == [["sensor.evcc_openwb_vehicle_soc", "56 %"], ["sensor.evcc_openwb_vehicle_range", "198 km"], ["sensor.evcc_openwb_vehicle_odometer", "11445 km"]],
             "connected: charge level, range and odometer are read from the loadpoint", json.dumps(info))
-    t.check(ex30.locator(".rplan-row").count() == 2, "the repeating plans of that vehicle, unavailable ones stay out",
-            f"{ex30.locator('.rplan-row').count()} rows")
+    rfold = ex30.locator('[data-vehicle-fold="rplan"]')
+    t.check(ex30.locator(".rplan-row").count() == 0 and rfold.count() == 1 and "0 von 2 aktiv" in rfold.inner_text(),
+            "the repeating plans are folded to one line that says how many are on", rfold.inner_text() if rfold.count() else "missing")
+    rfold.click(); page.wait_for_timeout(200)
+    t.check(ex30.locator(".rplan-row").count() == 2 and rfold.get_attribute("aria-expanded") == "true",
+            "unfolded: the repeating plans of that vehicle, unavailable ones stay out", f"{ex30.locator('.rplan-row').count()} rows")
     totals = ex30.locator(".vehicle-totals .si-value").all_inner_texts()
     t.check(totals == ["2425 kWh", "308.32 €", "1459 h"], "the session totals of that vehicle", json.dumps(totals))
     ex30.locator(".rplan-row button.toggle").first.click()
@@ -327,7 +331,7 @@ def vehicle_mode(browser, port, t):
             and id7.locator(".soc-track").count() == 0 and "Keine aktuellen Daten" in id7.inner_text(),
             "a vehicle evcc cannot reach shows no 0 % bar but a hint", id7.inner_text()[:120])
     t.check(id7.locator(".rplan-row").count() == 0 and id7.locator(".vehicle-totals").count() == 0
-            and id7.locator(".vehicle-chips, .vehicle-details").count() == 0,
+            and id7.locator(".vehicle-chips, [data-vehicle-details]").count() == 0,
             "no plans, no totals, and without a device of its own no chips either", "")
     done(page)
 
@@ -366,7 +370,7 @@ def vehicle_mode(browser, port, t):
             "chips: lock, the one open lid by name, thirty warning flags as one chip, location", json.dumps(got, ensure_ascii=False))
     details = page.locator(block("ex30")).locator(".vehicle-detail-list")
     t.check(details.count() == 1 and not details.is_visible(), "the remaining entities are folded away", "")
-    page.locator(block("ex30")).locator(".vehicle-details-toggle").click()
+    page.locator(block("ex30")).locator("[data-vehicle-details]").click()
     page.wait_for_timeout(200)
     rows = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .vehicle-detail')].map(e => [e.dataset.moreInfo, e.textContent.replace(/\\s+/g, ' ').trim()])")
     labels = dict(rows)
@@ -560,7 +564,7 @@ def vehicle_mode(browser, port, t):
                      ["sensor.volvo_ex30_kilometerstand", "11503 km"]]
             and not any(c[2] == "device_tracker.volvo_ex30_standort" for c in got),
             "a role switched off drops its chip and falls back to what evcc knows", json.dumps([info, got], ensure_ascii=False))
-    page.locator(block("ex30")).locator(".vehicle-details-toggle").click(); page.wait_for_timeout(200)
+    page.locator(block("ex30")).locator("[data-vehicle-details]").click(); page.wait_for_timeout(200)
     rows = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .vehicle-detail')].map(e => e.dataset.moreInfo)")
     t.check("sensor.volvo_ex30_batterie" in rows, "the entity the role let go turns up in the details", json.dumps(rows[:4]))
     done(page)
@@ -624,22 +628,58 @@ def vehicle_mode(browser, port, t):
             "unlocking it turns the switch off", json.dumps(svc(page)[n:]))
     done(page)
 
-    t.group("vehicle - charge plan of the loadpoint")
+    t.group("vehicle - charge plan while plugged in")
+    entry = json.loads((ROOT / "test/fixtures/entity_registry.json").read_text(encoding="utf-8"))[0]["config_entry_id"]
     page, errors = card()
-    t.check(page.locator(in_card(".vehicle-plan")).count() == 0, "no plan block without a plan", "")
+    fold = page.locator(block("ex30")).locator('[data-vehicle-fold="plan"]')
+    plan = page.locator(block("ex30")).locator(".plan-block[data-lp]")
+    previews = "window.__hass.wsCalls.filter(c => c.type === 'evcc_intg/plan_preview').length"
+    t.check(fold.count() == 1 and plan.count() == 0 and "Kein Plan" in fold.inner_text() and page.evaluate(previews) == 0,
+            "the plan is folded to one line (no plan yet), and folded it asks ha-evcc for no preview", fold.inner_text() if fold.count() else "missing")
+    fold.click(); page.wait_for_timeout(300)
+    t.check(plan.count() == 1 and plan.get_attribute("data-lp") == "openwb" and not errors,
+            "unfolded, the vehicle plugged in at openwb gets the plan block of its loadpoint, also without a plan", "")
+    page.evaluate("() => { window.__card._lastRenderKey = null; window.__card._render(); }"); page.wait_for_timeout(200)
+    t.check(plan.count() == 1 and page.evaluate(previews) >= 1,
+            "it stays unfolded through a render and now asks for the preview", f"{page.evaluate(previews)} preview call(s)")
+    t.check(plan.locator("input.plan-time-input").count() == 1 and plan.locator("input.plan-soc-range").count() == 1
+            and plan.locator("button.plan-btn.save").count() == 1 and plan.locator("button.plan-btn.delete").count() == 0,
+            "with time, target and a save button, nothing to delete yet", "")
+    t.check(plan.locator("select.plan-vehicle-select").count() == 0,
+            "and no vehicle select: the card is about this vehicle and puts no other one on the loadpoint", "")
+    soc = int(plan.locator("input.plan-soc-range").input_value())
+    plan.locator("input.plan-time-input").fill("2030-01-04T07:00"); plan.locator("input.plan-time-input").dispatch_event("change")
+    plan.locator("button.plan-btn.save").click(); page.wait_for_timeout(300)
+    t.check(svc(page)[-1:] == [{"domain": "evcc_intg", "service": "set_vehicle_plan",
+                                "data": {"vehicle": "db:18", "soc": soc, "startdate": "2030-01-04 07:00:00", "config_entry_id": entry}}],
+            "save sets the plan of this vehicle (evcc_intg.set_vehicle_plan with its evcc id)", json.dumps(svc(page)[-1:]))
     done(page)
+
     page, errors = card(set={"sensor.evcc_openwb_effective_plan_time": "2030-01-04T06:00:00+00:00",
-                             "sensor.evcc_openwb_effective_plan_soc": "80", "binary_sensor.evcc_openwb_plan_active": "on"})
-    plan = page.locator(block("ex30")).locator(".vehicle-plan")
-    t.check(plan.count() == 1 and "80 %" in plan.inner_text() and plan.locator(".plan-badge.active").count() == 1 and not errors,
-            "the plan of the loadpoint shows up at the vehicle plugged in there", plan.inner_text()[:120] if plan.count() else "missing")
-    t.check(plan.locator("input, select, button").count() == 0, "the plan is read only", "")
+                             "sensor.evcc_openwb_effective_plan_soc": "70", "binary_sensor.evcc_openwb_plan_active": "on"})
+    fold = page.locator(block("ex30")).locator('[data-vehicle-fold="plan"]')
+    t.check(fold.locator(".plan-badge.active").count() == 1 and "70 %" in fold.inner_text() and ":00" in fold.inner_text(),
+            "folded, the line says when, how far and that it charges by plan", fold.inner_text())
+    fold.click(); page.wait_for_timeout(300)
+    plan = page.locator(block("ex30")).locator(".plan-block[data-lp]")
+    t.check(plan.locator("input.plan-time-input").count() == 1 and plan.locator("input.plan-time-input").input_value() == "2030-01-04T07:00"
+            and "70 %" in plan.locator("button.plan-soc-val").inner_text() and not errors,
+            "a running plan fills the fields and says it charges by plan", plan.inner_text()[:120])
+    plan.locator("button.plan-btn.delete").click(); page.wait_for_timeout(300)
+    t.check(svc(page)[-1:] == [{"domain": "evcc_intg", "service": "del_vehicle_plan", "data": {"vehicle": "db:18", "config_entry_id": entry}}],
+            "delete removes the plan of this vehicle (evcc_intg.del_vehicle_plan)", json.dumps(svc(page)[-1:]))
     done(page)
-    page, errors = card(set={"sensor.evcc_openwb_effective_plan_time": "2026-09-18T18:30:00+02:00", "sensor.evcc_openwb_effective_plan_soc": "80"},
-                        attrs={"select.evcc_openwb_vehicle_name": {"vehicle": {"id": "ex30", "name": "EX30", "capacity": 0}}})
-    plan = page.locator(block("ex30")).locator(".vehicle-plan")
-    t.check(plan.count() == 1 and "18:30" in plan.inner_text() and "%" not in plan.inner_text(),
-            "a vehicle evcc plans in kWh shows no SoC goal; the time as in the plan chip", plan.inner_text()[:120] if plan.count() else "missing")
+
+    page, errors = card(attrs={"select.evcc_openwb_vehicle_name": {"vehicle": {"id": "ex30", "name": "EX30", "capacity": 0}}})
+    page.locator(block("ex30")).locator('[data-vehicle-fold="plan"]').click(); page.wait_for_timeout(300)
+    plan = page.locator(block("ex30")).locator(".plan-block[data-lp]")
+    t.check(plan.locator('input.plan-soc-range[data-kind="energy"]').count() == 1 and "kWh" in plan.inner_text(),
+            "a vehicle evcc plans in kWh gets the energy target, as in the plan mode", plan.inner_text()[:120] if plan.count() else "missing")
+    done(page)
+
+    page, errors = card(set=UNPLUGGED)
+    t.check(page.locator(in_card('[data-vehicle-fold="plan"]')).count() == 0 and not errors,
+            "unplugged there is no plan block: ha-evcc reports the plan only through the loadpoint", "")
     done(page)
 
     t.group("vehicle - which vehicle, missing data, second instance")
@@ -673,7 +713,7 @@ def vehicle_mode(browser, port, t):
     page, errors = card(set=UNPLUGGED, vehicle_device=False, drop=CONFIGVEHICLE)
     ex30 = page.locator(block("ex30"))
     hint = ex30.locator(".vehicle-hint").inner_text() if ex30.count() else "missing"
-    t.check(ex30.count() == 1 and "erweiterten Fahrzeugdaten" in hint and "Admin-Passwort" in hint and ex30.locator(".rplan-row").count() == 2
+    t.check(ex30.count() == 1 and "erweiterten Fahrzeugdaten" in hint and "Admin-Passwort" in hint and ex30.locator('[data-vehicle-fold="rplan"]').count() == 1
             and ex30.locator(".lp-disabled-warn").count() == 0 and not errors,
             "without the extended vehicle data the block stays, with a hint naming option and password", hint[:200])
     done(page)

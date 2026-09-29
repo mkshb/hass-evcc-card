@@ -405,5 +405,6 @@
   "editorVehicleImageRemove": "Quitar imagen",
   "editorAdvancedTitle": "Avanzado",
   "editorSliderStep": "Paso: {val}",
-  "editorSliderStepHint": "Vacío usa el paso de la entidad."
+  "editorSliderStepHint": "Vacío usa el paso de la entidad.",
+  "vehicleRplanSummary": "{active} de {total} activos"
 }

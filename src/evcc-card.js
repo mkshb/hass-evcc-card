@@ -57,6 +57,7 @@ export class EvccCard extends HTMLElement {
     this._currentBlockExpanded = {};
     this._vehicleDetailsOpen = {};     // vehicle slug -> detail list unfolded
     this._vehicleActionsOpen = {};     // vehicle slug -> action list unfolded
+    this._vehicleFoldOpen    = {};     // "plan" / "rplan" -> that block of the vehicle unfolded
     this._vehicleImageFailed = {};     // configured picture -> true once it failed to load
     this._vehicleMedia = {};           // media-source id -> { url, ts } signed address from HA
     this._vehicleConfirm = null;       // { entityId, cmd } waiting for the user's yes

@@ -405,5 +405,6 @@
   "editorVehicleImageRemove": "Retirer l'image",
   "editorAdvancedTitle": "Avancé",
   "editorSliderStep": "Pas : {val}",
-  "editorSliderStepHint": "Vide utilise le pas de l'entité."
+  "editorSliderStepHint": "Vide utilise le pas de l'entité.",
+  "vehicleRplanSummary": "{active} sur {total} actifs"
 }

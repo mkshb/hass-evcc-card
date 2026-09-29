@@ -405,5 +405,6 @@
   "editorVehicleImageRemove": "Ukloni sliku",
   "editorAdvancedTitle": "Napredno",
   "editorSliderStep": "Korak: {val}",
-  "editorSliderStepHint": "Prazno koristi korak entiteta."
+  "editorSliderStepHint": "Prazno koristi korak entiteta.",
+  "vehicleRplanSummary": "{active} od {total} aktivno"
 }

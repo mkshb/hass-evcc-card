@@ -405,5 +405,6 @@
   "editorVehicleImageRemove": "Bild entfernen",
   "editorAdvancedTitle": "Erweitert",
   "editorSliderStep": "Schrittweite: {val}",
-  "editorSliderStepHint": "Leer nimmt die Schrittweite der Entität."
+  "editorSliderStepHint": "Leer nimmt die Schrittweite der Entität.",
+  "vehicleRplanSummary": "{active} von {total} aktiv"
 }

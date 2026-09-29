@@ -497,8 +497,8 @@ What the card shows:
 - **Picture** of the real car, when one is configured (`vehicle_image`) or the vehicle's integration offers an image entity. The card draws no vehicle of its own
 - **Charge level, range and odometer**, with the vehicle's charge limit as a marker on the bar. The tooltip tells how old a value is; a tap opens the entity
 - **Chips** for the lock, open doors and windows, warnings and the location
-- **Charge plan** that evcc is working on, read only. It shows while the vehicle is plugged into an evcc charge point; the plan is set in the [`plan`](#plan) or `loadpoint` mode
-- **Repeating plans** of the vehicle, with the on/off toggle of the [`repeatplan`](#repeatplan) mode
+- **Charge plan** while the vehicle is plugged into an evcc charge point, folded to one line with the planned time, the target and whether it charges by plan. Unfolded: target time, target in % (or in kWh for a vehicle evcc plans on the charge point), plan strategy, live preview, set and delete, the same block as in the [`plan`](#plan) mode but without its vehicle selector. A vehicle that is not plugged in shows no plan: ha-evcc reports the plan of a vehicle only through the charge point it is at
+- **Repeating plans** of the vehicle, folded to one line that says how many are on; unfolded with the on/off toggle of the [`repeatplan`](#repeatplan) mode
 - **Charged in total**: energy, cost and charging time of all sessions of the vehicle
 - **Vehicle details**: everything else the vehicle's device reports, folded away
 

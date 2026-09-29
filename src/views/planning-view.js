@@ -18,7 +18,9 @@ export const planningView = {
     return force || !!ents.vehicle_soc || planActive;
   },
 
-  _renderPlanBlock(lpName, ents, force = false) {
+  // `vehicleSelect: false` leaves out the vehicle select, for a card that is
+  // about one vehicle and must not put another one on the loadpoint.
+  _renderPlanBlock(lpName, ents, force = false, { vehicleSelect = true } = {}) {
     const planActive = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
     const planTime   = ents.effective_plan_time
       ? stateVal(this._hass, ents.effective_plan_time) : null;
@@ -111,7 +113,7 @@ export const planningView = {
     }
     const defaultVehicle = this._planState[lpName].vehicle;
 
-    const vehicleSelectHtml = allOptions.some(id => id !== "null") ? `
+    const vehicleSelectHtml = vehicleSelect && allOptions.some(id => id !== "null") ? `
       <div class="plan-row">
         <label>${this._t("vehicle")}</label>
         <select class="plan-vehicle-select" data-lp="${escAttr(lpName)}" data-entity="${vehicleEntityId ?? ""}">
@@ -568,12 +570,18 @@ export const planningView = {
       <div class="plan-block rplan-block">
         <div class="plan-header">
           <span class="session-title">${this._t("repeatingPlans")}</span>
-          <span class="rplan-hint" title="${this._t("repeatingPlansHint")}" aria-label="${this._t("repeatingPlansHint")}">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M11,9H13V7H11M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M11,17H13V11H11V17Z"/></svg>
-          </span>
+          ${this._repeatPlansHint()}
         </div>
         <div class="rplan-list">${rows}</div>
       </div>`;
+  },
+
+  // The info icon beside the title: repeating plans are edited in evcc itself.
+  _repeatPlansHint() {
+    return `
+          <span class="rplan-hint" title="${this._t("repeatingPlansHint")}" aria-label="${this._t("repeatingPlansHint")}">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M11,9H13V7H11M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M11,17H13V11H11V17Z"/></svg>
+          </span>`;
   },
 
   _renderRepeatPlansMode() {

@@ -405,5 +405,6 @@
   "editorVehicleImageRemove": "Remove picture",
   "editorAdvancedTitle": "Advanced",
   "editorSliderStep": "Step: {val}",
-  "editorSliderStepHint": "Empty uses the step of the entity."
+  "editorSliderStepHint": "Empty uses the step of the entity.",
+  "vehicleRplanSummary": "{active} of {total} on"
 }

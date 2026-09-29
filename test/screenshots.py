@@ -32,7 +32,9 @@ SHOTS = {
     "repeatplan": {"mode": "repeatplan"},
     # The vehicle mode shows one vehicle per card, so the image has to name it;
     # `ex30` is the fixture's car, the one with a device of its own behind it.
-    "vehicle":    {"mode": "vehicle", "vehicle": "ex30"},
+    # Its picture comes from the HA media, which the mock resolves to
+    # test/fixtures/ex30_off.png.
+    "vehicle":    {"mode": "vehicle", "vehicle": "ex30", "vehicle_image": "media-source://media_source/local/ex30_off.png"},
 }
 
 # name -> states set on top of the fixture. The loadpoint views get a charge
