@@ -22,6 +22,26 @@ const NO_VALUE = new Set(["unknown", "unavailable", ""]);
 const chevron = open => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="${open
   ? "M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
   : "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"}"/></svg>`;
+// What the card remembers about a vehicle picture across page loads, in the
+// browser's own storage: the signed address of a media item (valid for a day)
+// and the height the picture took on screen, keyed by what was configured.
+// With it the picture is in the first render, from the browser's cache, in a
+// place kept free for it, instead of appearing late and pushing the card
+// apart. Storage that fails (private mode, full) only costs that shortcut.
+const PICTURE_STORE = "evcc-card-vehicle-picture";
+const PICTURE_KEEP  = 30 * 24 * 3600 * 1000;
+function readPictures() {
+  try { return JSON.parse(localStorage.getItem(PICTURE_STORE)) || {}; } catch (e) { return {}; }
+}
+function rememberPicture(source, patch) {
+  try {
+    const now = Date.now();
+    const all = Object.fromEntries(Object.entries(readPictures()).filter(([, v]) => now - (v.seen ?? 0) < PICTURE_KEEP));
+    all[source] = { ...all[source], ...patch, seen: now };
+    localStorage.setItem(PICTURE_STORE, JSON.stringify(all));
+  } catch (e) { /* the picture still works, only later */ }
+}
+
 // How many open doors or warnings get a chip of their own before the rest is summed up.
 const MAX_CHIPS = 4;
 
@@ -236,12 +256,17 @@ export const vehicleView = {
 
   // An item of the media library has no address of its own: Home Assistant
   // hands out a signed one on request, valid for a day. It is asked for once
-  // and again after half that time, never on a plain re-render; until the
-  // answer is there the block shows no picture.
+  // and again after half that time, never on a plain re-render, and kept in
+  // the browser's storage, so a page load starts with the address it had;
+  // until there is one the block shows no picture.
   _vehicleMediaUrl(source) {
     const LIFETIME  = 24 * 3600 * 1000;
     const HALF_LIFE = LIFETIME / 2;
     const RETRY     = 5 * 60 * 1000;
+    if (!this._vehicleMedia[source]) {
+      const kept = readPictures()[source];
+      if (kept?.url && Date.now() - kept.ts < LIFETIME) this._vehicleMedia[source] = { url: kept.url, ts: kept.ts };
+    }
     const hit = this._vehicleMedia[source];
     if (hit?.url && Date.now() - hit.ts < HALF_LIFE) return hit.url;
     if (!hit?.pending && !(hit?.failedAt && Date.now() - hit.failedAt < RETRY)) {
@@ -250,6 +275,7 @@ export const vehicleView = {
         .then(res => {
           if (!res?.url) throw new Error("no url");
           this._vehicleMedia[source] = { url: res.url, ts: Date.now() };
+          rememberPicture(source, { url: res.url, ts: this._vehicleMedia[source].ts });
         })
         .catch(() => {
           // A failed request is asked again a few minutes later: right after
@@ -269,9 +295,11 @@ export const vehicleView = {
   _renderVehicleImage(roles, title) {
     const image = this._vehicleImage(roles);
     if (!image) return "";
+    const height = readPictures()[image.source]?.height;
+    const keep   = height > 0 ? ` style="min-height: ${Math.round(height)}px"` : "";
     return `
-      <div class="vehicle-image">
-        <img src="${escAttr(image.url)}" alt="${escAttr(title)}" data-vehicle-image="${escAttr(image.source)}" loading="lazy" decoding="async">
+      <div class="vehicle-image"${keep}>
+        <img src="${escAttr(image.url)}" alt="${escAttr(title)}" data-vehicle-image="${escAttr(image.source)}" decoding="async">
       </div>`;
   },
 
@@ -533,6 +561,14 @@ export const vehicleView = {
     // error does not bubble, so it is bound on the picture itself; the morph
     // keeps the element, a new address reloads it with the listener in place.
     this._fresh("img[data-vehicle-image]").forEach(img => {
+      // The height the picture takes, for the place the next page load keeps
+      // free. The storage belongs to this browser, so the card is about as wide
+      // there the next time.
+      const measure = () => {
+        const h = Math.round(img.getBoundingClientRect().height);
+        if (h > 0 && readPictures()[img.dataset.vehicleImage]?.height !== h) rememberPicture(img.dataset.vehicleImage, { height: h });
+      };
+      if (img.complete) measure(); else img.addEventListener("load", measure);
       img.addEventListener("error", () => {
         this._vehicleImageFailed[img.dataset.vehicleImage] = true;
         this._render();
@@ -608,7 +644,7 @@ export const vehicleCss = `
       .vehicle-lp { font-size: .85em; color: var(--secondary-text-color); margin-right: 8px; white-space: nowrap; }
       .vehicle-hint { font-size: .8rem; line-height: 1.4; color: var(--secondary-text-color); margin-bottom: 12px; }
       .vehicle-block [data-more-info] { cursor: pointer; }
-      .vehicle-image { margin: 0 0 12px; display: flex; justify-content: center; }
+      .vehicle-image { margin: 0 0 12px; display: flex; justify-content: center; align-items: center; }
       .vehicle-image img { display: block; max-width: 100%; max-height: 180px; object-fit: contain; border-radius: 12px; }
       .vehicle-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
       .vehicle-chip {
