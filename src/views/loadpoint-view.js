@@ -295,11 +295,15 @@ export const loadpointView = {
   },
 
   // The charge limit set in the vehicle itself (evcc's vehicleLimitSoc), which
-  // ends the charge whatever evcc's own limit says. 0 is evcc's "none".
+  // ends the charge whatever evcc's own limit says. 0 is evcc's "none", but
+  // ha-evcc reports the effective limit in its place, so a value equal to it
+  // counts as none too; a real limit right at evcc's limit changes nothing.
   _vehicleLimit(ents) {
     if (!ents.vehicle_limit_soc) return null;
     const v = parseFloat(stateVal(this._hass, ents.vehicle_limit_soc));
-    return v > 0 ? v : null;
+    if (!(v > 0)) return null;
+    const effective = ents.effective_limit_soc ? parseFloat(stateVal(this._hass, ents.effective_limit_soc)) : NaN;
+    return v === effective ? null : v;
   },
 
   // evcc's vehicle status (Vehicles/Status.vue): the vehicle limit, while it

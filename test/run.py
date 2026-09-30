@@ -3379,6 +3379,15 @@ def hints(browser, port, t):
     page = new_page(browser, 480, 1600)
     errors = open_card(page, port, config=lp)
     t.check(limit(page) == [], "vehicle limit equal to the loadpoint limit: no chip", str(chips(page)))
+    t.check(marker(page) is None, "and no marker: ha-evcc reports the effective limit when the vehicle has none", str(marker(page)))
+    done(page)
+
+    # ha-evcc's stand-in for "no limit in the vehicle" while a plan aims above evcc's limit
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={**planned, VL: "80", "number.evcc_openwb_limit_soc": "80",
+                                          "sensor.evcc_openwb_effective_limit_soc": "80", "sensor.evcc_openwb_effective_plan_soc": "90"})
+    warn = page.evaluate("window.__card.shadowRoot.querySelector('.plan-block[data-lp=\"openwb\"] .plan-warning')?.textContent.trim() ?? null")
+    t.check(limit(page) == [] and warn is None, "no limit in the vehicle, plan above evcc's limit: no vehicle limit warning", f"{chips(page)} {warn}")
     done(page)
 
     page = new_page(browser, 480, 1600)
@@ -3423,7 +3432,15 @@ def hints(browser, port, t):
 
     page = new_page(browser, 480, 1600)
     errors += open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["wp"]})
-    t.check(limit(page) == ["vehiclelimit: Heizungslimit 60 °C"], "heating loadpoint: the heater limit as a temperature", str(chips(page)))
+    t.check(limit(page) == [], "heating loadpoint without a limit of its own (ha-evcc reports evcc's): no chip", str(chips(page)))
+    done(page)
+
+    page = new_page(browser, 480, 1600)
+    errors += open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["wp"]},
+                        set={"sensor.evcc_wp_vehicle_limit_soc": "55", "sensor.evcc_wp_effective_plan_soc": "58"})
+    t.check(limit(page) == ["vehiclelimit: Heizungslimit 55 °C"], "heating loadpoint: the heater limit as a temperature", str(chips(page)))
+    warn = page.evaluate("window.__card.shadowRoot.querySelectorAll('.plan-warning').length")
+    t.check(warn == 0, "and no plan warning, heating loadpoints have no plan block", str(warn))
     t.check(not errors, "no console errors", "; ".join(errors)[:300])
     done(page)
 

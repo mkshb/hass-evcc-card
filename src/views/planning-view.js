@@ -1,5 +1,5 @@
 import { discoverEntities } from "../core/entity-discovery.js";
-import { stateVal, isOn } from "../utils/state.js";
+import { stateVal, isOn, unitStr } from "../utils/state.js";
 import { evccDate, fmtDuration, fmtNum } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
 
@@ -235,7 +235,8 @@ export const planningView = {
     const limit   = this._vehicleLimit(ents);
     const planSoc = ents.effective_plan_soc ? parseFloat(stateVal(this._hass, ents.effective_plan_soc)) : NaN;
     if (limit === null || !(planSoc > limit)) return "";
-    return `<div class="plan-warning">${escHtml(this._t("vehicleLimitBelowPlan", { val: `${Math.round(limit)} %` }))}</div>`;
+    const unit = unitStr(this._hass, ents.vehicle_limit_soc) || "%";
+    return `<div class="plan-warning">${escHtml(this._t("vehicleLimitBelowPlan", { val: `${Math.round(limit)} ${unit}` }))}</div>`;
   },
 
   // "soc" or "energy", the way evcc decides it (socBasedPlanning in core and in
