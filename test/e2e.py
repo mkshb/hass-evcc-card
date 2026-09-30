@@ -6,7 +6,7 @@ Logs into HA-Dev with a browser, writes its own dashboard (one view per card mod
 every card with `prefix: evcc_demo_`), renders each mode against the real ha-evcc
 entities and drives changes through the whole stack: card, HA service,
 ha-evcc, evcc API, and back (mode, solar share, vehicle at a loadpoint, charge
-plan). The vehicle mode and its editor are checked against the demo vehicles.
+plan, vehicle limit). The vehicle mode and its editor are checked against the demo vehicles.
 Exit code 1 on failure, 2 when the setup is missing.
 
 This is not the mock suite (test/run.py). It needs the running stack and is run
@@ -504,6 +504,81 @@ def charge_plan(page, t):
     reset_demo()
 
 
+def vehicle_limit(page, t):
+    """The limit set in the vehicle or heater, read against evcc's raw vehicleLimitSoc.
+    Without one ha-evcc reports evcc's effective limit in the sensor, which the card
+    must not take for a limit of the vehicle."""
+    t.group("e2e vehicle limit - chip, marker and plan warning against evcc's raw value")
+    from datetime import datetime, timedelta, timezone
+    reset_demo()
+    open_view(page, "loadpoint")
+    probe = lambda: page.locator("evcc-card").first.evaluate("""(el, prefix) => {
+        const out = {};
+        for (const lp of el.shadowRoot?.querySelectorAll('.loadpoint') || []) {
+          const mode = lp.querySelector('button.mode-btn')?.dataset.entity || '';
+          const slug = mode.startsWith('select.' + prefix) ? mode.slice(7 + prefix.length, -5) : null;
+          if (!slug) continue;
+          const chip = lp.querySelector('.lp-action-chip.vehiclelimit');
+          out[slug] = { chip: chip ? chip.textContent.trim() : null, warn: !!chip?.classList.contains('warn'),
+                        jump: chip?.dataset.lpPlanOpen ?? null,
+                        marker: lp.querySelector('.soc-vehicle-limit-marker')?.style.left ?? null,
+                        planWarn: lp.querySelector('.plan-block .plan-warning')?.textContent.trim() ?? null };
+        }
+        return out; }""", PREFIX)
+
+    st = evcc_state()
+    lps = [(slug, st["loadpoints"][idx - 1]) for idx, _, slug in demo_loadpoints()]
+    raw = {slug: lp.get("vehicleLimitSoc") or 0 for slug, lp in lps}
+    t.check(any(v == 0 for v in raw.values()) and any(v > 0 for v in raw.values()),
+            "the demo has loadpoints with and without a limit of their own", str(raw))
+    got = wait_for(lambda: (lambda g: len(g) == len(lps) and g)(probe()), timeout=20) or {}
+    for slug, lp in lps:
+        v, eff = raw[slug], lp.get("effectiveLimitSoc") or 100
+        heating = bool(lp.get("chargerFeatureHeating"))
+        # evcc's vehicle status: below evcc's limit and connected; a heater's whenever set.
+        # A value equal to evcc's limit is what ha-evcc reports for none, so the card skips it.
+        own = v > 0 and v != eff
+        chip = own and (heating or (lp.get("connected") and v < eff))
+        g = got.get(slug, {})
+        ha = ha_state(page, f"sensor.{PREFIX}{slug}_vehicle_limit_soc")
+        detail = f"evcc vehicleLimitSoc={v} effectiveLimitSoc={eff} HA={ha} card={g}"
+        t.check(bool(g.get("chip")) == bool(chip) and (not chip or f"{round(v)} " in g["chip"]),
+                f"{lp['title']}: " + ("the chip names the limit" if chip else "no limit chip"), detail)
+        want_marker = f"{round(v)}%" if own and v < 100 else None
+        t.check(g.get("marker") == want_marker, f"{lp['title']}: " + (f"marker at {want_marker}" if want_marker else "no limit marker"), detail)
+
+    # A plan above evcc's limit at every vehicle loadpoint: a warning only where the
+    # vehicle has a limit of its own below the plan.
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).replace(hour=5, minute=0, second=0, microsecond=0)
+    when = tomorrow.strftime("%Y-%m-%dT%H:%M:%SZ")
+    targets = [(slug, lp) for slug, lp in lps if not lp.get("chargerFeatureHeating") and lp.get("connected") and lp.get("vehicleName")]
+    try:
+        for _, lp in targets:
+            evcc(f"vehicles/{lp['vehicleName']}/plan/soc/95/{when}", "POST")
+        planned = lambda: all(ha_state(page, f"sensor.{PREFIX}{slug}_effective_plan_soc") in ("95", "95.0") for slug, _ in targets)
+        arrived = wait_for(planned, timeout=40)
+        t.check(bool(arrived), "plans of 95 % arrive in HA for the connected vehicles",
+                str({slug: ha_state(page, f"sensor.{PREFIX}{slug}_effective_plan_soc") for slug, _ in targets}))
+        page.wait_for_timeout(1000)
+        got = probe()
+        for slug, lp in targets:
+            v, eff = raw[slug], lp.get("effectiveLimitSoc") or 100
+            warn = 0 < v < 95 and v < eff
+            g = got.get(slug, {})
+            detail = f"evcc vehicleLimitSoc={v} effectiveLimitSoc={eff} card={g}"
+            if warn:
+                t.check(g.get("warn") and g.get("jump") == slug and g.get("planWarn") and f"{round(v)} " in g["planWarn"],
+                        f"{lp['title']}: the chip warns and jumps to the plan, which warns as well", detail)
+            else:
+                t.check(not g.get("warn") and not g.get("planWarn"), f"{lp['title']}: no vehicle limit warning", detail)
+    finally:
+        for _, lp in targets:
+            try: evcc(f"vehicles/{lp['vehicleName']}/plan/soc", "DELETE")
+            except Exception: pass   # noqa: BLE001  (reset_demo deletes what is left)
+    t.check(not ERRORS, "no card errors", "; ".join(ERRORS)[:200])
+    reset_demo()
+
+
 def editor(page, t):
     """The visual editor of the vehicle mode with the real hass and HA's own elements.
     It is mounted straight into the HA page: the card edit dialog of the dashboard
@@ -584,7 +659,8 @@ def form_pick(page, name, value):
 
 
 GROUPS = {"smoke": smoke, "roundtrip": roundtrip, "solar_share": solar_share,
-          "vehicle": vehicle_view, "vehicle_switch": vehicle_switch, "charge_plan": charge_plan, "editor": editor}
+          "vehicle": vehicle_view, "vehicle_switch": vehicle_switch, "charge_plan": charge_plan,
+          "vehicle_limit": vehicle_limit, "editor": editor}
 
 
 def main():
