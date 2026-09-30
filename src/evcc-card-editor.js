@@ -453,24 +453,25 @@ export class EvccCardEditor extends HTMLElement {
     this._setVehicleRole("actions", list);
   }
 
-  // The picture of the card's vehicle: HA's media picker, and a text field
-  // underneath for a path or an address (and to show what was picked). A set
-  // picture gets a button next to the field that removes it.
-  _vehicleImageField() {
+  // A picture of the card's vehicle (`key`: vehicle_image or one of the
+  // pictures for a state): HA's media picker, and a text field underneath for
+  // a path or an address (and to show what was picked). A set picture gets a
+  // button next to the field that removes it.
+  _vehicleImageField(key) {
     const remove  = this._t("editorVehicleImageRemove");
-    const current = this._config.vehicle_image || "";
+    const current = this._config[key] || "";
     return `
-      <div class="vehicle-media" data-vehicle-media></div>
+      <div class="vehicle-media" data-vehicle-media="${key}"></div>
       <div class="vehicle-image-row">
-        <input id="vehicle-image" class="ha-input" type="text" data-vehicle-image
+        <input id="${key.replace(/_/g, "-")}" class="ha-input" type="text" data-vehicle-image="${key}"
                value="${this._esc(current)}" placeholder="${this._esc(this._t("editorVehicleImagePlaceholder"))}">
-        <button type="button" class="vehicle-image-clear" data-vehicle-image-clear
+        <button type="button" class="vehicle-image-clear" data-vehicle-image-clear="${key}"
                 title="${this._esc(remove)}" aria-label="${this._esc(remove)}"${current ? "" : " hidden"}>${CLEAR_ICON}</button>
       </div>`;
   }
 
-  _setVehicleImage(value) {
-    this._config = { ...this._config, vehicle_image: value || undefined };
+  _setVehicleImage(key, value) {
+    this._config = { ...this._config, [key]: value || undefined };
     this._fire();
   }
 
@@ -494,7 +495,8 @@ export class EvccCardEditor extends HTMLElement {
     const slots = this.shadowRoot.querySelectorAll("[data-vehicle-media]");
     if (!slots.length || !this._haSelectorReady()) return;
     slots.forEach(slot => {
-      const current = this._config.vehicle_image;
+      const key     = slot.dataset.vehicleMedia;
+      const current = this._config[key];
       const picker  = document.createElement("ha-selector");
       picker.hass     = this._hass;
       picker.selector = { media: { accept: ["image/*"] } };
@@ -503,7 +505,7 @@ export class EvccCardEditor extends HTMLElement {
       picker.addEventListener("value-changed", (e) => {
         e.stopPropagation();
         const id = e.detail?.value?.media_content_id;
-        this._setVehicleImage(isMediaSourceId(id) ? id : null);
+        this._setVehicleImage(key, isMediaSourceId(id) ? id : null);
         this._render();
       });
       slot.appendChild(picker);
@@ -573,7 +575,8 @@ export class EvccCardEditor extends HTMLElement {
         write: v => (this._instances.length > 0 && v === this._instances[0].prefix) ? undefined : v,
         after: next => {
           Object.assign(next, { loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined,
-            vehicle: undefined, vehicles: undefined, vehicle_device: undefined, vehicle_image: undefined, vehicle_entities: undefined });
+            vehicle: undefined, vehicles: undefined, vehicle_device: undefined, vehicle_image: undefined,
+            vehicle_image_connected: undefined, vehicle_image_charging: undefined, vehicle_entities: undefined });
         },
       }));
     }
@@ -636,7 +639,8 @@ export class EvccCardEditor extends HTMLElement {
         ...(value !== UNSET && !vSlugs.includes(value) ? [opt(value, value)] : []),
       ], value, {
         label: this._t("editorVehicleTitle"), helper: this._t("editorVehicleHint"),
-        after: next => Object.assign(next, { vehicles: undefined, vehicle_device: undefined, vehicle_image: undefined, vehicle_entities: undefined }),
+        after: next => Object.assign(next, { vehicles: undefined, vehicle_device: undefined, vehicle_image: undefined,
+          vehicle_image_connected: undefined, vehicle_image_charging: undefined, vehicle_entities: undefined }),
       }));
       if (selectVehicle(vehicles, c)) fields.push(flag("vehicle_actions", { label: this._t("editorVehicleActions") }));
     }
@@ -869,7 +873,17 @@ export class EvccCardEditor extends HTMLElement {
           <div class="field">
             <div class="section-title">${this._t("editorVehicleImageTitle")}</div>
             <div class="hint">${this._t("editorVehicleImageHint")}</div>
-            ${this._vehicleImageField()}
+            ${this._vehicleImageField("vehicle_image")}
+          </div>
+          <div class="field">
+            <div class="section-title">${this._t("editorVehicleImageConnectedTitle")}</div>
+            <div class="hint">${this._t("editorVehicleImageConnectedHint")}</div>
+            ${this._vehicleImageField("vehicle_image_connected")}
+          </div>
+          <div class="field">
+            <div class="section-title">${this._t("editorVehicleImageChargingTitle")}</div>
+            <div class="hint">${this._t("editorVehicleImageChargingHint")}</div>
+            ${this._vehicleImageField("vehicle_image_charging")}
           </div>`);
       }
     }
@@ -905,11 +919,12 @@ export class EvccCardEditor extends HTMLElement {
     // field is not rendered anew here, so focus and a click on the remove button
     // survive; only the button follows the value.
     this.shadowRoot.querySelectorAll("input[data-vehicle-image]").forEach(inp => {
-      const clear = this.shadowRoot.querySelector("[data-vehicle-image-clear]");
+      const key   = inp.dataset.vehicleImage;
+      const clear = this.shadowRoot.querySelector(`[data-vehicle-image-clear="${key}"]`);
       const set = (value) => {
-        this._setVehicleImage(value);
+        this._setVehicleImage(key, value);
         if (clear) clear.hidden = !value;
-        const picker = this.shadowRoot.querySelector("[data-vehicle-media] ha-selector");
+        const picker = this.shadowRoot.querySelector(`[data-vehicle-media="${key}"] ha-selector`);
         if (picker && !isMediaSourceId(value)) picker.value = undefined;
       };
       inp.addEventListener("change", () => {
@@ -918,11 +933,11 @@ export class EvccCardEditor extends HTMLElement {
         set(val && isVehicleImage(val) ? val : null);
       });
       inp.addEventListener("input", () => {
-        if (!inp.value.trim() && this._config.vehicle_image) set(null);
+        if (!inp.value.trim() && this._config[key]) set(null);
       });
     });
     this.shadowRoot.querySelectorAll("[data-vehicle-image-clear]").forEach(btn => {
-      btn.addEventListener("click", () => { this._setVehicleImage(null); this._render(); });
+      btn.addEventListener("click", () => { this._setVehicleImage(btn.dataset.vehicleImageClear, null); this._render(); });
     });
 
     // Unfolding the mapping is the editor's own state: it survives the re-render

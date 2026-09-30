@@ -545,6 +545,61 @@ def vehicle_mode(browser, port, t):
     t.check(got and got["src"] == "/test/fixtures/car.png?token=abc", "an image entity on the vehicle's device is the picture when none is configured", json.dumps(got))
     done(page)
 
+    t.group("vehicle - pictures at the charge point and while charging")
+    PLAIN, AT_LP, CHARGING = "/test/fixtures/car.png?p=plain", "/test/fixtures/car.png?p=connected", "/test/fixtures/car.png?p=charging"
+    ALL = {"mode": "vehicle", "vehicle": "ex30", "vehicle_image": PLAIN, "vehicle_image_connected": AT_LP, "vehicle_image_charging": CHARGING}
+    NOT_CHARGING = {"binary_sensor.evcc_openwb_charging": "off"}
+    set_states = """(st) => { const h = window.__hass;
+        h.states = { ...h.states, ...Object.fromEntries(Object.entries(st).map(([id, v]) => [id, { ...h.states[id], state: v }])) };
+        window.__card.hass = { ...h }; }"""
+    src = lambda page: (pic(page) or {}).get("src")
+    for label, config, st, want in (
+            ("charging at the loadpoint: the charging picture", ALL, None, CHARGING),
+            ("plugged in, not charging: the picture at the charge point", ALL, NOT_CHARGING, AT_LP),
+            ("not plugged in: the vehicle picture", ALL, UNPLUGGED, PLAIN),
+            ("charging without a charging picture: the one at the charge point", {**ALL, "vehicle_image_charging": None}, None, AT_LP),
+            ("charging with only the plain picture: that one", {**ALL, "vehicle_image_charging": None, "vehicle_image_connected": None}, None, PLAIN),
+            ("plugged in with only a charging picture: the vehicle picture", {**ALL, "vehicle_image_connected": None}, NOT_CHARGING, PLAIN),
+            ("a charging picture that does not load: the one at the charge point", {**ALL, "vehicle_image_charging": "/test/fixtures/missing.png"}, None, AT_LP)):
+        page, errors = card(config={k: v for k, v in config.items() if v is not None}, set=st)
+        page.wait_for_timeout(300); settle(page)
+        # the picture that does not load is the one 404 the browser reports
+        errors = [e for e in errors if "missing.png" not in e and "status of 404" not in e]
+        t.check(src(page) == want and not errors, label, f"{src(page)}; {'; '.join(errors)[:150]}")
+        done(page)
+
+    # The state changes under a running card: the same element takes the next
+    # picture, which was fetched ahead, so nothing jumps or blinks.
+    page, errors = card(config=ALL)
+    page.wait_for_timeout(300)
+    page.evaluate("window.__card.shadowRoot.querySelector('.vehicle-image img').__mark = 1")
+    ahead = page.evaluate("[...window.__card._vehicleImagePreloaded]")
+    t.check(sorted(ahead) == sorted([AT_LP, PLAIN]), "the pictures of the other states are fetched ahead", json.dumps(ahead))
+    page.evaluate(set_states, NOT_CHARGING); settle(page)
+    same = page.evaluate("window.__card.shadowRoot.querySelector('.vehicle-image img').__mark === 1")
+    t.check(src(page) == AT_LP and same, "charging stops: the picture at the charge point, in the same element", src(page))
+    page.evaluate(set_states, UNPLUGGED); settle(page)
+    t.check(src(page) == PLAIN, "unplugged: the vehicle picture, whatever the vehicle's integration says", src(page))
+    page.evaluate(set_states, {"binary_sensor.evcc_openwb_connected": "on", "binary_sensor.evcc_openwb_charging": "on"}); settle(page)
+    t.check(src(page) == CHARGING and not errors, "plugged in and charging again: the charging picture", src(page))
+    done(page)
+
+    # Media items: all of them are resolved with the first render, so a change
+    # of state needs no request; each picture keeps its own height.
+    M_CHARGING, M_AT_LP = "media-source://media_source/local/car.png", "media-source://media_source/local/ex30_off.png"
+    page, errors = card(config={"mode": "vehicle", "vehicle": "ex30", "vehicle_image_charging": M_CHARGING, "vehicle_image_connected": M_AT_LP})
+    page.wait_for_timeout(300); settle(page)
+    t.check(src(page) == "/test/fixtures/car.png?authSig=mock" and page.evaluate(resolves) == 2,
+            "media items: the charging picture, and the one at the charge point resolved with it", f"{src(page)}, {page.evaluate(resolves)} request(s)")
+    page.evaluate(set_states, NOT_CHARGING); settle(page)
+    t.check(src(page) == "/test/fixtures/ex30_off.png?authSig=mock" and page.evaluate(resolves) == 2,
+            "charging stops: the picture at the charge point at once, without a new request", f"{src(page)}, {page.evaluate(resolves)} request(s)")
+    page.wait_for_timeout(300)
+    kept = page.evaluate("JSON.parse(localStorage.getItem('evcc-card-vehicle-picture') || '{}')")
+    t.check(kept.get(M_CHARGING, {}).get("height", 0) > 0 and kept.get(M_AT_LP, {}).get("height", 0) > 0 and not errors,
+            "each picture keeps the height it took", json.dumps({k: v.get("height") for k, v in kept.items()}))
+    done(page)
+
     t.group("vehicle - commands (vehicle_actions)")
     LOCK = "lock.volvo_ex30_schloss"
     ex30 = lambda page: page.locator(block("ex30"))
@@ -1788,8 +1843,8 @@ def editor(browser, port, t):
     veh.select_option("id7")
     t.check(last().get("vehicle") == "id7" and last().get("mode") == "vehicle" and "vehicles" not in last(),
             "the choice writes config.vehicle", json.dumps(last()))
-    t.check(fld("select[data-vehicle-device]").count() == 1 and fld("input[data-vehicle-image]").count() == 1,
-            "now the device, the mapping and the picture belong to that vehicle", "")
+    t.check(fld("select[data-vehicle-device]").count() == 1 and fld("input[data-vehicle-image]").count() == 3,
+            "now the device, the mapping and the three pictures belong to that vehicle", "")
     mount({"mode": "vehicle", "vehicles": "EX30"})
     t.check(fm("vehicle").input_value().lower() == "ex30" and count() == 0,
             "the list of one the mode started with is shown as that vehicle, without case and without rewriting it",
@@ -1809,10 +1864,10 @@ def editor(browser, port, t):
     dev.select_option("")
     t.check("vehicle_device" not in last(), "back to automatic drops the key again", json.dumps(last()))
     t.check(fld("ha-selector").count() == 0, "without HA's selector element the text field stands alone", "")
-    img = fld("input[data-vehicle-image]")
+    img = fld('input[data-vehicle-image="vehicle_image"]')
     img.fill("/local/ex30.png"); img.dispatch_event("change")
     t.check(last().get("vehicle_image") == "/local/ex30.png", "a picture path writes config.vehicle_image", json.dumps(last()))
-    clear = fld("[data-vehicle-image-clear]")
+    clear = fld('[data-vehicle-image-clear="vehicle_image"]')
     t.check(clear.is_visible(), "a set picture has a remove button", "")
     clear.click()
     t.check("vehicle_image" not in last() and img.input_value() == "" and not clear.is_visible(),
@@ -1828,20 +1883,30 @@ def editor(browser, port, t):
     # Home Assistant's media selector, stood in for by an element that keeps what it is given.
     page.evaluate("""() => { if (!customElements.get("ha-selector")) customElements.define("ha-selector", class extends HTMLElement {}); }""")
     page.wait_for_timeout(300)
-    pick = "document.querySelector('evcc-card-editor').shadowRoot.querySelector('[data-vehicle-media] ha-selector')"
+    pick = "document.querySelector('evcc-card-editor').shadowRoot.querySelector('[data-vehicle-media=\"vehicle_image\"] ha-selector')"
     t.check(page.evaluate(f"(() => {{ const p = {pick}; return !!p && JSON.stringify(p.selector) === JSON.stringify({{media: {{accept: ['image/*']}}}}) && !!p.hass && p.value === undefined; }})()"),
             "once it is defined the picture is picked with HA's media selector, narrowed to images", "")
     page.evaluate(f"{pick}.dispatchEvent(new CustomEvent('value-changed', {{ detail: {{ value: {{ media_content_id: 'media-source://media_source/local/ex30.png', media_content_type: 'image/png' }} }} }}))")
     t.check(last().get("vehicle_image") == "media-source://media_source/local/ex30.png", "a picked media item writes config.vehicle_image", json.dumps(last()))
     t.check(page.evaluate(f"{pick}.value && {pick}.value.media_content_id") == "media-source://media_source/local/ex30.png"
-            and fld("input[data-vehicle-image]").input_value() == "media-source://media_source/local/ex30.png",
+            and fld('input[data-vehicle-image="vehicle_image"]').input_value() == "media-source://media_source/local/ex30.png",
             "the pick shows in the selector and in the text field", "")
     page.evaluate(f"{pick}.dispatchEvent(new CustomEvent('value-changed', {{ detail: {{ value: undefined }} }}))")
     t.check("vehicle_image" not in last(), "clearing the selector drops the key again", json.dumps(last()))
     page.evaluate(f"{pick}.dispatchEvent(new CustomEvent('value-changed', {{ detail: {{ value: {{ media_content_id: 'media-source://media_source/local/ex30.png', media_content_type: 'image/png' }} }} }}))")
-    fld("[data-vehicle-image-clear]").click()
+    fld('[data-vehicle-image-clear="vehicle_image"]').click()
     t.check("vehicle_image" not in last() and page.evaluate(f"{pick}.value") is None,
             "the remove button also empties the media selector", json.dumps(last()))
+    for key in ("vehicle_image_connected", "vehicle_image_charging"):
+        field = fld(f'input[data-vehicle-image="{key}"]')
+        field.fill("/local/ex30_lp.png"); field.dispatch_event("change")
+        t.check(last().get(key) == "/local/ex30_lp.png" and "vehicle_image" not in last(), f"its own field writes config.{key}", json.dumps(last()))
+        fld(f'[data-vehicle-image-clear="{key}"]').click()
+        t.check(key not in last(), f"and its remove button drops {key} again", json.dumps(last()))
+    cpick = "document.querySelector('evcc-card-editor').shadowRoot.querySelector('[data-vehicle-media=\"vehicle_image_charging\"] ha-selector')"
+    page.evaluate(f"{cpick}.dispatchEvent(new CustomEvent('value-changed', {{ detail: {{ value: {{ media_content_id: 'media-source://media_source/local/ex30.png', media_content_type: 'image/png' }} }} }}))")
+    t.check(last().get("vehicle_image_charging") == "media-source://media_source/local/ex30.png" and "vehicle_image" not in last(),
+            "the charging picture has its own media selector", json.dumps(last()))
     fm("vehicle_actions").check()
     t.check(last().get("vehicle_actions") is True, "the checkbox writes vehicle_actions: true", json.dumps(last()))
     fm("vehicle_actions").uncheck()
@@ -2667,6 +2732,8 @@ def setconfig(browser, port, t):
         ({"mode": "vehicle", "vehicle_device": False}, "vehicle_device: false"),
         ({"mode": "vehicle", "vehicles": ["ex30"]}, "a list of one, the shape the mode started with"),
         ({"mode": "vehicle", "vehicle_image": "media-source://media_source/local/ex30.png"}, "a picture from the media library"),
+        ({"mode": "vehicle", "vehicle_image_connected": "/local/ex30_lp.png", "vehicle_image_charging": "media-source://media_source/local/ex30.png"},
+         "pictures at the charge point and while charging"),
         ({"mode": "vehicle", "vehicle_entities": {"soc": "sensor.a", "location": "none", "actions": ["button.b"]}}, "the entity mapping"),
         ({"slider_steps": {"limit_soc": 5, "smart_cost_limit": 0.01}}, "slider steps"),
         ({"slider_steps": {"smart_cost_limit": "0.005"}}, "a slider step written as a string"),
@@ -2692,6 +2759,8 @@ def setconfig(browser, port, t):
         ({"vehicle_images": {"ex30": "/local/a.png"}}, "vehicle_images", "the map of pictures per vehicle"),
         ({"vehicle_device": 5}, "vehicle_device", "a numeric device"),
         ({"vehicle_image": "javascript:alert(1)"}, "vehicle_image", "a picture with another scheme"),
+        ({"vehicle_image_connected": "javascript:alert(1)"}, "vehicle_image_connected", "a picture at the charge point with another scheme"),
+        ({"vehicle_image_charging": 5}, "vehicle_image_charging", "a numeric picture while charging"),
         ({"vehicle_entities": {"ex30": {"soc": "sensor.a"}}}, "vehicle_entities", "the mapping per vehicle the mode started with"),
         ({"vehicle_entities": {"soc": "not an entity"}}, "vehicle_entities", "a role that is no entity id"),
         ({"slider_steps": [5]}, "slider_steps", "slider steps as a list"),

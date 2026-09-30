@@ -322,9 +322,11 @@ export function validateCardConfig(config) {
     throw new Error("evcc-card: vehicle_actions has to be true or false");
   }
 
-  const image = c.vehicle_image;
-  if (image !== undefined && image !== null && !isVehicleImage(image)) {
-    throw new Error("evcc-card: vehicle_image has to be a media item (media-source://...), an image path (/local/...) or an http(s) address");
+  for (const key of ["vehicle_image", "vehicle_image_connected", "vehicle_image_charging"]) {
+    const image = c[key];
+    if (image !== undefined && image !== null && !isVehicleImage(image)) {
+      throw new Error(`evcc-card: ${key} has to be a media item (media-source://...), an image path (/local/...) or an http(s) address`);
+    }
   }
 
   // vehicle_entities: the roles of the vehicle by hand, a map of role to entity

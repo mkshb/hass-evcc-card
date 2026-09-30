@@ -6,7 +6,7 @@ Logs into HA-Dev with a browser, writes its own dashboard (one view per card mod
 every card with `prefix: evcc_demo_`), renders each mode against the real ha-evcc
 entities and drives changes through the whole stack: card, HA service,
 ha-evcc, evcc API, and back (mode, solar share, vehicle at a loadpoint, charge
-plan, vehicle limit). The vehicle mode and its editor are checked against the demo vehicles.
+plan, vehicle limit, vehicle pictures). The vehicle mode and its editor are checked against the demo vehicles.
 Exit code 1 on failure, 2 when the setup is missing.
 
 This is not the mock suite (test/run.py). It needs the running stack and is run
@@ -579,6 +579,64 @@ def vehicle_limit(page, t):
     reset_demo()
 
 
+def vehicle_pictures(page, t):
+    """The pictures for the charge point and for charging follow evcc's loadpoint:
+    one card per demo vehicle with three pictures (HA's own icons, so nothing is
+    written into HA-Dev), then the Garage made to charge and stopped again."""
+    t.group("e2e vehicle pictures - plugged in and charging at an evcc loadpoint")
+    ICON = "/static/icons/favicon-192x192.png"
+    PICS = {"vehicle_image": f"{ICON}?p=plain", "vehicle_image_connected": f"{ICON}?p=connected", "vehicle_image_charging": f"{ICON}?p=charging"}
+    garage = next(((i, s) for i, title, s in demo_loadpoints() if title == "Garage"), None)
+    if not garage:
+        t.fail("the demo has a Garage loadpoint", str(demo_loadpoints()))
+        return
+    idx = garage[0]
+    vehicles = demo_vehicles()
+    reset_demo()
+    config = dashboard_config()
+    config["views"].append({"title": "pictures", "path": "pictures", "cards": [
+        {"type": "custom:evcc-card", "mode": "vehicle", "prefix": PREFIX, "vehicle": slug, **PICS} for _, slug in sorted(vehicles.values())]})
+    ws(page, {"type": "lovelace/config/save", "url_path": DASHBOARD, "config": config})
+    try:
+        open_view(page, "pictures")
+        shown = lambda: page.evaluate("""() => {
+            const out = {};
+            const walk = (root) => root.querySelectorAll('*').forEach(el => {
+              if (el.tagName === 'EVCC-CARD') {
+                const b = el.shadowRoot?.querySelector('.vehicle-block'), i = b?.querySelector('.vehicle-image img');
+                if (b) out[b.dataset.vehicle] = i ? { src: i.getAttribute('src'), loaded: i.complete && i.naturalWidth > 0 } : null;
+              }
+              if (el.shadowRoot) walk(el.shadowRoot);
+            });
+            walk(document); return out; }""")
+        def expected():
+            st = evcc_state()
+            want = {}
+            for name, (_, slug) in vehicles.items():
+                lp = next((lp for lp in st["loadpoints"] if lp.get("vehicleName") == name), None)
+                key = "vehicle_image_charging" if lp and lp.get("charging") else "vehicle_image_connected" if lp and lp.get("connected") else "vehicle_image"
+                want[slug] = PICS[key]
+            return want
+        want = expected()
+        got = wait_for(lambda: (lambda g: all((g.get(s) or {}).get("src") == w for s, w in want.items()) and g)(shown()), timeout=30) or shown()
+        t.check(all((got.get(s) or {}).get("src") == w and got[s]["loaded"] for s, w in want.items()),
+                "each vehicle shows the picture of its state at evcc's loadpoints", json.dumps({"want": want, "got": got}))
+        white = next(slug for name, (_, slug) in vehicles.items() if name == DEMO_VEHICLES["Garage"])
+        pic = lambda: (shown().get(white) or {}).get("src")
+        t.check(pic() == PICS["vehicle_image_connected"], "the Garage vehicle, plugged in and off: the picture at the charge point", str(pic()))
+        evcc(f"loadpoints/{idx}/mode/now", "POST")
+        charging = wait_for(lambda: evcc_state()["loadpoints"][idx - 1]["charging"], timeout=30)
+        in_card = wait_for(lambda: pic() == PICS["vehicle_image_charging"], timeout=40)
+        t.check(bool(charging and in_card), "the Garage starts charging: the charging picture", f"evcc charging={charging} card={pic()}")
+        evcc(f"loadpoints/{idx}/mode/off", "POST")
+        back = wait_for(lambda: pic() == PICS["vehicle_image_connected"], timeout=90)
+        t.check(bool(back), "charging stops: the picture at the charge point again", f"evcc charging={evcc_state()['loadpoints'][idx - 1]['charging']} card={pic()}")
+        t.check(not ERRORS, "no card errors", "; ".join(ERRORS)[:200])
+    finally:
+        reset_demo()
+        ensure_dashboard(page)
+
+
 def editor(page, t):
     """The visual editor of the vehicle mode with the real hass and HA's own elements.
     It is mounted straight into the HA page: the card edit dialog of the dashboard
@@ -621,7 +679,7 @@ def editor(page, t):
         t.check(ed.locator("select[data-vehicle-device]").count() == 1,
                 "now the device of that vehicle can be picked", "")
         media = ed.locator("[data-vehicle-media] ha-selector ha-selector-media").count()
-        t.check(media == 1, "HA's own media selector for the picture", f"{media} ha-selector-media")
+        t.check(media == 3, "HA's own media selector for each picture: plain, at the charge point, charging", f"{media} ha-selector-media")
         ed.locator("[data-vehicle-map]").click()
         page.wait_for_timeout(1200)
         pickers = ed.locator("[data-vehicle-role-pick] ha-selector ha-selector-entity").count()
@@ -660,7 +718,7 @@ def form_pick(page, name, value):
 
 GROUPS = {"smoke": smoke, "roundtrip": roundtrip, "solar_share": solar_share,
           "vehicle": vehicle_view, "vehicle_switch": vehicle_switch, "charge_plan": charge_plan,
-          "vehicle_limit": vehicle_limit, "editor": editor}
+          "vehicle_limit": vehicle_limit, "vehicle_pictures": vehicle_pictures, "editor": editor}
 
 
 def main():
