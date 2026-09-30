@@ -43,6 +43,8 @@ export const FEATURES = [
   { suffix: "vehicle_soc",         domain: "sensor",        type: "soc",           lp: true  },
   { suffix: "vehicle_range",       domain: "sensor",        type: "range",         lp: true  },
   { suffix: "vehicle_odometer",    domain: "sensor",        type: "info",          lp: true  },
+  // The charge limit set in the vehicle itself (evcc's vehicleLimitSoc), 0 = none.
+  { suffix: "vehicle_limit_soc",   domain: "sensor",        type: "info",          lp: true  },
   { suffix: "session_energy",          domain: "sensor", type: "info", lp: true },
   { suffix: "session_price",           domain: "sensor", type: "info", lp: true },
   { suffix: "session_price_per_kwh",   domain: "sensor", type: "info", lp: true },

@@ -189,6 +189,7 @@ export const vehicleView = {
       <div class="soc-track" style="background:${socTrackBg(0, limitSoc ?? 100)}">
         <div class="soc-fill ${state === "charging" ? "charging" : ""}"
              style="width:${Math.min(soc.value, 100)}%;background:${socFillGradient(soc.value, 0, limitSoc ?? 100)}"></div>
+        ${lp?.connected ? this._renderVehicleLimitMarker(lp.ents, this._vehicleLimit(lp.ents), soc.value) : ""}
         ${limitSoc !== null ? `<div class="soc-limit-marker" style="left:${Math.min(limitSoc, 100)}%"></div>` : ""}
       </div>` : "";
 

@@ -357,6 +357,15 @@ def vehicle_mode(browser, port, t):
     t.check("left:90%" in marker.replace(" ", ""), "the limit marker follows the vehicle's own limit", marker)
     done(page)
 
+    VL = "sensor.evcc_openwb_vehicle_limit_soc"
+    vmark = lambda page: page.evaluate("window.__card.shadowRoot.querySelector('.vehicle-block[data-vehicle=ex30] .soc-vehicle-limit-marker')?.style.left ?? null")
+    page, errors = card(set={VL: "80"})
+    t.check(vmark(page) == "80%" and not errors, "plugged in: the limit set in the vehicle on the bar", str(vmark(page)))
+    done(page)
+    page, errors = card(set={**UNPLUGGED, VL: "80"})
+    t.check(vmark(page) is None, "unplugged: the loadpoint's reading does not apply", str(vmark(page)))
+    done(page)
+
     t.group("vehicle - device of the vehicle's own integration")
     VOLVO, DECOY = "f1c0de00volvoex30fixture000000001", "f1c0de00companionex30fixture00002"
     values = "[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .soc-label-row [data-more-info]')].map(e => [e.dataset.moreInfo, e.textContent.trim()])"
@@ -3359,6 +3368,62 @@ def hints(browser, port, t):
     page.wait_for_timeout(300)
     got = page.evaluate("({ tab: window.__card.shadowRoot.querySelector('button.compact-tab.active')?.dataset.tab, opened: window.__opened })")
     t.check(got == {"tab": "0", "opened": ["select.evcc_openwb_min_soc"]}, "the minimum chip after a plan chip: more-info only, no jump to the plan tab", str(got))
+    t.check(not errors, "no console errors", "; ".join(errors)[:300])
+    done(page)
+
+    t.group("hints - vehicle limit")
+    VL = "sensor.evcc_openwb_vehicle_limit_soc"
+    limit = lambda page: [c for c in chips(page) if c.startswith("vehiclelimit")]
+    marker = lambda page: page.evaluate("""() => { const m = window.__card.shadowRoot.querySelector('.loadpoint .soc-vehicle-limit-marker');
+        return m ? { left: m.style.left, active: m.classList.contains('active') } : null; }""")
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, config=lp)
+    t.check(limit(page) == [], "vehicle limit equal to the loadpoint limit: no chip", str(chips(page)))
+    done(page)
+
+    page = new_page(browser, 480, 1600)
+    errors += open_card(page, port, config=lp, set={VL: "80"})
+    t.check(limit(page) == ["vehiclelimit: Fahrzeuglimit 80 %"], "vehicle limit below the loadpoint limit: the chip", str(chips(page)))
+    info = page.evaluate("window.__card.shadowRoot.querySelector('.lp-action-chip.vehiclelimit').dataset.moreInfo")
+    t.check(info == VL, "and a tap opens the sensor", str(info))
+    t.check(marker(page) == {"left": "80%", "active": True}, "the marker on the SoC bar, strong below it", str(marker(page)))
+    done(page)
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={VL: "80", "sensor.evcc_openwb_vehicle_soc": "79.5", "binary_sensor.evcc_openwb_charging": "off"})
+    t.check(limit(page) == ["vehiclelimit: Fahrzeuglimit 80 % erreicht"], "SoC at the limit without charging: reached", str(chips(page)))
+    t.check(marker(page) == {"left": "80%", "active": True}, "79.5 % is still below the marker", str(marker(page)))
+    done(page)
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={VL: "80", "sensor.evcc_openwb_vehicle_soc": "85"})
+    t.check(marker(page) == {"left": "80%", "active": False}, "SoC above the limit: the marker fades", str(marker(page)))
+    done(page)
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={**planned, VL: "80", "sensor.evcc_openwb_effective_plan_soc": "90"})
+    t.check(limit(page) == ["vehiclelimit warn: Fahrzeuglimit 80 % unter dem Ladeziel"], "plan above the vehicle limit: the warning", str(chips(page)))
+    got = page.evaluate("""() => { const c = window.__card.shadowRoot.querySelector('.lp-action-chip.vehiclelimit');
+        return { jump: c.dataset.lpPlanOpen ?? null, info: c.dataset.moreInfo ?? null,
+                 warn: window.__card.shadowRoot.querySelector('.plan-block[data-lp="openwb"] .plan-warning')?.textContent.trim() ?? null }; }""")
+    t.check(got == {"jump": "openwb", "info": None, "warn": "Fahrzeuglimit 80 % unter dem Ladeziel"}, "it jumps to the plan, which warns as well", str(got))
+    page.locator(in_card(".lp-action-chip.vehiclelimit")).click()
+    page.wait_for_timeout(100)
+    lit = page.evaluate("window.__card.shadowRoot.querySelector('.plan-block[data-lp=\"openwb\"]').getAnimations().length")
+    t.check(lit == 1, "a tap highlights the plan block", str(lit))
+    done(page)
+
+    for case, st in (("not connected", {VL: "80", "binary_sensor.evcc_openwb_connected": "off", "binary_sensor.evcc_openwb_charging": "off"}),
+                     ("limit 0 (none)", {VL: "0"}),
+                     ("limit unknown", {VL: "unknown"})):
+        page = new_page(browser, 480, 1600)
+        open_card(page, port, config=lp, set=st)
+        t.check(limit(page) == [], f"{case}: no vehicle limit chip", str(chips(page)))
+        done(page)
+
+    page = new_page(browser, 480, 1600)
+    errors += open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["wp"]})
+    t.check(limit(page) == ["vehiclelimit: Heizungslimit 60 °C"], "heating loadpoint: the heater limit as a temperature", str(chips(page)))
     t.check(not errors, "no console errors", "; ".join(errors)[:300])
     done(page)
 

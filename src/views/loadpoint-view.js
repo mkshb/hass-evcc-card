@@ -9,6 +9,12 @@ import { escHtml, escAttr } from "../utils/html.js";
 // every element carrying the attribute; empty when the entity is not discovered.
 const moreInfo = (entityId) => entityId ? ` data-more-info="${escAttr(entityId)}"` : "";
 
+// Material Design Icons: battery-lock, battery-check, battery-alert, thermometer-chevron-up.
+const ICON_LIMIT         = "M19.8 16V14.5C19.8 13.1 18.4 12 17 12S14.2 13.1 14.2 14.5V16C13.6 16 13 16.6 13 17.2V20.7C13 21.4 13.6 22 14.2 22H19.7C20.4 22 21 21.4 21 20.8V17.3C21 16.6 20.4 16 19.8 16M18.5 16H15.5V14.5C15.5 13.7 16.2 13.2 17 13.2S18.5 13.7 18.5 14.5V16M11.27 22H5.33C4.6 22 4 21.4 4 20.67V5.33C4 4.6 4.6 4 5.33 4H7V2H13V4H14.67C15.4 4 16 4.6 16 5.33V10.11C13.86 10.55 12.2 12.38 12.2 14.5V14.74C11.5 15.34 11 16.24 11 17.2V20.7C11 21.16 11.1 21.6 11.27 22Z";
+const ICON_LIMIT_REACHED = "M16.75 21.16L14 18.16L15.16 17L16.75 18.59L20.34 15L21.5 16.41L16.75 21.16M12 18C12 14.69 14.69 12 18 12V5.33C18 4.6 17.4 4 16.67 4H15V2H9V4H7.33C6.6 4 6 4.6 6 5.33V20.67C6 21.4 6.6 22 7.33 22H13.54C12.58 20.94 12 19.54 12 18Z";
+const ICON_LIMIT_WARN    = "M13 14H11V8H13M13 18H11V16H13M16.7 4H15V2H9V4H7.3C6.6 4 6 4.6 6 5.3V20.6C6 21.4 6.6 22 7.3 22H16.6C17.3 22 17.9 21.4 17.9 20.7V5.3C18 4.6 17.4 4 16.7 4Z";
+const ICON_HEATER_LIMIT  = "M17.41 11.83L20.58 15L22 13.59L17.41 9L12.82 13.59L14.24 15L17.41 11.83M10 13V5C10 3.34 8.66 2 7 2S4 3.34 4 5V13C1.79 14.66 1.34 17.79 3 20S7.79 22.66 10 21 12.66 16.21 11 14C10.72 13.62 10.38 13.28 10 13M7 4C7.55 4 8 4.45 8 5V8H6V5C6 4.45 6.45 4 7 4Z";
+
 // Loadpoint and compact modes: header, mode selector, power row, vehicle and session info, toggles. Methods are mixed into EvccCard.prototype.
 export const loadpointView = {
   _renderLoadpoint(lpName, ents) {
@@ -182,6 +188,8 @@ export const loadpointView = {
     if (planChip) chips.push(planChip);
     const minChip = this._renderMinSocHint(ents);
     if (minChip) chips.push(minChip);
+    const limitChip = this._renderVehicleLimitHint(ents, lpName, noPlan);
+    if (limitChip) chips.push(limitChip);
 
     if (ents.phase_action && this._hass.states[ents.phase_action]) {
       const state = stateVal(this._hass, ents.phase_action);
@@ -284,6 +292,61 @@ export const loadpointView = {
             ${icon}
             <span>${escHtml(this._t("minSocHint", { soc: `${Math.round(minSoc)} %` }))}</span>
           </div>`;
+  },
+
+  // The charge limit set in the vehicle itself (evcc's vehicleLimitSoc), which
+  // ends the charge whatever evcc's own limit says. 0 is evcc's "none".
+  _vehicleLimit(ents) {
+    if (!ents.vehicle_limit_soc) return null;
+    const v = parseFloat(stateVal(this._hass, ents.vehicle_limit_soc));
+    return v > 0 ? v : null;
+  },
+
+  // evcc's vehicle status (Vehicles/Status.vue): the vehicle limit, while it
+  // lies below the loadpoint's limit and a vehicle is connected; reached once
+  // the SoC stands at it without charging; a warning when the plan aims above
+  // it, and a tap then jumps to the plan. A heater's limit is a temperature and
+  // shows whenever it is set.
+  _renderVehicleLimitHint(ents, lpName, noPlan) {
+    const limit = this._vehicleLimit(ents);
+    if (limit === null) return "";
+    const unit = unitStr(this._hass, ents.vehicle_limit_soc) || "%";
+    const val  = `${Math.round(limit)} ${unit}`;
+    const chip = (key, cls, icon, text, target) => `
+          <div class="lp-action-chip ${cls}" data-key="${key}"${target}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="${icon}"/></svg>
+            <span>${escHtml(text)}</span>
+          </div>`;
+    if (unit === "°C" || this._isHeatingLoadpoint(ents)) {
+      return chip("vehiclelimit", "vehiclelimit", ICON_HEATER_LIMIT, this._t("heaterLimitHint", { val }), moreInfo(ents.vehicle_limit_soc));
+    }
+    const num = id => id ? parseFloat(stateVal(this._hass, id)) : NaN;
+    const connected = ents.connected ? isOn(this._hass, ents.connected) : false;
+    const lpLimit   = num(ents.effective_limit_soc);
+    if (!connected || limit >= (lpLimit > 0 ? lpLimit : 100)) return "";
+    const charging = ents.charging ? isOn(this._hass, ents.charging) : false;
+    const soc      = num(ents.vehicle_soc);
+    const planSoc  = num(ents.effective_plan_soc);
+    if (planSoc > limit) {
+      // A key of its own: the morph must not turn the more-info chip into the
+      // one that jumps, it keeps the listener it was bound with.
+      const target = !noPlan && this._hasPlanBlock(ents)
+        ? ` data-lp-plan-open="${escAttr(lpName)}"` : moreInfo(ents.vehicle_limit_soc);
+      return chip("vehiclelimit-plan", "vehiclelimit warn", ICON_LIMIT_WARN, this._t("vehicleLimitBelowPlan", { val }), target);
+    }
+    const reached = !charging && soc > 0 && soc >= limit - 1;
+    return chip("vehiclelimit", "vehiclelimit", reached ? ICON_LIMIT_REACHED : ICON_LIMIT,
+      this._t(reached ? "vehicleLimitReached" : "vehicleLimitHint", { val }), moreInfo(ents.vehicle_limit_soc));
+  },
+
+  // The vehicle limit on the SoC bar, drawn under the target marker, which
+  // covers it where both are the same. Stronger while the SoC is below it, as
+  // in evcc (Vehicles/Soc.vue). The vehicle mode draws it too.
+  _renderVehicleLimitMarker(ents, vehLimit, soc) {
+    if (vehLimit === null || vehLimit >= 100) return "";
+    const unit = unitStr(this._hass, ents.vehicle_limit_soc) || "%";
+    const text = this._t(unit === "°C" ? "heaterLimitHint" : "vehicleLimitHint", { val: `${Math.round(vehLimit)} ${unit}` });
+    return `<div class="soc-vehicle-limit-marker${soc < vehLimit ? " active" : ""}" style="left:${vehLimit}%" title="${escAttr(text)}"></div>`;
   },
 
   _renderModeSelector(ents, hidePv = false) {
@@ -427,6 +490,7 @@ export const loadpointView = {
     const energyMax   = Math.max(kwh(ents.plan_energy), energyLimit, charged ?? 0);
     const limit  = ents.limit_soc ? parseFloat(stateVal(this._hass, ents.limit_soc))  : null;
     const minSoc = ents.min_soc   ? parseFloat(stateVal(this._hass, ents.min_soc))    : null;
+    const vehLimit = this._vehicleLimit(ents);
     const fillBg  = soc !== null ? socFillGradient(soc, minSoc ?? 0, limit ?? 100) : "var(--evcc-blue)";
     const trackBg = socTrackBg(minSoc ?? 0, limit ?? 100);
 
@@ -478,6 +542,7 @@ export const loadpointView = {
                data-min-soc="${minSoc ?? 0}" data-limit-soc="${limit ?? 100}"
                style="width:${soc}%;background:${fillBg}"></div>
           ${minSoc !== null ? `<div class="soc-min-marker"   style="left:${Math.min(minSoc,100)}%"></div>` : ""}
+          ${this._renderVehicleLimitMarker(ents, vehLimit, soc)}
           ${limit  !== null ? `<div class="soc-limit-marker" style="left:${Math.min(limit,100)}%"></div>`  : ""}
         </div>` : ""}
         ${charged !== null ? `
@@ -832,6 +897,8 @@ export const loadpointCss = `
       .lp-action-chip.plan  { color: var(--info-color, #2196f3); border-color: color-mix(in srgb, var(--info-color, #2196f3) 50%, transparent); background: color-mix(in srgb, var(--info-color, #2196f3) 10%, transparent); cursor: pointer; }
       .lp-action-chip.plan.late, .lp-action-chip.minsoc { color: var(--warning-color, #ff9800); border-color: color-mix(in srgb, var(--warning-color, #ff9800) 50%, transparent); background: color-mix(in srgb, var(--warning-color, #ff9800) 10%, transparent); }
       .lp-action-chip.minsoc { cursor: pointer; }
+      .lp-action-chip.vehiclelimit { color: var(--secondary-text-color); cursor: pointer; }
+      .lp-action-chip.vehiclelimit.warn { color: var(--warning-color, #ff9800); border-color: color-mix(in srgb, var(--warning-color, #ff9800) 50%, transparent); background: color-mix(in srgb, var(--warning-color, #ff9800) 10%, transparent); }
       .lp-action-chip.vehicle { color: var(--info-color, #2196f3); border-color: color-mix(in srgb, var(--info-color, #2196f3) 50%, transparent); background: color-mix(in srgb, var(--info-color, #2196f3) 10%, transparent); }
       .lp-remaining {
         font-size: .85em; color: var(--secondary-text-color);
@@ -888,6 +955,11 @@ export const loadpointCss = `
         position: absolute; top: -3px; width: 3px; height: 14px;
         background: #f59e0b; border-radius: 2px; transform: translateX(-50%);
       }
+      .soc-vehicle-limit-marker {
+        position: absolute; top: -2px; width: 2px; height: 12px;
+        background: var(--secondary-text-color); opacity: .45; border-radius: 1px; transform: translateX(-50%);
+      }
+      .soc-vehicle-limit-marker.active { opacity: .9; }
 
       .power-row { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 12px; color: var(--secondary-text-color); flex-wrap: wrap; }
       .power-row.charging { color: #22c55e; }
