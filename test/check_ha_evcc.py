@@ -34,7 +34,7 @@ DOMAIN_OF = {"SENSOR": "sensor", "BINARY": "binary_sensor", "NUMBER": "number", 
 
 
 def card_features():
-    src = (ROOT / "dist" / "evcc-card.js").read_text(encoding="utf-8")
+    src = (ROOT / "src" / "core" / "constants.js").read_text(encoding="utf-8")
     block = src[src.index("const FEATURES = ["):]
     block = block[:block.index("\n];")]
     feats = []
@@ -45,7 +45,7 @@ def card_features():
 
 def card_vehicle_features():
     """The per-vehicle lists next to FEATURES: entries without an `lp` flag, scope 'vehicle'."""
-    src = (ROOT / "dist" / "evcc-card.js").read_text(encoding="utf-8")
+    src = (ROOT / "src" / "core" / "constants.js").read_text(encoding="utf-8")
     feats = []
     for name in ("VEHICLE_FEATURES", "VEHICLE_SESSION_FEATURES"):
         block = src[src.index(f"const {name} = ["):]

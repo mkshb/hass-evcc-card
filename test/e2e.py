@@ -6,7 +6,7 @@ Logs into HA-Dev with a browser, writes its own dashboard (one view per card mod
 every card with `prefix: evcc_demo_`), renders each mode against the real ha-evcc
 entities and drives changes through the whole stack: card, HA service,
 ha-evcc, evcc API, and back (mode, solar share, vehicle at a loadpoint, charge
-plan). The vehicle mode and its editor are checked against the demo vehicles.
+plan, vehicle limit, vehicle pictures). The vehicle mode and its editor are checked against the demo vehicles.
 Exit code 1 on failure, 2 when the setup is missing.
 
 This is not the mock suite (test/run.py). It needs the running stack and is run
@@ -504,6 +504,139 @@ def charge_plan(page, t):
     reset_demo()
 
 
+def vehicle_limit(page, t):
+    """The limit set in the vehicle or heater, read against evcc's raw vehicleLimitSoc.
+    Without one ha-evcc reports evcc's effective limit in the sensor, which the card
+    must not take for a limit of the vehicle."""
+    t.group("e2e vehicle limit - chip, marker and plan warning against evcc's raw value")
+    from datetime import datetime, timedelta, timezone
+    reset_demo()
+    open_view(page, "loadpoint")
+    probe = lambda: page.locator("evcc-card").first.evaluate("""(el, prefix) => {
+        const out = {};
+        for (const lp of el.shadowRoot?.querySelectorAll('.loadpoint') || []) {
+          const mode = lp.querySelector('button.mode-btn')?.dataset.entity || '';
+          const slug = mode.startsWith('select.' + prefix) ? mode.slice(7 + prefix.length, -5) : null;
+          if (!slug) continue;
+          const chip = lp.querySelector('.lp-action-chip.vehiclelimit');
+          out[slug] = { chip: chip ? chip.textContent.trim() : null, warn: !!chip?.classList.contains('warn'),
+                        jump: chip?.dataset.lpPlanOpen ?? null,
+                        marker: lp.querySelector('.soc-vehicle-limit-marker')?.style.left ?? null,
+                        planWarn: lp.querySelector('.plan-block .plan-warning')?.textContent.trim() ?? null };
+        }
+        return out; }""", PREFIX)
+
+    st = evcc_state()
+    lps = [(slug, st["loadpoints"][idx - 1]) for idx, _, slug in demo_loadpoints()]
+    raw = {slug: lp.get("vehicleLimitSoc") or 0 for slug, lp in lps}
+    t.check(any(v == 0 for v in raw.values()) and any(v > 0 for v in raw.values()),
+            "the demo has loadpoints with and without a limit of their own", str(raw))
+    got = wait_for(lambda: (lambda g: len(g) == len(lps) and g)(probe()), timeout=20) or {}
+    for slug, lp in lps:
+        v, eff = raw[slug], lp.get("effectiveLimitSoc") or 100
+        heating = bool(lp.get("chargerFeatureHeating"))
+        # evcc's vehicle status: below evcc's limit and connected; a heater's whenever set.
+        # A value equal to evcc's limit is what ha-evcc reports for none, so the card skips it.
+        own = v > 0 and v != eff
+        chip = own and (heating or (lp.get("connected") and v < eff))
+        g = got.get(slug, {})
+        ha = ha_state(page, f"sensor.{PREFIX}{slug}_vehicle_limit_soc")
+        detail = f"evcc vehicleLimitSoc={v} effectiveLimitSoc={eff} HA={ha} card={g}"
+        t.check(bool(g.get("chip")) == bool(chip) and (not chip or f"{round(v)} " in g["chip"]),
+                f"{lp['title']}: " + ("the chip names the limit" if chip else "no limit chip"), detail)
+        want_marker = f"{round(v)}%" if own and v < 100 else None
+        t.check(g.get("marker") == want_marker, f"{lp['title']}: " + (f"marker at {want_marker}" if want_marker else "no limit marker"), detail)
+
+    # A plan above evcc's limit at every vehicle loadpoint: a warning only where the
+    # vehicle has a limit of its own below the plan.
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).replace(hour=5, minute=0, second=0, microsecond=0)
+    when = tomorrow.strftime("%Y-%m-%dT%H:%M:%SZ")
+    targets = [(slug, lp) for slug, lp in lps if not lp.get("chargerFeatureHeating") and lp.get("connected") and lp.get("vehicleName")]
+    try:
+        for _, lp in targets:
+            evcc(f"vehicles/{lp['vehicleName']}/plan/soc/95/{when}", "POST")
+        planned = lambda: all(ha_state(page, f"sensor.{PREFIX}{slug}_effective_plan_soc") in ("95", "95.0") for slug, _ in targets)
+        arrived = wait_for(planned, timeout=40)
+        t.check(bool(arrived), "plans of 95 % arrive in HA for the connected vehicles",
+                str({slug: ha_state(page, f"sensor.{PREFIX}{slug}_effective_plan_soc") for slug, _ in targets}))
+        page.wait_for_timeout(1000)
+        got = probe()
+        for slug, lp in targets:
+            v, eff = raw[slug], lp.get("effectiveLimitSoc") or 100
+            warn = 0 < v < 95 and v < eff
+            g = got.get(slug, {})
+            detail = f"evcc vehicleLimitSoc={v} effectiveLimitSoc={eff} card={g}"
+            if warn:
+                t.check(g.get("warn") and g.get("jump") == slug and g.get("planWarn") and f"{round(v)} " in g["planWarn"],
+                        f"{lp['title']}: the chip warns and jumps to the plan, which warns as well", detail)
+            else:
+                t.check(not g.get("warn") and not g.get("planWarn"), f"{lp['title']}: no vehicle limit warning", detail)
+    finally:
+        for _, lp in targets:
+            try: evcc(f"vehicles/{lp['vehicleName']}/plan/soc", "DELETE")
+            except Exception: pass   # noqa: BLE001  (reset_demo deletes what is left)
+    t.check(not ERRORS, "no card errors", "; ".join(ERRORS)[:200])
+    reset_demo()
+
+
+def vehicle_pictures(page, t):
+    """The pictures for the charge point and for charging follow evcc's loadpoint:
+    one card per demo vehicle with three pictures (HA's own icons, so nothing is
+    written into HA-Dev), then the Garage made to charge and stopped again."""
+    t.group("e2e vehicle pictures - plugged in and charging at an evcc loadpoint")
+    ICON = "/static/icons/favicon-192x192.png"
+    PICS = {"vehicle_image": f"{ICON}?p=plain", "vehicle_image_connected": f"{ICON}?p=connected", "vehicle_image_charging": f"{ICON}?p=charging"}
+    garage = next(((i, s) for i, title, s in demo_loadpoints() if title == "Garage"), None)
+    if not garage:
+        t.fail("the demo has a Garage loadpoint", str(demo_loadpoints()))
+        return
+    idx = garage[0]
+    vehicles = demo_vehicles()
+    reset_demo()
+    config = dashboard_config()
+    config["views"].append({"title": "pictures", "path": "pictures", "cards": [
+        {"type": "custom:evcc-card", "mode": "vehicle", "prefix": PREFIX, "vehicle": slug, **PICS} for _, slug in sorted(vehicles.values())]})
+    ws(page, {"type": "lovelace/config/save", "url_path": DASHBOARD, "config": config})
+    try:
+        open_view(page, "pictures")
+        shown = lambda: page.evaluate("""() => {
+            const out = {};
+            const walk = (root) => root.querySelectorAll('*').forEach(el => {
+              if (el.tagName === 'EVCC-CARD') {
+                const b = el.shadowRoot?.querySelector('.vehicle-block'), i = b?.querySelector('.vehicle-image img');
+                if (b) out[b.dataset.vehicle] = i ? { src: i.getAttribute('src'), loaded: i.complete && i.naturalWidth > 0 } : null;
+              }
+              if (el.shadowRoot) walk(el.shadowRoot);
+            });
+            walk(document); return out; }""")
+        def expected():
+            st = evcc_state()
+            want = {}
+            for name, (_, slug) in vehicles.items():
+                lp = next((lp for lp in st["loadpoints"] if lp.get("vehicleName") == name), None)
+                key = "vehicle_image_charging" if lp and lp.get("charging") else "vehicle_image_connected" if lp and lp.get("connected") else "vehicle_image"
+                want[slug] = PICS[key]
+            return want
+        want = expected()
+        got = wait_for(lambda: (lambda g: all((g.get(s) or {}).get("src") == w for s, w in want.items()) and g)(shown()), timeout=30) or shown()
+        t.check(all((got.get(s) or {}).get("src") == w and got[s]["loaded"] for s, w in want.items()),
+                "each vehicle shows the picture of its state at evcc's loadpoints", json.dumps({"want": want, "got": got}))
+        white = next(slug for name, (_, slug) in vehicles.items() if name == DEMO_VEHICLES["Garage"])
+        pic = lambda: (shown().get(white) or {}).get("src")
+        t.check(pic() == PICS["vehicle_image_connected"], "the Garage vehicle, plugged in and off: the picture at the charge point", str(pic()))
+        evcc(f"loadpoints/{idx}/mode/now", "POST")
+        charging = wait_for(lambda: evcc_state()["loadpoints"][idx - 1]["charging"], timeout=30)
+        in_card = wait_for(lambda: pic() == PICS["vehicle_image_charging"], timeout=40)
+        t.check(bool(charging and in_card), "the Garage starts charging: the charging picture", f"evcc charging={charging} card={pic()}")
+        evcc(f"loadpoints/{idx}/mode/off", "POST")
+        back = wait_for(lambda: pic() == PICS["vehicle_image_connected"], timeout=90)
+        t.check(bool(back), "charging stops: the picture at the charge point again", f"evcc charging={evcc_state()['loadpoints'][idx - 1]['charging']} card={pic()}")
+        t.check(not ERRORS, "no card errors", "; ".join(ERRORS)[:200])
+    finally:
+        reset_demo()
+        ensure_dashboard(page)
+
+
 def editor(page, t):
     """The visual editor of the vehicle mode with the real hass and HA's own elements.
     It is mounted straight into the HA page: the card edit dialog of the dashboard
@@ -546,7 +679,7 @@ def editor(page, t):
         t.check(ed.locator("select[data-vehicle-device]").count() == 1,
                 "now the device of that vehicle can be picked", "")
         media = ed.locator("[data-vehicle-media] ha-selector ha-selector-media").count()
-        t.check(media == 1, "HA's own media selector for the picture", f"{media} ha-selector-media")
+        t.check(media == 3, "HA's own media selector for each picture: plain, at the charge point, charging", f"{media} ha-selector-media")
         ed.locator("[data-vehicle-map]").click()
         page.wait_for_timeout(1200)
         pickers = ed.locator("[data-vehicle-role-pick] ha-selector ha-selector-entity").count()
@@ -584,7 +717,8 @@ def form_pick(page, name, value):
 
 
 GROUPS = {"smoke": smoke, "roundtrip": roundtrip, "solar_share": solar_share,
-          "vehicle": vehicle_view, "vehicle_switch": vehicle_switch, "charge_plan": charge_plan, "editor": editor}
+          "vehicle": vehicle_view, "vehicle_switch": vehicle_switch, "charge_plan": charge_plan,
+          "vehicle_limit": vehicle_limit, "vehicle_pictures": vehicle_pictures, "editor": editor}
 
 
 def main():

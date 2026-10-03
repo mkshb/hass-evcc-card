@@ -1,4 +1,4 @@
-export const EVCC_CARD_VERSION = "0.9.1";
+export const EVCC_CARD_VERSION = "0.9.2";
 
 export const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -43,6 +43,8 @@ export const FEATURES = [
   { suffix: "vehicle_soc",         domain: "sensor",        type: "soc",           lp: true  },
   { suffix: "vehicle_range",       domain: "sensor",        type: "range",         lp: true  },
   { suffix: "vehicle_odometer",    domain: "sensor",        type: "info",          lp: true  },
+  // The charge limit set in the vehicle itself (evcc's vehicleLimitSoc), 0 = none.
+  { suffix: "vehicle_limit_soc",   domain: "sensor",        type: "info",          lp: true  },
   { suffix: "session_energy",          domain: "sensor", type: "info", lp: true },
   { suffix: "session_price",           domain: "sensor", type: "info", lp: true },
   { suffix: "session_price_per_kwh",   domain: "sensor", type: "info", lp: true },
@@ -320,9 +322,11 @@ export function validateCardConfig(config) {
     throw new Error("evcc-card: vehicle_actions has to be true or false");
   }
 
-  const image = c.vehicle_image;
-  if (image !== undefined && image !== null && !isVehicleImage(image)) {
-    throw new Error("evcc-card: vehicle_image has to be a media item (media-source://...), an image path (/local/...) or an http(s) address");
+  for (const key of ["vehicle_image", "vehicle_image_connected", "vehicle_image_charging"]) {
+    const image = c[key];
+    if (image !== undefined && image !== null && !isVehicleImage(image)) {
+      throw new Error(`evcc-card: ${key} has to be a media item (media-source://...), an image path (/local/...) or an http(s) address`);
+    }
   }
 
   // vehicle_entities: the roles of the vehicle by hand, a map of role to entity

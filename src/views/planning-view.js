@@ -1,5 +1,5 @@
 import { discoverEntities } from "../core/entity-discovery.js";
-import { stateVal, isOn } from "../utils/state.js";
+import { stateVal, isOn, unitStr } from "../utils/state.js";
 import { evccDate, fmtDuration, fmtNum } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
 
@@ -191,6 +191,7 @@ export const planningView = {
           ${planBadge}
         </div>
         ${projectionHtml}
+        ${this._renderPlanVehicleLimitWarn(ents)}
         <div class="plan-inputs">
           ${vehicleSelectHtml}
           <div class="plan-row">
@@ -226,6 +227,16 @@ export const planningView = {
         </div>
       </div>
     `;
+  },
+
+  // evcc's targetIsAboveVehicleLimit (ChargingPlans/Warnings.vue): the plan
+  // aims above the limit set in the vehicle, so it will not be reached.
+  _renderPlanVehicleLimitWarn(ents) {
+    const limit   = this._vehicleLimit(ents);
+    const planSoc = ents.effective_plan_soc ? parseFloat(stateVal(this._hass, ents.effective_plan_soc)) : NaN;
+    if (limit === null || !(planSoc > limit)) return "";
+    const unit = unitStr(this._hass, ents.vehicle_limit_soc) || "%";
+    return `<div class="plan-warning">${escHtml(this._t("vehicleLimitBelowPlan", { val: `${Math.round(limit)} ${unit}` }))}</div>`;
   },
 
   // "soc" or "energy", the way evcc decides it (socBasedPlanning in core and in
@@ -784,6 +795,7 @@ export const planCss = `
       .plan-badge.active  { background: color-mix(in srgb, var(--evcc-green) 15%, transparent); color: var(--evcc-green); border-color: var(--evcc-green); }
       .plan-projection { display: flex; flex-direction: column; gap: 3px; font-size: .78rem; color: var(--secondary-text-color); margin-bottom: 10px; padding: 7px 10px; background: var(--secondary-background-color, rgba(0,0,0,.08)); border-radius: 6px; }
       .plan-projection strong { color: var(--primary-text-color); }
+      .plan-warning { font-size: .78rem; color: var(--warning-color, #ff9800); margin-bottom: 10px; padding: 7px 10px; background: color-mix(in srgb, var(--warning-color, #ff9800) 10%, transparent); border-radius: 6px; }
       .plan-inputs { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
       .plan-row { display: flex; align-items: center; gap: 8px; font-size: .83rem; flex-wrap: wrap; }
       .plan-row label { flex: 0 0 auto; min-width: 60px; white-space: nowrap; color: var(--secondary-text-color); }

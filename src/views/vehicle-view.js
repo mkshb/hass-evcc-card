@@ -189,6 +189,7 @@ export const vehicleView = {
       <div class="soc-track" style="background:${socTrackBg(0, limitSoc ?? 100)}">
         <div class="soc-fill ${state === "charging" ? "charging" : ""}"
              style="width:${Math.min(soc.value, 100)}%;background:${socFillGradient(soc.value, 0, limitSoc ?? 100)}"></div>
+        ${lp?.connected ? this._renderVehicleLimitMarker(lp.ents, this._vehicleLimit(lp.ents), soc.value) : ""}
         ${limitSoc !== null ? `<div class="soc-limit-marker" style="left:${Math.min(limitSoc, 100)}%"></div>` : ""}
       </div>` : "";
 
@@ -202,7 +203,7 @@ export const vehicleView = {
           ${lpTitle ? `<span class="vehicle-lp" title="${this._t("vehicleAtLoadpoint")}">${escHtml(lpTitle)}</span>` : ""}
           <span class="lp-badge ${statusClass}">${statusLabel}</span>
         </div>
-        ${this._renderVehicleImage(roles, title)}
+        ${this._renderVehicleImage(roles, title, lp?.charging ? "charging" : lp?.connected ? "connected" : null)}
         ${(soc || range || odometer) ? `
         <div class="soc-section">
           <div class="soc-label-row">
@@ -231,17 +232,29 @@ export const vehicleView = {
     return VEHICLE_FEATURES.some(f => this._isEntityDisabled(`${f.domain}.${prefix}${slug}_${f.suffix}`));
   },
 
-  // The picture of the real car: the configured one, else what the vehicle's
-  // integration offers as an image entity. Returns { source, url } or null;
+  // The configured pictures for a state at an evcc loadpoint, first choice
+  // first: charging falls back to the one at the charge point, that one to the
+  // plain picture. What the vehicle's own integration says (plugged in at a
+  // public charger) does not count, so `state` comes from the loadpoint only.
+  _vehicleImageChain(state) {
+    const c = this._config;
+    return [
+      ...(state === "charging" ? [c.vehicle_image_charging] : []),
+      ...(state === "charging" || state === "connected" ? [c.vehicle_image_connected] : []),
+      c.vehicle_image,
+    ];
+  },
+
+  // The picture of the real car: the configured one for the state, else what
+  // the vehicle's integration offers as an image entity. Returns { source, url } or null;
   // `source` is what was configured and `url` what the browser can load. One
   // that failed to load is not tried again: the next one takes its place, and
   // without one the block goes on without a picture. A media item still being
   // resolved holds its place, so the picture does not switch on the way; one
   // that could not be resolved lets the next one stand in meanwhile.
-  _vehicleImage(roles) {
-    const configured = this._config.vehicle_image;
+  _vehicleImage(roles, state) {
     const fromEntity = roles.image ? this._hass.states[roles.image]?.attributes?.entity_picture : null;
-    const sources = [configured, fromEntity].filter(v => isMediaSourceId(v) || isVehicleImageUrl(v)).map(v => v.trim());
+    const sources = [...this._vehicleImageChain(state), fromEntity].filter(v => isMediaSourceId(v) || isVehicleImageUrl(v)).map(v => v.trim());
     for (const source of sources) {
       if (this._vehicleImageFailed[source]) continue;
       if (!isMediaSourceId(source)) return { source, url: source };
@@ -252,6 +265,23 @@ export const vehicleView = {
       if (!this._vehicleMedia[source]?.failedAt) return null;
     }
     return null;
+  },
+
+  // The pictures of the other states, fetched ahead so that plugging in or
+  // starting to charge swaps the picture without a gap: a media item is
+  // resolved (and kept like the shown one), every address loaded once into
+  // the browser's cache.
+  _preloadVehicleImages(shown) {
+    const c = this._config;
+    for (const v of [c.vehicle_image_charging, c.vehicle_image_connected, c.vehicle_image]) {
+      if (!isMediaSourceId(v) && !isVehicleImageUrl(v)) continue;
+      const source = v.trim();
+      if (this._vehicleImageFailed[source]) continue;
+      const url = isMediaSourceId(source) ? this._vehicleMediaUrl(source) : source;
+      if (!url || url === shown || this._vehicleImagePreloaded.has(url)) continue;
+      this._vehicleImagePreloaded.add(url);
+      new Image().src = url;
+    }
   },
 
   // An item of the media library has no address of its own: Home Assistant
@@ -292,8 +322,9 @@ export const vehicleView = {
   // The picture above the values, only when there is one: the card draws no
   // vehicle of its own. A picture that fails to load is dropped (listener in
   // _attachVehicleListeners), keyed by what was configured.
-  _renderVehicleImage(roles, title) {
-    const image = this._vehicleImage(roles);
+  _renderVehicleImage(roles, title, state) {
+    const image = this._vehicleImage(roles, state);
+    this._preloadVehicleImages(image?.url);
     if (!image) return "";
     const height = readPictures()[image.source]?.height;
     const keep   = height > 0 ? ` style="min-height: ${Math.round(height)}px"` : "";
@@ -568,7 +599,10 @@ export const vehicleView = {
         const h = Math.round(img.getBoundingClientRect().height);
         if (h > 0 && readPictures()[img.dataset.vehicleImage]?.height !== h) rememberPicture(img.dataset.vehicleImage, { height: h });
       };
-      if (img.complete) measure(); else img.addEventListener("load", measure);
+      // Measured on every load: the element stays when the picture changes
+      // with the state, and each picture keeps its own height.
+      if (img.complete) measure();
+      img.addEventListener("load", measure);
       img.addEventListener("error", () => {
         this._vehicleImageFailed[img.dataset.vehicleImage] = true;
         this._render();

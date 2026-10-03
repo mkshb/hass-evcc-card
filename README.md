@@ -194,6 +194,8 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 | `vehicle` | `string` | *(the only one)* | The vehicle of the `vehicle` mode, by the name ha-evcc uses in its entity ids (`ex30` for `sensor.evcc_ex30_configvehicle_soc`). Can be left out when evcc knows just one vehicle. See [`vehicle`](#vehicle) |
 | `vehicle_device` | `string` | *(auto)* | `vehicle` mode: the Home Assistant device of the vehicle's own integration, as a device id; `none` keeps the card without one |
 | `vehicle_image` | `string` | *(none)* | `vehicle` mode: a picture of the car, from the HA media (`media-source://...`), a path (`/local/ex30.png`) or an http(s) address |
+| `vehicle_image_connected` | `string` | *(none)* | `vehicle` mode: the picture while the car is plugged in at an evcc charge point, same forms as `vehicle_image` |
+| `vehicle_image_charging` | `string` | *(none)* | `vehicle` mode: the picture while the car charges at an evcc charge point, same forms as `vehicle_image` |
 | `vehicle_actions` | `boolean` | `false` | `vehicle` mode: `true` lets the card send commands to the vehicle (lock, climate, the device's buttons) |
 | `vehicle_entities` | `map` | *(auto)* | `vehicle` mode: assigns entities to the roles of the vehicle by hand, see [Assigning entities](#assigning-entities) |
 | `plan_loadpoint_index` | `map` | *(auto)* | **YAML only** — Override the evcc loadpoint index (1-based) used for the plan preview, e.g. `{ openwb: 1, wp: 2 }`. Only needed if the auto-detected order does not match evcc |
@@ -251,6 +253,7 @@ Under the loadpoint header a row of chips names what drives the charge point rig
 
 - **Charge plan:** *"Charging plan starts 02:00"* or *"Charging plan active until 06:30"*, and a warning *"Goal will be reached 1 h 20 min later"* when evcc projects the end after the target time. A tap jumps to the plan block; in `compact` mode, where the chip sits above the tabs, it opens the plan tab. Not on heating loadpoints or with `no_plan`.
 - **Minimum charge:** *"Minimum charging to 20 %"* while a connected vehicle is below its minimum SoC. A tap opens the minimum SoC entity.
+- **Vehicle limit:** *"Vehicle limit 80 %"* when the charge limit set in the vehicle itself lies below evcc's limit, *"Vehicle limit 80 % reached"* once the SoC stands at it, and a warning *"Vehicle limit 80 % below charging goal"* when the plan aims higher; that one jumps to the plan, which repeats the warning. The limit is also a grey marker on the SoC bar. Heating loadpoints with a limit of their own show their *"Heater limit 60 °C"*. Reads `sensor.evcc_<loadpoint>_vehicle_limit_soc`; ha-evcc reports evcc's own limit there when the vehicle or heater sets none, so a value equal to it shows nothing.
 - **Live action indicators** when evcc has scheduled a pending phase switch or PV-charging change, e.g. *"Switching to 3-phase in 0:42"* or *"PV charging on in 1:15"*. Like in evcc, the chip shows only while there is time to count down and disappears once the action is executed. Requires ha-evcc with the `phase_action` / `pv_action` sensors exposed.
 
 The **CHARGE SETTINGS** section is collapsed by default and can be toggled using the gear icon. It contains:
@@ -494,8 +497,8 @@ vehicle: ex30
 What the card shows:
 
 - **Header** with the vehicle title from evcc, the charge point it is plugged into and a status badge: *Charging* or *Connected* at an evcc charge point, *Driving* or *Parked* when the vehicle's own integration says so, otherwise *Not connected*
-- **Picture** of the real car, when one is configured (`vehicle_image`) or the vehicle's integration offers an image entity. The card draws no vehicle of its own
-- **Charge level, range and odometer**, with the vehicle's charge limit as a marker on the bar. The tooltip tells how old a value is; a tap opens the entity
+- **Picture** of the real car, when one is configured (`vehicle_image`) or the vehicle's integration offers an image entity. The card draws no vehicle of its own. Two more pictures follow the evcc charge point: `vehicle_image_connected` while the car is plugged in there, `vehicle_image_charging` while it charges. A missing one falls back to the next (charging, plugged in, the vehicle picture, the image entity), and so does one that does not load. Plugged in elsewhere, as the car's own integration may report, the vehicle picture stays
+- **Charge level, range and odometer**, with the vehicle's charge limit as a marker on the bar and, while it is plugged in, the limit set in the vehicle itself as a grey one. The tooltip tells how old a value is; a tap opens the entity
 - **Chips** for the lock, open doors and windows, warnings and the location
 - **Charge plan** while the vehicle is plugged into an evcc charge point, folded to one line with the planned time, the target and whether it charges by plan. Unfolded: target time, target in % (or in kWh for a vehicle evcc plans on the charge point), plan strategy, live preview, set and delete, the same block as in the [`plan`](#plan) mode but without its vehicle selector. A vehicle that is not plugged in shows no plan: ha-evcc reports the plan of a vehicle only through the charge point it is at
 - **Repeating plans** of the vehicle, folded to one line that says how many are on; unfolded with the on/off toggle of the [`repeatplan`](#repeatplan) mode
