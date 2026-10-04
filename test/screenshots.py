@@ -45,7 +45,14 @@ PLAN = {"sensor.evcc_openwb_plan_projected_start": "2026-09-19T02:00:00+02:00",
         "sensor.evcc_openwb_effective_plan_soc":   "80"}
 # The vehicle in the image is plugged into that loadpoint, so its block carries
 # the plan as well.
-STATES = {"loadpoint": PLAN, "compact": PLAN, "vehicle": PLAN}
+# The battery image shows what evcc's optimizer adds (suggestion, SoC forecast,
+# highest and lowest), with a SoC that continues the mock's recorder curve.
+BATTERY = {"sensor.evcc_battery_soc": "83", "sensor.evcc_battery_0_soc": "83",
+           "sensor.evcc_battery_power": "-2882", "sensor.evcc_battery_0_power": "-2882"}
+STATES = {"loadpoint": PLAN, "compact": PLAN, "vehicle": PLAN, "battery": BATTERY}
+# name -> further open_card arguments.
+EXTRA = {"battery": {"optimizer": True,
+                     "attrs": {"sensor.evcc_battery_0_soc": {"suggestion": {"action": "hold", "charge": 0, "discharge": 0, "actionable": True}}}}}
 
 
 def open_steady(page, port, **kw):
@@ -66,7 +73,7 @@ def union(*boxes):
 
 def shot_mode(browser, port, name, config, dark, out):
     page = new_page(browser, WIDTH + 50, 1600)
-    errors = open_steady(page, port, dark=dark, width=WIDTH, config=config, set=STATES.get(name))
+    errors = open_steady(page, port, dark=dark, width=WIDTH, config=config, set=STATES.get(name), **EXTRA.get(name, {}))
     path = out / f"{name}-{'dark' if dark else 'light'}.png"
     page.locator(in_card("ha-card")).screenshot(path=str(path), animations="disabled")
     done(page)
