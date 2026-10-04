@@ -72,6 +72,26 @@ export const actions = {
     return this._hass.callService("button", "press", { entity_id: entityId });
   },
 
+  // Grid discharging is allowed and its limit set in one step: evcc accepts the
+  // limit only once discharging into the grid is allowed, so it is written
+  // after the switch. Switching off needs no second call, evcc drops the limit
+  // itself; the limit is marked as gone right away.
+  _setGridDischarge(switchId, limitId, on, startValue) {
+    if (!on) {
+      const call = this._toggleEntity("switch", switchId, true);
+      if (limitId) this._expect(limitId, "unknown", call);
+      return call;
+    }
+    return this._toggleEntity("switch", switchId, false)
+      .then(() => limitId && startValue != null ? this._setNumberValue(limitId, startValue) : null);
+  },
+
+  // Removes a limit through its clear button (ha-evcc sends a DELETE to evcc);
+  // the limit reads "unknown" from then on.
+  _clearLimit(clearId, limitId) {
+    return this._expect(limitId, "unknown", this._pressButton(clearId));
+  },
+
   // ── Vehicle commands ───────────────────────────────────────────────────
   // Commands to the vehicle's own integration (vehicle mode, vehicle_actions).
   // They are not marked with the target state like evcc's controls: the car

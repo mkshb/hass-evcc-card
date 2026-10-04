@@ -214,7 +214,7 @@
     const second = q.get("second") ? JSON.parse(q.get("second")) : null;
     const hass = await createMockHass({ language: q.get("lang") || "de", ws: q.get("ws") !== "0", admin: q.get("admin") !== "0", drop: (q.get("drop") || "").split(",").filter(Boolean),
                                         set, attrs, disable, rename, tariff: q.get("tariff") || "price", second,
-                                        wsName: q.get("wsname"), vehicleDevice: q.get("vd") !== "0" });
+                                        wsName: q.get("wsname"), vehicleDevice: q.get("vd") !== "0", optimizer: q.get("optimizer") === "1", batteryExt: q.get("battext") === "1" });
     await customElements.whenDefined("evcc-card");
     const card = document.createElement("evcc-card");
     new MutationObserver(() => { window.__mutations++; })

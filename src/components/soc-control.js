@@ -187,7 +187,9 @@ export const socControl = {
 
   // `locked` draws the slider and its value unusable, for a setting evcc does
   // not take right now (the solar share while a power threshold is set).
-  _sliderRow(entityId, label, zeroLabel = null, locked = false) {
+  // `unsetLabel`: shown instead of a number while the entity has none (an evcc
+  // limit that is not set reads "unknown"; the slider then sits at 0).
+  _sliderRow(entityId, label, zeroLabel = null, locked = false, unsetLabel = null) {
     const domain  = entityId.split(".")[0];
     const _v      = parseFloat(stateVal(this._hass, entityId));
     const val     = isNaN(_v) ? 0 : _v;
@@ -231,7 +233,7 @@ export const socControl = {
                  data-entity="${entityId}"
                  data-domain="${domain}"${locked ? " disabled" : ""} />
           <button type="button" class="slider-val" data-slider-edit${locked ? " disabled" : ""}
-                  title="${this._t("sliderEditHint")}">${zeroLabel && val === 0 ? zeroLabel : `${val} ${escHtml(unit)}`}</button>
+                  title="${this._t("sliderEditHint")}">${unsetLabel && isNaN(_v) ? unsetLabel : zeroLabel && val === 0 ? zeroLabel : `${val} ${escHtml(unit)}`}</button>
         </div>
       </div>`;
   },
