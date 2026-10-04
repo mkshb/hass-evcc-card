@@ -3936,6 +3936,13 @@ def battery_mode(browser, port, t):
     t.check(page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).get_attribute("aria-selected") == "true", "the chosen tab is marked")
     done(page)
 
+    # evcc reads a buffer SoC of 0 as "no buffer" (100 %); ha-evcc then reports unknown
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", set={"select.evcc_buffer_soc": "unknown"})
+    body = page.locator(in_card(".batt-tab-body")).inner_text()
+    t.check("Batterie als Ladepuffer" in body and "Setze einen Wert unter" in body, "buffer without a value: shown as no buffer, as in evcc", body[:200])
+    done(page)
+
     # with the proposed entities: a switch per function, the limit only while it is on
     page = new_page(browser, 480, 1600)
     open_card(page, port, mode="battery", battery_ext=True)

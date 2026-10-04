@@ -420,7 +420,9 @@ export const batteryView = {
       .map(o => parseFloat(o)).filter(o => !isNaN(o)).sort((a, b) => a - b) : [];
 
     const priorityVal    = val(site.priority_soc);
-    const bufferVal      = val(site.buffer_soc);
+    // evcc reads a buffer SoC of 0 as 100, i.e. no buffer; ha-evcc then
+    // reports no value at all.
+    const bufferVal      = isLive(this._hass, site.buffer_soc) ? (val(site.buffer_soc) || 100) : null;
     const bufferStartVal = val(site.buffer_start_soc);
 
     const bufferOpts      = opts(site.buffer_soc).filter(o => (priorityVal === null || o >= priorityVal) && (bufferStartVal === null || bufferStartVal === 0 || o <= bufferStartVal));
