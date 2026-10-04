@@ -20,7 +20,19 @@
 //   drop:    ["button.evcc_openwb_smart_cost_limit", ...]  remove state and registry entry (never created)
 //   vehicleDevice: false  leave out the vehicle integration's device (test/fixtures/vehicle_device.json),
 //            so the vehicle mode runs on ha-evcc data alone
-export async function createMockHass({ language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, admin = true, drop = [], vehicleDevice = true } = {}) {
+//   batteryExt: true  the battery entities proposed to ha-evcc (grid discharge, clear
+//            buttons for the battery limits), as the ha-evcc fork creates them; `disable`
+//            and `set` apply to them as to every other entity
+//   optimizer: true  ha-evcc offers evcc_intg/optimizer and evcc's optimizer reports a
+//            battery forecast (generated from now on, like the recorder history)
+// A battery SoC by time of day: charges from 9 to 14 h, discharges overnight.
+function mockSoc(t) {
+  const h = new Date(t).getHours() + new Date(t).getMinutes() / 60;
+  const v = h < 9 ? 45 - h * 3.5 : h < 14 ? 13.5 + (h - 9) * 17.3 : 100 - (h - 14) * 5.5;
+  return Math.max(5, Math.min(100, Math.round(v)));
+}
+
+export async function createMockHass({ batteryExt = false, optimizer = false, language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, admin = true, drop = [], vehicleDevice = true } = {}) {
   const base = new URL("./fixtures/", import.meta.url);
   const json = (p) => fetch(new URL(p, base)).then(r => r.ok ? r.json() : Promise.reject(new Error(`fixture ${p}: ${r.status}`)));
 
@@ -40,6 +52,21 @@ export async function createMockHass({ language = "de", ws = true, set = {}, att
     for (const [id, st] of Object.entries(vd.states)) {
       const stamp = new Date(Date.now() - st.age_min * 60000).toISOString();
       states[id] = { entity_id: id, state: st.state, attributes: st.attributes, last_changed: stamp, last_updated: stamp };
+    }
+  }
+  if (batteryExt) {
+    const euro = { min: -0.5, max: 2.5, step: 0.005, mode: "box", unit_of_measurement: "€/kWh" };
+    const ext = {
+      "button.evcc_battery_grid_charge_limit":           ["unknown", { friendly_name: "Hausbatterie: Netzladen Limit entfernen" }],
+      "switch.evcc_battery_grid_discharge":              ["off",     { friendly_name: "Hausbatterie: Entladen ins Netz zulassen" }],
+      "binary_sensor.evcc_battery_grid_discharge_active": ["off",    { friendly_name: "Hausbatterie: Netzentladen" }],
+      "number.evcc_battery_grid_discharge_limit":        ["unknown", { ...euro, friendly_name: "Hausbatterie: Netzentladen € Limit ≥" }],
+      "button.evcc_battery_grid_discharge_limit":        ["unknown", { friendly_name: "Hausbatterie: Netzentladen Limit entfernen" }],
+    };
+    for (const [id, [state, attributes]] of Object.entries(ext)) {
+      states[id] = { entity_id: id, state, attributes };
+      registry.push({ entity_id: id, platform: "evcc_intg", config_entry_id: "01KW6EDNA9VMFE9QX98AZHH3WC", disabled_by: null,
+                      unique_id: `evcc_intg.${id.split(".")[1]}`, original_name: attributes.friendly_name });
     }
   }
   for (const [id, state] of Object.entries(set)) {
@@ -101,7 +128,7 @@ export async function createMockHass({ language = "de", ws = true, set = {}, att
   };
 
   const fx = ws ? {
-    capabilities: await json("ws/capabilities.json"),
+    capabilities: await json("ws/capabilities.json").then(c => optimizer ? { ...c, commands: [...c.commands, "optimizer"] } : c),
     sessions:     await json("ws/sessions.json"),
     forecast: {
       grid:    await json("ws/forecast_grid.json"),
@@ -110,6 +137,13 @@ export async function createMockHass({ language = "de", ws = true, set = {}, att
     },
     plan_preview: await json("ws/plan_preview.json"),
   } : null;
+
+  // A feed-in tariff for the grid discharge view, varying over the day (the
+  // grid fixture is a flat price): highest in the evening, lowest at noon.
+  if (fx) fx.forecast.feedin = { ...fx.forecast.grid, rates: fx.forecast.grid.rates.map(r => {
+    const h = new Date(r.start).getHours();
+    return { ...r, value: Math.round((0.08 + 0.05 * Math.cos(((h - 19) / 24) * 2 * Math.PI)) * 1000) / 1000 };
+  }) };
 
   // Every name the integration passes through from evcc, replaced in one go.
   if (fx && wsName) {
@@ -163,7 +197,8 @@ export async function createMockHass({ language = "de", ws = true, set = {}, att
           return fx ? Promise.resolve(fx.capabilities) : Promise.reject(new Error("mock: WebSocket data API not available"));
         case "evcc_intg/forecast": {
           const f = fx?.forecast[msg.kind];
-          return f ? Promise.resolve(asCo2(rebase(f))) : Promise.reject(new Error(`mock: no forecast fixture for kind ${msg.kind}`));
+          // The feed-in tariff is a price in every setup, never CO2.
+          return f ? Promise.resolve(msg.kind === "feedin" ? rebase(f) : asCo2(rebase(f))) : Promise.reject(new Error(`mock: no forecast fixture for kind ${msg.kind}`));
         }
         case "evcc_intg/sessions": {
           if (!fx) return Promise.reject(new Error("mock: no sessions"));
@@ -196,6 +231,55 @@ export async function createMockHass({ language = "de", ws = true, set = {}, att
         // Generated over the requested window rather than stored as a fixture,
         // because the card asks for a window that ends "now" - and generated
         // from the bucket index, so two runs produce the same chart.
+        // HA recorder history of a sensor, the source of the battery chart.
+        // Generated over the requested window from the time of day, so two runs
+        // draw the same curve: the battery fills up around noon and runs down
+        // over the night. Compressed format as HA answers with minimal_response.
+        case "history/history_during_period": {
+          const out = {};
+          const from = Math.ceil(new Date(msg.start_time).getTime() / 900000) * 900000;
+          const to   = new Date(msg.end_time ?? Date.now()).getTime();
+          for (const id of msg.entity_ids ?? []) {
+            const pts = [];
+            for (let t = from; t <= to; t += 900000) pts.push({ s: String(mockSoc(t)), lu: t / 1000 });
+            out[id] = pts;
+          }
+          return Promise.resolve(out);
+        }
+
+        // evcc's optimizer, passed through as evcc publishes it (shape as on a
+        // real instance): a vehicle ahead of the home battery in the result, SoC
+        // in Wh, a short first slot up to the next quarter hour, then 15 min
+        // slots over 48 h; plus the highest/lowest evcc derives from it.
+        case "evcc_intg/optimizer": {
+          if (!fx || !optimizer) return Promise.reject(new Error("mock: no optimizer"));
+          const now = Date.now();
+          const ts = [now];
+          for (let t = Math.ceil((now + 1) / 900000) * 900000; t < now + 48 * 3600000; t += 900000) ts.push(t);
+          const capWh = 10000;
+          const home = ts.map(t => mockSoc(t) / 100 * capWh);
+          const pick = (cmp) => ts.reduce((best, t, j) => cmp(home[j], home[best]) ? j : best, 1);
+          const hi = pick((a, b) => a > b), lo = pick((a, b) => a < b);
+          const point = (j, edge) => ({ soc: home[j] / capWh * 100, time: new Date(ts[j]).toISOString(), limit: edge });
+          return Promise.resolve({
+            evopt: {
+              updated: new Date(now).toISOString(),
+              res: { status: "Optimal", batteries: [
+                { state_of_charge: ts.map(() => 41400), charging_power: ts.map(() => 0), discharging_power: ts.map(() => 0) },
+                { state_of_charge: home, charging_power: ts.map(() => 0), discharging_power: ts.map(() => 0) },
+              ] },
+              details: {
+                timestamp: ts.map(t => new Date(t).toISOString()),
+                batteryDetails: [
+                  { type: "vehicle", title: "openWB (EX30)", name: "db:18", capacity: 69 },
+                  { type: "battery", title: "Speicher", name: "db:5", capacity: capWh / 1000 },
+                ],
+              },
+            },
+            batteryForecast: { highest: point(hi, home[hi] >= capWh), lowest: point(lo, home[lo] <= capWh * 0.05) },
+          });
+        }
+
         case "recorder/statistics_during_period": {
           const monthly = msg.period !== "day";
           const now = new Date();

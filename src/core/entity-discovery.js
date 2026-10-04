@@ -86,7 +86,7 @@ export function disabledCardEntities(hass, disabled, prefix = "evcc_", { vehicle
     const hit  = candidates.find(f => f.domain === domain && (rest === f.suffix || rest.endsWith("_" + f.suffix)));
     if (!hit) continue;
     const owner = rest === hit.suffix ? "" : rest.slice(0, rest.length - hit.suffix.length - 1);
-    const needed = owner && DISABLED_NEEDED.includes(hit) && (!hit.vehicle || owner === vehicle);
+    const needed = (owner || hit.site) && DISABLED_NEEDED.includes(hit) && (!hit.vehicle || owner === vehicle);
     out.push({ id, owner, suffix: hit.suffix, need: needed ? hit : null });
   }
   return out.sort((a, b) => (!!b.need - !!a.need) || a.id.localeCompare(b.id));

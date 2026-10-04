@@ -1,6 +1,6 @@
 import { HIDEABLE_SETTINGS } from "../core/constants.js";
 import { featureKeyOf } from "../core/entity-discovery.js";
-import { stateVal, attr, displayUnit, isOn } from "../utils/state.js";
+import { stateVal, attr, displayUnit, isOn, isLive } from "../utils/state.js";
 import { stepDecimals, fmtNum } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
 
@@ -39,7 +39,7 @@ export const socControl = {
   // the registry is for the warning triangle (disabled-entities.js).
   _limitClear(limitId) {
     const id = limitId.replace(/^number\./, "button.");
-    return this._hass.states[id] ? id : null;
+    return isLive(this._hass, id) ? id : null;
   },
 
   _renderCurrentBlock(ents, lpName = "") {
@@ -122,10 +122,10 @@ export const socControl = {
           })() : "",
           hasFeedIn ? (() => {
             // Feed-in priority: above this feed-in limit, evcc prioritizes selling to the
-            // grid over PV-surplus charging. Like the smart charging limit, the limit follows
-            // evcc's global cost type, so the unit is currency/kWh (price mode) or g/kWh
-            // (CO2 mode); _sliderRow renders whichever unit the entity reports. The
-            // integration's binary_sensor is the authoritative "active" signal in both modes.
+            // grid over PV-surplus charging. Unlike the smart charging limit it does not
+            // follow evcc's cost type: evcc compares it with the feed-in tariff, so it is
+            // always a price (currency/kWh). _sliderRow renders the unit the entity reports.
+            // The integration's binary_sensor is the authoritative "active" signal.
             const active     = ents.smart_feed_in_priority_active
               ? isOn(this._hass, ents.smart_feed_in_priority_active)
               : false;
@@ -187,7 +187,9 @@ export const socControl = {
 
   // `locked` draws the slider and its value unusable, for a setting evcc does
   // not take right now (the solar share while a power threshold is set).
-  _sliderRow(entityId, label, zeroLabel = null, locked = false) {
+  // `unsetLabel`: shown instead of a number while the entity has none (an evcc
+  // limit that is not set reads "unknown"; the slider then sits at 0).
+  _sliderRow(entityId, label, zeroLabel = null, locked = false, unsetLabel = null) {
     const domain  = entityId.split(".")[0];
     const _v      = parseFloat(stateVal(this._hass, entityId));
     const val     = isNaN(_v) ? 0 : _v;
@@ -231,7 +233,7 @@ export const socControl = {
                  data-entity="${entityId}"
                  data-domain="${domain}"${locked ? " disabled" : ""} />
           <button type="button" class="slider-val" data-slider-edit${locked ? " disabled" : ""}
-                  title="${this._t("sliderEditHint")}">${zeroLabel && val === 0 ? zeroLabel : `${val} ${escHtml(unit)}`}</button>
+                  title="${this._t("sliderEditHint")}">${unsetLabel && isNaN(_v) ? unsetLabel : zeroLabel && val === 0 ? zeroLabel : `${val} ${escHtml(unit)}`}</button>
         </div>
       </div>`;
   },

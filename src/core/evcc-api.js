@@ -30,9 +30,13 @@ export const evccApi = {
         };
         // Build the loadpoint slug -> evcc API index map (ha-evcc 2026.6.x+),
         // so the plan preview targets the right loadpoint without guessing.
+        // The same list carries evcc's title of each loadpoint, the name the
+        // card shows wherever it names a loadpoint (_loadpointTitle).
         this._lpIndexMap = {};
+        this._lpTitleMap = {};
         for (const lp of (Array.isArray(res?.loadpoints) ? res.loadpoints : [])) {
           if (lp && lp.id != null && lp.index != null) this._lpIndexMap[lp.id] = Number(lp.index);
+          if (lp && lp.id != null && lp.name) this._lpTitleMap[lp.id] = String(lp.name);
         }
       })
       .catch(e => {

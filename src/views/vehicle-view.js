@@ -3,7 +3,7 @@ import { classifyVehicleDevice, resolveVehicleDevice, evccVehicleTitle, vehicleD
          vehicleOverride, hasVehicleDeviceData } from "../core/vehicle-device.js";
 import { VEHICLE_FEATURES, isVehicleImageUrl, isMediaSourceId, vehicleSlug } from "../core/constants.js";
 import { stateVal, unitStr, isOn } from "../utils/state.js";
-import { fmtClock, durationSeconds, socFillGradient, socTrackBg } from "../utils/format.js";
+import { fmtClock, durationSeconds, socFillGradient, socTrackBg, fmtRemainingDuration } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
 
 const ICON_BATTERY  = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="var(--secondary-text-color)"><path d="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4M13,18H11V16H9L12,11V14H14L13,18Z"/></svg>`;
@@ -180,6 +180,9 @@ export const vehicleView = {
                       : state === "driving"   ? this._t("vehicleDriving")
                       : state === "parked"    ? this._t("vehicleParked") : this._t("vehicleNotConnected");
     const lpTitle = lp?.connected ? this._loadpointTitle(lp.lpName, lp.ents) : null;
+    // The remaining charging time, as in the header of the loadpoint.
+    const remainingId = lp?.charging ? lp.ents.charge_remaining_duration : null;
+    const remaining   = remainingId ? fmtRemainingDuration(this._hass, remainingId) : "";
 
     const value = (v, icon, text) => v
       ? `<span data-more-info="${escAttr(v.entityId)}" title="${escAttr(this._vehicleAge(v.updated))}">${icon} ${text}</span>` : "";
@@ -201,6 +204,7 @@ export const vehicleView = {
           <span class="lp-name">${escHtml(title)}</span>
           ${this._renderVehicleDisabledWarn(slug, !!link)}
           ${lpTitle ? `<span class="vehicle-lp" title="${this._t("vehicleAtLoadpoint")}">${escHtml(lpTitle)}</span>` : ""}
+          ${remaining ? `<span class="lp-remaining" title="${this._t("remaining")}" data-more-info="${escAttr(remainingId)}">${remaining}</span>` : ""}
           <span class="lp-badge ${statusClass}">${statusLabel}</span>
         </div>
         ${this._renderVehicleImage(roles, title, lp?.charging ? "charging" : lp?.connected ? "connected" : null)}

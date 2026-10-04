@@ -401,12 +401,22 @@ The stat sensors exist in your ha-evcc integration but are disabled by default. 
 
 ### `battery`
 
-Home battery management block:
+Home battery, built after evcc's battery view:
 
-- Current battery SoC with visual indicator
-- Buffer SoC slider
-- Priority SoC slider
-- Discharge lock toggle
+- **Status**: state of charge, stored energy of the total capacity and the charging or discharging power. With several batteries each one gets a row of its own
+- **State of charge**: chart of the last two days from the Home Assistant recorder, paged back day by day up to 30 days. Dashed lines mark the priority and buffer SoC
+- **Battery usage**: where the solar surplus goes first (priority SoC), the battery as charging buffer (buffer SoC and when solar charging starts) and the discharge lock, worded as in evcc
+- **Grid charging**: price or CO₂ limit, the active time and the tariff of the next 24 hours with the slots at or below the limit highlighted. With ha-evcc's clear button (`button.<prefix>battery_grid_charge_limit`, disabled by default) a switch turns grid charging on and off; without it the limit can only be moved
+- **Grid discharging** (experimental in evcc): a tab of its own once ha-evcc provides the entities for it. The switch allows discharging into the grid and sets the feed-in limit to the current feed-in rate; switched off, evcc drops the limit
+- Every value opens the Home Assistant detail dialog of its entity
+
+**evcc optimizer.** When evcc's optimizer (experimental) runs, the card shows what it adds without any configuration:
+
+- The optimizer's suggestion for each battery, as long as it differs from what the battery does anyway
+- The SoC forecast as a dashed line; the chart then covers a day back and a day ahead
+- Highest and lowest SoC with their time, "full" or "empty" when the battery reaches its limit
+
+The suggestion comes from ha-evcc's battery SoC sensors. Forecast, highest and lowest need the ha-evcc WebSocket command `evcc_intg/optimizer`, which is not released yet; until then the chart ends at "now".
 
 <img src="images/battery-dark.png" width="400"> <img src="images/battery-light.png" width="400">
 
@@ -496,7 +506,7 @@ vehicle: ex30
 
 What the card shows:
 
-- **Header** with the vehicle title from evcc, the charge point it is plugged into and a status badge: *Charging* or *Connected* at an evcc charge point, *Driving* or *Parked* when the vehicle's own integration says so, otherwise *Not connected*
+- **Header** with the vehicle title from evcc, the charge point it is plugged into, the remaining charging time while it charges and a status badge: *Charging* or *Connected* at an evcc charge point, *Driving* or *Parked* when the vehicle's own integration says so, otherwise *Not connected*
 - **Picture** of the real car, when one is configured (`vehicle_image`) or the vehicle's integration offers an image entity. The card draws no vehicle of its own. Two more pictures follow the evcc charge point: `vehicle_image_connected` while the car is plugged in there, `vehicle_image_charging` while it charges. A missing one falls back to the next (charging, plugged in, the vehicle picture, the image entity), and so does one that does not load. Plugged in elsewhere, as the car's own integration may report, the vehicle picture stays
 - **Charge level, range and odometer**, with the vehicle's charge limit as a marker on the bar and, while it is plugged in, the limit set in the vehicle itself as a grey one. The tooltip tells how old a value is; a tap opens the entity
 - **Chips** for the lock, open doors and windows, warnings and the location

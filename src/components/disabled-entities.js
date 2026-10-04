@@ -97,7 +97,7 @@ export const disabledEntities = {
     // nothing left to point at; a failed attempt keeps the triangle.
     const pending = eid => this._enabling[eid] && this._enabling[eid].status !== "failed";
     return DISABLED_NEEDED.filter(n => {
-      if (n.vehicle) return false;
+      if (n.vehicle || n.site) return false;
       const eid = id(n.domain, n.suffix);
       if (!this._isEntityDisabled(eid) || pending(eid)) return false;
       if (n.hide && this._isSettingHidden(n.hide)) return false;
@@ -121,6 +121,22 @@ export const disabledEntities = {
       const eid = `${n.domain}.${prefix}${slug}_${n.suffix}`;
       return this._isEntityDisabled(eid) && !(this._enabling[eid] && this._enabling[eid].status !== "failed");
     });
+  },
+
+  // The site-level DISABLED_NEEDED entities the battery mode would use, for the
+  // triangle in its header.
+  _siteNeededDisabled(site) {
+    const prefix = this._getPrefix();
+    return DISABLED_NEEDED.filter(n => {
+      if (!n.site) return false;
+      const eid = `${n.domain}.${prefix}${n.suffix}`;
+      if (!this._isEntityDisabled(eid) || (this._enabling[eid] && this._enabling[eid].status !== "failed")) return false;
+      return !n.needs || !!site[n.needs.split(".")[1]];
+    });
+  },
+
+  _renderSiteDisabledWarn(site) {
+    return this._disabledWarnButton(() => this._siteNeededDisabled(site));
   },
 
   // The triangle in a loadpoint header, only for administrators (nobody else

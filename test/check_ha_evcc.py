@@ -38,8 +38,9 @@ def card_features():
     block = src[src.index("const FEATURES = ["):]
     block = block[:block.index("\n];")]
     feats = []
-    for m in re.finditer(r'\{\s*suffix:\s*"([^"]+)",\s*domain:\s*"([^"]+)",[^}]*?lp:\s*(true|false)', block):
-        feats.append({"suffix": m.group(1), "domain": m.group(2), "lp": m.group(3) == "true"})
+    for m in re.finditer(r'\{\s*suffix:\s*"([^"]+)",\s*domain:\s*"([^"]+)",[^}]*?lp:\s*(true|false)([^}]*)\}', block):
+        feats.append({"suffix": m.group(1), "domain": m.group(2), "lp": m.group(3) == "true",
+                      "pending": bool(re.search(r"pending:\s*true", m.group(4)))})
     return feats
 
 
@@ -131,7 +132,7 @@ def main():
     reg_ids = [e["entity_id"] for e in registry]
 
     feats = card_features() + card_vehicle_features()
-    rows, failures = [], []
+    rows, failures, pending, stale = [], [], [], []
     for f in feats:
         scope = "vehicle" if f.get("vehicle") else "loadpoint" if f["lp"] else "site"
         suffix = f["suffix"]
@@ -146,7 +147,11 @@ def main():
         pat = re.compile(rf"^{f['domain']}\.evcc_(.+_)?{re.escape(f['suffix'])}$" if f["lp"] or f.get("vehicle") else rf"^{f['domain']}\.evcc_{re.escape(f['suffix'])}$")
         seen = any(pat.match(i) for i in reg_ids)
         rows.append((f["domain"], f["suffix"], scope, ok, seen))
-        if not ok: failures.append(f)
+        # `pending`: proposed to ha-evcc, not released yet. Allowed to be missing;
+        # once ha-evcc has it, the flag has served its purpose (see below).
+        if f.get("pending"):
+            (stale if ok else pending).append(f)
+        elif not ok: failures.append(f)
 
     print(f"ha-evcc {manifest.get('version')} at {path}: {len(tags)} tags, {len(ents['site'])} site + {len(ents['loadpoint'])} loadpoint entity keys")
     print(f"card FEATURES: {len(feats)} entries\n")
@@ -154,11 +159,14 @@ def main():
     for d, sfx, scope, ok, seen in rows:
         print(f"{d:<14}{sfx:<36}{scope:<11}{'yes' if ok else 'NO':<12}{'yes' if seen else '-'}")
     print()
+    for f in pending: print(f"pending (not in ha-evcc yet): {f['domain']}.*{f['suffix']}")
+    for f in stale:   print(f"NOTE: {f['domain']}.*{f['suffix']} is marked pending but exists in ha-evcc now - drop the flag")
+    if pending or stale: print()
     if failures:
         print(f"FAILED: {len(failures)} feature(s) have no counterpart in ha-evcc:")
         for f in failures: print(f"  - {f['domain']}.*{f['suffix']} ({'loadpoint' if f['lp'] else 'site'})")
         sys.exit(1)
-    print(f"OK: all {len(feats)} features exist in ha-evcc {manifest.get('version')}")
+    print(f"OK: all {len(feats) - len(pending)} features exist in ha-evcc {manifest.get('version')}" + (f", {len(pending)} pending" if pending else ""))
 
 
 if __name__ == "__main__":

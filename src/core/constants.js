@@ -1,4 +1,4 @@
-export const EVCC_CARD_VERSION = "0.9.2";
+export const EVCC_CARD_VERSION = "0.9.3";
 
 export const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -126,6 +126,12 @@ export const FEATURES = [
   { suffix: "battery_discharge_control", domain: "switch",  type: "toggle",        lp: false },
   { suffix: "battery_grid_charge_active", domain: "binary_sensor", type: "status_bool", lp: false },
   { suffix: "battery_grid_charge_limit",  domain: "number",        type: "slider",      lp: false },
+  // Grid discharge, not in ha-evcc yet: proposed upstream, the card shows it as
+  // soon as the entities exist. `pending` keeps the contract check from failing
+  // on them (test/check_ha_evcc.py).
+  { suffix: "battery_grid_discharge",        domain: "switch",        type: "toggle",      lp: false, pending: true },
+  { suffix: "battery_grid_discharge_active", domain: "binary_sensor", type: "status_bool", lp: false, pending: true },
+  { suffix: "battery_grid_discharge_limit",  domain: "number",        type: "slider",      lp: false, pending: true },
 ];
 
 // Entities ha-evcc creates per vehicle, independent of any loadpoint:
@@ -383,7 +389,7 @@ export function validateCardConfig(config) {
 export const RENDER_ATTRS = [
   "options", "min", "max", "step", "unit_of_measurement", "device_class",
   "title", "loadpoint_title", "vehicle", "soc", "time", "weekdays",
-  "state_class", "source_type", "entity_picture",
+  "state_class", "source_type", "entity_picture", "suggestion", "restored",
 ];
 
 // Settings the user can drop from the loadpoint/compact card via
@@ -431,6 +437,8 @@ export const DISABLED_NEEDED = [
   { domain: "button", suffix: "smart_cost_limit",             hide: "smart_cost_limit",             needs: "number.smart_cost_limit",             what: "disabledWhatSmartCostClear" },
   { domain: "number", suffix: "smart_feed_in_priority_limit", hide: "smart_feed_in_priority_limit",                                               what: "disabledWhatFeedIn" },
   { domain: "button", suffix: "smart_feed_in_priority_limit", hide: "smart_feed_in_priority_limit", needs: "number.smart_feed_in_priority_limit", what: "disabledWhatFeedInClear" },
+  // Site level: the switch "grid charging" of the battery mode clears the limit through it.
+  { domain: "button", suffix: "battery_grid_charge_limit",    site: true, needs: "number.battery_grid_charge_limit", what: "disabledWhatBattGridChargeClear" },
   { domain: "number", suffix: "limit_energy",                 hide: "limit_soc",                    energy: true,                                   what: "disabledWhatLimitEnergy" },
   { domain: "sensor", suffix: "phase_action",                 needs: "select.phases_configured",                                              what: "disabledWhatPhaseAction" },
   { domain: "sensor", suffix: "charge_currents_0",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
