@@ -1,1 +1,1 @@
-{"version":"2026.8.4","commands":["forecast","sessions","plan_preview"]}
+{"version":"2026.8.4","commands":["forecast","sessions","plan_preview"],"loadpoints":[{"index":1,"id":"openwb","name":"openWB","heating":false,"disabled":false},{"index":2,"id":"wp","name":"WP","heating":true,"disabled":false}]}

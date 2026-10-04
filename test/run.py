@@ -307,7 +307,7 @@ def vehicle_mode(browser, port, t):
     slugs = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block')].map(b => b.dataset.vehicle)")
     t.check(slugs == ["ex30"] and not errors, "the card shows the one vehicle it is for", f"{slugs}; {'; '.join(errors)[:150]}")
     ex30 = page.locator(block("ex30"))
-    t.check(ex30.locator(".lp-name").inner_text().strip().upper() == "EX30" and ex30.locator(".vehicle-lp").inner_text().strip() == "openwb",
+    t.check(ex30.locator(".lp-name").inner_text().strip().upper() == "EX30" and ex30.locator(".vehicle-lp").inner_text().strip() == "openWB",
             "the connected vehicle carries its evcc title and names its loadpoint", ex30.locator(".lp-header").inner_text())
     info = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.vehicle-block[data-vehicle=ex30] .soc-label-row [data-more-info]')].map(e => [e.dataset.moreInfo, e.textContent.trim()])")
     t.check(info == [["sensor.evcc_openwb_vehicle_soc", "56 %"], ["sensor.evcc_openwb_vehicle_range", "198 km"], ["sensor.evcc_openwb_vehicle_odometer", "11445 km"]],
@@ -469,6 +469,26 @@ def vehicle_mode(browser, port, t):
     t.check(page.locator(block("ex30")).locator(".lp-remaining").count() == 0, "not charging: no remaining time")
     done(page)
 
+    # the loadpoint's name: evcc's title from ha-evcc's capabilities; a device
+    # that is not the loadpoint's own (older ha-evcc put a single loadpoint on
+    # the main device) never names it (#187)
+    page, errors = card()
+    names = page.evaluate("""() => { const c = window.__card, h = window.__hass;
+      const ents = { mode: "select.evcc_openwb_mode" };
+      h.devices.main = { id: "main", name: "evcc ☀️🚘 Solar Charging [evcc]", name_by_user: null };
+      h.entities["select.evcc_openwb_mode"] = { ...h.entities["select.evcc_openwb_mode"], device_id: "main" };
+      const caps = c._loadpointTitle("openwb", ents);
+      c._lpTitleMap = {};
+      const main = c._loadpointTitle("openwb", ents);
+      h.devices.main.name_by_user = "My evcc";
+      const renamedMain = c._loadpointTitle("openwb", ents);
+      h.devices.lp = { id: "lp", name: "evcc - Ladepunkt openWB [evcc]", name_by_user: "Wallbox" };
+      h.entities["select.evcc_openwb_mode"].device_id = "lp";
+      const renamedLp = c._loadpointTitle("openwb", ents);
+      return { caps, main, renamedMain, renamedLp }; }""")
+    t.check(names == {"caps": "openWB", "main": "openwb", "renamedMain": "openwb", "renamedLp": "Wallbox"},
+            "loadpoint name: evcc title, never the main device, a renamed loadpoint device wins", json.dumps(names, ensure_ascii=False))
+    done(page)
 
     t.group("vehicle - picture of the real car")
     PHOTO = "/test/fixtures/car.png"

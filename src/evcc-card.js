@@ -77,6 +77,7 @@ export class EvccCard extends HTMLElement {
     this._capsLoaded  = false;
     this._capsLoading = null;   // in-flight promise guard
     this._lpIndexMap  = {};     // loadpoint slug -> evcc API index (from capabilities)
+    this._lpTitleMap  = {};     // loadpoint slug -> evcc title (from capabilities)
     this._wsCache     = {};     // cacheKey -> { ts, data }
     this._wsInflight  = {};     // cacheKey -> Promise (de-dup concurrent fetches)
 
@@ -232,6 +233,7 @@ export class EvccCard extends HTMLElement {
     this._capsLoaded  = false;
     this._capsLoading = null;
     this._lpIndexMap  = {};
+    this._lpTitleMap  = {};
     this._wsCache     = {};
     this._wsInflight  = {};
     this._loadCapabilities();

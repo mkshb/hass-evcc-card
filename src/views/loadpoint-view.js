@@ -122,22 +122,24 @@ export const loadpointView = {
     // 1) a loadpoint_title attribute on the mode entity, when one is present
     const fromAttr = ents.mode && attr(hass, ents.mode, "loadpoint_title");
     if (fromAttr) return fromAttr;
-    // 2) the device registry: ha-evcc names the loadpoint device like
-    //    "evcc - Ladepunkt openWB [evcc]" — extract the title by locating the lp slug
-    //    inside the device name case-insensitively (underscores match space/dash too).
+    // The device of the loadpoint: ha-evcc names it like "evcc - Ladepunkt
+    // openWB [evcc]", the title is found by locating the lp slug inside the
+    // name case-insensitively (underscores match space/dash too). Older ha-evcc
+    // put the entities of a single loadpoint on the main device ("evcc ☀️🚘
+    // Solar Charging [evcc]"), whose name says nothing about the loadpoint.
     const probeEntity = ents.mode || ents.charge_power || ents.priority;
-    const entReg = hass?.entities?.[probeEntity];
-    const devId  = entReg?.device_id;
-    const dev    = devId ? hass?.devices?.[devId] : null;
-    if (dev?.name_by_user) return dev.name_by_user;
-    const devName = dev?.name;
-    if (devName) {
-      const slugPattern = lp.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/_/g, "[ _\\-]");
-      const re = new RegExp(`(${slugPattern})`, "i");
-      const m = devName.match(re);
-      if (m) return m[1];
-      return devName.replace(/^\[evcc\]\s*/i, "").trim() || lp;
-    }
+    const devId   = hass?.entities?.[probeEntity]?.device_id;
+    const dev     = devId ? hass?.devices?.[devId] : null;
+    const slugPattern = lp.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/_/g, "[ _\\-]");
+    const inName  = dev?.name?.match(new RegExp(`(${slugPattern})`, "i"));
+    // 2) a name the user gave the loadpoint's own device
+    if (inName && dev.name_by_user) return dev.name_by_user;
+    // 3) evcc's title from the capabilities of ha-evcc's WebSocket API
+    const fromCaps = this._lpTitleMap?.[lp];
+    if (fromCaps) return fromCaps;
+    // 4) the title inside the device name, or a device of the old "[evcc] <title>" form
+    if (inName) return inName[1];
+    if (dev?.name && /^\[evcc\]/i.test(dev.name)) return dev.name.replace(/^\[evcc\]\s*/i, "").trim() || lp;
     return lp;
   },
 
