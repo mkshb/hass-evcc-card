@@ -3961,6 +3961,19 @@ def battery_mode(browser, port, t):
     t.check(page.locator(in_card(".slider-val")).inner_text().strip() == "keine", "allowed without a limit: the slider reads 'keine'")
     done(page)
 
+    # entities an older or newer ha-evcc left in the registry: HA keeps them as
+    # unavailable and restored, the card offers no control for them
+    restored = {"state": "unavailable"}
+    gone = ["switch.evcc_battery_grid_discharge", "binary_sensor.evcc_battery_grid_discharge_active",
+            "number.evcc_battery_grid_discharge_limit", "button.evcc_battery_grid_discharge_limit", "button.evcc_battery_grid_charge_limit"]
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True, set={e: "unavailable" for e in gone}, attrs={e: {"restored": True} for e in gone})
+    tabs = page.locator(in_card("button.batt-tab")).evaluate_all("els => els.map(e => e.dataset.battTab)")
+    t.check(tabs == ["usage", "charge"], "orphaned grid discharge entities: no tab for them", str(tabs))
+    page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).click(); settle(page)
+    t.check(page.locator(in_card("[data-batt-limit]")).count() == 0, "orphaned clear button: no grid charging switch, the slider instead")
+    done(page)
+
     # a disabled clear button: warning triangle in the battery header, not at the loadpoints
     page = new_page(browser, 480, 1600)
     open_card(page, port, mode="battery", battery_ext=True, disable=["button.evcc_battery_grid_charge_limit"])

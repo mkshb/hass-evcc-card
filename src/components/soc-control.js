@@ -1,6 +1,6 @@
 import { HIDEABLE_SETTINGS } from "../core/constants.js";
 import { featureKeyOf } from "../core/entity-discovery.js";
-import { stateVal, attr, displayUnit, isOn } from "../utils/state.js";
+import { stateVal, attr, displayUnit, isOn, isLive } from "../utils/state.js";
 import { stepDecimals, fmtNum } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
 
@@ -39,7 +39,7 @@ export const socControl = {
   // the registry is for the warning triangle (disabled-entities.js).
   _limitClear(limitId) {
     const id = limitId.replace(/^number\./, "button.");
-    return this._hass.states[id] ? id : null;
+    return isLive(this._hass, id) ? id : null;
   },
 
   _renderCurrentBlock(ents, lpName = "") {

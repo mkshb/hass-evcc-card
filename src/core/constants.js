@@ -389,7 +389,7 @@ export function validateCardConfig(config) {
 export const RENDER_ATTRS = [
   "options", "min", "max", "step", "unit_of_measurement", "device_class",
   "title", "loadpoint_title", "vehicle", "soc", "time", "weekdays",
-  "state_class", "source_type", "entity_picture", "suggestion",
+  "state_class", "source_type", "entity_picture", "suggestion", "restored",
 ];
 
 // Settings the user can drop from the loadpoint/compact card via

@@ -1,4 +1,4 @@
-import { stateVal, attr, isOn } from "../utils/state.js";
+import { stateVal, attr, isOn, isLive } from "../utils/state.js";
 import { escHtml, escAttr } from "../utils/html.js";
 import { evccDate } from "../utils/format.js";
 
@@ -377,7 +377,7 @@ export const batteryView = {
   // left out; grid discharging (experimental in evcc) mostly is.
 
   _battTabs(site) {
-    const has = id => !!id && !!this._hass.states[id];
+    const has = id => isLive(this._hass, id);
     return [
       { key: "usage",     label: this._t("battTabUsage"),         show: has(site.priority_soc) || has(site.buffer_soc) || has(site.battery_discharge_control) },
       { key: "charge",    label: this._t("battTabGridCharge"),    show: has(site.battery_grid_charge_limit) },
@@ -454,7 +454,7 @@ export const batteryView = {
       items.push(item(MDI.bolt, this._t("battBufferTitle"),
         this._t(bufferVal < 100 ? "battBuffer" : "battBufferNone", { soc: sel, start }), site.buffer_soc));
     }
-    const lock = site.battery_discharge_control && this._hass.states[site.battery_discharge_control]
+    const lock = isLive(this._hass, site.battery_discharge_control)
       ? this._battSwitchRow(this._t("battDischargeLock"),
           `data-entity="${site.battery_discharge_control}" data-domain="switch"`, isOn(this._hass, site.battery_discharge_control), site.battery_discharge_control)
       : "";
@@ -483,7 +483,7 @@ export const batteryView = {
   _renderBattGridDischarge(site) {
     const allowId = site.battery_grid_discharge;
     const allowed = isOn(this._hass, allowId);
-    const limitId = site.battery_grid_discharge_limit && this._hass.states[site.battery_grid_discharge_limit] ? site.battery_grid_discharge_limit : null;
+    const limitId = isLive(this._hass, site.battery_grid_discharge_limit) ? site.battery_grid_discharge_limit : null;
     const row = this._battSwitchRow(
       `${this._t("battGridDischargeDesc")} <span class="batt-experimental">${this._t("battExperimental")}</span>`,
       `data-batt-discharge="${allowId}" data-limit="${limitId ?? ""}"`, allowed, allowId);
