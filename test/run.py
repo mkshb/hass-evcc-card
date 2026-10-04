@@ -459,6 +459,17 @@ def vehicle_mode(browser, port, t):
     t.check(badge(page) == "Nicht verbunden", "without an integration the card does not claim to know: not connected", badge(page))
     done(page)
 
+    # the remaining charging time, as in the header of the loadpoint (#187)
+    page, errors = card()
+    rem = page.locator(block("ex30")).locator(".lp-header .lp-remaining")
+    t.check(rem.count() == 1 and rem.inner_text().strip() == "6 h 48 min" and rem.get_attribute("data-more-info") == "sensor.evcc_openwb_charge_remaining_duration",
+            "charging: the remaining time in the header, opens its sensor", rem.inner_text() if rem.count() else "none")
+    done(page)
+    page, errors = card(set={"binary_sensor.evcc_openwb_charging": "off"})
+    t.check(page.locator(block("ex30")).locator(".lp-remaining").count() == 0, "not charging: no remaining time")
+    done(page)
+
+
     t.group("vehicle - picture of the real car")
     PHOTO = "/test/fixtures/car.png"
     pic = lambda page, slug="ex30": page.evaluate(f"(() => {{ const i = window.__card.shadowRoot.querySelector('.vehicle-block[data-vehicle={slug}] .vehicle-image img'); return i ? {{ src: i.getAttribute('src'), alt: i.alt, loaded: i.complete && i.naturalWidth > 0 }} : null; }})()")
