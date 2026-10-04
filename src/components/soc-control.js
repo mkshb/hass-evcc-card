@@ -122,10 +122,10 @@ export const socControl = {
           })() : "",
           hasFeedIn ? (() => {
             // Feed-in priority: above this feed-in limit, evcc prioritizes selling to the
-            // grid over PV-surplus charging. Like the smart charging limit, the limit follows
-            // evcc's global cost type, so the unit is currency/kWh (price mode) or g/kWh
-            // (CO2 mode); _sliderRow renders whichever unit the entity reports. The
-            // integration's binary_sensor is the authoritative "active" signal in both modes.
+            // grid over PV-surplus charging. Unlike the smart charging limit it does not
+            // follow evcc's cost type: evcc compares it with the feed-in tariff, so it is
+            // always a price (currency/kWh). _sliderRow renders the unit the entity reports.
+            // The integration's binary_sensor is the authoritative "active" signal.
             const active     = ents.smart_feed_in_priority_active
               ? isOn(this._hass, ents.smart_feed_in_priority_active)
               : false;

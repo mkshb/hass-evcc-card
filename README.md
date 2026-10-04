@@ -506,7 +506,7 @@ vehicle: ex30
 
 What the card shows:
 
-- **Header** with the vehicle title from evcc, the charge point it is plugged into and a status badge: *Charging* or *Connected* at an evcc charge point, *Driving* or *Parked* when the vehicle's own integration says so, otherwise *Not connected*
+- **Header** with the vehicle title from evcc, the charge point it is plugged into, the remaining charging time while it charges and a status badge: *Charging* or *Connected* at an evcc charge point, *Driving* or *Parked* when the vehicle's own integration says so, otherwise *Not connected*
 - **Picture** of the real car, when one is configured (`vehicle_image`) or the vehicle's integration offers an image entity. The card draws no vehicle of its own. Two more pictures follow the evcc charge point: `vehicle_image_connected` while the car is plugged in there, `vehicle_image_charging` while it charges. A missing one falls back to the next (charging, plugged in, the vehicle picture, the image entity), and so does one that does not load. Plugged in elsewhere, as the car's own integration may report, the vehicle picture stays
 - **Charge level, range and odometer**, with the vehicle's charge limit as a marker on the bar and, while it is plugged in, the limit set in the vehicle itself as a grey one. The tooltip tells how old a value is; a tap opens the entity
 - **Chips** for the lock, open doors and windows, warnings and the location
