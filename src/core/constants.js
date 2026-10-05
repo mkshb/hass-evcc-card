@@ -126,12 +126,10 @@ export const FEATURES = [
   { suffix: "battery_discharge_control", domain: "switch",  type: "toggle",        lp: false },
   { suffix: "battery_grid_charge_active", domain: "binary_sensor", type: "status_bool", lp: false },
   { suffix: "battery_grid_charge_limit",  domain: "number",        type: "slider",      lp: false },
-  // Grid discharge, not in ha-evcc yet: proposed upstream, the card shows it as
-  // soon as the entities exist. `pending` keeps the contract check from failing
-  // on them (test/check_ha_evcc.py).
-  { suffix: "battery_grid_discharge",        domain: "switch",        type: "toggle",      lp: false, pending: true },
-  { suffix: "battery_grid_discharge_active", domain: "binary_sensor", type: "status_bool", lp: false, pending: true },
-  { suffix: "battery_grid_discharge_limit",  domain: "number",        type: "slider",      lp: false, pending: true },
+  // Grid discharge, ha-evcc 2026.10.1+, disabled by default there
+  { suffix: "battery_grid_discharge",        domain: "switch",        type: "toggle",      lp: false },
+  { suffix: "battery_grid_discharge_active", domain: "binary_sensor", type: "status_bool", lp: false },
+  { suffix: "battery_grid_discharge_limit",  domain: "number",        type: "slider",      lp: false },
 ];
 
 // Entities ha-evcc creates per vehicle, independent of any loadpoint:
