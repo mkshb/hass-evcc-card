@@ -4037,6 +4037,28 @@ def battery_mode(browser, port, t):
     t.check(page.evaluate("window.__moreInfo") == ["sensor.evcc_battery_soc"], "Enter opens more-info", str(page.evaluate("window.__moreInfo")))
     done(page)
 
+    # the tab picked last comes back when the card is opened again, per ha-evcc
+    # instance; one that is not offered any more, or storage that fails, leaves
+    # the view at the first tab
+    page = new_page(browser, 480, 1600)
+    active = lambda: page.locator(in_card("button.batt-tab.active")).get_attribute("data-batt-tab")
+    open_card(page, port, mode="battery", battery_ext=True)
+    t.check(active() == "usage", "no tab remembered: usage first")
+    page.locator(in_card('button.batt-tab[data-batt-tab="discharge"]')).click(); settle(page)
+    stored = page.evaluate("JSON.parse(localStorage.getItem('evcc-card-battery-tab'))")
+    t.check(stored == {"evcc_": "discharge"}, "the picked tab is stored per prefix", json.dumps(stored))
+    open_card(page, port, mode="battery", battery_ext=True)
+    t.check(active() == "discharge", "opened again: the remembered tab", str(active()))
+    open_card(page, port, mode="battery")
+    t.check(active() == "usage", "remembered tab no longer offered: the first one", str(active()))
+    page.evaluate("localStorage.setItem('evcc-card-battery-tab', '{broken')")
+    open_card(page, port, mode="battery", battery_ext=True)
+    t.check(active() == "usage", "unreadable storage: the first tab", str(active()))
+    page.evaluate("() => { Storage.prototype.setItem = () => { throw new Error('quota'); }; }")
+    page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).click(); settle(page)
+    t.check(active() == "charge", "storage that refuses the write: the tab still switches", str(active()))
+    done(page)
+
     # the settings as tabs, as in evcc: usage first, a tab only for what ha-evcc provides
     page = new_page(browser, 480, 1600)
     open_card(page, port, mode="battery")

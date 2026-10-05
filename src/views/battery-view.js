@@ -22,6 +22,21 @@ const FORECAST_TTL     = 30 * 1000;
 const FORECAST_RECHECK = [3000, 10000];
 const FORECAST_BUSY    = 15 * 1000;
 
+// The settings tab last picked, per ha-evcc instance (prefix), so a card that
+// is opened again shows it. Storage that fails (private mode, full) only means
+// the view starts at the first tab, as it did before.
+const TAB_STORE = "evcc-card-battery-tab";
+function readTab(prefix) {
+  try { return (JSON.parse(localStorage.getItem(TAB_STORE)) || {})[prefix] ?? null; } catch (e) { return null; }
+}
+function rememberTab(prefix, key) {
+  try {
+    const all = JSON.parse(localStorage.getItem(TAB_STORE)) || {};
+    all[prefix] = key;
+    localStorage.setItem(TAB_STORE, JSON.stringify(all));
+  } catch (e) { /* the tab still works, only not on the next visit */ }
+}
+
 // MDI paths (Material Design Icons, as used by HA).
 const MDI = {
   battery:   "M16,20H8V6H16M16.67,4H15V2H9V4H7.33A1.33,1.33 0 0,0 6,5.33V20.67C6,21.4 6.6,22 7.33,22H16.67A1.33,1.33 0 0,0 18,20.67V5.33C18,4.6 17.4,4 16.67,4Z",
@@ -457,6 +472,7 @@ export const batteryView = {
   _renderBattSettings(site) {
     const tabs = this._battTabs(site);
     if (!tabs.length) return "";
+    if (this._battTab === undefined) this._battTab = readTab(this._getPrefix());
     const cur  = tabs.find(tab => tab.key === this._battTab) ? this._battTab : tabs[0].key;
     const body = cur === "charge" ? this._renderBattGridCharge(site)
       : cur === "discharge" ? this._renderBattGridDischarge(site)
@@ -694,6 +710,7 @@ export const batteryView = {
     this._fresh("button.batt-tab").forEach(btn => {
       btn.addEventListener("click", () => {
         this._battTab = btn.dataset.battTab;
+        rememberTab(this._getPrefix(), this._battTab);
         this._render();
       });
     });

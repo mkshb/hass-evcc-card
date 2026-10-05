@@ -409,6 +409,7 @@ Home battery, built after evcc's battery view:
 - **Battery usage**: where the solar surplus goes first (priority SoC), the battery as charging buffer (buffer SoC and when solar charging starts) and the discharge lock, worded as in evcc
 - **Grid charging**: price or CO₂ limit, the active time and the tariff of the next 24 hours with the slots at or below the limit highlighted. With ha-evcc's clear button (`button.<prefix>battery_grid_charge_limit`, ha-evcc 2026.10.1+, disabled by default) a switch turns grid charging on and off; without it the limit can only be moved
 - **Grid discharging** (experimental in evcc): a tab of its own with ha-evcc 2026.10.1+. ha-evcc ships its entities **disabled by default**, so enable at least `switch.<prefix>battery_grid_discharge`, together with `number.<prefix>battery_grid_discharge_limit` and `binary_sensor.<prefix>battery_grid_discharge_active` for the limit and its status. The switch allows discharging into the grid and sets the feed-in limit to the current feed-in rate; switched off, evcc drops the limit
+- The settings tab picked last comes back the next time the card is opened, per browser and ha-evcc instance: whoever charges from the grid every day in winter lands right there
 - Every value opens the Home Assistant detail dialog of its entity
 
 **evcc optimizer.** When evcc's optimizer (experimental) runs, the card shows what it adds without any configuration:
