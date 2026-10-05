@@ -566,7 +566,8 @@ export const batteryView = {
   // One switch for the whole of it: on allows discharging into the grid and
   // sets the limit to the feed-in rate of the moment, off disallows it and evcc
   // drops the limit itself. evcc refuses a limit while discharging is not
-  // allowed, so the limit shows only while it is.
+  // allowed, so the limit shows only while it is; the feed-in rates always do,
+  // as the grid rates do on the grid charging tab.
   _renderBattGridDischarge(site) {
     const allowId = site.battery_grid_discharge;
     const allowed = isOn(this._hass, allowId);
@@ -574,7 +575,7 @@ export const batteryView = {
     const row = this._battSwitchRow(
       `${this._t("battGridDischargeDesc")} <span class="batt-experimental">${this._t("battExperimental")}</span>`,
       `data-batt-discharge="${allowId}" data-limit="${limitId ?? ""}"`, allowed, allowId);
-    if (!allowed || !limitId) return row;
+    if (!allowed || !limitId) return row + (this._battSlots("feedin", null, () => false)?.html ?? "");
     return row + this._renderBattLimit({
       limitId, activeId: site.battery_grid_discharge_active, label: this._t("battFeedInLimit"),
       kind: "feedin", hit: (v, limit) => v >= limit, noSwitch: true,
@@ -634,6 +635,8 @@ export const batteryView = {
     const bw = W / slots.length;
     const lang = this._hass?.language || "en";
     let activeMs = 0;
+    // Charging green, discharging amber, as evcc tells the two apart.
+    const hitColor = kind === "feedin" ? "var(--evcc-amber)" : "var(--evcc-green)";
     const bars = slots.map((r, i) => {
       const on = limit !== null && hit(r.v, limit);
       if (on) activeMs += Math.min(r.e, end) - Math.max(r.s, now);
@@ -642,7 +645,7 @@ export const batteryView = {
       const tick = d.getMinutes() === 0 && d.getHours() % 6 === 0
         ? `<text x="${i * bw + bw / 2}" y="${H - 2}" text-anchor="middle" font-size="7" fill="var(--secondary-text-color,#888)">${d.getHours()}</text>` : "";
       return `<rect x="${(i * bw + 0.3).toFixed(1)}" y="${(H - MB - h).toFixed(1)}" width="${Math.max(0.5, bw - 0.6).toFixed(1)}" height="${h.toFixed(1)}" rx="0.5"
-          fill="${on ? "var(--evcc-green)" : "var(--secondary-text-color,#888)"}" opacity="${on ? 0.9 : 0.3}"><title>${d.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })} · ${fmt(r.v)}</title></rect>${tick}`;
+          fill="${on ? hitColor : "var(--secondary-text-color,#888)"}" opacity="${on ? 0.9 : 0.3}"><title>${d.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })} · ${fmt(r.v)}</title></rect>${tick}`;
     }).join("");
 
     return {

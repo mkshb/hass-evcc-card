@@ -4093,6 +4093,10 @@ def battery_mode(browser, port, t):
     page.locator(in_card('button.batt-tab[data-batt-tab="discharge"]')).click(); settle(page)
     t.check(page.locator(in_card("[data-batt-discharge]")).get_attribute("aria-checked") == "false", "grid discharging off")
     t.check(page.locator(in_card('input[data-entity="number.evcc_battery_grid_discharge_limit"]')).count() == 0, "no feed-in limit while discharging into the grid is off")
+    fills = lambda: page.locator(in_card(".batt-slots-svg rect")).evaluate_all("els => [...new Set(els.map(e => e.getAttribute('fill')))]")
+    t.check("Einspeisetarif" in page.locator(in_card(".batt-slots-legend")).inner_text(),
+            "grid discharging off: the feed-in rates of the next 24 h, as grid charging shows the grid rates")
+    t.check(fills() == ["var(--secondary-text-color,#888)"], "and nothing highlighted while it is off", str(fills()))
     done(page)
     page = new_page(browser, 480, 1600)
     open_card(page, port, mode="battery", battery_ext=True, set={"number.evcc_battery_grid_charge_limit": "0.21", "switch.evcc_battery_grid_discharge": "on"})
@@ -4105,6 +4109,16 @@ def battery_mode(browser, port, t):
             "grid discharging: one switch, no second one for the limit")
     t.check(page.locator(in_card('input[data-entity="number.evcc_battery_grid_discharge_limit"]')).count() == 1, "feed-in limit while discharging into the grid is allowed")
     t.check(page.locator(in_card(".slider-val")).inner_text().strip() == "keine", "allowed without a limit: the slider reads 'keine'")
+    done(page)
+    # the slots that meet a limit: green for charging, amber for discharging, as in evcc
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True, set={"number.evcc_battery_grid_charge_limit": "2.0",
+              "switch.evcc_battery_grid_discharge": "on", "number.evcc_battery_grid_discharge_limit": "-0.5"})
+    fills = lambda: page.locator(in_card(".batt-slots-svg rect")).evaluate_all("els => [...new Set(els.map(e => e.getAttribute('fill')))]")
+    page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).click(); settle(page)
+    t.check("var(--evcc-green)" in fills() and "var(--evcc-amber)" not in fills(), "grid charging: green slots", str(fills()))
+    page.locator(in_card('button.batt-tab[data-batt-tab="discharge"]')).click(); settle(page)
+    t.check("var(--evcc-amber)" in fills() and "var(--evcc-green)" not in fills(), "grid discharging: amber slots", str(fills()))
     done(page)
 
     # entities an older or newer ha-evcc left in the registry: HA keeps them as
