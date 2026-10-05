@@ -209,6 +209,7 @@
   "disabledWhatVehicleData": "Vrijednosti vozila bez punjača (razina napunjenosti, domet, kilometraža)",
   "debugBack": "Natrag",
   "editorHideDisabledHint": "Sakrij trokut upozorenja za onemogućene entitete",
+  "editorHideSocChart": "Sakrij grafikon razine napunjenosti",
   "smartCostActive": "Pametno punjenje aktivno",
   "in": "Proizvodnja",
   "out": "Potrošnja",

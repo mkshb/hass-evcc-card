@@ -62,6 +62,8 @@ const icon = (path, size = 18, color = "currentColor") =>
 // works for every evcc setup. What the optimizer adds (the suggestion per
 // battery, the SoC forecast, highest/lowest) shows up on its own once the data
 // is there; there is no option for it, and without data nothing hints at it.
+// `hide_soc_chart: true` leaves the chart out, and with it the recorder query;
+// highest/lowest and the recompute button stay in the status.
 export const batteryView = {
   _renderBatteryBlock(site) {
     if (!site.battery_soc) return "";
@@ -73,7 +75,7 @@ export const batteryView = {
           <span class="lp-name">${escHtml(this._config.title || this._t("homeBattery"))}</span>
         </div>
         ${this._renderBattStatus(site, forecast)}
-        ${this._renderBattHistory(site, forecast)}
+        ${this._config.hide_soc_chart === true ? "" : this._renderBattHistory(site, forecast)}
         ${this._renderBattSettings(site)}
       </div>`;
   },

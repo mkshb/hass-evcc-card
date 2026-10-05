@@ -209,6 +209,7 @@
   "disabledWhatVehicleData": "Valores del vehículo sin punto de carga (nivel de carga, autonomía, cuentakilómetros)",
   "debugBack": "Volver",
   "editorHideDisabledHint": "Ocultar el triángulo de aviso de entidades desactivadas",
+  "editorHideSocChart": "Ocultar el gráfico del estado de carga",
   "smartCostActive": "Carga inteligente activa",
   "in": "Generación",
   "out": "Consumidores",

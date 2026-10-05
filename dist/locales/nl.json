@@ -209,6 +209,7 @@
   "disabledWhatVehicleData": "Voertuigwaarden zonder laadpunt (laadniveau, actieradius, kilometerstand)",
   "debugBack": "Terug",
   "editorHideDisabledHint": "Waarschuwingsdriehoek voor uitgeschakelde entiteiten verbergen",
+  "editorHideSocChart": "Grafiek van de laadtoestand verbergen",
   "smartCostActive": "Slim laden actief",
   "in": "Opwek",
   "out": "Verbruikers",

@@ -649,6 +649,7 @@ export class EvccCardEditor extends HTMLElement {
       fields.push(many("no_plan", ...this._listField("no_plan", lps), { label: this._t("editorNoPlanForTitle") }));
       fields.push(many("no_pv",   ...this._listField("no_pv",   lps), { label: this._t("editorNoPvForTitle") }));
     }
+    if (mode === "battery") fields.push(flag("hide_soc_chart", { label: this._t("editorHideSocChart") }));
     if (showChargeCurrent) {
       fields.push(pick("charge_current_settings", [
         tOpt("collapsed", "editorCollapsed"),

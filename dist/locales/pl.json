@@ -209,6 +209,7 @@
   "disabledWhatVehicleData": "Wartości pojazdu bez punktu ładowania (poziom naładowania, zasięg, przebieg)",
   "debugBack": "Wstecz",
   "editorHideDisabledHint": "Ukryj trójkąt ostrzegawczy dla wyłączonych encji",
+  "editorHideSocChart": "Ukryj wykres stanu naładowania",
   "smartCostActive": "Inteligentne ładowanie aktywne",
   "in": "Produkcja",
   "out": "Odbiorniki",

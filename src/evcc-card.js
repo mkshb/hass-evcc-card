@@ -344,6 +344,7 @@ export class EvccCard extends HTMLElement {
     const mode = this._config?.mode || "loadpoint";
     let rows = CARD_SIZES[mode] ?? CARD_SIZES.loadpoint;
     if (mode === "loadpoint" || mode === "compact") rows *= this._sizedLoadpointCount();
+    if (mode === "battery" && this._config?.hide_soc_chart === true) rows -= 3;
     if (this._config?.site_details !== "collapsed") rows += CARD_SIZE_DETAILS[mode] ?? 0;
     if (normalizeStatsPeriod(this._config?.stats_period, "total") !== "none") {
       rows += CARD_SIZE_FOOTER[mode] ?? 0;

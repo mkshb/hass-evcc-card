@@ -209,6 +209,7 @@
   "disabledWhatVehicleData": "Vehicle values without a loadpoint (charge level, range, odometer)",
   "debugBack": "Back",
   "editorHideDisabledHint": "Hide the warning triangle for disabled entities",
+  "editorHideSocChart": "Hide the state of charge chart",
   "smartCostActive": "Smart charging active",
   "in": "Generation",
   "out": "Consumers",

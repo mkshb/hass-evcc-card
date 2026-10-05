@@ -3961,6 +3961,18 @@ def battery_mode(browser, port, t):
             "power in the HA language (2,9) and evcc's sign (positive discharges)", page.locator(in_card(".batt-stat-val")).nth(1).inner_text())
     done(page)
 
+    # hide_soc_chart: no chart and no recorder query, the status and the settings stay
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, config={"mode": "battery", "hide_soc_chart": True}, optimizer=True)
+    t.check(not errors, "hide_soc_chart: renders without errors", "; ".join(errors))
+    t.check(page.locator(in_card(".batt-chart")).count() == 0 and page.locator(in_card(".batt-stepper")).count() == 0,
+            "hide_soc_chart: no chart, no day stepper")
+    t.check(not hist_calls(page), "hide_soc_chart: the recorder is not asked")
+    t.check(page.locator(in_card(".batt-status")).count() == 1 and page.locator(in_card(".batt-extreme")).count() == 2
+            and page.locator(in_card("button.batt-tab")).count() >= 1,
+            "hide_soc_chart: status with highest/lowest and the settings tabs stay")
+    done(page)
+
     # with the optimizer: a day back to a day ahead, the forecast dashed, highest/lowest
     page = new_page(browser, 480, 1600)
     errors = open_card(page, port, mode="battery", optimizer=True, set={"sensor.evcc_battery_soc": "83", "sensor.evcc_battery_0_soc": "83"})

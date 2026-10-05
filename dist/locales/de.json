@@ -209,6 +209,7 @@
   "disabledWhatVehicleData": "Fahrzeugwerte ohne Ladepunkt (Ladestand, Reichweite, Kilometerstand)",
   "debugBack": "Zurück",
   "editorHideDisabledHint": "Warndreieck für deaktivierte Entitäten ausblenden",
+  "editorHideSocChart": "Ladestand-Diagramm ausblenden",
   "smartCostActive": "Smart Charging aktiv",
   "in": "Erzeugung",
   "out": "Verbraucher",
