@@ -593,6 +593,9 @@ def vehicle_pictures(page, t):
     idx = garage[0]
     vehicles = demo_vehicles()
     reset_demo()
+    # a group before may have left the Garage charging; switched off, evcc
+    # still reports it charging for a few seconds
+    wait_for(lambda: not evcc_state()["loadpoints"][idx - 1]["charging"], timeout=90)
     config = dashboard_config()
     config["views"].append({"title": "pictures", "path": "pictures", "cards": [
         {"type": "custom:evcc-card", "mode": "vehicle", "prefix": PREFIX, "vehicle": slug, **PICS} for _, slug in sorted(vehicles.values())]})
