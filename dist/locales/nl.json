@@ -75,6 +75,7 @@
   "grid": "Net",
   "gridImport": "Netafname",
   "gridExport": "Teruglevering",
+  "gridAndBattery": "Net en batterij",
   "gridStatus": "Netstatus",
   "gridNeutral": "Netoniafhankelijk",
   "battCharge": "Batterij laden",

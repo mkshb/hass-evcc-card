@@ -75,6 +75,7 @@
   "grid": "Grid",
   "gridImport": "Grid import",
   "gridExport": "Grid export",
+  "gridAndBattery": "Grid & battery",
   "gridStatus": "Grid status",
   "gridNeutral": "Grid independent",
   "battCharge": "Battery charge",

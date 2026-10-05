@@ -75,6 +75,7 @@
   "grid": "Red",
   "gridImport": "Importación de red",
   "gridExport": "Exportación de red",
+  "gridAndBattery": "Red y batería",
   "gridStatus": "Estado de red",
   "gridNeutral": "Independiente de la red",
   "battCharge": "Carga de batería",

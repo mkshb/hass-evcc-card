@@ -75,6 +75,7 @@
   "grid": "Netz",
   "gridImport": "Netzbezug",
   "gridExport": "Einspeisung",
+  "gridAndBattery": "Netz & Batterie",
   "gridStatus": "Netzstatus",
   "gridNeutral": "Netzunabhängig",
   "battCharge": "Batterie laden",

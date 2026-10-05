@@ -75,6 +75,7 @@
   "grid": "Réseau",
   "gridImport": "Soutirage réseau",
   "gridExport": "Injection réseau",
+  "gridAndBattery": "Réseau et batterie",
   "gridStatus": "État du réseau",
   "gridNeutral": "Indépendant du réseau",
   "battCharge": "Charge batterie",

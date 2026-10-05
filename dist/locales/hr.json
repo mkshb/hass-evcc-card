@@ -75,6 +75,7 @@
   "grid": "Mreža",
   "gridImport": "Uvoz s mreže",
   "gridExport": "Izvoz u mrežu",
+  "gridAndBattery": "Mreža i baterija",
   "gridStatus": "Status mreže",
   "gridNeutral": "Neovisno o mreži",
   "battCharge": "Punjenje baterije",

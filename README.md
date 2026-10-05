@@ -313,7 +313,8 @@ Full site energy overview:
 - Individual PV string values (e.g. BKW, Dach) shown as indented sub-rows
 - Live power table with IN/OUT sections: Grid import/export, PV generation, home consumption, charging, battery
 - Battery SoC shown inline in the charging/discharging row
-- Active charge points shown as indented sub-rows under the charging row
+- Every charge point shown as an indented sub-row under the charging row
+- The table keeps its rows while the power moves, so the card keeps its height and the dashboard stays still: everything the installation has is listed, without power dimmed. Grid and battery are one row each on the side the power flows (import and discharge under IN, export and charge under OUT, idle under IN)
 
 The IN/OUT detail table can be toggled by clicking the power bar. It opens expanded by default; set `site_details` to `collapsed` in the editor to start collapsed instead.
 
@@ -331,6 +332,7 @@ Sankey-style energy flow diagram showing how energy is distributed from sources 
 - Each node shows an MDI icon and current power value; battery and vehicle nodes include SoC as a sub-label
 - All nodes are clickable to open the Home Assistant entity detail dialog
 - Collapsible IN/OUT detail table below — click the diagram to toggle (same as `site` mode)
+- The diagram has a fixed height per installation, room for every node it could show, so nodes coming and going only redistribute the bands and the card keeps its height
 
 <img src="images/flow-dark.png" width="400"> <img src="images/flow-light.png" width="400">
 
@@ -341,9 +343,9 @@ Sankey-style energy flow diagram showing how energy is distributed from sources 
 Compact site energy overview with a focus on the current grid status:
 
 - Large net grid value with color coding: red for import, green for export
-- Solar self-sufficiency badge (e.g. `86 % Solar`) shown when PV is active
-- Source chips: active energy sources (PV generation, grid import, battery discharge)
-- Consumer chips: active consumers (home consumption, charge points with vehicle SoC/temperature, battery charging, grid export)
+- Solar self-sufficiency badge (e.g. `86 % Solar`), dimmed at 0 %
+- Three sections of chips: generation (PV), grid & battery (saying the direction: import or export, charging or discharging), consumption (home and every charge point with vehicle SoC/temperature)
+- Chips without power stay, dimmed, so the card keeps its height while the power moves (on a card narrower than about 400 px the direction labels of grid and battery can still wrap their section)
 
 > **Deprecation notice:** `mode: site2` still works but is deprecated and will be removed in a future release. Please migrate to `mode: grid`.
 

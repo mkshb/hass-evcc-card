@@ -75,6 +75,7 @@
   "grid": "Sieć",
   "gridImport": "Pobór z sieci",
   "gridExport": "Oddanie do sieci",
+  "gridAndBattery": "Sieć i akumulator",
   "gridStatus": "Status sieci",
   "gridNeutral": "Niezależny od sieci",
   "battCharge": "Ładowanie baterii",

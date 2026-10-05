@@ -2543,6 +2543,77 @@ def discovery(browser, port, t):
     done(page)
 
 
+def stable_height(browser, port, t):
+    """flow, grid and site keep their height while the power moves: a dashboard
+    reflows every time a card changes its height. Rows and chips of what the
+    installation has stay, without power dimmed; grid and battery change side
+    (table) or say the direction (grid mode); the Sankey diagram has a fixed
+    height per installation."""
+    t.group("stable height - flow, grid, site")
+    states = {
+        "night":   {"sensor.evcc_pv_power": "0", "sensor.evcc_grid_power": "800", "sensor.evcc_battery_power": "600", "sensor.evcc_home_power": "1400",
+                    "sensor.evcc_openwb_charge_power": "0", "sensor.evcc_wp_charge_power": "0"},
+        "noon":    {"sensor.evcc_pv_power": "8000", "sensor.evcc_grid_power": "-3000", "sensor.evcc_battery_power": "-2500", "sensor.evcc_home_power": "2500",
+                    "sensor.evcc_openwb_charge_power": "0", "sensor.evcc_wp_charge_power": "0"},
+        "busy":    {"sensor.evcc_pv_power": "9000", "sensor.evcc_grid_power": "1500", "sensor.evcc_battery_power": "1000", "sensor.evcc_home_power": "800",
+                    "sensor.evcc_openwb_charge_power": "11000", "sensor.evcc_wp_charge_power": "2000"},
+        "quiet":   {"sensor.evcc_pv_power": "500", "sensor.evcc_grid_power": "0", "sensor.evcc_battery_power": "0", "sensor.evcc_home_power": "500",
+                    "sensor.evcc_openwb_charge_power": "0", "sensor.evcc_wp_charge_power": "0"},
+    }
+    for mode in ("flow", "grid", "site"):
+        # grid: grid and battery name the direction, the longer label may wrap
+        # their section on a card narrower than 400 px
+        for width in ((400, 520) if mode == "grid" else (300, 400)):
+            heights = {}
+            for name, st in states.items():
+                page = new_page(browser, 480, 1400)
+                open_card(page, port, mode=mode, set=st, width=width)
+                heights[name] = page.evaluate("Math.round(document.querySelector('evcc-card').getBoundingClientRect().height)")
+                done(page)
+            t.check(len(set(heights.values())) == 1, f"{mode} at {width} px: the same height in every state", json.dumps(heights))
+
+    # the table: idle rows dimmed, grid and battery on the side the power flows
+    page = new_page(browser, 480, 1400)
+    rows = lambda sec: page.locator(in_card(f".site-section >> nth={sec}")).locator(".site-row").evaluate_all(
+        "els => els.map(e => [e.querySelector('.site-row-name').textContent.trim(), e.classList.contains('site-row-idle')])")
+    open_card(page, port, mode="site", set=states["noon"])
+    out = dict(rows(1))
+    t.check(out.get("Einspeisung") is False and any(k.startswith("Batterie laden") for k in out),
+            "exporting and charging: grid and battery among the consumers", json.dumps(out))
+    t.check(out.get("Ladepunkt") is True and any(k.startswith("openwb") and v for k, v in out.items()),
+            "loadpoints without power stay, dimmed", json.dumps(out))
+    open_card(page, port, mode="site", set=states["quiet"])
+    inn = dict(rows(0))
+    t.check(inn.get("Netz") is True and any(k.startswith("Batterie –") and v for k, v in inn.items()),
+            "idle grid and battery: in the generation section, dimmed", json.dumps(inn))
+    done(page)
+
+    # grid mode: a section of its own for grid and battery
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, mode="grid", set=states["noon"] | {"sensor.evcc_battery_1_power": "0", "sensor.evcc_battery_1_soc": "0"})
+    labels = page.locator(in_card(".s2-section-label")).all_inner_texts()
+    t.check([l.upper() for l in labels] == ["ERZEUGUNG", "NETZ & BATTERIE", "VERBRAUCH"], "grid mode: three sections", str(labels))
+    stack = page.locator(in_card(".s2-section >> nth=1")).locator(".s2-chip").all_inner_texts()
+    t.check(len(stack) == 3 and "Einspeisung" in stack[0] and "entlädt 2.9 kW · 30 %" in stack[1] and "bereit" in stack[2],
+            "grid and battery say the direction, each battery too", str(stack))
+    t.check(page.locator(in_card(".s2-section >> nth=2")).locator(".s2-chip.s2-idle").count() == 2, "idle loadpoints dimmed")
+    open_card(page, port, mode="grid", set=states["night"] | {"sensor.evcc_pv_power": "0"})
+    t.check(page.locator(in_card(".s2-pv-badge")).count() == 1, "the solar share badge stays")
+    done(page)
+
+    # ha-evcc creates battery_0 to battery_3 up front: an index without values is no battery
+    gone = {"sensor.evcc_battery_1_power": "unknown", "sensor.evcc_battery_1_soc": "unknown"}
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, mode="site", set=states["noon"] | gone)
+    names = page.locator(in_card(".site-row-name")).all_inner_texts()
+    t.check(not any(n.startswith("Batterie 1") or n.startswith("Batterie 2") for n in names),
+            "table: a battery index without values is left out, one battery has no sub-rows", str(names))
+    open_card(page, port, mode="grid", set=states["noon"] | gone)
+    stack = page.locator(in_card(".s2-section >> nth=1")).locator(".s2-chip").all_inner_texts()
+    t.check(len(stack) == 2 and stack[1].startswith("Batterie laden"), "grid mode: one battery chip", str(stack))
+    done(page)
+
+
 def flow_labels(browser, port, t):
     """Flow labels must stay readable when the bands get thin.
 
@@ -4147,7 +4218,7 @@ def battery_mode(browser, port, t):
 
 GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "editor_vehicle_map": editor_vehicle_map, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
-          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities, "solar_share": solar_share, "vehicle": vehicle_mode, "battery": battery_mode}
+          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities, "solar_share": solar_share, "vehicle": vehicle_mode, "battery": battery_mode, "stable_height": stable_height}
 
 
 # The groups that take longest go to the workers first, so the run is not left
