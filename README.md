@@ -417,7 +417,7 @@ Home battery, built after evcc's battery view:
 - The SoC forecast as a dashed line; the chart then covers a day back and a day ahead
 - Highest and lowest SoC with their time, "full" or "empty" when the battery reaches its limit
 
-The suggestion comes from ha-evcc's battery SoC sensors. Forecast, highest and lowest need the ha-evcc WebSocket command `evcc_intg/optimizer` (ha-evcc 2026.10.1+); with an older ha-evcc the chart ends at "now".
+The suggestion comes from ha-evcc's battery SoC sensors. Forecast, highest and lowest need the ha-evcc WebSocket command `evcc_intg/optimizer` (ha-evcc 2026.10.1+); with an older ha-evcc the chart ends at "now". The card picks up a new optimizer result within 30 seconds, and a few seconds after the grid charge limit or grid discharging is changed in the card, as soon as evcc has computed it again (evcc releases after 0.316.2 do so right after the change).
 
 <img src="images/battery-dark.png" width="400"> <img src="images/battery-light.png" width="400">
 

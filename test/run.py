@@ -3905,6 +3905,44 @@ def battery_mode(browser, port, t):
     t.check(len(ext) == 2 and "voll" in ext[0] and "Tiefststand" in ext[1], "highest and lowest from batteryForecast", str(ext))
     done(page)
 
+    # the forecast is asked for again after 30 s; an unchanged answer draws
+    # nothing, a changed one renders once; a write of the grid charge limit or
+    # grid discharging asks again after 3 and 10 s, any other write does not
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", optimizer=True, battery_ext=True)
+    page.evaluate("""() => { const c = window.__card, orig = c._render.bind(c);
+      window.__renders = 0; c._render = function (...a) { window.__renders++; return orig(...a); }; }""")
+    calls = lambda: sum(1 for m in page.evaluate("window.__hass.wsCalls") if m["type"] == "evcc_intg/optimizer")
+    age = lambda s: page.evaluate(f"() => {{ const c = window.__card; c._wsCache.optimizer.ts = Date.now() - {s * 1000}; c._battForecast(); }}")
+    n = calls(); age(20); page.wait_for_timeout(700)
+    t.check(calls() == n, "forecast younger than 30 s: not asked for again")
+    age(31); page.wait_for_timeout(700)
+    t.check(calls() == n + 1, "forecast older than 30 s: asked for again", f"{n} -> {calls()}")
+    t.check(page.evaluate("window.__renders") == 0, "an unchanged answer renders nothing", str(page.evaluate("window.__renders")))
+    page.evaluate("""() => { const h = window.__card._hass, orig = h.callWS.bind(h);
+      h.callWS = msg => msg.type !== "evcc_intg/optimizer" ? orig(msg)
+        : orig(msg).then(d => ({ ...d, batteryForecast: { ...d.batteryForecast, lowest: null } })); }""")
+    age(31); page.wait_for_timeout(700)
+    t.check(page.evaluate("window.__renders") == 1, "a changed answer renders once", str(page.evaluate("window.__renders")))
+    t.check(page.locator(in_card(".batt-extreme")).count() == 1, "and shows the new forecast (no lowest any more)")
+    n = calls()
+    page.evaluate("window.__card._setNumberValue('number.evcc_residual_power', 100)")
+    page.wait_for_timeout(3500)
+    t.check(calls() == n, "a write of another setting asks for no forecast", f"{n} -> {calls()}")
+    page.evaluate("window.__card._setNumberValue('number.evcc_battery_grid_charge_limit', 0.25)")
+    page.wait_for_timeout(1000)
+    t.check(calls() == n, "grid charge limit written: not asked for at once (evcc is still computing)")
+    page.wait_for_timeout(2500)
+    t.check(calls() == n + 1, "asked for again 3 s after the write", f"{n} -> {calls()}")
+    page.wait_for_timeout(7000)
+    t.check(calls() == n + 2, "and once more after 10 s", f"{n} -> {calls()}")
+    n = calls()
+    page.evaluate("() => { window.__card._hass.callService = () => Promise.reject(new Error('mock: refused')); }")
+    page.evaluate("window.__card._toggleEntity('switch', 'switch.evcc_battery_grid_discharge', false).catch(() => {})")
+    page.wait_for_timeout(3500)
+    t.check(calls() == n, "a refused write asks for no forecast", f"{n} -> {calls()}")
+    done(page)
+
     # the suggestion shows only when it differs from what the battery does (actionable)
     for actionable in (True, False):
         page = new_page(browser, 480, 1600)

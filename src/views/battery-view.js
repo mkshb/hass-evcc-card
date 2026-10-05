@@ -13,6 +13,13 @@ const HIST_STEP = 5 * 60 * 1000;
 // (core/site_optimizer.go, currentSlotSuggestion).
 const SUGGESTION_ACTIONS = ["normal", "hold", "charge", "holdcharge", "discharge"];
 
+// ha-evcc keeps evcc's optimizer result in memory, as evcc pushes it, so
+// asking again costs evcc nothing. evcc runs the optimizer again a few seconds
+// after the grid charge limit or grid discharging changed; the card asks
+// again that long after its own write.
+const FORECAST_TTL     = 30 * 1000;
+const FORECAST_RECHECK = [3000, 10000];
+
 // MDI paths (Material Design Icons, as used by HA).
 const MDI = {
   battery:   "M16,20H8V6H16M16.67,4H15V2H9V4H7.33A1.33,1.33 0 0,0 6,5.33V20.67C6,21.4 6.6,22 7.33,22H16.67A1.33,1.33 0 0,0 18,20.67V5.33C18,4.6 17.4,4 16.67,4Z",
@@ -180,12 +187,30 @@ export const batteryView = {
   // the command is missing, pending, failed or there is nothing to show.
   _battForecast() {
     if (!this._hasCmd("optimizer")) return null;
-    const data = this._wsFetch("evcc_intg/optimizer", {}, "optimizer", 5 * 60 * 1000)?.data;
+    const data = this._wsFetch("evcc_intg/optimizer", {}, "optimizer", FORECAST_TTL)?.data;
     if (!data) return null;
     const series = this._battForecastSeries(data.evopt);
     const bf     = data.batteryForecast;
     if (!series.length && !bf?.highest && !bf?.lowest) return null;
     return { series, highest: bf?.highest ?? null, lowest: bf?.lowest ?? null };
+  },
+
+  // Called by every write (actions.js). After an accepted write of the grid
+  // charge limit or grid discharging, the forecast is asked for again; an
+  // answer that has not changed draws nothing (_wsFetch).
+  _battForecastWritten(entityId, call) {
+    const site = this._cachedEntities?.site;
+    if (this._config.mode !== "battery" || !site || !this._hasCmd("optimizer")) return;
+    if (entityId !== site.battery_grid_charge_limit && entityId !== site.battery_grid_discharge) return;
+    Promise.resolve(call).then(() => this._battForecastRecheck(), () => {});
+  },
+
+  _battForecastRecheck() {
+    for (const ms of FORECAST_RECHECK) {
+      setTimeout(() => {
+        if (this.isConnected) this._wsFetch("evcc_intg/optimizer", {}, "optimizer", 0);
+      }, ms);
+    }
   },
 
   // The combined SoC curve of the home batteries in percent. evcc lists

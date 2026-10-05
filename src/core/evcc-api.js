@@ -65,7 +65,9 @@ export const evccApi = {
 
   // Generic cached WS fetch. Returns fresh cached data synchronously; otherwise
   // kicks off the request (de-duplicated per cacheKey) and triggers a re-render
-  // when it lands. Returns null while data is pending or on error.
+  // when it lands with something new. An answer equal to the cached one only
+  // renews the TTL: the render drew it already. Returns null while data is
+  // pending or on error.
   // Returns: null (pending/no hass), { data } on success, { error } on failure.
   _wsFetch(type, params, cacheKey, ttlMs) {
     if (!this._hass || !this._entryId) return null;
@@ -77,21 +79,30 @@ export const evccApi = {
     if (!this._wsInflight[cacheKey]) {
       const entryId = this._entryId;
       const stale   = () => entryId !== this._entryId;   // entry swapped meanwhile, see _syncIntegrationInstance
+      let changed = true;
+      // Stores the answer, keeping the cached object when it is the same.
+      const store = (result) => {
+        const json = JSON.stringify(result);
+        const prev = this._wsCache[cacheKey];
+        changed = !prev || prev.json !== json;
+        this._wsCache[cacheKey] = { ts: Date.now(), result: changed ? result : prev.result, json };
+      };
       this._wsInflight[cacheKey] = this._hass
         .callWS({ type, entry_id: entryId, ...params })
         .then(data => {
           if (stale()) return;
-          this._wsCache[cacheKey] = { ts: Date.now(), result: { data } };
+          store({ data });
         })
         .catch(e => {
           if (stale()) return;
           const msg = e?.message || (typeof e === "object" ? JSON.stringify(e) : String(e));
           console.warn(`[evcc-card] ${type} failed:`, msg);
-          this._wsCache[cacheKey] = { ts: Date.now(), result: { error: msg } };
+          store({ error: msg });
         })
         .finally(() => {
           if (stale()) return;
           delete this._wsInflight[cacheKey];
+          if (!changed) return;
           // Throttle the re-render to avoid rapid DOM replacements.
           if (!this._wsRenderTimer) {
             this._wsRenderTimer = setTimeout(() => {
