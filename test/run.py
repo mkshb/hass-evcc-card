@@ -151,10 +151,11 @@ def done(page):
 
 def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="de", ws=True, set=None, disable=None,
               rename=None, attrs=None, tariff=None, second=None, wsname=None, admin=True, drop=None,
-              vehicle_device=True, optimizer=False, battery_ext=False):
+              vehicle_device=True, optimizer=False, battery_ext=False, optimize=False):
     q = {"w": width, "lang": lang}
     if optimizer: q["optimizer"] = 1
     if battery_ext: q["battext"] = 1
+    if optimize: q["optimize"] = 1
     if not ws: q["ws"] = 0
     if not admin: q["admin"] = 0
     if drop: q["drop"] = ",".join(drop)
@@ -3942,6 +3943,53 @@ def battery_mode(browser, port, t):
     page.wait_for_timeout(3500)
     t.check(calls() == n, "a refused write asks for no forecast", f"{n} -> {calls()}")
     done(page)
+
+    # evcc's "optimize" button (proposed to ha-evcc): only with the entity and a
+    # running optimizer; a press turns its icon until a new forecast is in, and
+    # a write of the grid charge limit presses it
+    for opt, optimize, want in ((True, False, 0), (False, True, 0), (True, True, 1)):
+        page = new_page(browser, 480, 1600)
+        open_card(page, port, mode="battery", optimizer=opt, battery_ext=True, optimize=optimize)
+        t.check(page.locator(in_card("button.batt-recompute")).count() == want,
+                f"recompute button {'shown' if want else 'hidden'} (optimizer {opt}, button entity {optimize})")
+        done(page)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", optimizer=True, battery_ext=True, optimize=True)
+    btn = page.locator(in_card("button.batt-recompute"))
+    t.check(btn.get_attribute("aria-label") == "Prognose neu berechnen", "recompute button labelled", str(btn.get_attribute("aria-label")))
+    presses = lambda: [c for c in page.evaluate("window.__hass.serviceCalls") if c["domain"] == "button"]
+    n = calls()
+    btn.click(); page.wait_for_timeout(200)
+    t.check(presses() == [{"domain": "button", "service": "press", "data": {"entity_id": "button.evcc_optimize"}}],
+            "a click presses button.evcc_optimize", json.dumps(presses()))
+    t.check("busy" in (btn.get_attribute("class") or "") and btn.is_disabled(), "the icon turns while evcc computes, the button is locked")
+    page.evaluate("""() => { const h = window.__card._hass, orig = h.callWS.bind(h);
+      h.callWS = msg => msg.type !== "evcc_intg/optimizer" ? orig(msg)
+        : orig(msg).then(d => ({ ...d, batteryForecast: { ...d.batteryForecast, lowest: null } })); }""")
+    page.wait_for_timeout(3700)
+    t.check(calls() == n + 1, "asked for the forecast 3 s after the press", f"{n} -> {calls()}")
+    t.check("busy" not in (btn.get_attribute("class") or "") and not btn.is_disabled(), "a new forecast stops the turning")
+    done(page)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", optimizer=True, battery_ext=True, optimize=True)
+    page.evaluate("window.__card._setNumberValue('number.evcc_battery_grid_charge_limit', 0.25)")
+    page.wait_for_timeout(300)
+    got = [c["data"].get("entity_id") for c in page.evaluate("window.__hass.serviceCalls")]
+    t.check(got == ["number.evcc_battery_grid_charge_limit", "button.evcc_optimize"], "grid charge limit written, then optimize pressed", str(got))
+    t.check("busy" in (page.locator(in_card("button.batt-recompute")).get_attribute("class") or ""), "and the icon turns")
+    done(page)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", optimizer=True, battery_ext=True, optimize=True)
+    page.evaluate("() => { window.__card._hass.callService = () => Promise.reject(new Error('mock: refused')); }")
+    page.locator(in_card("button.batt-recompute")).click(); page.wait_for_timeout(300)
+    t.check("busy" not in (page.locator(in_card("button.batt-recompute")).get_attribute("class") or ""), "a refused press stops the turning at once")
+    done(page)
+    for opt, want in ((True, 1), (False, 0)):
+        page = new_page(browser, 480, 1600)
+        open_card(page, port, mode="battery", optimizer=opt, battery_ext=True, optimize=True, disable=["button.evcc_optimize"])
+        t.check(page.locator(in_card(".battery-block .lp-disabled-warn")).count() == want,
+                f"disabled optimize button: {'triangle' if opt else 'no triangle'} {'with' if opt else 'without'} a running optimizer")
+        done(page)
 
     # the suggestion shows only when it differs from what the battery does (actionable)
     for actionable in (True, False):

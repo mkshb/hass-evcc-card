@@ -130,6 +130,10 @@ export const FEATURES = [
   { suffix: "battery_grid_discharge",        domain: "switch",        type: "toggle",      lp: false },
   { suffix: "battery_grid_discharge_active", domain: "binary_sensor", type: "status_bool", lp: false },
   { suffix: "battery_grid_discharge_limit",  domain: "number",        type: "slider",      lp: false },
+  // evcc's "optimize" (POST /api/optimize), not in ha-evcc yet: proposed
+  // upstream, the battery mode shows it as soon as the entity exists. `pending`
+  // keeps the contract check from failing on it (test/check_ha_evcc.py).
+  { suffix: "optimize",                      domain: "button",        type: "button",      lp: false, pending: true },
 ];
 
 // Entities ha-evcc creates per vehicle, independent of any loadpoint:
@@ -431,12 +435,16 @@ export const SLIDER_STEP_KEYS = [
 //            creates these disabled when it cannot read evcc's configuration
 //            (no admin password), and enabled they then stay empty: the hint in
 //            the vehicle block says so.
+//   site:      a site entity; its triangle sits in the header of the battery mode
+//   optimizer: only while evcc's optimizer delivers a forecast
 export const DISABLED_NEEDED = [
   { domain: "button", suffix: "smart_cost_limit",             hide: "smart_cost_limit",             needs: "number.smart_cost_limit",             what: "disabledWhatSmartCostClear" },
   { domain: "number", suffix: "smart_feed_in_priority_limit", hide: "smart_feed_in_priority_limit",                                               what: "disabledWhatFeedIn" },
   { domain: "button", suffix: "smart_feed_in_priority_limit", hide: "smart_feed_in_priority_limit", needs: "number.smart_feed_in_priority_limit", what: "disabledWhatFeedInClear" },
   // Site level: the switch "grid charging" of the battery mode clears the limit through it.
   { domain: "button", suffix: "battery_grid_charge_limit",    site: true, needs: "number.battery_grid_charge_limit", what: "disabledWhatBattGridChargeClear" },
+  // Site level, only while evcc's optimizer delivers a forecast: the battery mode recomputes it through it.
+  { domain: "button", suffix: "optimize",                     site: true, optimizer: true,                          what: "disabledWhatOptimize" },
   { domain: "number", suffix: "limit_energy",                 hide: "limit_soc",                    energy: true,                                   what: "disabledWhatLimitEnergy" },
   { domain: "sensor", suffix: "phase_action",                 needs: "select.phases_configured",                                              what: "disabledWhatPhaseAction" },
   { domain: "sensor", suffix: "charge_currents_0",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },

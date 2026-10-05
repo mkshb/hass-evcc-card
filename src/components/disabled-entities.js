@@ -131,6 +131,7 @@ export const disabledEntities = {
       if (!n.site) return false;
       const eid = `${n.domain}.${prefix}${n.suffix}`;
       if (!this._isEntityDisabled(eid) || (this._enabling[eid] && this._enabling[eid].status !== "failed")) return false;
+      if (n.optimizer && !this._battForecast()) return false;
       return !n.needs || !!site[n.needs.split(".")[1]];
     });
   },

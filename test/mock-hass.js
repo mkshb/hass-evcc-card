@@ -20,9 +20,11 @@
 //   drop:    ["button.evcc_openwb_smart_cost_limit", ...]  remove state and registry entry (never created)
 //   vehicleDevice: false  leave out the vehicle integration's device (test/fixtures/vehicle_device.json),
 //            so the vehicle mode runs on ha-evcc data alone
-//   batteryExt: true  the battery entities proposed to ha-evcc (grid discharge, clear
-//            buttons for the battery limits), as the ha-evcc fork creates them; `disable`
-//            and `set` apply to them as to every other entity
+//   batteryExt: true  the battery entities of ha-evcc 2026.10.1 (grid discharge, clear
+//            buttons for the battery limits), enabled; `disable` and `set` apply to
+//            them as to every other entity
+//   optimize: true  with batteryExt: evcc's "optimize" button, proposed to ha-evcc
+//            (button.evcc_optimize)
 //   optimizer: true  ha-evcc offers evcc_intg/optimizer and evcc's optimizer reports a
 //            battery forecast (generated from now on, like the recorder history)
 // A battery SoC by time of day: charges from 9 to 14 h, discharges overnight.
@@ -32,7 +34,7 @@ function mockSoc(t) {
   return Math.max(5, Math.min(100, Math.round(v)));
 }
 
-export async function createMockHass({ batteryExt = false, optimizer = false, language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, admin = true, drop = [], vehicleDevice = true } = {}) {
+export async function createMockHass({ batteryExt = false, optimizer = false, language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, admin = true, drop = [], vehicleDevice = true, optimize = false } = {}) {
   const base = new URL("./fixtures/", import.meta.url);
   const json = (p) => fetch(new URL(p, base)).then(r => r.ok ? r.json() : Promise.reject(new Error(`fixture ${p}: ${r.status}`)));
 
@@ -63,6 +65,7 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
       "number.evcc_battery_grid_discharge_limit":        ["unknown", { ...euro, friendly_name: "Hausbatterie: Netzentladen € Limit ≥" }],
       "button.evcc_battery_grid_discharge_limit":        ["unknown", { friendly_name: "Hausbatterie: Netzentladen Limit entfernen" }],
     };
+    if (optimize) ext["button.evcc_optimize"] = ["unknown", { friendly_name: "Optimizer neu berechnen" }];
     for (const [id, [state, attributes]] of Object.entries(ext)) {
       states[id] = { entity_id: id, state, attributes };
       registry.push({ entity_id: id, platform: "evcc_intg", config_entry_id: "01KW6EDNA9VMFE9QX98AZHH3WC", disabled_by: null,

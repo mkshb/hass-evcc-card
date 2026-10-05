@@ -16,9 +16,11 @@ const SUGGESTION_ACTIONS = ["normal", "hold", "charge", "holdcharge", "discharge
 // ha-evcc keeps evcc's optimizer result in memory, as evcc pushes it, so
 // asking again costs evcc nothing. evcc runs the optimizer again a few seconds
 // after the grid charge limit or grid discharging changed; the card asks
-// again that long after its own write.
+// again that long after its own write. evcc's "optimize" button starts a run
+// at once; its icon turns until a new result is in, at most FORECAST_BUSY.
 const FORECAST_TTL     = 30 * 1000;
 const FORECAST_RECHECK = [3000, 10000];
+const FORECAST_BUSY    = 15 * 1000;
 
 // MDI paths (Material Design Icons, as used by HA).
 const MDI = {
@@ -27,6 +29,7 @@ const MDI = {
   home:      "M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z",
   bolt:      "M11 15H6L13 1V9H18L11 23V15Z",
   sun:       "M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z",
+  refresh:   "M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z",
   lightbulb: "M12,2A7,7 0 0,0 5,9C5,11.38 6.19,13.47 8,14.74V17A1,1 0 0,0 9,18H15A1,1 0 0,0 16,17V14.74C17.81,13.47 19,11.38 19,9A7,7 0 0,0 12,2M9,21A1,1 0 0,0 10,22H14A1,1 0 0,0 15,21V20H9V21Z",
   grid:      "M8.28,5.45L6.5,4.55L7.76,2H16.23L17.5,4.55L15.72,5.44L15,4H9L8.28,5.45M18.62,8H14.09L13.3,5H10.7L9.91,8H5.38L4.1,10.55L5.89,11.44L6.62,10H17.38L18.1,11.45L19.89,10.56L18.62,8M17.77,22H15.7L15.46,21.1L12,15.9L8.53,21.1L8.3,22H6.23L9.12,11H11.19L10.83,12.35L12,14.1L13.16,12.35L12.81,11H14.88L17.77,22M11.4,15L10.5,13.65L9.32,18.13L11.4,15M14.68,18.12L13.5,13.64L12.6,15L14.68,18.12Z",
 };
@@ -142,6 +145,7 @@ export const batteryView = {
         ${suggestion || forecast ? `<div class="batt-optimizer">
           ${suggestion ? this._renderBattSuggestion(suggestion, suggestionId) : ""}
           ${this._renderBattExtremes(forecast)}
+          ${forecast ? this._renderBattRecompute(site) : ""}
         </div>` : ""}
         ${rows ? `<div class="batt-devs">${rows}</div>` : ""}
       </div>`;
@@ -153,6 +157,15 @@ export const batteryView = {
     return `<span class="batt-suggestion" data-suggestion="${s.action}" title="${this._t("battSuggestion")}"${moreInfo(socId)}>
         ${icon(MDI.lightbulb, 14)}<span>${this._t(`battAction_${s.action}`)}</span>
       </span>`;
+  },
+
+  // evcc's "optimize" button, once ha-evcc provides it; turns while evcc computes.
+  _renderBattRecompute(site) {
+    if (!isLive(this._hass, site.optimize)) return "";
+    const busy  = this._battOptimizeBusy();
+    const label = escAttr(this._t("battRecompute"));
+    return `<button type="button" class="batt-recompute${busy ? " busy" : ""}" data-entity="${escAttr(site.optimize)}"
+        title="${label}" aria-label="${label}"${busy ? ` aria-busy="true" disabled` : ""}>${icon(MDI.refresh, 16)}</button>`;
   },
 
   // "Highest / lowest" from the forecast; past points are left out.
@@ -196,13 +209,18 @@ export const batteryView = {
   },
 
   // Called by every write (actions.js). After an accepted write of the grid
-  // charge limit or grid discharging, the forecast is asked for again; an
-  // answer that has not changed draws nothing (_wsFetch).
+  // charge limit or grid discharging, evcc's "optimize" button is pressed when
+  // there is one (an evcc that computes again on its own ignores the second
+  // start while running), and the forecast is asked for again; an answer that
+  // has not changed draws nothing (_wsFetch).
   _battForecastWritten(entityId, call) {
     const site = this._cachedEntities?.site;
     if (this._config.mode !== "battery" || !site || !this._hasCmd("optimizer")) return;
     if (entityId !== site.battery_grid_charge_limit && entityId !== site.battery_grid_discharge) return;
-    Promise.resolve(call).then(() => this._battForecastRecheck(), () => {});
+    Promise.resolve(call).then(() => {
+      if (this._battForecast() && isLive(this._hass, site.optimize)) this._battOptimize(site.optimize);
+      else this._battForecastRecheck();
+    }, () => {});
   },
 
   _battForecastRecheck() {
@@ -211,6 +229,32 @@ export const batteryView = {
         if (this.isConnected) this._wsFetch("evcc_intg/optimizer", {}, "optimizer", 0);
       }, ms);
     }
+  },
+
+  // Starts an optimizer run in evcc. The button turns from the press until an
+  // answer differs from the one before it, at most FORECAST_BUSY; a refused
+  // press stops it at once.
+  _battOptimize(buttonId) {
+    const run = { json: this._wsCache.optimizer?.json, until: Date.now() + FORECAST_BUSY };
+    this._battOptimizing = run;
+    const end = () => {
+      if (this._battOptimizing !== run) return;
+      this._battOptimizing = null;
+      if (this.isConnected) this._render();
+    };
+    Promise.resolve(this._pressButton(buttonId)).then(() => this._battForecastRecheck(), end);
+    setTimeout(end, FORECAST_BUSY + 50);
+    this._render();
+  },
+
+  _battOptimizeBusy() {
+    const run = this._battOptimizing;
+    if (!run) return false;
+    if (Date.now() > run.until || this._wsCache.optimizer?.json !== run.json) {
+      this._battOptimizing = null;
+      return false;
+    }
+    return true;
   },
 
   // The combined SoC curve of the home batteries in percent. evcc lists
@@ -636,6 +680,10 @@ export const batteryView = {
       });
     });
 
+    this._fresh("button.batt-recompute").forEach(btn => {
+      btn.addEventListener("click", () => { if (!btn.disabled) this._battOptimize(btn.dataset.entity); });
+    });
+
     this._fresh(".batt-inline-select").forEach(sel => {
       sel.addEventListener("change", () => {
         this._setSelectOption(sel.dataset.entity, sel.value);
@@ -680,6 +728,12 @@ export const batteryCss = `
       .batt-optimizer { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: .76rem; color: var(--secondary-text-color); }
       .batt-suggestion { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; background: color-mix(in srgb, var(--evcc-bolt) 18%, transparent); color: var(--primary-text-color); font-size: .74rem; }
       .batt-extreme { white-space: nowrap; }
+      .batt-recompute { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: none; border-radius: 50%; background: none; color: var(--secondary-text-color); cursor: pointer; }
+      .batt-recompute:hover { color: var(--primary-text-color); background: color-mix(in srgb, var(--primary-text-color) 8%, transparent); }
+      .batt-recompute:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+      .batt-recompute.busy { cursor: progress; }
+      .batt-recompute.busy svg { animation: batt-spin 1s linear infinite; }
+      @keyframes batt-spin { to { transform: rotate(360deg); } }
       .batt-devs { display: flex; flex-direction: column; gap: 6px; }
       .batt-dev-row { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: center; font-size: .78rem; }
       .batt-dev-power { grid-column: 1 / -1; color: var(--secondary-text-color); font-size: .72rem; }
