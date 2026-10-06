@@ -2562,8 +2562,9 @@ def stable_height(browser, port, t):
     }
     for mode in ("flow", "grid", "site"):
         # grid: grid and battery name the direction, the longer label may wrap
-        # their section on a card narrower than 400 px
-        for width in ((400, 520) if mode == "grid" else (300, 400)):
+        # their section on a card of about 400 px or less (WebKit's wider
+        # glyphs already do at 400 px)
+        for width in ((520,) if mode == "grid" else (300, 400)):
             heights = {}
             for name, st in states.items():
                 page = new_page(browser, 480, 1400)

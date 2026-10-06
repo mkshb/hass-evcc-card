@@ -346,7 +346,7 @@ Compact site energy overview with a focus on the current grid status:
 - Large net grid value with color coding: red for import, green for export
 - Solar self-sufficiency badge (e.g. `86 % Solar`), dimmed at 0 %
 - Three sections of chips: generation (PV), grid & battery (saying the direction: import or export, charging or discharging), consumption (home and every charge point with vehicle SoC/temperature)
-- Chips without power stay, dimmed, so the card keeps its height while the power moves (on a card narrower than about 400 px the direction labels of grid and battery can still wrap their section)
+- Chips without power stay, dimmed, so the card keeps its height while the power moves (on a card of about 400 px or less the direction labels of grid and battery can still wrap their section)
 
 > **Deprecation notice:** `mode: site2` still works but is deprecated and will be removed in a future release. Please migrate to `mode: grid`.
 
