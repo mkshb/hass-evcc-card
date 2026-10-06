@@ -112,6 +112,7 @@ All charge points and site entities are **automatically discovered** via the HA 
 - [Home Assistant](https://www.home-assistant.io/) (2023.x or newer)
 - [ha-evcc](https://github.com/marq24/ha-evcc) integration installed and configured, with a running [EVCC](https://evcc.io/) instance connected to it
 - For the **live plan preview** and the **session-based statistics**, ha-evcc **2026.6.x or newer** is required (it ships evcc's WebSocket data API). On older versions these features fall back automatically and the rest of the card keeps working.
+- For the SoC forecast of the optimizer, grid discharging and the clear button of the grid charge limit in the `battery` mode, ha-evcc **2026.10.1 or newer** is required, for the button that recomputes the forecast **2026.10.2 or newer**.
 
 ---
 
@@ -204,6 +205,7 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 | `site_details` | `string` | `expanded` | `collapsed` to hide the IN/OUT detail table by default in `site` and `flow` mode |
 | `charge_current_settings` | `string` | `collapsed` | `expanded` to show charge settings expanded by default |
 | `hide_settings` | `list` | *(none)* | Remove individual settings from the `loadpoint` / `compact` card: `limit_soc`, `min_soc`, `phases`, `max_current`, `min_current`, `battery_boost`, `solar_share`, `priority`, `smart_cost_limit`, `smart_feed_in_priority_limit`. See [Slider settings](#slider-settings) |
+| `hide_soc_chart` | `boolean` | `false` | `battery` mode: `true` leaves out the state of charge chart, for a card that is only used for the settings. Highest and lowest SoC of the optimizer stay in the status |
 | `hide_disabled_hint` | `boolean` | `false` | `true` hides the warning triangle that the `loadpoint` / `compact` card shows administrators while an entity it needs is disabled in Home Assistant. See [Disabled entities](#disabled-entities) |
 | `slider_steps` | `map` | *(entity)* | Override the step of a number slider per setting (visual editor: **Advanced**), e.g. `{ smart_cost_limit: 0.01, limit_soc: 5 }`. Keys are ha-evcc feature names and are matched exactly. Also sets the increment of the − / + buttons in the direct-input panel. Number entities only. See [Slider settings](#slider-settings) |
 | `stats_period` | `string` | *(see note)* | Statistics period: `month`, `year`, `total`, `none`. Unconfigured, the `stats` mode opens on the most recent month and the footer under `site`/`grid`/`flow` summarises everything; `none` hides that footer. The older values `30d`, `365d` and `thisYear` still work |
@@ -312,7 +314,8 @@ Full site energy overview:
 - Individual PV string values (e.g. BKW, Dach) shown as indented sub-rows
 - Live power table with IN/OUT sections: Grid import/export, PV generation, home consumption, charging, battery
 - Battery SoC shown inline in the charging/discharging row
-- Active charge points shown as indented sub-rows under the charging row
+- Every charge point shown as an indented sub-row under the charging row
+- The table keeps its rows while the power moves, so the card keeps its height and the dashboard stays still: everything the installation has is listed, without power dimmed. Grid and battery are one row each on the side the power flows (import and discharge under IN, export and charge under OUT, idle under IN)
 
 The IN/OUT detail table can be toggled by clicking the power bar. It opens expanded by default; set `site_details` to `collapsed` in the editor to start collapsed instead.
 
@@ -330,6 +333,7 @@ Sankey-style energy flow diagram showing how energy is distributed from sources 
 - Each node shows an MDI icon and current power value; battery and vehicle nodes include SoC as a sub-label
 - All nodes are clickable to open the Home Assistant entity detail dialog
 - Collapsible IN/OUT detail table below — click the diagram to toggle (same as `site` mode)
+- The diagram has a fixed height per installation, room for every node it could show, so nodes coming and going only redistribute the bands and the card keeps its height
 
 <img src="images/flow-dark.png" width="400"> <img src="images/flow-light.png" width="400">
 
@@ -340,9 +344,9 @@ Sankey-style energy flow diagram showing how energy is distributed from sources 
 Compact site energy overview with a focus on the current grid status:
 
 - Large net grid value with color coding: red for import, green for export
-- Solar self-sufficiency badge (e.g. `86 % Solar`) shown when PV is active
-- Source chips: active energy sources (PV generation, grid import, battery discharge)
-- Consumer chips: active consumers (home consumption, charge points with vehicle SoC/temperature, battery charging, grid export)
+- Solar self-sufficiency badge (e.g. `86 % Solar`), dimmed at 0 %
+- Three sections of chips: generation (PV), grid & battery (saying the direction: import or export, charging or discharging), consumption (home and every charge point with vehicle SoC/temperature)
+- Chips without power stay, dimmed, so the card keeps its height while the power moves (on a card of about 400 px or less the direction labels of grid and battery can still wrap their section)
 
 > **Deprecation notice:** `mode: site2` still works but is deprecated and will be removed in a future release. Please migrate to `mode: grid`.
 
@@ -404,10 +408,11 @@ The stat sensors exist in your ha-evcc integration but are disabled by default. 
 Home battery, built after evcc's battery view:
 
 - **Status**: state of charge, stored energy of the total capacity and the charging or discharging power. With several batteries each one gets a row of its own
-- **State of charge**: chart of the last two days from the Home Assistant recorder, paged back day by day up to 30 days. Dashed lines mark the priority and buffer SoC
+- **State of charge**: chart of the last two days from the Home Assistant recorder, paged back day by day up to 30 days. Dashed lines mark the priority and buffer SoC. `hide_soc_chart: true` leaves the chart out
 - **Battery usage**: where the solar surplus goes first (priority SoC), the battery as charging buffer (buffer SoC and when solar charging starts) and the discharge lock, worded as in evcc
-- **Grid charging**: price or CO₂ limit, the active time and the tariff of the next 24 hours with the slots at or below the limit highlighted. With ha-evcc's clear button (`button.<prefix>battery_grid_charge_limit`, disabled by default) a switch turns grid charging on and off; without it the limit can only be moved
-- **Grid discharging** (experimental in evcc): a tab of its own once ha-evcc provides the entities for it. The switch allows discharging into the grid and sets the feed-in limit to the current feed-in rate; switched off, evcc drops the limit
+- **Grid charging**: price or CO₂ limit, the active time and the tariff of the next 24 hours with the slots at or below the limit highlighted. With ha-evcc's clear button (`button.<prefix>battery_grid_charge_limit`, ha-evcc 2026.10.1+, disabled by default) a switch turns grid charging on and off; without it the limit can only be moved
+- **Grid discharging** (experimental in evcc): a tab of its own with ha-evcc 2026.10.1+. ha-evcc ships its entities **disabled by default**, so enable at least `switch.<prefix>battery_grid_discharge`, together with `number.<prefix>battery_grid_discharge_limit` and `binary_sensor.<prefix>battery_grid_discharge_active` for the limit and its status. The switch allows discharging into the grid and sets the feed-in limit to the current feed-in rate; switched off, evcc drops the limit. Like the grid charging tab, it shows the tariff of the next 24 hours, here the feed-in rate, with the slots at or above the limit in amber (grid charging: green)
+- The settings tab picked last comes back the next time the card is opened, per browser and ha-evcc instance: whoever charges from the grid every day in winter lands right there
 - Every value opens the Home Assistant detail dialog of its entity
 
 **evcc optimizer.** When evcc's optimizer (experimental) runs, the card shows what it adds without any configuration:
@@ -415,8 +420,9 @@ Home battery, built after evcc's battery view:
 - The optimizer's suggestion for each battery, as long as it differs from what the battery does anyway
 - The SoC forecast as a dashed line; the chart then covers a day back and a day ahead
 - Highest and lowest SoC with their time, "full" or "empty" when the battery reaches its limit
+- A button that has evcc compute the forecast again, with ha-evcc's optimize button (`button.<prefix>optimize`, ha-evcc 2026.10.2+, disabled by default; administrators see the warning triangle in the battery header to enable it). The card also presses it after changing the grid charge limit or grid discharging, so the forecast follows the new setting within seconds
 
-The suggestion comes from ha-evcc's battery SoC sensors. Forecast, highest and lowest need the ha-evcc WebSocket command `evcc_intg/optimizer`, which is not released yet; until then the chart ends at "now".
+The suggestion comes from ha-evcc's battery SoC sensors. Forecast, highest and lowest need the ha-evcc WebSocket command `evcc_intg/optimizer` (ha-evcc 2026.10.1+); with an older ha-evcc the chart ends at "now". The card picks up a new optimizer result within 30 seconds, and a few seconds after the grid charge limit or grid discharging is changed in the card, as soon as evcc has computed it again (evcc releases after 0.316.2 do so right after the change).
 
 <img src="images/battery-dark.png" width="400"> <img src="images/battery-light.png" width="400">
 

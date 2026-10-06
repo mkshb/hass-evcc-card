@@ -151,10 +151,11 @@ def done(page):
 
 def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="de", ws=True, set=None, disable=None,
               rename=None, attrs=None, tariff=None, second=None, wsname=None, admin=True, drop=None,
-              vehicle_device=True, optimizer=False, battery_ext=False):
+              vehicle_device=True, optimizer=False, battery_ext=False, optimize=False):
     q = {"w": width, "lang": lang}
     if optimizer: q["optimizer"] = 1
     if battery_ext: q["battext"] = 1
+    if optimize: q["optimize"] = 1
     if not ws: q["ws"] = 0
     if not admin: q["admin"] = 0
     if drop: q["drop"] = ",".join(drop)
@@ -2542,6 +2543,78 @@ def discovery(browser, port, t):
     done(page)
 
 
+def stable_height(browser, port, t):
+    """flow, grid and site keep their height while the power moves: a dashboard
+    reflows every time a card changes its height. Rows and chips of what the
+    installation has stay, without power dimmed; grid and battery change side
+    (table) or say the direction (grid mode); the Sankey diagram has a fixed
+    height per installation."""
+    t.group("stable height - flow, grid, site")
+    states = {
+        "night":   {"sensor.evcc_pv_power": "0", "sensor.evcc_grid_power": "800", "sensor.evcc_battery_power": "600", "sensor.evcc_home_power": "1400",
+                    "sensor.evcc_openwb_charge_power": "0", "sensor.evcc_wp_charge_power": "0"},
+        "noon":    {"sensor.evcc_pv_power": "8000", "sensor.evcc_grid_power": "-3000", "sensor.evcc_battery_power": "-2500", "sensor.evcc_home_power": "2500",
+                    "sensor.evcc_openwb_charge_power": "0", "sensor.evcc_wp_charge_power": "0"},
+        "busy":    {"sensor.evcc_pv_power": "9000", "sensor.evcc_grid_power": "1500", "sensor.evcc_battery_power": "1000", "sensor.evcc_home_power": "800",
+                    "sensor.evcc_openwb_charge_power": "11000", "sensor.evcc_wp_charge_power": "2000"},
+        "quiet":   {"sensor.evcc_pv_power": "500", "sensor.evcc_grid_power": "0", "sensor.evcc_battery_power": "0", "sensor.evcc_home_power": "500",
+                    "sensor.evcc_openwb_charge_power": "0", "sensor.evcc_wp_charge_power": "0"},
+    }
+    for mode in ("flow", "grid", "site"):
+        # grid: grid and battery name the direction, the longer label may wrap
+        # their section on a card of about 400 px or less (WebKit's wider
+        # glyphs already do at 400 px)
+        for width in ((520,) if mode == "grid" else (300, 400)):
+            heights = {}
+            for name, st in states.items():
+                page = new_page(browser, 480, 1400)
+                open_card(page, port, mode=mode, set=st, width=width)
+                heights[name] = page.evaluate("Math.round(document.querySelector('evcc-card').getBoundingClientRect().height)")
+                done(page)
+            t.check(len(set(heights.values())) == 1, f"{mode} at {width} px: the same height in every state", json.dumps(heights))
+
+    # the table: idle rows dimmed, grid and battery on the side the power flows
+    page = new_page(browser, 480, 1400)
+    rows = lambda sec: page.locator(in_card(f".site-section >> nth={sec}")).locator(".site-row").evaluate_all(
+        "els => els.map(e => [e.querySelector('.site-row-name').textContent.trim(), e.classList.contains('site-row-idle')])")
+    open_card(page, port, mode="site", set=states["noon"])
+    out = dict(rows(1))
+    t.check(out.get("Einspeisung") is False and any(k.startswith("Batterie laden") for k in out),
+            "exporting and charging: grid and battery among the consumers", json.dumps(out))
+    t.check(out.get("Ladepunkt") is True and any(k.startswith("openwb") and v for k, v in out.items()),
+            "loadpoints without power stay, dimmed", json.dumps(out))
+    open_card(page, port, mode="site", set=states["quiet"])
+    inn = dict(rows(0))
+    t.check(inn.get("Netz") is True and any(k.startswith("Batterie –") and v for k, v in inn.items()),
+            "idle grid and battery: in the generation section, dimmed", json.dumps(inn))
+    done(page)
+
+    # grid mode: a section of its own for grid and battery
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, mode="grid", set=states["noon"] | {"sensor.evcc_battery_1_power": "0", "sensor.evcc_battery_1_soc": "0"})
+    labels = page.locator(in_card(".s2-section-label")).all_inner_texts()
+    t.check([l.upper() for l in labels] == ["ERZEUGUNG", "NETZ & BATTERIE", "VERBRAUCH"], "grid mode: three sections", str(labels))
+    stack = page.locator(in_card(".s2-section >> nth=1")).locator(".s2-chip").all_inner_texts()
+    t.check(len(stack) == 3 and "Einspeisung" in stack[0] and "entlädt 2.9 kW · 30 %" in stack[1] and "bereit" in stack[2],
+            "grid and battery say the direction, each battery too", str(stack))
+    t.check(page.locator(in_card(".s2-section >> nth=2")).locator(".s2-chip.s2-idle").count() == 2, "idle loadpoints dimmed")
+    open_card(page, port, mode="grid", set=states["night"] | {"sensor.evcc_pv_power": "0"})
+    t.check(page.locator(in_card(".s2-pv-badge")).count() == 1, "the solar share badge stays")
+    done(page)
+
+    # ha-evcc creates battery_0 to battery_3 up front: an index without values is no battery
+    gone = {"sensor.evcc_battery_1_power": "unknown", "sensor.evcc_battery_1_soc": "unknown"}
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, mode="site", set=states["noon"] | gone)
+    names = page.locator(in_card(".site-row-name")).all_inner_texts()
+    t.check(not any(n.startswith("Batterie 1") or n.startswith("Batterie 2") for n in names),
+            "table: a battery index without values is left out, one battery has no sub-rows", str(names))
+    open_card(page, port, mode="grid", set=states["noon"] | gone)
+    stack = page.locator(in_card(".s2-section >> nth=1")).locator(".s2-chip").all_inner_texts()
+    t.check(len(stack) == 2 and stack[1].startswith("Batterie laden"), "grid mode: one battery chip", str(stack))
+    done(page)
+
+
 def flow_labels(browser, port, t):
     """Flow labels must stay readable when the bands get thin.
 
@@ -3889,6 +3962,18 @@ def battery_mode(browser, port, t):
             "power in the HA language (2,9) and evcc's sign (positive discharges)", page.locator(in_card(".batt-stat-val")).nth(1).inner_text())
     done(page)
 
+    # hide_soc_chart: no chart and no recorder query, the status and the settings stay
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, config={"mode": "battery", "hide_soc_chart": True}, optimizer=True)
+    t.check(not errors, "hide_soc_chart: renders without errors", "; ".join(errors))
+    t.check(page.locator(in_card(".batt-chart")).count() == 0 and page.locator(in_card(".batt-stepper")).count() == 0,
+            "hide_soc_chart: no chart, no day stepper")
+    t.check(not hist_calls(page), "hide_soc_chart: the recorder is not asked")
+    t.check(page.locator(in_card(".batt-status")).count() == 1 and page.locator(in_card(".batt-extreme")).count() == 2
+            and page.locator(in_card("button.batt-tab")).count() >= 1,
+            "hide_soc_chart: status with highest/lowest and the settings tabs stay")
+    done(page)
+
     # with the optimizer: a day back to a day ahead, the forecast dashed, highest/lowest
     page = new_page(browser, 480, 1600)
     errors = open_card(page, port, mode="battery", optimizer=True, set={"sensor.evcc_battery_soc": "83", "sensor.evcc_battery_0_soc": "83"})
@@ -3904,6 +3989,91 @@ def battery_mode(browser, port, t):
     ext = page.locator(in_card(".batt-extreme")).all_inner_texts()
     t.check(len(ext) == 2 and "voll" in ext[0] and "Tiefststand" in ext[1], "highest and lowest from batteryForecast", str(ext))
     done(page)
+
+    # the forecast is asked for again after 30 s; an unchanged answer draws
+    # nothing, a changed one renders once; a write of the grid charge limit or
+    # grid discharging asks again after 3 and 10 s, any other write does not
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", optimizer=True, battery_ext=True)
+    page.evaluate("""() => { const c = window.__card, orig = c._render.bind(c);
+      window.__renders = 0; c._render = function (...a) { window.__renders++; return orig(...a); }; }""")
+    calls = lambda: sum(1 for m in page.evaluate("window.__hass.wsCalls") if m["type"] == "evcc_intg/optimizer")
+    age = lambda s: page.evaluate(f"() => {{ const c = window.__card; c._wsCache.optimizer.ts = Date.now() - {s * 1000}; c._battForecast(); }}")
+    n = calls(); age(20); page.wait_for_timeout(700)
+    t.check(calls() == n, "forecast younger than 30 s: not asked for again")
+    age(31); page.wait_for_timeout(700)
+    t.check(calls() == n + 1, "forecast older than 30 s: asked for again", f"{n} -> {calls()}")
+    t.check(page.evaluate("window.__renders") == 0, "an unchanged answer renders nothing", str(page.evaluate("window.__renders")))
+    page.evaluate("""() => { const h = window.__card._hass, orig = h.callWS.bind(h);
+      h.callWS = msg => msg.type !== "evcc_intg/optimizer" ? orig(msg)
+        : orig(msg).then(d => ({ ...d, batteryForecast: { ...d.batteryForecast, lowest: null } })); }""")
+    age(31); page.wait_for_timeout(700)
+    t.check(page.evaluate("window.__renders") == 1, "a changed answer renders once", str(page.evaluate("window.__renders")))
+    t.check(page.locator(in_card(".batt-extreme")).count() == 1, "and shows the new forecast (no lowest any more)")
+    n = calls()
+    page.evaluate("window.__card._setNumberValue('number.evcc_residual_power', 100)")
+    page.wait_for_timeout(3500)
+    t.check(calls() == n, "a write of another setting asks for no forecast", f"{n} -> {calls()}")
+    page.evaluate("window.__card._setNumberValue('number.evcc_battery_grid_charge_limit', 0.25)")
+    page.wait_for_timeout(1000)
+    t.check(calls() == n, "grid charge limit written: not asked for at once (evcc is still computing)")
+    page.wait_for_timeout(2500)
+    t.check(calls() == n + 1, "asked for again 3 s after the write", f"{n} -> {calls()}")
+    page.wait_for_timeout(7000)
+    t.check(calls() == n + 2, "and once more after 10 s", f"{n} -> {calls()}")
+    n = calls()
+    page.evaluate("() => { window.__card._hass.callService = () => Promise.reject(new Error('mock: refused')); }")
+    page.evaluate("window.__card._toggleEntity('switch', 'switch.evcc_battery_grid_discharge', false).catch(() => {})")
+    page.wait_for_timeout(3500)
+    t.check(calls() == n, "a refused write asks for no forecast", f"{n} -> {calls()}")
+    done(page)
+
+    # evcc's "optimize" button (proposed to ha-evcc): only with the entity and a
+    # running optimizer; a press turns its icon until a new forecast is in, and
+    # a write of the grid charge limit presses it
+    for opt, optimize, want in ((True, False, 0), (False, True, 0), (True, True, 1)):
+        page = new_page(browser, 480, 1600)
+        open_card(page, port, mode="battery", optimizer=opt, battery_ext=True, optimize=optimize)
+        t.check(page.locator(in_card("button.batt-recompute")).count() == want,
+                f"recompute button {'shown' if want else 'hidden'} (optimizer {opt}, button entity {optimize})")
+        done(page)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", optimizer=True, battery_ext=True, optimize=True)
+    btn = page.locator(in_card("button.batt-recompute"))
+    t.check(btn.get_attribute("aria-label") == "Prognose neu berechnen", "recompute button labelled", str(btn.get_attribute("aria-label")))
+    presses = lambda: [c for c in page.evaluate("window.__hass.serviceCalls") if c["domain"] == "button"]
+    n = calls()
+    btn.click(); page.wait_for_timeout(200)
+    t.check(presses() == [{"domain": "button", "service": "press", "data": {"entity_id": "button.evcc_optimize"}}],
+            "a click presses button.evcc_optimize", json.dumps(presses()))
+    t.check("busy" in (btn.get_attribute("class") or "") and btn.is_disabled(), "the icon turns while evcc computes, the button is locked")
+    page.evaluate("""() => { const h = window.__card._hass, orig = h.callWS.bind(h);
+      h.callWS = msg => msg.type !== "evcc_intg/optimizer" ? orig(msg)
+        : orig(msg).then(d => ({ ...d, batteryForecast: { ...d.batteryForecast, lowest: null } })); }""")
+    page.wait_for_timeout(3700)
+    t.check(calls() == n + 1, "asked for the forecast 3 s after the press", f"{n} -> {calls()}")
+    t.check("busy" not in (btn.get_attribute("class") or "") and not btn.is_disabled(), "a new forecast stops the turning")
+    done(page)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", optimizer=True, battery_ext=True, optimize=True)
+    page.evaluate("window.__card._setNumberValue('number.evcc_battery_grid_charge_limit', 0.25)")
+    page.wait_for_timeout(300)
+    got = [c["data"].get("entity_id") for c in page.evaluate("window.__hass.serviceCalls")]
+    t.check(got == ["number.evcc_battery_grid_charge_limit", "button.evcc_optimize"], "grid charge limit written, then optimize pressed", str(got))
+    t.check("busy" in (page.locator(in_card("button.batt-recompute")).get_attribute("class") or ""), "and the icon turns")
+    done(page)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", optimizer=True, battery_ext=True, optimize=True)
+    page.evaluate("() => { window.__card._hass.callService = () => Promise.reject(new Error('mock: refused')); }")
+    page.locator(in_card("button.batt-recompute")).click(); page.wait_for_timeout(300)
+    t.check("busy" not in (page.locator(in_card("button.batt-recompute")).get_attribute("class") or ""), "a refused press stops the turning at once")
+    done(page)
+    for opt, want in ((True, 1), (False, 0)):
+        page = new_page(browser, 480, 1600)
+        open_card(page, port, mode="battery", optimizer=opt, battery_ext=True, optimize=True, disable=["button.evcc_optimize"])
+        t.check(page.locator(in_card(".battery-block .lp-disabled-warn")).count() == want,
+                f"disabled optimize button: {'triangle' if opt else 'no triangle'} {'with' if opt else 'without'} a running optimizer")
+        done(page)
 
     # the suggestion shows only when it differs from what the battery does (actionable)
     for actionable in (True, False):
@@ -3951,6 +4121,28 @@ def battery_mode(browser, port, t):
     t.check(page.evaluate("window.__moreInfo") == ["sensor.evcc_battery_soc"], "Enter opens more-info", str(page.evaluate("window.__moreInfo")))
     done(page)
 
+    # the tab picked last comes back when the card is opened again, per ha-evcc
+    # instance; one that is not offered any more, or storage that fails, leaves
+    # the view at the first tab
+    page = new_page(browser, 480, 1600)
+    active = lambda: page.locator(in_card("button.batt-tab.active")).get_attribute("data-batt-tab")
+    open_card(page, port, mode="battery", battery_ext=True)
+    t.check(active() == "usage", "no tab remembered: usage first")
+    page.locator(in_card('button.batt-tab[data-batt-tab="discharge"]')).click(); settle(page)
+    stored = page.evaluate("JSON.parse(localStorage.getItem('evcc-card-battery-tab'))")
+    t.check(stored == {"evcc_": "discharge"}, "the picked tab is stored per prefix", json.dumps(stored))
+    open_card(page, port, mode="battery", battery_ext=True)
+    t.check(active() == "discharge", "opened again: the remembered tab", str(active()))
+    open_card(page, port, mode="battery")
+    t.check(active() == "usage", "remembered tab no longer offered: the first one", str(active()))
+    page.evaluate("localStorage.setItem('evcc-card-battery-tab', '{broken')")
+    open_card(page, port, mode="battery", battery_ext=True)
+    t.check(active() == "usage", "unreadable storage: the first tab", str(active()))
+    page.evaluate("() => { Storage.prototype.setItem = () => { throw new Error('quota'); }; }")
+    page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).click(); settle(page)
+    t.check(active() == "charge", "storage that refuses the write: the tab still switches", str(active()))
+    done(page)
+
     # the settings as tabs, as in evcc: usage first, a tab only for what ha-evcc provides
     page = new_page(browser, 480, 1600)
     open_card(page, port, mode="battery")
@@ -3985,6 +4177,10 @@ def battery_mode(browser, port, t):
     page.locator(in_card('button.batt-tab[data-batt-tab="discharge"]')).click(); settle(page)
     t.check(page.locator(in_card("[data-batt-discharge]")).get_attribute("aria-checked") == "false", "grid discharging off")
     t.check(page.locator(in_card('input[data-entity="number.evcc_battery_grid_discharge_limit"]')).count() == 0, "no feed-in limit while discharging into the grid is off")
+    fills = lambda: page.locator(in_card(".batt-slots-svg rect")).evaluate_all("els => [...new Set(els.map(e => e.getAttribute('fill')))]")
+    t.check("Einspeisetarif" in page.locator(in_card(".batt-slots-legend")).inner_text(),
+            "grid discharging off: the feed-in rates of the next 24 h, as grid charging shows the grid rates")
+    t.check(fills() == ["var(--secondary-text-color,#888)"], "and nothing highlighted while it is off", str(fills()))
     done(page)
     page = new_page(browser, 480, 1600)
     open_card(page, port, mode="battery", battery_ext=True, set={"number.evcc_battery_grid_charge_limit": "0.21", "switch.evcc_battery_grid_discharge": "on"})
@@ -3997,6 +4193,16 @@ def battery_mode(browser, port, t):
             "grid discharging: one switch, no second one for the limit")
     t.check(page.locator(in_card('input[data-entity="number.evcc_battery_grid_discharge_limit"]')).count() == 1, "feed-in limit while discharging into the grid is allowed")
     t.check(page.locator(in_card(".slider-val")).inner_text().strip() == "keine", "allowed without a limit: the slider reads 'keine'")
+    done(page)
+    # the slots that meet a limit: green for charging, amber for discharging, as in evcc
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True, set={"number.evcc_battery_grid_charge_limit": "2.0",
+              "switch.evcc_battery_grid_discharge": "on", "number.evcc_battery_grid_discharge_limit": "-0.5"})
+    fills = lambda: page.locator(in_card(".batt-slots-svg rect")).evaluate_all("els => [...new Set(els.map(e => e.getAttribute('fill')))]")
+    page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).click(); settle(page)
+    t.check("var(--evcc-green)" in fills() and "var(--evcc-amber)" not in fills(), "grid charging: green slots", str(fills()))
+    page.locator(in_card('button.batt-tab[data-batt-tab="discharge"]')).click(); settle(page)
+    t.check("var(--evcc-amber)" in fills() and "var(--evcc-green)" not in fills(), "grid discharging: amber slots", str(fills()))
     done(page)
 
     # entities an older or newer ha-evcc left in the registry: HA keeps them as
@@ -4025,7 +4231,7 @@ def battery_mode(browser, port, t):
 
 GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "editor_vehicle_map": editor_vehicle_map, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
-          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities, "solar_share": solar_share, "vehicle": vehicle_mode, "battery": battery_mode}
+          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities, "solar_share": solar_share, "vehicle": vehicle_mode, "battery": battery_mode, "stable_height": stable_height}
 
 
 # The groups that take longest go to the workers first, so the run is not left

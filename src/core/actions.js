@@ -31,15 +31,22 @@ export const actions = {
   },
 
   _setNumberValue(entityId, value) {
-    return this._expect(entityId, String(value),
-      this._hass.callService("number", "set_value", { entity_id: entityId, value }));
+    return this._written(entityId, this._expect(entityId, String(value),
+      this._hass.callService("number", "set_value", { entity_id: entityId, value })));
   },
 
   // Toggles pass the state they currently show, not the one they want: a
   // control rendered "on" turns off.
   _toggleEntity(domain, entityId, isOn) {
-    return this._expect(entityId, isOn ? "off" : "on",
-      this._hass.callService(domain, isOn ? "turn_off" : "turn_on", { entity_id: entityId }));
+    return this._written(entityId, this._expect(entityId, isOn ? "off" : "on",
+      this._hass.callService(domain, isOn ? "turn_off" : "turn_on", { entity_id: entityId })));
+  },
+
+  // A setting that evcc computes other data from: the views that show such
+  // data fetch it again (battery view: the optimizer forecast).
+  _written(entityId, call) {
+    this._battForecastWritten(entityId, call);
+    return call;
   },
 
   // ── Optimistic state ────────────────────────────────────────────────────
@@ -89,7 +96,7 @@ export const actions = {
   // Removes a limit through its clear button (ha-evcc sends a DELETE to evcc);
   // the limit reads "unknown" from then on.
   _clearLimit(clearId, limitId) {
-    return this._expect(limitId, "unknown", this._pressButton(clearId));
+    return this._written(limitId, this._expect(limitId, "unknown", this._pressButton(clearId)));
   },
 
   // ── Vehicle commands ───────────────────────────────────────────────────
