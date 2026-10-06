@@ -176,7 +176,7 @@ export const batteryView = {
       </span>`;
   },
 
-  // evcc's "optimize" button, once ha-evcc provides it; turns while evcc computes.
+  // evcc's "optimize" button (ha-evcc 2026.10.2+); turns while evcc computes.
   _renderBattRecompute(site) {
     if (!isLive(this._hass, site.optimize)) return "";
     const busy  = this._battOptimizeBusy();

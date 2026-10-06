@@ -130,10 +130,8 @@ export const FEATURES = [
   { suffix: "battery_grid_discharge",        domain: "switch",        type: "toggle",      lp: false },
   { suffix: "battery_grid_discharge_active", domain: "binary_sensor", type: "status_bool", lp: false },
   { suffix: "battery_grid_discharge_limit",  domain: "number",        type: "slider",      lp: false },
-  // evcc's "optimize" (POST /api/optimize), not in ha-evcc yet: proposed
-  // upstream, the battery mode shows it as soon as the entity exists. `pending`
-  // keeps the contract check from failing on it (test/check_ha_evcc.py).
-  { suffix: "optimize",                      domain: "button",        type: "button",      lp: false, pending: true },
+  // evcc's "optimize" (POST /api/optimize), ha-evcc 2026.10.2+, disabled by default there
+  { suffix: "optimize",                      domain: "button",        type: "button",      lp: false },
 ];
 
 // Entities ha-evcc creates per vehicle, independent of any loadpoint:
