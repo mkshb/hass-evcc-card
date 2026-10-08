@@ -603,7 +603,7 @@ export const batteryView = {
       <div class="batt-gc-limit">${this._sliderRow(limitId, label, null, false, this._t("battNoLimit"), this._battLimitRange(limitId, kind))}</div>
       <div class="batt-gc-plan">${this._renderBattGridPlan(limit, activeId)}</div>`;
     }
-    const slots = this._battSlots(kind, set ? limit : null, hit);
+    const slots = this._battSlots(kind, set ? limit : null, hit, null, this._battPick(limitId, kind));
     const time  = set ? `
         <div class="batt-active-row">
           <span>${this._t("battActiveTime")}</span>
@@ -639,8 +639,10 @@ export const batteryView = {
   // The tariff slots of the next 24 hours, the ones that meet the limit
   // highlighted: when evcc would charge from or discharge into the grid.
   // `model` (grid charging, _battGridModel) adds the energy each slot charges
-  // and the limit as a line. { html, hours } or null without a forecast.
-  _battSlots(kind, limit, hit, model = null) {
+  // and the limit as a line. `pick` ({ id, dir } of the limit entity) makes the
+  // columns the selector of that limit, see _battPickValue.
+  // { html, hours } or null without a forecast.
+  _battSlots(kind, limit, hit, model = null, pick = null) {
     const rates = model ?? this._battRates(kind);
     if (!rates) return null;
     const { slots, now, end, isCo2, fmt } = rates;
@@ -673,8 +675,15 @@ export const batteryView = {
       const fill = fh > 0 ? `<rect x="${x}" y="${(H - MB - fh).toFixed(1)}" width="${w}" height="${fh.toFixed(1)}" rx="0.5"
           fill="var(--evcc-blue)" opacity="${model.source === "plan" ? 1 : 0.55}" pointer-events="none"/>` : "";
       const info = wh > 1 ? ` · ${this._battNum(wh / 1000, 2)} kWh` : "";
-      return `<rect x="${x}" y="${(H - MB - h).toFixed(1)}" width="${w}" height="${h.toFixed(1)}" rx="0.5"
-          fill="${on ? hitColor : "var(--secondary-text-color,#888)"}" opacity="${on ? 0.9 : 0.3}"><title>${d.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })} · ${fmt(r.v)}${info}</title></rect>${fill}${tick}`;
+      const label = `${d.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })} · ${fmt(r.v)}${info}`;
+      const bar = `<rect class="batt-slot-bar" x="${x}" y="${(H - MB - h).toFixed(1)}" width="${w}" height="${h.toFixed(1)}" rx="0.5"
+          fill="${on ? hitColor : "var(--secondary-text-color,#888)"}" opacity="${on ? 0.9 : 0.3}"/>`;
+      // A transparent rect over the whole column, drawn last so it catches the
+      // pointer: a two pixel bar is no hover or click target. Where the column
+      // is not the selector it carries the browser's own tooltip, otherwise the
+      // legend shows the value (_battPickShow), which needs no hover delay.
+      const hitbox = `<rect class="batt-slot-hit" x="${x}" y="0" width="${w}" height="${H - MB}" fill="transparent">${pick ? "" : `<title>${label}</title>`}</rect>`;
+      return `<g class="batt-slot"${pick ? ` data-slot="${i}" data-v="${r.v}" data-label="${escAttr(label)}"` : ""}>${bar}${fill}${hitbox}</g>${tick}`;
     }).join("");
     const ly   = model && limit !== null ? H - MB - Math.max(0, Math.min(H - MB, (limit - lo) / span * (H - MB - 2))) : null;
     const line = ly !== null ? `<line x1="0" x2="${W}" y1="${ly.toFixed(1)}" y2="${ly.toFixed(1)}" stroke="var(--primary-text-color,#fff)" stroke-width="0.6" stroke-dasharray="3 2" opacity="0.55"/>` : "";
@@ -688,9 +697,9 @@ export const batteryView = {
     return {
       hours: activeMs / HOUR,
       html: `
-      <div class="batt-slots">
+      <div class="batt-slots${pick ? " pick" : ""}"${pick ? ` data-pick-id="${pick.id}" data-pick-dir="${pick.dir}"` : ""}>
         <svg viewBox="0 0 ${W} ${H}" class="batt-slots-svg">${bars}${line}</svg>
-        <div class="batt-slots-legend"><span>${this._t(kind === "feedin" ? "battFeedInRate" : isCo2 ? "battCo2Rate" : "battGridRate")}</span><span>${fmt(min)} – ${fmt(max)}</span></div>${keys}
+        <div class="batt-slots-legend"><span>${this._t(kind === "feedin" ? "battFeedInRate" : isCo2 ? "battCo2Rate" : "battGridRate")}</span>${pick ? `<span class="batt-slots-pick" data-morph-keep></span>` : ""}<span>${fmt(min)} – ${fmt(max)}</span></div>${keys}
       </div>`,
     };
   },
@@ -923,7 +932,7 @@ export const batteryView = {
       hint = this._t("battCappedHint", { soc: pct(m.maxSoc), time: this._battTimeLabel(new Date(m.end)) });
     }
 
-    const slots = this._battSlots("planner", limit, null, m);
+    const slots = this._battSlots("planner", limit, null, m, this._battPick(site.battery_grid_charge_limit, "planner"));
     return `
       <div class="batt-gc-kpis">
         ${kpi(this._t("battChargeTime"), hm(m.hours), winText)}
@@ -975,6 +984,51 @@ export const batteryView = {
     return Number(v.toFixed(6));
   },
 
+  // ── The tariff chart as the limit selector ─────────────────────────────
+  // evcc lets a click on a column of its price chart set the limit to that
+  // column's price. The card does the same in both charts, the one of grid
+  // charging and the one of grid discharging.
+
+  _battPick(limitId, kind) {
+    if (!limitId || !this._hass?.states?.[limitId]) return null;
+    // evcc charges below the limit and discharges above it.
+    return { id: limitId, dir: kind === "feedin" ? "down" : "up" };
+  },
+
+  // The value a clicked column writes: its price on the entity's step, rounded
+  // away from the column (up for charging, down for discharging), so the
+  // column that was clicked ends up on the side that charges or discharges.
+  // Within the entity's range.
+  _battPickValue(limitId, v, dir) {
+    if (!limitId || !isFinite(v)) return null;
+    const min  = attr(this._hass, limitId, "min") ?? 0;
+    const max  = attr(this._hass, limitId, "max") ?? 1;
+    const step = this._sliderStepOverride(limitId) ?? (attr(this._hass, limitId, "step") ?? 0.005);
+    const n    = (v - min) / step;
+    // The epsilon leaves a price that already sits on a step where it is: the
+    // division puts it a hair above or below the whole number.
+    const k    = dir === "down" ? Math.floor(n + 1e-9) : Math.ceil(n - 1e-9);
+    return Number(Math.min(max, Math.max(min, min + k * step)).toFixed(6));
+  },
+
+  // Time and price of the column under the pointer, in the legend of its own
+  // chart: the browser's tooltip takes a moment, goes away on its own and
+  // never shows on a touch screen. `armed` notes the column for the second
+  // tap, which a touch needs because it has no hover to show the value first.
+  _battPickShow(slot, armed) {
+    const info = slot.closest(".batt-slots")?.querySelector(".batt-slots-pick");
+    if (!info) return;
+    info.textContent = slot.dataset.label ?? "";
+    info.dataset.armed = armed ? slot.dataset.slot : "";
+  },
+
+  _battPickClear(box) {
+    const info = box?.querySelector(".batt-slots-pick");
+    if (!info) return;
+    info.textContent = "";
+    info.dataset.armed = "";
+  },
+
   // Listeners of the battery view: the discharge toggle, the inline selects
   // and the history stepper. Called by _attachListeners() after every render.
   _attachBatteryListeners() {
@@ -1006,6 +1060,42 @@ export const batteryView = {
       input.addEventListener("input", () => {
         const box = this.shadowRoot.querySelector(".batt-gc-plan");
         if (box) box.innerHTML = this._renderBattGridPlan(parseFloat(input.value), this._cachedEntities?.site?.battery_grid_charge_active, true);
+      });
+    });
+
+    // The tariff charts as the limit selector. Bound to the block, which
+    // outlives both the morph and the innerHTML a drag writes into
+    // .batt-gc-plan; the columns inside do not.
+    this._fresh(".battery-block").forEach(block => {
+      const slotOf = e => e.target?.closest?.(".batt-slots.pick .batt-slot");
+      block.addEventListener("pointerover", e => {
+        const slot = slotOf(e);
+        if (slot) this._battPickShow(slot, false);
+      });
+      // Only a mouse leaves: after a tap the value has to stay in the legend,
+      // it is what the second tap confirms.
+      block.addEventListener("pointerout", e => {
+        if (e.pointerType !== "mouse") return;
+        const box = e.target?.closest?.(".batt-slots.pick");
+        if (box && !box.contains(e.relatedTarget)) this._battPickClear(box);
+      });
+      block.addEventListener("pointerdown", e => { this._battTouch = e.pointerType !== "mouse"; });
+      block.addEventListener("click", e => {
+        const slot = slotOf(e);
+        if (!slot) return;
+        const box  = slot.closest(".batt-slots");
+        const info = box.querySelector(".batt-slots-pick");
+        // First tap shows the price, second tap writes it: without a hover
+        // nobody would see what a column costs before it becomes the limit.
+        if (this._battTouch && info?.dataset.armed !== slot.dataset.slot) {
+          this._battPickShow(slot, true);
+          return;
+        }
+        const v = this._battPickValue(box.dataset.pickId, Number(slot.dataset.v), box.dataset.pickDir);
+        if (v === null) return;
+        this._battPickClear(box);
+        this._setNumberValue(box.dataset.pickId, v);
+        this._render();
       });
     });
 
@@ -1108,6 +1198,9 @@ export const batteryCss = `
       .batt-gc-sw.line { width: 12px; height: 0; border-radius: 0; background: none; border-top: 1px dashed var(--primary-text-color); opacity: .55; }
       .batt-gc-foot { font-size: .7rem; color: var(--secondary-text-color); }
       .batt-slots-legend { display: flex; justify-content: space-between; gap: 8px; font-size: .72rem; color: var(--secondary-text-color); margin-top: 2px; }
+      .batt-slots-pick { color: var(--primary-text-color); font-weight: 600; white-space: nowrap; }
+      .batt-slots.pick .batt-slot { cursor: pointer; }
+      .batt-slots.pick .batt-slot:hover .batt-slot-bar { opacity: 1; }
       .batt-text-col { display: flex; flex-direction: column; gap: 12px; overflow-wrap: anywhere; }
       .batt-text-item { display: flex; gap: 8px; align-items: flex-start; }
       .batt-text-icon { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }

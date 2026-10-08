@@ -12,7 +12,7 @@ companion app renders the frontend in). The WebKit run is functional only, its
 screenshots go to test/out/webkit/ and are not compared with images/ (text
 rendering differs between engines).
 """
-import argparse, datetime, http.server, json, os, re, socketserver, subprocess, sys, threading, time, urllib.parse
+import argparse, datetime, http.server, json, math, os, re, socketserver, subprocess, sys, threading, time, urllib.parse
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
@@ -4121,6 +4121,70 @@ def battery_mode(browser, port, t):
     t.check(page.evaluate("window.__moreInfo") == ["sensor.evcc_battery_soc"], "Enter opens more-info", str(page.evaluate("window.__moreInfo")))
     done(page)
 
+    # the tariff columns are the selector of the limit: hovering shows time and
+    # price in the legend, a click writes that price, rounded away from the
+    # column (up for charging, down for discharging) so the column that was
+    # clicked stays inside the limit
+    snap = lambda v, down: round(-0.5 + (math.floor((v + 0.5) / 0.005 + 1e-9) if down else math.ceil((v + 0.5) / 0.005 - 1e-9)) * 0.005, 6)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True, set={"number.evcc_battery_grid_charge_limit": "0.21"})
+    tab = lambda key: (page.locator(in_card(f'button.batt-tab[data-batt-tab="{key}"]')).click(), settle(page))
+    tab("charge")
+    chart = page.locator(in_card(".batt-slots.pick")).first
+    t.check(chart.count() == 1, "grid charging: the chart selects the limit")
+    slot = chart.locator(".batt-slot").nth(8)
+    slot.hover(); page.wait_for_timeout(80)
+    info = chart.locator(".batt-slots-pick").inner_text()
+    t.check(":" in info and "0,202" in info, "hovering a column shows its time and price", info)
+    v = float(slot.get_attribute("data-v"))
+    page.evaluate("() => { window.__hass.serviceCalls.length = 0; }")
+    slot.click(); settle(page)
+    call = [c for c in svc(page) if c["domain"] == "number"]
+    t.check(call == [{"domain": "number", "service": "set_value",
+                      "data": {"entity_id": "number.evcc_battery_grid_charge_limit", "value": snap(v, False)}}],
+            f"a click writes the column's price rounded up ({snap(v, False)})", str(call))
+    t.check(snap(v, False) >= v, "the charge limit lands at or above the column", str((v, snap(v, False))))
+    t.check(chart.locator(".batt-slots-pick").inner_text() == "", "the readout clears after the click")
+    done(page)
+
+    # the same with the limit switched off: the click sets it and switches it on
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True, set={"number.evcc_battery_grid_charge_limit": "unknown"})
+    page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).click(); settle(page)
+    chart = page.locator(in_card(".batt-slots.pick")).first
+    chart.locator(".batt-slot").nth(8).click(); settle(page)
+    call = [c for c in svc(page) if c["domain"] == "number"]
+    t.check(len(call) == 1 and call[0]["data"]["entity_id"] == "number.evcc_battery_grid_charge_limit",
+            "a click switches an unset limit on", str(call))
+    done(page)
+
+    # grid discharging: the feed-in columns round the other way, and without
+    # discharging allowed evcc takes no limit, so the columns select nothing
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True,
+              set={"switch.evcc_battery_grid_discharge": "on", "number.evcc_battery_grid_discharge_limit": "0.09"})
+    page.locator(in_card('button.batt-tab[data-batt-tab="discharge"]')).click(); settle(page)
+    chart = page.locator(in_card(".batt-slots.pick")).first
+    t.check(chart.count() == 1, "grid discharging: the chart selects the limit")
+    slot = chart.locator(".batt-slot").nth(8)
+    v = float(slot.get_attribute("data-v"))
+    page.evaluate("() => { window.__hass.serviceCalls.length = 0; }")
+    slot.click(); settle(page)
+    call = [c for c in svc(page) if c["domain"] == "number"]
+    t.check(call == [{"domain": "number", "service": "set_value",
+                      "data": {"entity_id": "number.evcc_battery_grid_discharge_limit", "value": snap(v, True)}}],
+            f"a click writes the column's price rounded down ({snap(v, True)})", str(call))
+    t.check(snap(v, True) <= v, "the feed-in limit lands at or below the column", str((v, snap(v, True))))
+    done(page)
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True, set={"switch.evcc_battery_grid_discharge": "off"})
+    page.locator(in_card('button.batt-tab[data-batt-tab="discharge"]')).click(); settle(page)
+    t.check(page.locator(in_card(".batt-slots")).count() == 1
+            and page.locator(in_card(".batt-slots.pick")).count() == 0,
+            "discharging not allowed: the columns select nothing")
+    done(page)
+
     # the tab picked last comes back when the card is opened again, per ha-evcc
     # instance; one that is not offered any more, or storage that fails, leaves
     # the view at the first tab
@@ -4177,7 +4241,7 @@ def battery_mode(browser, port, t):
     page.locator(in_card('button.batt-tab[data-batt-tab="discharge"]')).click(); settle(page)
     t.check(page.locator(in_card("[data-batt-discharge]")).get_attribute("aria-checked") == "false", "grid discharging off")
     t.check(page.locator(in_card('input[data-entity="number.evcc_battery_grid_discharge_limit"]')).count() == 0, "no feed-in limit while discharging into the grid is off")
-    fills = lambda: page.locator(in_card(".batt-slots-svg rect")).evaluate_all("els => [...new Set(els.map(e => e.getAttribute('fill')))]")
+    fills = lambda: page.locator(in_card(".batt-slots-svg .batt-slot-bar")).evaluate_all("els => [...new Set(els.map(e => e.getAttribute('fill')))]")
     t.check("Einspeisetarif" in page.locator(in_card(".batt-slots-legend")).inner_text(),
             "grid discharging off: the feed-in rates of the next 24 h, as grid charging shows the grid rates")
     t.check(fills() == ["var(--secondary-text-color,#888)"], "and nothing highlighted while it is off", str(fills()))
@@ -4199,7 +4263,7 @@ def battery_mode(browser, port, t):
     page = new_page(browser, 480, 1600)
     open_card(page, port, mode="battery", battery_ext=True, set={"number.evcc_battery_grid_charge_limit": "2.0",
               "switch.evcc_battery_grid_discharge": "on", "number.evcc_battery_grid_discharge_limit": "-0.5"})
-    fills = lambda: page.locator(in_card(".batt-slots-svg rect")).evaluate_all("els => [...new Set(els.map(e => e.getAttribute('fill')))]")
+    fills = lambda: page.locator(in_card(".batt-slots-svg .batt-slot-bar")).evaluate_all("els => [...new Set(els.map(e => e.getAttribute('fill')))]")
     page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).click(); settle(page)
     t.check("var(--evcc-green)" in fills() and "var(--evcc-amber)" not in fills(), "grid charging: green slots", str(fills()))
     page.locator(in_card('button.batt-tab[data-batt-tab="discharge"]')).click(); settle(page)
