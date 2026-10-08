@@ -189,7 +189,9 @@ export const socControl = {
   // not take right now (the solar share while a power threshold is set).
   // `unsetLabel`: shown instead of a number while the entity has none (an evcc
   // limit that is not set reads "unknown"; the slider then sits at 0).
-  _sliderRow(entityId, label, zeroLabel = null, locked = false, unsetLabel = null) {
+  // `range` ({ min, max }, number entities only) narrows the slider to where
+  // the values that matter lie; the direct input keeps the entity's own range.
+  _sliderRow(entityId, label, zeroLabel = null, locked = false, unsetLabel = null, range = null) {
     const domain  = entityId.split(".")[0];
     const _v      = parseFloat(stateVal(this._hass, entityId));
     const val     = isNaN(_v) ? 0 : _v;
@@ -220,6 +222,8 @@ export const socControl = {
       step = this._sliderStepOverride(entityId) ?? (attr(this._hass, entityId, "step") ?? 1);
       sliderVal = val;
     }
+    const full = range && domain !== "select" ? ` data-full-min="${min}" data-full-max="${max}"` : "";
+    if (full) { min = range.min; max = range.max; }
 
     // The value doubles as a tap target that opens the direct-input panel
     // (see _openSliderEdit); it must stay the range input's next sibling
@@ -231,7 +235,7 @@ export const socControl = {
           <input type="range"
                  min="${min}" max="${max}" step="${step}" value="${sliderVal}"
                  data-entity="${entityId}"
-                 data-domain="${domain}"${locked ? " disabled" : ""} />
+                 data-domain="${domain}"${full}${locked ? " disabled" : ""} />
           <button type="button" class="slider-val" data-slider-edit${locked ? " disabled" : ""}
                   title="${this._t("sliderEditHint")}">${unsetLabel && isNaN(_v) ? unsetLabel : zeroLabel && val === 0 ? zeroLabel : `${val} ${escHtml(unit)}`}</button>
         </div>
@@ -301,7 +305,8 @@ export const socControl = {
     const domain   = local ? "number" : input.dataset.domain;
     const unit     = local ? (local.unit ?? "") : displayUnit(this._hass, entityId);
     const opts     = domain === "select" ? this._sliderOptions(entityId) : [];
-    const min      = parseFloat(input.min), max = parseFloat(input.max);
+    // A slider narrowed to a range (_sliderRow) still takes any value of the entity here.
+    const min      = parseFloat(input.dataset.fullMin ?? input.min), max = parseFloat(input.dataset.fullMax ?? input.max);
     const step     = parseFloat(input.step) || 1;
     const decimals = domain === "select" ? 3 : stepDecimals(step);
     const raw      = local ? parseFloat(local.value) : parseFloat(stateVal(this._hass, entityId));

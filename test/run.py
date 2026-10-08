@@ -4187,7 +4187,8 @@ def battery_mode(browser, port, t):
     page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).click(); settle(page)
     t.check(page.locator(in_card('[data-batt-limit="charge"]')).get_attribute("aria-checked") == "true", "grid charging on with a limit")
     t.check(page.locator(in_card('input[data-entity="number.evcc_battery_grid_charge_limit"]')).count() == 1, "slider while a limit is set")
-    t.check("24 h" in page.locator(in_card(".batt-active-row")).inner_text(), "active time of the next 24 h", page.locator(in_card(".batt-active-row")).inner_text())
+    kpis = lambda: page.locator(in_card(".batt-gc-kpis")).inner_text().replace("\u00a0", " ")
+    t.check("24 h" in kpis(), "charge time of the next 24 h", kpis())
     page.locator(in_card('button.batt-tab[data-batt-tab="discharge"]')).click(); settle(page)
     t.check(page.locator(in_card("[data-batt-discharge]")).count() == 1 and page.locator(in_card("[data-batt-limit]")).count() == 0,
             "grid discharging: one switch, no second one for the limit")

@@ -595,6 +595,14 @@ export const batteryView = {
       : clearId
       ? this._battSwitchRow(desc, `aria-label="${escAttr(label)}" data-batt-limit="${key}" data-entity="${limitId}" data-clear="${clearId}" data-kind="${kind}"`, set, limitId)
       : `<div class="batt-switch-row"><span class="batt-switch-desc"${moreInfo(limitId)}>${desc}</span></div>`;
+    // Grid charging with the optimizer's plan: charge time, energy and SoC
+    // in a block of their own, which a drag of the slider redraws.
+    if (key === "charge" && set) {
+      return `
+      ${row}
+      <div class="batt-gc-limit">${this._sliderRow(limitId, label, null, false, this._t("battNoLimit"), this._battLimitRange(limitId, kind))}</div>
+      <div class="batt-gc-plan">${this._renderBattGridPlan(limit, activeId)}</div>`;
+    }
     const slots = this._battSlots(kind, set ? limit : null, hit);
     const time  = set ? `
         <div class="batt-active-row">
@@ -606,15 +614,15 @@ export const batteryView = {
         </div>` : "";
     return `
       ${row}
-      ${set || !clearId ? this._sliderRow(limitId, label, null, false, this._t("battNoLimit")) : ""}
+      ${set || !clearId ? this._sliderRow(limitId, label, null, false, this._t("battNoLimit"), this._battLimitRange(limitId, kind)) : ""}
       ${time}
       ${slots ? slots.html : ""}`;
   },
 
-  // The tariff slots of the next 24 hours, the ones that meet the limit
-  // highlighted: when evcc would charge from or discharge into the grid.
-  // { html, hours } or null without a forecast.
-  _battSlots(kind, limit, hit) {
+  // The tariff slots of the next 24 hours: { slots: [{ s, e, v }] in ms, now,
+  // end, isCo2, fmt } or null without a forecast. The feed-in tariff is always
+  // a price; the planner follows the cost type.
+  _battRates(kind) {
     const res   = this._wsForecast(kind);
     const rates = res?.data?.rates;
     if (!Array.isArray(rates) || !rates.length) return null;
@@ -623,14 +631,24 @@ export const batteryView = {
     const slots = rates.map(r => ({ s: evccDate(r.start)?.getTime(), e: evccDate(r.end)?.getTime(), v: r.value }))
       .filter(r => r.s != null && r.e != null && r.e > now && r.s < end && typeof r.v === "number");
     if (!slots.length) return null;
-
-    // The feed-in tariff is always a price; the planner follows the cost type.
     const isCo2 = kind === "planner" && res.data.smartCostType === "co2";
     const unit  = isCo2 ? "g/kWh" : `${res.data.currency ? escHtml(res.data.currency) : ""}/kWh`;
-    const fmt   = v => `${this._battNum(v, isCo2 ? 0 : 3)} ${unit}`;
+    return { slots, now, end, isCo2, fmt: v => `${this._battNum(v, isCo2 ? 0 : 3)} ${unit}` };
+  },
+
+  // The tariff slots of the next 24 hours, the ones that meet the limit
+  // highlighted: when evcc would charge from or discharge into the grid.
+  // `model` (grid charging, _battGridModel) adds the energy each slot charges
+  // and the limit as a line. { html, hours } or null without a forecast.
+  _battSlots(kind, limit, hit, model = null) {
+    const rates = model ?? this._battRates(kind);
+    if (!rates) return null;
+    const { slots, now, end, isCo2, fmt } = rates;
     const vals  = slots.map(r => r.v);
     const min   = Math.min(...vals), max = Math.max(...vals);
-    const lo    = Math.min(min, 0);
+    // With the plan the axis starts just below the cheapest slot, so the
+    // slots and the limit line between them stay apart.
+    const lo    = model ? min - Math.max((max - min) * 0.3, Math.abs(min) * 0.05, 0.001) : Math.min(min, 0);
     const span  = (max - lo) || 1;
 
     const W = 400, H = 44, MB = 12;
@@ -639,25 +657,305 @@ export const batteryView = {
     let activeMs = 0;
     // Charging green, discharging amber, as evcc tells the two apart.
     const hitColor = kind === "feedin" ? "var(--evcc-amber)" : "var(--evcc-green)";
+    const filled   = !!model?.source;
     const bars = slots.map((r, i) => {
-      const on = limit !== null && hit(r.v, limit);
+      const on = model ? r.on : limit !== null && hit(r.v, limit);
       if (on) activeMs += Math.min(r.e, end) - Math.max(r.s, now);
       const h = Math.max(2, (r.v - lo) / span * (H - MB - 2));
       const d = new Date(r.s);
+      const x = (i * bw + 0.3).toFixed(1), w = Math.max(0.5, bw - 0.6).toFixed(1);
       const tick = d.getMinutes() === 0 && d.getHours() % 6 === 0
         ? `<text x="${i * bw + bw / 2}" y="${H - 2}" text-anchor="middle" font-size="7" fill="var(--secondary-text-color,#888)">${d.getHours()}</text>` : "";
-      return `<rect x="${(i * bw + 0.3).toFixed(1)}" y="${(H - MB - h).toFixed(1)}" width="${Math.max(0.5, bw - 0.6).toFixed(1)}" height="${h.toFixed(1)}" rx="0.5"
-          fill="${on ? hitColor : "var(--secondary-text-color,#888)"}" opacity="${on ? 0.9 : 0.3}"><title>${d.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })} · ${fmt(r.v)}</title></rect>${tick}`;
+      // The energy the slot charges, as a share of what it could at c_max.
+      const wh   = filled && on ? r.wh ?? 0 : 0;
+      const cap  = wh > 1 ? model.slotMax(r) : 0;
+      const fh   = cap > 0 ? h * Math.min(1, wh / cap) : 0;
+      const fill = fh > 0 ? `<rect x="${x}" y="${(H - MB - fh).toFixed(1)}" width="${w}" height="${fh.toFixed(1)}" rx="0.5"
+          fill="var(--evcc-blue)" opacity="${model.source === "plan" ? 1 : 0.55}" pointer-events="none"/>` : "";
+      const info = wh > 1 ? ` · ${this._battNum(wh / 1000, 2)} kWh` : "";
+      return `<rect x="${x}" y="${(H - MB - h).toFixed(1)}" width="${w}" height="${h.toFixed(1)}" rx="0.5"
+          fill="${on ? hitColor : "var(--secondary-text-color,#888)"}" opacity="${on ? 0.9 : 0.3}"><title>${d.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })} · ${fmt(r.v)}${info}</title></rect>${fill}${tick}`;
     }).join("");
+    const ly   = model && limit !== null ? H - MB - Math.max(0, Math.min(H - MB, (limit - lo) / span * (H - MB - 2))) : null;
+    const line = ly !== null ? `<line x1="0" x2="${W}" y1="${ly.toFixed(1)}" y2="${ly.toFixed(1)}" stroke="var(--primary-text-color,#fff)" stroke-width="0.6" stroke-dasharray="3 2" opacity="0.55"/>` : "";
+    const keys = model ? `
+        <div class="batt-gc-keys">
+          <span><i class="batt-gc-sw" style="background:${hitColor}"></i>${this._t("battKeyBelow")}</span>
+          ${filled ? `<span><i class="batt-gc-sw${model.source === "plan" ? "" : " est"}"></i>${this._t(model.source === "plan" ? "battKeyPlanned" : "battKeyEstimated")}</span>` : ""}
+          <span><i class="batt-gc-sw line"></i>${this._t("battKeyLimit")}</span>
+        </div>` : "";
 
     return {
       hours: activeMs / HOUR,
       html: `
       <div class="batt-slots">
-        <svg viewBox="0 0 ${W} ${H}" class="batt-slots-svg">${bars}</svg>
-        <div class="batt-slots-legend"><span>${this._t(kind === "feedin" ? "battFeedInRate" : isCo2 ? "battCo2Rate" : "battGridRate")}</span><span>${fmt(min)} – ${fmt(max)}</span></div>
+        <svg viewBox="0 0 ${W} ${H}" class="batt-slots-svg">${bars}${line}</svg>
+        <div class="batt-slots-legend"><span>${this._t(kind === "feedin" ? "battFeedInRate" : isCo2 ? "battCo2Rate" : "battGridRate")}</span><span>${fmt(min)} – ${fmt(max)}</span></div>${keys}
       </div>`,
     };
+  },
+
+  // ── Grid charging with the optimizer's plan ────────────────────────────
+  // evcc asks its optimizer to charge the home battery at full power in every
+  // slot whose price meets the grid charge limit (p_demand: c_max for the
+  // length of the slot, core/site_optimizer.go applyBatteryGridChargeLimit).
+  // The plan that comes back says how much each slot charges and where the
+  // SoC ends up. It holds for the limit evcc had when it ran: while the limit
+  // is another one (a drag of the slider, the run after a write still to
+  // come) the card estimates the way evcc asks, from the plan's SoC before the
+  // first slot, at c_max, up to the max SoC, with the charge efficiency.
+  // Without the optimizer only the charge time is known.
+
+  _battEvopt() {
+    if (!this._hasCmd("optimizer")) return null;
+    return this._wsFetch("evcc_intg/optimizer", {}, "optimizer", FORECAST_TTL)?.data?.evopt ?? null;
+  },
+
+  // The home batteries of the optimizer's request and result (the details at
+  // the same index tell them from the vehicles), and its time steps:
+  // details.timestamp is the start of each step, req.time_series.dt its length
+  // in seconds, res.batteries[].state_of_charge (Wh) the SoC at its end.
+  // `chargers` are the batteries evcc charges from the grid (charge_from_grid,
+  // the ones it asks p_demand for); an evcc that sends the flag for none is
+  // taken to charge them all. The sums are what the card shows.
+  _battPlanData() {
+    const evopt = this._battEvopt();
+    const req = evopt?.req, res = evopt?.res, det = evopt?.details;
+    if (!Array.isArray(req?.batteries) || !Array.isArray(res?.batteries) || !Array.isArray(det?.timestamp)) return null;
+    const homes = [];
+    (det.batteryDetails ?? []).forEach((d, i) => {
+      const cfg = req.batteries[i], out = res.batteries[i];
+      if (d?.type !== "battery" || !(d.capacity > 0) || !cfg || !out) return;
+      const capWh = d.capacity * 1000;
+      homes.push({
+        cfg, out, capWh,
+        cMax: Number(cfg.c_max) || 0,
+        sMax: cfg.s_max > 0 ? cfg.s_max : capWh,
+        sNow: Number(cfg.s_initial) || 0,
+        grid: cfg.charge_from_grid === true,
+        soc:  j => out.state_of_charge?.[j],
+      });
+    });
+    if (!homes.length) return null;
+    const chargers = homes.some(h => h.grid) ? homes.filter(h => h.grid) : homes;
+    const dt  = req.time_series?.dt ?? [];
+    const sum = (list, f) => list.reduce((a, h) => a + (Number(f(h)) || 0), 0);
+    const steps = [];
+    det.timestamp.forEach((iso, j) => {
+      const t = evccDate(iso)?.getTime();
+      if (t != null) steps.push({ j, t, len: (dt[j] > 0 ? dt[j] : 900) * 1000 });
+    });
+    return {
+      steps, homes, chargers,
+      updated: evccDate(evopt.updated),
+      capWh:  sum(homes, h => h.capWh),
+      cMax:   sum(chargers, h => h.cMax),
+      sMax:   sum(homes, h => h.sMax),
+      sNow:   sum(homes, h => h.sNow),
+      eta:    req.eta_c > 0 ? req.eta_c : 0.95,
+      at:     (key, j) => sum(homes, h => h.out[key]?.[j]),
+      demand: j => sum(homes, h => h.cfg.p_demand?.[j]),
+    };
+  },
+
+  // Charging in the steps that meet the limit, each battery that charges from
+  // the grid at its own c_max up to its own max SoC, from the SoC `startOf`
+  // gives it (Wh); the others keep theirs. One full battery leaves the rest
+  // of a slot to the others. `mark` notes the energy on the tariff slots.
+  _battGreedy(steps, p, startOf, mark) {
+    const s = new Map(p.homes.map(h => [h, startOf(h)]));
+    let energy = 0, end = null;
+    for (const st of steps) {
+      if (!st.on) continue;
+      let x = 0;
+      for (const h of p.chargers) {
+        const xh = Math.max(0, Math.min(h.cMax * st.len / HOUR, (h.sMax - s.get(h)) / p.eta));
+        s.set(h, s.get(h) + xh * p.eta);
+        x += xh;
+      }
+      energy += x;
+      if (mark && st.slot) st.slot.wh += x;
+      if (x > 1) end = st.t + st.len;
+    }
+    const total = [...s.values()].reduce((a, v) => a + v, 0);
+    return { energy, s: total, end, capped: p.chargers.every(h => s.get(h) >= h.sMax - h.capWh * 0.005) };
+  },
+
+  // The tariff slots (_battRates) with what the limit makes of them: `hours`
+  // that meet it, and with the optimizer `source` ("plan" or "estimate"),
+  // `energy` (Wh), the SoC at the `end` of the last charging slot and
+  // whether every battery that charges is at its max SoC (`capped`). Null
+  // without a forecast.
+  _battGridModel(limit) {
+    const m = this._battRates("planner");
+    if (!m) return null;
+    const { now, end } = m;
+    m.slots = m.slots.map(s => ({ ...s, on: limit !== null && s.v <= limit, wh: 0 }));
+    m.hours = m.slots.reduce((a, s) => a + (s.on ? Math.min(s.e, end) - Math.max(s.s, now) : 0), 0) / HOUR;
+    m.source = null;
+    const p = limit === null ? null : this._battPlanData();
+    if (!p || !(p.cMax > 0)) return m;
+
+    const steps = p.steps.filter(st => st.t + st.len > now && st.t < end).map(st => {
+      const slot = m.slots.find(s => st.t >= s.s && st.t < s.e);
+      return { ...st, slot, on: !!slot?.on };
+    });
+    // The plan is for this limit when evcc asked for charging in exactly these
+    // steps. The step running now does not count: evcc shortens it, and the
+    // price may have turned with it. On a co2 signal the plan never is: evcc's
+    // optimizer compares the limit (g/kWh) with the grid price, so it charges
+    // in every slot; the estimate then starts from the SoC of now, as the
+    // plan's SoC is already that wrong charging.
+    const fresh = !m.isCo2 && steps.every(st => st.t <= now || (p.demand(st.j) > 0) === st.on);
+    const first = steps.find(st => st.on);
+    // Each battery's SoC before the first slot as planned, or the one of now.
+    const planned = h => first && first.j > 0 && typeof h.soc(first.j - 1) === "number" ? h.soc(first.j - 1) : h.sNow;
+    const startOf = m.isCo2 ? (h => h.sNow) : planned;
+    const startWh = p.homes.reduce((a, h) => a + startOf(h), 0);
+    let r;
+    if (fresh) {
+      r = { energy: 0, s: startWh, end: null, last: null };
+      for (const st of steps) {
+        if (!st.on) continue;
+        const x = p.at("charging_power", st.j);
+        r.energy += x;
+        if (st.slot) st.slot.wh += x;
+        if (x > 1) { r.end = st.t + st.len; r.s = p.at("state_of_charge", st.j); r.last = st.j; }
+      }
+      r.capped = r.last !== null && p.chargers.every(h => (h.soc(r.last) ?? 0) >= h.sMax - h.capWh * 0.005);
+    } else {
+      r = this._battGreedy(steps, p, startOf, true);
+    }
+    return Object.assign(m, {
+      source:  fresh ? "plan" : "estimate",
+      energy:  r.energy,
+      end:     r.end,
+      socEnd:  r.s / p.capWh * 100,
+      capped:  r.capped,
+      startSoc: startWh / p.capWh * 100,
+      // The SoC at which charging stops: every battery evcc charges from the
+      // grid at its max SoC, the others where they are. The footer names the
+      // max SoC of all of them, as evcc has it.
+      maxSoc:  p.homes.reduce((a, h) => a + (p.chargers.includes(h) ? h.sMax : startOf(h)), 0) / p.capWh * 100,
+      setSoc:  p.sMax / p.capWh * 100,
+      // What the same slots would charge from the SoC of now, for the hint
+      // that the battery runs down before the first of them.
+      fromNow: this._battGreedy(steps, p, h => h.sNow, false).energy,
+      dropped: startWh < p.sNow - p.capWh * 0.03,
+      cMax:    p.cMax,
+      eta:     p.eta,
+      updated: p.updated,
+      slotMax: s => p.cMax * (Math.min(s.e, end) - Math.max(s.s, now)) / HOUR,
+    });
+  },
+
+  // Charge time, energy and SoC for `limit`, the status of the figures (plan,
+  // estimate, computing), a hint where the figures need one, and the slots.
+  // `dragging`: the limit is on the slider, not yet written.
+  _renderBattGridPlan(limit, activeId, dragging = false) {
+    const m = this._battGridModel(limit);
+    if (!m) return "";
+    const site = this._cachedEntities?.site ?? {};
+    const soc  = parseFloat(stateVal(this._hass, site.battery_soc));
+    // No break between a number and its unit, the figures sit in narrow columns.
+    const kwh  = wh => `${this._battNum(wh / 1000)}\u00a0kWh`;
+    const pct  = v => `${Math.round(v)}\u00a0%`;
+    // Hours and minutes, also for all of the 24 h ("24 h", not "1 d").
+    const hm   = h => { const min = Math.round(h * 60), hh = Math.floor(min / 60), mm = min % 60;
+      return mm ? `${hh ? `${hh}\u00a0h ` : ""}${mm}\u00a0min` : `${hh}\u00a0h`; };
+    const lang = this._hass?.language || "en";
+    const clock = t => new Date(t).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" });
+
+    // The windows the slots that meet the limit make.
+    const wins = [];
+    for (const s of m.slots) {
+      if (!s.on) continue;
+      const last = wins[wins.length - 1];
+      if (last && last.e === s.s) last.e = s.e; else wins.push({ s: Math.max(s.s, m.now), e: s.e });
+    }
+    const winText = !wins.length ? this._t("battNoWindow")
+      : wins.length <= 2 ? wins.map(w => `${clock(w.s)}–${new Date(w.e).toDateString() === new Date(w.s).toDateString() ? clock(w.e) : this._battTimeLabel(new Date(w.e))}`).join(", ")
+      : this._t("battWindows", { n: wins.length });
+
+    const plan = m.source === "plan", est = m.source === "estimate";
+    const approx = est ? "≈ " : "";
+    const charges = m.source && m.energy > 1;
+    const kpi = (label, val, sub, muted = false) => `
+        <div class="batt-gc-kpi">
+          <span class="batt-gc-label">${label}</span>
+          <span class="batt-gc-val${muted ? " muted" : ""}">${val}</span>
+          <span class="batt-gc-sub">${sub}</span>
+        </div>`;
+    const energy = !m.source
+      ? kpi(this._t("battGcCharge"), this._t("battNotAvailable"), this._t("battOnlyOptimizer"), true)
+      : kpi(this._t(plan ? "battChargePlanned" : "battGcCharge"), `${approx}${kwh(m.energy)}`,
+          plan ? this._t("battFromPlan") : this._t("battEstimated", { power: `${this._battNum(m.cMax / 1000)} kW` }));
+    const socEnd = !m.source
+      ? kpi(this._t("battSocAfter"), this._t("battNotAvailable"), this._t("battOnlyOptimizer"), true)
+      : kpi(this._t("battSocAfter"),
+          charges ? `${isNaN(soc) ? "" : `${pct(soc)} → `}${approx}${pct(m.socEnd)}` : isNaN(soc) ? "–" : pct(soc),
+          !charges ? this._t("battNoCharge")
+            : m.capped ? this._t("battMaxSocAt", { soc: pct(m.maxSoc), time: this._battTimeLabel(new Date(m.end)) })
+            : this._battTimeLabel(new Date(m.end)));
+
+    // Where the figures come from.
+    const busy = this._battOptimizeBusy();
+    const chip = !m.source ? ""
+      : plan ? `<span class="batt-chip plan">${this._t("battPlanFrom", { time: m.updated ? clock(m.updated) : "" })}</span>`
+      : m.isCo2 ? `<span class="batt-chip estimate">${this._t("battPlanCo2")}</span>`
+      : dragging ? `<span class="batt-chip estimate">${this._t("battPlanDragging")}</span>`
+      : busy ? `<span class="batt-chip busy">${icon(MDI.refresh, 12)}${this._t("battPlanBusy")}</span>`
+      : `<span class="batt-chip estimate">${this._t("battPlanOther")}</span>`;
+    const active = activeId && isOn(this._hass, activeId)
+      ? `<span class="batt-chip active"${moreInfo(activeId)}>${icon(MDI.grid, 12)} ${this._t("battActiveNow")}</span>` : "";
+
+    let hint = "";
+    if (!m.hours) {
+      const cheap = m.slots.reduce((a, b) => b.v < a.v ? b : a);
+      hint = this._t("battNoSlotHint", { limit: m.fmt(limit), price: m.fmt(cheap.v), time: this._battTimeLabel(new Date(Math.max(cheap.s, m.now))) });
+    } else if (!m.source) {
+      hint = this._t("battNeedsOptimizer");
+    } else if (plan && m.dropped && m.energy - m.fromNow > 800) {
+      hint = this._t("battPlanMoreHint", { energy: kwh(m.fromNow), soc: pct(m.startSoc) });
+    } else if (m.capped && m.energy < 1000) {
+      hint = this._t("battFullHint", { soc: pct(m.maxSoc), energy: kwh(m.energy) });
+    } else if (m.capped && m.end && wins.length && m.end < wins[wins.length - 1].e) {
+      hint = this._t("battCappedHint", { soc: pct(m.maxSoc), time: this._battTimeLabel(new Date(m.end)) });
+    }
+
+    const slots = this._battSlots("planner", limit, null, m);
+    return `
+      <div class="batt-gc-kpis">
+        ${kpi(this._t("battChargeTime"), hm(m.hours), winText)}
+        ${energy}${socEnd}
+      </div>
+      ${chip || active ? `<div class="batt-gc-status">${active}${chip}</div>` : ""}
+      ${hint ? `<div class="batt-gc-hint">${hint}</div>` : ""}
+      ${slots ? slots.html : ""}
+      ${m.source ? `<div class="batt-gc-foot">${this._t("battPlanFoot", { power: `${this._battNum(m.cMax / 1000)} kW`, soc: pct(m.setSoc), eta: pct(m.eta * 100) })}</div>` : ""}`;
+  },
+
+  // The slider of a limit spans the tariff it is compared with, not the
+  // entity's range (ha-evcc: -0.5 to 2.5 per kWh, where a cent is a pixel):
+  // the cheapest to the dearest slot of the forecast with a quarter of that
+  // span as margin on both sides, the limit set always inside, on the
+  // entity's step and within its range. Null without a forecast.
+  _battLimitRange(limitId, kind) {
+    const rates = this._wsForecast(kind)?.data?.rates;
+    const vals  = Array.isArray(rates) ? rates.map(r => r.value).filter(v => typeof v === "number") : [];
+    if (!vals.length) return null;
+    const eMin = attr(this._hass, limitId, "min") ?? 0;
+    const eMax = attr(this._hass, limitId, "max") ?? 1;
+    const step = this._sliderStepOverride(limitId) ?? (attr(this._hass, limitId, "step") ?? 1);
+    const cur  = parseFloat(stateVal(this._hass, limitId));
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    const margin = Math.max((hi - lo) * 0.25, step * 4);
+    lo -= margin; hi += margin;
+    if (!isNaN(cur)) { lo = Math.min(lo, cur); hi = Math.max(hi, cur); }
+    const snap = (v, round) => Number((eMin + round((v - eMin) / step) * step).toFixed(6));
+    const min = Math.max(eMin, snap(lo, Math.floor));
+    const max = Math.min(eMax, snap(hi, Math.ceil));
+    return max > min ? { min, max } : null;
   },
 
   // The value a limit starts with when it is switched on: the tariff right
@@ -698,6 +996,16 @@ export const batteryView = {
           this._toggleEntity(d.domain, d.entity, on);
         }
         this._render();
+      });
+    });
+
+    // A drag of the grid charge limit redraws the figures under it at once.
+    // The render waits for the end of the drag (soc-control.js), which writes
+    // the limit; evcc's optimizer then plans for it.
+    this._fresh(".batt-gc-limit input[type=range]").forEach(input => {
+      input.addEventListener("input", () => {
+        const box = this.shadowRoot.querySelector(".batt-gc-plan");
+        if (box) box.innerHTML = this._renderBattGridPlan(parseFloat(input.value), this._cachedEntities?.site?.battery_grid_charge_active, true);
       });
     });
 
@@ -781,6 +1089,24 @@ export const batteryCss = `
       .batt-experimental { font-size: .7rem; color: var(--secondary-text-color); }
       .batt-chip { display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; padding: 2px 8px; border-radius: 10px; background: var(--divider-color, #333); }
       .batt-chip.active { background: color-mix(in srgb, var(--evcc-green) 22%, transparent); }
+      .batt-gc-plan { display: flex; flex-direction: column; gap: 10px; }
+      .batt-gc-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+      .batt-gc-kpi { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 6px 8px; border-radius: 8px; background: color-mix(in srgb, var(--primary-text-color) 4%, transparent); }
+      .batt-gc-label, .batt-gc-sub { font-size: .7rem; color: var(--secondary-text-color); line-height: 1.35; }
+      .batt-gc-val { font-size: .95rem; font-weight: 700; line-height: 1.3; }
+      .batt-gc-val.muted { font-size: .78rem; font-weight: 600; color: var(--secondary-text-color); }
+      .batt-gc-status { display: flex; gap: 6px; flex-wrap: wrap; }
+      .batt-chip.plan { background: color-mix(in srgb, var(--evcc-green) 20%, transparent); }
+      .batt-chip.estimate { background: color-mix(in srgb, var(--evcc-amber) 26%, transparent); }
+      .batt-chip.busy { background: color-mix(in srgb, var(--evcc-blue) 20%, transparent); }
+      .batt-chip.busy svg { animation: batt-spin 1s linear infinite; }
+      .batt-gc-hint { font-size: .74rem; line-height: 1.4; color: var(--secondary-text-color); }
+      .batt-gc-keys { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: .7rem; color: var(--secondary-text-color); margin-top: 4px; }
+      .batt-gc-keys span { display: inline-flex; align-items: center; gap: 4px; }
+      .batt-gc-sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; background: var(--evcc-blue); }
+      .batt-gc-sw.est { opacity: .55; }
+      .batt-gc-sw.line { width: 12px; height: 0; border-radius: 0; background: none; border-top: 1px dashed var(--primary-text-color); opacity: .55; }
+      .batt-gc-foot { font-size: .7rem; color: var(--secondary-text-color); }
       .batt-slots-legend { display: flex; justify-content: space-between; gap: 8px; font-size: .72rem; color: var(--secondary-text-color); margin-top: 2px; }
       .batt-text-col { display: flex; flex-direction: column; gap: 12px; overflow-wrap: anywhere; }
       .batt-text-item { display: flex; gap: 8px; align-items: flex-start; }
