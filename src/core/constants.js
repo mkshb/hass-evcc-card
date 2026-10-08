@@ -1,4 +1,4 @@
-export const EVCC_CARD_VERSION = "0.9.4";
+export const EVCC_CARD_VERSION = "0.9.5-beta.1";
 
 export const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
