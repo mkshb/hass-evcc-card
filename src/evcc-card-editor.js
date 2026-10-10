@@ -1,5 +1,6 @@
-import { HIDEABLE_SETTINGS, SLIDER_STEP_KEYS, vehicleSlug, isVehicleImage, isMediaSourceId } from "./core/constants.js";
-import { detectIntegration, discoverEntities, discoverVehicles, selectVehicle, disabledCardEntities } from "./core/entity-discovery.js";
+import { HIDEABLE_SETTINGS, SLIDER_STEP_KEYS, SINGLE_LOADPOINT_MODES, vehicleSlug, isVehicleImage, isMediaSourceId,
+         loadpointFilter, loadpointOption } from "./core/constants.js";
+import { detectIntegration, discoverEntities, discoverVehicles, selectVehicle, cardDisabledEntities } from "./core/entity-discovery.js";
 import { enableEntity } from "./core/actions.js";
 import { disabledEntitiesHtml, disabledListCss, enableEntities } from "./components/disabled-entities.js";
 import { loadSharedTranslations, sharedTranslations, sharedTranslationsReady } from "./utils/translations.js";
@@ -10,6 +11,9 @@ import { listVehicleDevices, findVehicleDevice, evccVehicleTitle, resolveVehicle
 // mdi:eye-off
 const EYE_OFF_ICON = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.56 9,11.77 9,12A3,3 0 0,0 12,15C12.22,15 12.44,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17A5,5 0 0,1 7,12C7,11.21 7.2,10.47 7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,12C2.73,16.39 7,19.5 12,19.5C13.55,19.5 15.03,19.2 16.38,18.66L18.74,21L20,19.73L3.27,3M12,7A5,5 0 0,1 17,12C17,12.64 16.87,13.26 16.64,13.82L19.57,16.75C21.07,15.5 22.27,13.86 23,12C21.27,7.61 17,4.5 12,4.5C10.6,4.5 9.26,4.75 8,5.2L10.17,7.35C10.74,7.13 11.35,7 12,7Z"/></svg>`;
 
+// mdi:alert, the warning triangle the card shows for disabled entities
+const WARN_ICON = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13,14H11V10H13M13,18H11V16H13M1,21H23L12,2L1,21Z"/></svg>`;
+
 // mdi:close
 const CLEAR_ICON = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/></svg>`;
 
@@ -17,6 +21,10 @@ const CLEAR_ICON = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="tr
 // hold an empty value, so the default option carries this one and the editor
 // turns it back into a missing key.
 const UNSET = "__unset";
+
+// The value of the option that stands for a list of several loadpoints from
+// before, in the modes that show one loadpoint per card.
+const MANY = "__many";
 
 // A value from the form as it goes into the config: the unset option, an empty
 // field, a switch that is off and an empty list all drop the key.
@@ -66,6 +74,11 @@ const LANGUAGES = [
   ["pt", "editorLanguageNamePt"],
 ];
 
+const SECTION_TITLES = {
+  content: "editorSectionContent",
+  look:    "editorSectionLook",
+};
+
 const LEGACY_PERIOD_LABELS = {
   "30d":      "editorStatsPeriod30d",
   "365d":     "editorStatsPeriod365d",
@@ -81,6 +94,8 @@ const EDITOR_CSS = `
   .field-label { font-size: .875rem; font-weight: 500; color: var(--primary-text-color); }
   .section-title { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--secondary-text-color); }
   .hint { font-size: .75rem; color: var(--secondary-text-color); }
+  .deprecated { padding: 8px 12px; border-radius: 4px; font-size: .875rem; color: var(--error-color, #db4437);
+                background: rgba(219, 68, 55, .1); border-left: 4px solid var(--error-color, #db4437); }
   .ha-select, .ha-input {
     width: 100%; padding: 8px 12px; border-radius: 4px; font-size: 1rem;
     background: var(--card-background-color, #fff);
@@ -89,6 +104,11 @@ const EDITOR_CSS = `
     box-sizing: border-box; font-family: inherit;
   }
   .ha-select:focus, .ha-input:focus { outline: none; border-color: var(--primary-color); }
+  .panel-icon { display: inline-flex; vertical-align: -4px; margin-right: 8px; color: var(--warning-color, #ffa600); }
+  .panel-icon svg { width: 20px; height: 20px; }
+  .panel-body { display: flex; flex-direction: column; gap: 16px; padding: 8px 0; }
+  details.panel { border: 1px solid var(--divider-color, #e0e0e0); border-radius: 4px; padding: 0 16px; }
+  details.panel > summary { cursor: pointer; padding: 12px 0; font-weight: 500; color: var(--primary-text-color); }
   .vehicle-media { margin-top: 6px; }
   .vehicle-media:empty { display: none; }
   .vehicle-media + .vehicle-image-row { margin-top: 6px; }
@@ -136,7 +156,6 @@ export class EvccCardEditor extends HTMLElement {
     this._instances = [];   // every ha-evcc entry in the registry, first one is the default
     this._disabled  = [];   // ha-evcc entities disabled in the registry
     this._enabling  = {};   // entity id -> outcome of enabling it here (disabled-entities.js)
-    this._disabledOptionalOpen = false;
     this._vehicleMapOpen = false;   // the entity mapping of the card's vehicle unfolded
   }
 
@@ -193,12 +212,13 @@ export class EvccCardEditor extends HTMLElement {
   }
 
   // The vehicle sensors count as needed for the card's own vehicle only, and
-  // only while it has no device of its own (see disabledCardEntities).
+  // only while it has no device of its own (see disabledCardEntities). Only
+  // what this card's warning triangles point at, see cardDisabledEntities.
   _disabledEntries() {
     if (!this._hass) return [];
     const vehicle = this._config.mode === "vehicle" && !this._vehicleDeviceFor()
       ? selectVehicle(discoverVehicles(this._hass, this._getPrefix()), this._config)?.[0] ?? null : null;
-    return disabledCardEntities(this._hass, this._disabled, this._getPrefix(), { vehicle });
+    return cardDisabledEntities(this._hass, this._disabled, this._getPrefix(), this._config, { vehicle });
   }
 
   _esc(str) {
@@ -543,12 +563,17 @@ export class EvccCardEditor extends HTMLElement {
       ({ name, schema: { name, selector: { boolean: {} } }, value: c[name] === true, ...extra });
 
     const showLoadpoints    = ["loadpoint", "compact", "plan", "priority"].includes(mode);
+    const single            = SINGLE_LOADPOINT_MODES.includes(mode);
     const showNoPlan        = ["loadpoint", "compact"].includes(mode);
     const showChargeCurrent = ["loadpoint", "compact"].includes(mode);
     const showSiteDetails   = ["site", "flow"].includes(mode);
     const showStatsPeriod   = ["stats", "site", "flow", "grid"].includes(mode);
     const lps = this._availableLoadpoints;
     const fields = [];
+    // What the card draws: the loadpoints it is limited to, else all of them.
+    const filter = loadpointFilter(c);
+    const shown  = filter || lps;
+    const oneLp  = shown.length === 1 ? shown[0] : null;
 
     fields.push(pick("mode", [
       tOpt("loadpoint",  "editorModeLoadpoint"),
@@ -563,7 +588,8 @@ export class EvccCardEditor extends HTMLElement {
       tOpt("repeatplan", "editorModeRepeatplan"),
       tOpt("priority",   "editorModePriority"),
       tOpt("debug",      "editorModeDebug"),
-    ], mode, { label: this._t("editorModeLabel"), helper: this._t(MODE_DESC[mode] || "") || undefined }));
+    ], mode, { label: this._t("editorModeLabel"), helper: this._t(MODE_DESC[mode] || "") || undefined,
+               after: next => this._fitLoadpoints(next) }));
 
     // Instance: the first entry is what the card detects on its own, so picking
     // it drops `prefix` from the config. Loadpoint and vehicle selections belong
@@ -574,7 +600,7 @@ export class EvccCardEditor extends HTMLElement {
         label: this._t("editorInstanceLabel"), helper: this._t("editorInstanceHint"),
         write: v => (this._instances.length > 0 && v === this._instances[0].prefix) ? undefined : v,
         after: next => {
-          Object.assign(next, { loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined,
+          Object.assign(next, { loadpoint: undefined, loadpoints: undefined, no_plan: undefined, no_pv: undefined, repeating_plan_vehicles: undefined,
             vehicle: undefined, vehicles: undefined, vehicle_device: undefined, vehicle_image: undefined,
             vehicle_image_connected: undefined, vehicle_image_charging: undefined, vehicle_entities: undefined });
         },
@@ -591,26 +617,48 @@ export class EvccCardEditor extends HTMLElement {
     fields.push(pick("language", [
       tOpt(UNSET, "editorLanguageAuto"),
       ...LANGUAGES.map(([code, key]) => tOpt(code, key)),
-    ], c.language || UNSET, { label: this._t("editorLanguageLabel") }));
+    ], c.language || UNSET, { label: this._t("editorLanguageLabel"), section: "look" }));
 
     fields.push(pick("size", [
       tOpt(UNSET,    "editorSizeAuto"),
       tOpt("small",  "editorSizeSmall"),
       tOpt("medium", "editorSizeMedium"),
       tOpt("large",  "editorSizeLarge"),
-    ], c.size || UNSET, { label: this._t("editorSizeLabel") }));
+    ], c.size || UNSET, { label: this._t("editorSizeLabel"), section: "look" }));
 
-    if (showLoadpoints && lps.length) {
+    // One loadpoint per card in the loadpoint and plan modes, picked like the
+    // vehicle: with a single loadpoint the card takes it by itself and the
+    // first option says so. A list of several from before is an option of its
+    // own and keeps drawing them all until another one is picked; the red
+    // note above the form then says that this goes away (_deprecatedHtml).
+    if (single && lps.length) {
+      const legacy = !c.loadpoint && filter && filter.length > 1;
+      const value  = c.loadpoint ?? (legacy ? MANY : (filter ? filter[0] : UNSET));
+      // Drawing them all is phasing out: offered only while the card does it.
+      fields.push(pick("loadpoint", [
+        ...(lps.length === 1 ? [opt(UNSET, this._t("editorLoadpointAuto", { val: lps[0] }))]
+          : value === UNSET ? [opt(UNSET, `\u26A0 ${this._t("editorLoadpointAll")}`)] : []),
+        ...lps.map(lp => opt(lp, lp)),
+        ...(value !== UNSET && value !== MANY && !lps.includes(value) ? [opt(value, value)] : []),
+        ...(legacy ? [opt(MANY, `\u26A0 ${this._t("editorLoadpointMany", { val: filter.join(", ") })}`)] : []),
+      ], value, {
+        label: this._t("editorLoadpointTitle"),
+        helper: oneLp ? this._t("editorLoadpointHint") : undefined,
+        write: v => (v === UNSET || v === MANY) ? undefined : v,
+        after: next => { next.loadpoints = undefined; this._fitLoadpoints(next); },
+      }));
+    } else if (showLoadpoints && lps.length) {
       fields.push(many("loadpoints", ...this._listField("loadpoints", lps),
         { label: this._t("editorShowLoadpointsTitle"), helper: this._t("editorShowLoadpointsHint") }));
     }
-    if (showLoadpoints) {
+    // A card for one loadpoint has no other to hide it among.
+    if (showLoadpoints && !(single && oneLp)) {
       fields.push(pick("disabled_loadpoints", [
         tOpt(UNSET,  "editorDisabledLoadpointsHide"),
         tOpt("dim",  "editorDisabledLoadpointsDim"),
         tOpt("show", "editorDisabledLoadpointsShow"),
       ], c.disabled_loadpoints || UNSET,
-      { label: this._t("editorDisabledLoadpointsLabel"), helper: this._t("editorDisabledLoadpointsHint") }));
+      { label: this._t("editorDisabledLoadpointsLabel"), helper: this._t("editorDisabledLoadpointsHint"), section: "content" }));
     }
 
     const rplanSlugs = mode === "repeatplan" ? this._availableVehicleSlugs : [];
@@ -642,28 +690,37 @@ export class EvccCardEditor extends HTMLElement {
         after: next => Object.assign(next, { vehicles: undefined, vehicle_device: undefined, vehicle_image: undefined,
           vehicle_image_connected: undefined, vehicle_image_charging: undefined, vehicle_entities: undefined }),
       }));
-      if (selectVehicle(vehicles, c)) fields.push(flag("vehicle_actions", { label: this._t("editorVehicleActions") }));
+      if (selectVehicle(vehicles, c)) fields.push(flag("vehicle_actions", { label: this._t("editorVehicleActions"), section: "content" }));
     }
 
-    if (showNoPlan && lps.length) {
-      fields.push(many("no_plan", ...this._listField("no_plan", lps), { label: this._t("editorNoPlanForTitle") }));
-      fields.push(many("no_pv",   ...this._listField("no_pv",   lps), { label: this._t("editorNoPvForTitle") }));
+    // For one loadpoint a switch that writes `true`, for several a list of names.
+    // `no_pv` has no field: evcc offers the solar modes whenever a grid meter
+    // is configured, so it only matters without one and stays a YAML option.
+    if (showNoPlan && lps.length && single && oneLp) {
+      fields.push({ name: "no_plan", schema: { name: "no_plan", selector: { boolean: {} } }, value: loadpointOption(c, "no_plan", oneLp),
+                    label: this._t("editorNoPlan"), section: "content", write: v => v ? true : undefined });
+    } else if (showNoPlan && lps.length) {
+      fields.push(many("no_plan", ...this._listField("no_plan", lps), { label: this._t("editorNoPlanForTitle"), section: "content" }));
     }
-    if (mode === "battery") fields.push(flag("hide_soc_chart", { label: this._t("editorHideSocChart") }));
+    if (mode === "battery") fields.push(flag("hide_soc_chart", { label: this._t("editorHideSocChart"), section: "content" }));
     if (showChargeCurrent) {
       fields.push(pick("charge_current_settings", [
         tOpt("collapsed", "editorCollapsed"),
         tOpt("expanded",  "editorExpanded"),
-      ], c.charge_current_settings || "collapsed", { label: this._t("editorChargeCurrentSettingsLabel") }));
+      ], c.charge_current_settings || "collapsed", { label: this._t("editorChargeCurrentSettingsLabel"), section: "content" }));
       fields.push(many("hide_settings", ...this._listField("hide_settings", HIDEABLE_SETTINGS.map(([key]) => key),
         { label: key => this._t(HIDEABLE_SETTINGS.find(([k]) => k === key)?.[1] ?? key) }),
-        { label: this._t("editorHideSettingsTitle"), helper: this._t("editorHideSettingsHint") }));
+        { label: this._t("editorHideSettingsTitle"), helper: this._t("editorHideSettingsHint"), section: "content" }));
+    }
+    // The switch for the warning triangle, in the modes that draw one.
+    if (["loadpoint", "compact", "battery", "vehicle"].includes(mode)) {
+      fields.push(flag("hide_disabled_hint", { label: this._t("editorHideDisabledHint"), section: "content" }));
     }
     if (showSiteDetails) {
       fields.push(pick("site_details", [
         tOpt("expanded",  "editorExpanded"),
         tOpt("collapsed", "editorCollapsed"),
-      ], c.site_details || "expanded", { label: this._t("editorSiteDetailsLabel") }));
+      ], c.site_details || "expanded", { label: this._t("editorSiteDetailsLabel"), section: "content" }));
     }
     if (showStatsPeriod) {
       // `stats_period` has no implicit value: unconfigured, every mode follows
@@ -684,7 +741,7 @@ export class EvccCardEditor extends HTMLElement {
         tOpt("none",  "editorStatsPeriodNone"),
       ];
       if (LEGACY_PERIOD_LABELS[c.stats_period]) options.push(tOpt(c.stats_period, LEGACY_PERIOD_LABELS[c.stats_period]));
-      fields.push(pick("stats_period", options, c.stats_period || UNSET, { label: this._t("editorStatsPeriodLabel") }));
+      fields.push(pick("stats_period", options, c.stats_period || UNSET, { label: this._t("editorStatsPeriodLabel"), section: "content" }));
     }
 
     // Advanced, folded away: the step of each number slider. A named section of
@@ -720,13 +777,33 @@ export class EvccCardEditor extends HTMLElement {
     return fields;
   }
 
+  // Brings `loadpoint` and `loadpoints` in line with the mode (`next`, the
+  // config about to be written): a mode for one loadpoint takes a list of one
+  // as its loadpoint, a mode for several takes the one loadpoint as a list.
+  // A card down to one loadpoint keeps `no_plan` / `no_pv` as `true` where its
+  // loadpoint was in the list.
+  _fitLoadpoints(next) {
+    if (SINGLE_LOADPOINT_MODES.includes(next.mode || "loadpoint")) {
+      const list = loadpointFilter(next);
+      if (!next.loadpoint && list && list.length === 1) Object.assign(next, { loadpoint: list[0], loadpoints: undefined });
+      if (!next.loadpoint) return;
+      for (const key of ["no_plan", "no_pv"]) {
+        if (next[key] !== undefined && next[key] !== true) next[key] = loadpointOption(next, key, next.loadpoint) || undefined;
+      }
+    } else if (["compact", "priority"].includes(next.mode) && next.loadpoint) {
+      Object.assign(next, { loadpoints: [next.loadpoint], loadpoint: undefined });
+    }
+  }
+
   // A list option as the form shows it: a single name is the shorthand of a
-  // list with one entry, and a name the installation does not have stays in the
+  // list with one entry, `true` (every loadpoint, see loadpointOption) all of
+  // the known ones, and a name the installation does not have stays in the
   // list as an option of its own, so nothing is dropped unseen. Vehicle slugs
   // are compared without case, like the card does.
   _listField(name, known, { nocase = false, label = v => v } = {}) {
     const raw    = this._config[name];
-    const listed = raw === undefined || raw === null ? [] : (Array.isArray(raw) ? raw : [raw]).map(String);
+    const listed = raw === undefined || raw === null || raw === false ? [] : raw === true ? [...known]
+      : (Array.isArray(raw) ? raw : [raw]).map(String);
     const value  = listed.map(v => nocase ? (known.find(k => k.toLowerCase() === v.toLowerCase()) ?? v) : v);
     const options = [...known, ...value.filter(v => !known.includes(v))].map(v => ({ value: v, label: label(v) }));
     return [options, value];
@@ -768,7 +845,7 @@ export class EvccCardEditor extends HTMLElement {
       texts[f.name] = { label: f.label, helper: f.helper };
       Object.assign(texts, f.children || {});
     }
-    const schema = fields.map(f => f.schema);
+    const schema = this._sectionSchema(fields);
     const key    = JSON.stringify(schema);
     form.hass = this._hass;
     if (form._evccSchema !== key) { form.schema = schema; form._evccSchema = key; }
@@ -776,6 +853,30 @@ export class EvccCardEditor extends HTMLElement {
     form.computeHelper = s => texts[s.name]?.helper;
     form.data = Object.fromEntries(fields.map(f => [f.name, f.value]));
     return form;
+  }
+
+  // The fields of a section go into a folded panel of their own: first the
+  // fields without one, then the panels in the order of SECTION_TITLES, then
+  // the panels a field brings itself (the slider steps). A panel is flattened,
+  // so its values stay top level keys of the config, and its title counts what
+  // is set in it, so a folded panel still tells whether anything differs from
+  // the defaults.
+  _sectionSchema(fields) {
+    const own      = f => !f.section && f.schema.type !== "expandable";
+    const sections = Object.keys(SECTION_TITLES).map(name => {
+      const list = fields.filter(f => f.section === name);
+      if (!list.length) return null;
+      const set   = list.filter(f => this._config[f.name] !== undefined && this._config[f.name] !== null).length;
+      const title = this._t(SECTION_TITLES[name]);
+      return { type: "expandable", name: `section_${name}`, flatten: true,
+               title: set ? `${title} (${this._t("editorVehicleMapSet", { val: set })})` : title,
+               schema: list.map(f => f.schema) };
+    }).filter(Boolean);
+    return [
+      ...fields.filter(own).map(f => f.schema),
+      ...sections,
+      ...fields.filter(f => !f.section && !own(f)).map(f => f.schema),
+    ];
   }
 
   // A change from the form: every field whose value moved away from what the
@@ -804,52 +905,59 @@ export class EvccCardEditor extends HTMLElement {
     this._render();
   }
 
-  // The switch that hides the warning triangle sits under the list it is about.
-  _hintFields() {
-    return [{ name: "hide_disabled_hint", schema: { name: "hide_disabled_hint", selector: { boolean: {} } },
-              value: this._config.hide_disabled_hint === true, label: this._t("editorHideDisabledHint") }];
-  }
-
   _render() {
     const root = this.shadowRoot;
     if (!this._slots) {
       root.innerHTML = `
         <style>${EDITOR_CSS}${disabledListCss}</style>
         <div class="form">
+          <div class="form-warn"></div>
           <div class="form-main"></div>
           <div class="form-extra"></div>
-          <div class="form-hint"></div>
+          <div class="form-look"></div>
+          <div class="form-disabled"></div>
         </div>`;
-      this._slots = { main: root.querySelector(".form-main"), extra: root.querySelector(".form-extra"), hint: root.querySelector(".form-hint") };
+      this._slots = { disabled: root.querySelector(".form-disabled"), main: root.querySelector(".form-main"),
+                      warn: root.querySelector(".form-warn"),
+                      extra: root.querySelector(".form-extra"), look: root.querySelector(".form-look") };
     }
 
     const c    = this._config;
     const mode = c.mode || "loadpoint";
     const disabledEntries = this._disabledEntries();
     this._disabledKey     = disabledEntries.map(e => e.id).join(",");
-    const showHint        = ["loadpoint", "compact"].includes(mode) && (disabledEntries.length || c.hide_disabled_hint);
+
+    this._slots.warn.innerHTML     = this._deprecatedHtml(mode);
+    this._slots.extra.innerHTML    = this._extraHtml(mode);
+    this._slots.disabled.innerHTML = this._disabledHtml(disabledEntries);
 
     const ready = this._haFormReady();
     if (ready) {
-      const fields = this._fields();
+      // Language and size follow what the form cannot hold (the vehicle's
+      // panels) in a form of their own; the disabled entities come last.
+      const all    = this._fields();
+      const fields = all.filter(f => f.section !== "look");
+      const look   = all.filter(f => f.section === "look");
       this._mainForm = this._mountForm(this._slots.main, this._mainForm, fields, data => this._applyForm(fields, data));
-      if (showHint) {
-        const hint = this._hintFields();
-        this._hintForm = this._mountForm(this._slots.hint, this._hintForm, hint, data => this._applyForm(hint, data));
-      } else {
-        this._slots.hint.replaceChildren();
-        this._hintForm = null;
-      }
+      this._lookForm = this._mountForm(this._slots.look, this._lookForm, look, data => this._applyForm(look, data));
     }
 
-    this._slots.extra.innerHTML = this._extraHtml(mode, disabledEntries);
     this._addListeners();
   }
 
+  // Several loadpoints on a loadpoint or plan card go away in one of the next
+  // versions; until then the editor says so in red, above everything else.
+  _deprecatedHtml(mode) {
+    const lps = this._availableLoadpoints;
+    if (!SINGLE_LOADPOINT_MODES.includes(mode) || !lps.length) return "";
+    if ((loadpointFilter(this._config) || lps).length < 2) return "";
+    return `<div class="deprecated" role="alert">${this._esc(this._t("editorLoadpointManyHint"))}</div>`;
+  }
+
   // Everything below the form that HA's form cannot express: what is missing
-  // in the installation, the device, mapping and picture of the card's vehicle,
-  // and the list of disabled entities with its enable buttons.
-  _extraHtml(mode, disabledEntries) {
+  // in the installation, and the device, mapping and picture of the card's
+  // vehicle.
+  _extraHtml(mode) {
     const c     = this._config;
     const parts = [];
     const lps   = this._availableLoadpoints;
@@ -865,41 +973,64 @@ export class EvccCardEditor extends HTMLElement {
       if (!Object.keys(vehicles).length) {
         parts.push(`<div class="hint">${this._t("editorVehiclesNoneFound")}</div>`);
       } else if (own) {
-        parts.push(`
+        const isSet  = key => c[key] !== undefined && c[key] !== null;
+        const images = ["vehicle_image", "vehicle_image_connected", "vehicle_image_charging"];
+        parts.push(this._panel("vehicle_device", this._t("editorVehicleDeviceTitle"),
+          ["vehicle_device", "vehicle_entities"].filter(isSet).length, `
           <div class="field">
-            <div class="section-title">${this._t("editorVehicleDeviceTitle")}</div>
             <div class="hint">${this._t("editorVehicleDeviceHint")}</div>
             ${this._vehicleDeviceField(own[0], own[1])}
-          </div>
+          </div>`));
+        parts.push(this._panel("vehicle_images", this._t("editorVehicleImagesTitle"), images.filter(isSet).length, `
           <div class="field">
-            <div class="section-title">${this._t("editorVehicleImageTitle")}</div>
+            <div class="field-label">${this._t("editorVehicleImageTitle")}</div>
             <div class="hint">${this._t("editorVehicleImageHint")}</div>
             ${this._vehicleImageField("vehicle_image")}
           </div>
           <div class="field">
-            <div class="section-title">${this._t("editorVehicleImageConnectedTitle")}</div>
+            <div class="field-label">${this._t("editorVehicleImageConnectedTitle")}</div>
             <div class="hint">${this._t("editorVehicleImageConnectedHint")}</div>
             ${this._vehicleImageField("vehicle_image_connected")}
           </div>
           <div class="field">
-            <div class="section-title">${this._t("editorVehicleImageChargingTitle")}</div>
+            <div class="field-label">${this._t("editorVehicleImageChargingTitle")}</div>
             <div class="hint">${this._t("editorVehicleImageChargingHint")}</div>
             ${this._vehicleImageField("vehicle_image_charging")}
-          </div>`);
+          </div>`));
       }
-    }
-    if (disabledEntries.length) {
-      parts.push(`
-        <div class="field">
-          <div class="section-title">${this._t("disabledTitle")}</div>
-          ${disabledEntitiesHtml({ entries: disabledEntries, enabling: this._enabling, admin: !!this._hass?.user?.is_admin,
-                                   t: (k, r) => this._t(k, r), optionalOpen: this._disabledOptionalOpen })}
-        </div>`);
     }
     return parts.join("");
   }
 
+  // What this card misses, last and folded like the rest: the entities its
+  // warning triangles point at, with their enable buttons. The panel carries
+  // the card's triangle and counts them. Nothing missing, nothing shown.
+  _disabledHtml(disabledEntries) {
+    if (!disabledEntries.length) return "";
+    const body = disabledEntitiesHtml({ entries: disabledEntries, enabling: this._enabling, admin: !!this._hass?.user?.is_admin,
+                                       t: (k, r) => this._t(k, r) });
+    return this._panel("disabled", `${this._t("disabledWarnTitle")} (${disabledEntries.length})`, 0, body, WARN_ICON);
+  }
+
+  // A folded panel below the form, looking like the sections inside it: HA's
+  // expansion panel where the frontend has it, a native one otherwise. The
+  // title counts what is set inside, like the form's sections. Whether it is
+  // open is the editor's own state, so it survives the next render.
+  _panel(key, title, set, body, icon = "") {
+    const open = !!this._panelsOpen?.[key];
+    const head = set ? `${title} (${this._t("editorVehicleMapSet", { val: set })})` : title;
+    return customElements.get("ha-expansion-panel")
+      ? `<ha-expansion-panel outlined data-panel="${key}" header="${this._esc(head)}"${open ? " expanded" : ""}>${icon ? `<span class="panel-icon" slot="leading-icon">${icon}</span>` : ""}<div class="panel-body">${body}</div></ha-expansion-panel>`
+      : `<details class="panel" data-panel="${key}"${open ? " open" : ""}><summary>${icon ? `<span class="panel-icon">${icon}</span>` : ""}${this._esc(head)}</summary><div class="panel-body">${body}</div></details>`;
+  }
+
   _addListeners() {
+    this.shadowRoot.querySelectorAll("[data-panel]").forEach(el => {
+      const keep = open => { this._panelsOpen = { ...this._panelsOpen, [el.dataset.panel]: open }; };
+      el.addEventListener("expanded-changed", e => { if (e.target === el) keep(!!e.detail?.expanded); });
+      el.addEventListener("toggle", () => keep(el.open));
+    });
+
     const enable = ids => enableEntities(id => enableEntity(this._hass, id),
       this._disabledEntries().filter(e => ids.includes(e.id)), this._enabling, () => this._render());
     this.shadowRoot.querySelectorAll("button.disabled-enable").forEach(btn => {
@@ -908,8 +1039,6 @@ export class EvccCardEditor extends HTMLElement {
     this.shadowRoot.querySelectorAll("button.disabled-enable-all").forEach(btn => {
       btn.addEventListener("click", () => { btn.disabled = true; enable(btn.dataset.enableEntities.split(",")); });
     });
-    const optEl = this.shadowRoot.querySelector("details.disabled-optional");
-    if (optEl) optEl.addEventListener("toggle", () => { this._disabledOptionalOpen = optEl.open; });
 
     this._mountVehicleMediaPickers();
     this._mountVehicleRolePickers();

@@ -83,7 +83,7 @@
     // `data`, `computeLabel`, `computeHelper` in, a `value-changed` event with
     // the whole data on every change out. It draws one native field per schema
     // entry, marked with data-name (a field of a named section as
-    // "section.key"), and keeps the fields when only the data changes, as HA's
+    // "section.key", one of a flattened section by its key alone), and keeps the fields when only the data changes, as HA's
     // form does. A multiple select appends a checked value, like HA's list.
     if (!customElements.get("ha-form")) {
       customElements.define("ha-form", class extends HTMLElement {
@@ -103,6 +103,9 @@
           this.dispatchEvent(new CustomEvent("value-changed", { detail: { value: data } }));
         }
         _build() {
+          // HA's form keeps a panel open when only the schema around it changes
+          // (a section title that counts its set fields), so the stand-in does too.
+          const open = new Set([...this.querySelectorAll("details[open]")].map(d => d.dataset.section));
           this.replaceChildren();
           this._fields = [];
           const walk = (schema, parent, path) => {
@@ -110,11 +113,12 @@
               if (s.type === "expandable") {
                 const box = document.createElement("details");
                 box.dataset.section = s.name;
+                box.open = open.has(s.name);
                 const head = document.createElement("summary");
                 head.textContent = s.title || "";
                 box.append(head);
                 parent.append(box);
-                walk(s.schema, box, [...path, s.name]);
+                walk(s.schema, box, s.flatten ? path : [...path, s.name]);
                 continue;
               }
               const p = [...path, s.name];

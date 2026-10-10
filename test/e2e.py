@@ -683,6 +683,8 @@ def editor(page, t):
                 "now the device of that vehicle can be picked", "")
         media = ed.locator("[data-vehicle-media] ha-selector ha-selector-media").count()
         t.check(media == 3, "HA's own media selector for each picture: plain, at the charge point, charging", f"{media} ha-selector-media")
+        # the device settings sit in a folded panel, HA's ha-expansion-panel here
+        ed.locator('ha-expansion-panel[data-panel="vehicle_device"] #summary').click()
         ed.locator("[data-vehicle-map]").click()
         page.wait_for_timeout(1200)
         pickers = ed.locator("[data-vehicle-role-pick] ha-selector ha-selector-entity").count()
@@ -692,14 +694,14 @@ def editor(page, t):
             return p ? p.selector.entity.include_entities : null; }""")
         t.check(isinstance(ids, list) and all(i.startswith(("sensor.", "number.")) for i in ids),
                 "the picker of a role is handed only entities that fit it", json.dumps((ids or [])[:5]))
-    # The loadpoint fields and the advanced section with the slider steps.
+    # The loadpoint fields, folded into the content section, and the slider steps.
     picked = form_pick(page, "mode", "loadpoint")
     page.wait_for_timeout(1200)
     cfg = page.evaluate("window.__e2eCfg.at(-1) ?? null")
     t.check(picked and cfg and cfg.get("mode") == "loadpoint" and cfg.get("prefix") == PREFIX,
             "a mode switch through HA's form writes the whole config", json.dumps(cfg))
     adv = page.evaluate(f"""() => {{ const f = {FORM}; return f && f.shadowRoot ? f.shadowRoot.querySelectorAll('ha-form-expandable').length : -1; }}""")
-    t.check(adv == 1, "the loadpoint mode has the folded advanced section", f"{adv} ha-form-expandable")
+    t.check(adv == 2, "the loadpoint mode has the folded content section and the slider steps", f"{adv} ha-form-expandable")
     page.evaluate("() => document.getElementById('e2e-editor')?.remove()")
     t.check(not ERRORS, "no card errors", "; ".join(ERRORS)[:200])
 

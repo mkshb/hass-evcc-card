@@ -1,4 +1,4 @@
-import { SMART_MODE_ICON, CHARGE_MODES } from "../core/constants.js";
+import { SMART_MODE_ICON, CHARGE_MODES, loadpointOption } from "../core/constants.js";
 import { stateVal, attr, unitStr, isOn } from "../utils/state.js";
 import { fmtNum, fmtClock, fmtDuration, fmtRemainingDuration, evccDate, fmtCountdownFromISO, fmtCountdownFromTimestamp, socFillGradient, socTrackBg } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
@@ -23,8 +23,8 @@ export const loadpointView = {
     const statusLabel = charging ? this._t("charging") : connected ? this._t("connected") : this._t("ready");
     const statusClass = charging ? "charging" : connected ? "connected" : "ready";
 
-    const noPlan = Array.isArray(this._config.no_plan) && this._config.no_plan.includes(lpName);
-    const noPv   = Array.isArray(this._config.no_pv)   && this._config.no_pv.includes(lpName);
+    const noPlan = loadpointOption(this._config, "no_plan", lpName);
+    const noPv   = loadpointOption(this._config, "no_pv", lpName);
     const remaining = charging ? fmtRemainingDuration(this._hass, ents.charge_remaining_duration) : "";
 
     return `
@@ -55,8 +55,8 @@ export const loadpointView = {
     const connected   = ents.connected ? isOn(this._hass, ents.connected) : false;
     const statusLabel = charging ? this._t("charging") : connected ? this._t("connected") : this._t("ready");
     const statusClass = charging ? "charging" : connected ? "connected" : "ready";
-    const noPlan      = Array.isArray(this._config.no_plan) && this._config.no_plan.includes(lpName);
-    const noPv        = Array.isArray(this._config.no_pv)   && this._config.no_pv.includes(lpName);
+    const noPlan      = loadpointOption(this._config, "no_plan", lpName);
+    const noPv        = loadpointOption(this._config, "no_pv", lpName);
 
     if (this._tabState[lpName] === undefined) this._tabState[lpName] = 0;
     const activeTab = this._tabState[lpName];

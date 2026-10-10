@@ -1754,6 +1754,29 @@ def editor(browser, port, t):
     fm("title").fill("   ")
     t.check("title" not in last(), "a blank title drops the key instead of storing an empty string", json.dumps(last()))
 
+    # --- sections ----------------------------------------------------------------
+    # Display options and language/size sit in folded panels after the fields
+    # that pick what the card is for. The panels are flattened, so their fields
+    # write top level keys, and the title counts what is set inside.
+    sec = lambda name: fld(f'ha-form details[data-section="section_{name}"]')
+    order = page.evaluate("""() => [...document.querySelector("evcc-card-editor").shadowRoot.querySelector("ha-form").children]
+      .map(e => e.dataset.section || e.dataset.field)""")
+    t.check(order[-2:] == ["section_content", "slider_steps"],
+            "the panels follow the top fields: content, then advanced", json.dumps(order))
+    t.check(page.evaluate("""() => { const r = document.querySelector("evcc-card-editor").shadowRoot;
+      return r.querySelector(".form-look").querySelector('ha-form details[data-section="section_look"]') !== null
+        && r.querySelector(".form-look").nextElementSibling === r.querySelector(".form-disabled"); }"""),
+            "language and size come last, only the disabled entities follow", "")
+    t.check(sec("look").locator('[data-name="language"]').count() == 1 and sec("look").locator('[data-name="size"]').count() == 1
+            and sec("content").locator('[data-name="hide_settings"]').count() > 0 and sec("content").locator('[data-name="no_plan"]').count() > 0,
+            "language and size, and the display options, sit in their panels", "")
+    t.check(fld('ha-form > [data-field="mode"]').count() == 1 and fld('ha-form > [data-field="loadpoint"]').count() == 1,
+            "mode and loadpoint stay on top", "")
+    t.check(re.search(r"\(1 \w+\)$", sec("content").locator("summary").inner_text()) and not sec("look").locator("summary").inner_text().endswith(")"),
+            "a panel title counts the options set in it", f"{sec('content').locator('summary').inner_text()!r} / {sec('look').locator('summary').inner_text()!r}")
+    for name in ("content", "look"):
+        sec(name).locator("summary").first.click()
+
     # --- selects -----------------------------------------------------------------
     for sel, value in (("language", "en"), ("size", "large"), ("disabled_loadpoints", "dim"),
                        ("charge_current_settings", "expanded")):
@@ -1766,8 +1789,10 @@ def editor(browser, port, t):
         t.check(sel not in last(), f"{sel} back to its default drops the key", json.dumps(last()))
 
     # --- checkbox groups ---------------------------------------------------------
-    for field, a, b in (("loadpoints", "openwb", "wp"), ("no_plan", "openwb", "wp"), ("no_pv", "openwb", "wp"),
-                        ("hide_settings", "min_soc", "phases")):
+    # A loadpoint card that draws all loadpoints still has the lists; the
+    # loadpoint list itself belongs to the modes for several.
+    t.check(fld('ha-form [data-name="no_pv"]').count() == 0, "no_pv has no field, it stays a YAML option", "")
+    for field, a, b in (("no_plan", "openwb", "wp"), ("hide_settings", "min_soc", "phases")):
         cb(field, a).check()
         t.check(last().get(field, [])[-1:] == [a], f"{field}: checking {a} appends it", json.dumps(last().get(field)))
         cb(field, b).check()
@@ -1776,8 +1801,53 @@ def editor(browser, port, t):
         cb(field, a).uncheck()
         t.check(a not in last().get(field, []) and b in last().get(field, []),
                 f"{field}: unchecking removes only that entry", json.dumps(last().get(field)))
-    cb("no_pv", "wp").uncheck()
-    t.check("no_pv" not in last(), "emptying a checkbox group drops the key", json.dumps(last()))
+    cb("no_plan", "wp").uncheck()
+    t.check("no_plan" not in last(), "emptying a checkbox group drops the key", json.dumps(last()))
+
+    # --- one loadpoint per card ----------------------------------------------------
+    # The loadpoint and plan modes pick one loadpoint, like the vehicle mode;
+    # no_plan / no_pv become switches that write true. A list of several from
+    # before is an option of its own and keeps working until something is picked.
+    lp = fm("loadpoint")
+    opts = lp.locator("option").evaluate_all("os => os.map(o => o.value)")
+    t.check(opts[0] == "__unset" and "openwb" in opts and "wp" in opts and fm("loadpoints").count() == 0,
+            "the loadpoint mode offers one loadpoint, the first option draws them all", json.dumps(opts))
+    t.check(lp.locator('option[value="__unset"]').inner_text() == "\u26a0 Alle Ladepunkte",
+            "drawing them all is marked with a warning sign", lp.locator('option[value="__unset"]').inner_text())
+    lp.select_option("openwb")
+    t.check(last().get("loadpoint") == "openwb" and "loadpoints" not in last(), "a pick writes config.loadpoint", json.dumps(last()))
+    t.check(fm("loadpoint").locator('option[value="__unset"]').count() == 0,
+            "once one is picked, all of them is no longer offered", json.dumps(fm("loadpoint").locator("option").evaluate_all("os => os.map(o => o.value)")))
+    t.check(fm("disabled_loadpoints").count() == 0 and fld('ha-form input[type=checkbox][data-name="no_plan"]').count() == 1,
+            "for one loadpoint: no disabled_loadpoints, no_plan is a single switch", "")
+    t.check(fld('ha-form [data-name="no_pv"]').count() == 0, "no no_pv switch either", "")
+    fm("no_plan").check()
+    t.check(last().get("no_plan") is True, "the switch writes no_plan: true", json.dumps(last()))
+    fm("no_plan").uncheck()
+    t.check("no_plan" not in last(), "and off drops it again", json.dumps(last()))
+    mount({"mode": "loadpoint", "loadpoints": ["openwb", "wp"], "no_plan": ["openwb"], "no_pv": ["wp"]})
+    t.check(fm("loadpoint").input_value() == "__many" and fm("loadpoint").locator("option:checked").inner_text() == "\u26a0 Mehrere: openwb, wp" and count() == 0,
+            "a list of several from before shows as such, unchanged", fm("loadpoint").locator("option:checked").inner_text())
+    warn = fld(".form-warn .deprecated")
+    t.check(warn.count() == 1 and "Künftige Versionen" in warn.inner_text() and fld(".form > div").first.locator(".deprecated").count() == 1,
+            "several loadpoints: a red note on top says they go away", warn.inner_text() if warn.count() else "")
+    fm("loadpoint").select_option("wp")
+    t.check(last().get("loadpoint") == "wp" and "loadpoints" not in last() and "no_plan" not in last() and last().get("no_pv") is True,
+            "picking one turns the lists into its switches", json.dumps(last()))
+    t.check(fld(".deprecated").count() == 0, "with one loadpoint the note is gone", "")
+    opts = fm("loadpoint").locator("option").evaluate_all("os => os.map(o => o.value)")
+    t.check("__many" not in opts and "__unset" not in opts, "and neither the list nor all of them can be picked again", json.dumps(opts))
+    mount({"mode": "loadpoint", "loadpoints": "openwb"})
+    t.check(fm("loadpoint").input_value() == "openwb" and count() == 0, "the shorthand of one shows as that loadpoint, not rewritten", fm("loadpoint").input_value())
+    mount({"mode": "loadpoint", "loadpoint": "openwb"})
+    fm("mode").select_option("compact")
+    t.check(last().get("loadpoints") == ["openwb"] and "loadpoint" not in last(), "to the compact mode the loadpoint becomes a list of one", json.dumps(last()))
+    fm("mode").select_option("plan")
+    t.check(last().get("loadpoint") == "openwb" and "loadpoints" not in last(), "and back to one loadpoint per card", json.dumps(last()))
+    mount({"mode": "compact"})
+    cb("loadpoints", "openwb").check()
+    t.check(last().get("loadpoints") == ["openwb"], "the compact mode keeps the list of loadpoints", json.dumps(last()))
+    mount({"mode": "loadpoint"})
 
     # --- mode switch re-renders the form -----------------------------------------
     # --- advanced: slider steps, folded away ---------------------------------------
@@ -1811,6 +1881,7 @@ def editor(browser, port, t):
             and fld('ha-form details[data-section="slider_steps"]').count() == 0,
             "the form re-renders with the fields of the new mode",
             f"site_details={fm('site_details').count()} charge_current={fm('charge_current_settings').count()}")
+    sec("content").locator("summary").first.click()
     fm("site_details").select_option("collapsed")
     t.check(last().get("site_details") == "collapsed", "site_details writes config.site_details", json.dumps(last()))
     fm("stats_period").select_option("month")
@@ -1886,7 +1957,24 @@ def editor(browser, port, t):
     fm("vehicle").select_option("__unset")
     t.check("vehicle" not in last() and "vehicles" not in last(), "back to automatic drops the old list as well", json.dumps(last()))
 
-    mount({"mode": "vehicle", "vehicle": "ex30"})
+    mount({"mode": "vehicle", "vehicle": "ex30", "vehicle_image_charging": "/local/ex30_c.png"})
+    # Device and pictures sit in folded panels below the form, closed at first,
+    # their titles counting what is set inside.
+    panel = lambda key: fld(f'details[data-panel="{key}"]')
+    t.check(panel("vehicle_device").count() == 1 and panel("vehicle_images").count() == 1
+            and not panel("vehicle_device").evaluate("d => d.open") and not panel("vehicle_images").evaluate("d => d.open"),
+            "device and pictures are folded panels, closed at first", "")
+    t.check(re.search(r"\(1 \w+\)$", panel("vehicle_images").locator("summary").inner_text())
+            and not panel("vehicle_device").locator("summary").inner_text().endswith(")"),
+            "a panel title counts the pictures set in it",
+            f"{panel('vehicle_images').locator('summary').inner_text()!r} / {panel('vehicle_device').locator('summary').inner_text()!r}")
+    for key in ("vehicle_device", "vehicle_images"):
+        panel(key).locator("summary").click()
+    page.wait_for_timeout(100)
+    fld('[data-vehicle-image-clear="vehicle_image_charging"]').click()
+    t.check("vehicle_image_charging" not in last() and panel("vehicle_device").evaluate("d => d.open")
+            and panel("vehicle_images").evaluate("d => d.open"),
+            "an open panel stays open when a change renders the editor again", json.dumps(last()))
     dev = fld("select[data-vehicle-device]")
     auto = dev.locator("option").first.inner_text()
     t.check(dev.count() == 1 and "Volvo EX30" in auto and dev.input_value() == "",
@@ -1941,6 +2029,7 @@ def editor(browser, port, t):
     page.evaluate(f"{cpick}.dispatchEvent(new CustomEvent('value-changed', {{ detail: {{ value: {{ media_content_id: 'media-source://media_source/local/ex30.png', media_content_type: 'image/png' }} }} }}))")
     t.check(last().get("vehicle_image_charging") == "media-source://media_source/local/ex30.png" and "vehicle_image" not in last(),
             "the charging picture has its own media selector", json.dumps(last()))
+    fld('ha-form details[data-section="section_content"] summary').click()
     fm("vehicle_actions").check()
     t.check(last().get("vehicle_actions") is True, "the checkbox writes vehicle_actions: true", json.dumps(last()))
     fm("vehicle_actions").uncheck()
@@ -2235,6 +2324,12 @@ def tariff_modes(browser, port, t):
               set={"sensor.evcc_tariff_grid": "unknown", "select.evcc_openwb_mode": "off"})
     got = modes(page)
     t.check(got == ["off", "now"], "no_pv without a tariff: the smart mode is dropped", str(got))
+    done(page)
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoint": "openwb", "no_pv": True},
+              set={"sensor.evcc_tariff_grid": "unknown", "select.evcc_openwb_mode": "off"})
+    got = modes(page)
+    t.check(got == ["off", "now"], "no_pv: true on a card for one loadpoint does the same", str(got))
     done(page)
 
     t.group("tariff - no_pv on the legacy mode set")
@@ -2760,6 +2855,14 @@ def card_api(browser, port, t):
             "; ".join(stub_errors)[:200] or f"ha-card={drawn}")
     done(stub)
 
+    stubs = page.evaluate("""(() => { const C = window.__card.constructor, h = window.__hass;
+      return { none: C.getStubConfig(), here: C.getStubConfig(h),
+               one: C.getStubConfig({ ...h, entities: Object.fromEntries(Object.entries(h.entities).filter(([id]) => !id.includes("_wp_"))),
+                                         states: Object.fromEntries(Object.entries(h.states).filter(([id]) => !id.includes("_wp_"))) }) }; })()""")
+    t.check(stubs["none"] == {"mode": "loadpoint"}, "without hass the stub is the plain loadpoint card", json.dumps(stubs["none"]))
+    t.check(stubs["here"] == {"mode": "loadpoint", "loadpoint": "openwb"}, "with several loadpoints a new card starts on the first", json.dumps(stubs["here"]))
+    t.check(stubs["one"] == {"mode": "loadpoint"}, "with one loadpoint it is left to the card", json.dumps(stubs["one"]))
+
     t.group("cardapi - getEntitySuggestion")
     sug = page.evaluate("""(() => {
       const fn = (window.customCards || []).find(c => c.type === "evcc-card")?.getEntitySuggestion;
@@ -2871,6 +2974,8 @@ def setconfig(browser, port, t):
         ({"stats_period": "365d"}, "a legacy stats_period"),
         ({"disabled_loadpoints": "dim"}, "a known disabled_loadpoints"),
         ({"loadpoints": "openwb"}, "a single loadpoint as a string"),
+        ({"mode": "loadpoint", "loadpoint": "openwb", "no_plan": True, "no_pv": True}, "one loadpoint, no_plan and no_pv as switches"),
+        ({"no_plan": ["openwb"], "no_pv": "wp"}, "no_plan and no_pv as lists"),
         ({"prefix": "evcc2_", "language": "en"}, "prefix and language"),
         ({"mode": "vehicle", "vehicle": "ex30", "vehicle_actions": True, "vehicle_device": "none"}, "the vehicle mode options"),
         ({"mode": "vehicle", "vehicle_device": False}, "vehicle_device: false"),
@@ -2895,6 +3000,9 @@ def setconfig(browser, port, t):
         ({"loadpoints": []}, "loadpoints", "an empty loadpoint list"),
         ({"loadpoints": [""]}, "loadpoints", "a blank loadpoint name"),
         ({"loadpoints": 5}, "loadpoints", "a numeric loadpoints"),
+        ({"loadpoint": ""}, "loadpoint", "an empty loadpoint"),
+        ({"loadpoint": "openwb", "loadpoints": ["wp"]}, "not both", "loadpoint and loadpoints together"),
+        ({"no_plan": 5}, "no_plan", "a numeric no_plan"),
         ({"vehicles": []}, "vehicles", "an empty vehicle list"),
         ({"vehicles": ["ex30", "id7"]}, "one vehicle", "several vehicles in one card"),
         ({"vehicle": ""}, "vehicle", "an empty vehicle name"),
@@ -2987,6 +3095,7 @@ def editor_vehicle_map(browser, port, t):
     # --- without HA's selector element: the select stands in ----------------------
     t.group("editor - vehicle mapping, the select that stands in")
     mount({"mode": "vehicle", "vehicle": "ex30"})
+    fld('details[data-panel="vehicle_device"] summary').click()
     t.check(fld("[data-vehicle-map]").count() == 1 and role("soc").count() == 0,
             "the mapping of a vehicle is folded away", "")
     fld("[data-vehicle-map]").click(); page.wait_for_timeout(300)
@@ -3039,6 +3148,7 @@ def editor_vehicle_map(browser, port, t):
     # is; what matters is that the card hands it the right entities.
     t.group("editor - vehicle mapping through HA's entity picker")
     mount({"mode": "vehicle", "vehicle": "ex30"})
+    fld('details[data-panel="vehicle_device"] summary').click()
     fld("[data-vehicle-map]").click(); page.wait_for_timeout(300)
     page.evaluate("""() => { if (!customElements.get("ha-selector")) customElements.define("ha-selector", class extends HTMLElement {}); }""")
     page.wait_for_timeout(500)
@@ -3080,6 +3190,7 @@ def editor_vehicle_map(browser, port, t):
             "the functions already listed stay out of the picker", json.dumps(free[:5]))
 
     mount({"mode": "vehicle", "vehicle": "ex30", "vehicle_entities": {"soc": "sensor.volvo_ex30_batterie"}})
+    fld('details[data-panel="vehicle_device"] summary').click()
     fld("[data-vehicle-map]").click(); page.wait_for_timeout(400)
     t.check(inEd("%s.value" % pick("soc")) == "sensor.volvo_ex30_batterie" and count() == 0,
             "a configured mapping shows up in its field, unchanged", str(inEd("%s.value" % pick("soc"))))
@@ -3453,6 +3564,12 @@ def hints(browser, port, t):
     done(page)
 
     page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoint": "openwb", "no_plan": True}, set=planned)
+    t.check(plan(page) == [] and page.evaluate("window.__card.shadowRoot.querySelectorAll('.loadpoint').length") == 1,
+            "loadpoint: openwb draws that one, no_plan: true hides its plan", str(chips(page)))
+    done(page)
+
+    page = new_page(browser, 480, 1600)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["wp"]},
               set={"binary_sensor.evcc_wp_plan_active": "on", "sensor.evcc_wp_plan_projected_end": "2026-09-18T16:30:00+02:00"})
     t.check(plan(page) == [], "heating loadpoint: no EV plan, no plan chip", str(chips(page)))
@@ -3821,20 +3938,46 @@ def disabled_entities(browser, port, t):
     t.group("disabled entities - editor")
     page = new_page(browser, 480, 1800)
     open_card(page, port, config=cfg, disable=[btn])
-    page.evaluate("""async () => {
+    mount = lambda config: page.evaluate("""async (config) => {
+      document.querySelectorAll("evcc-card-editor").forEach(e => e.remove());
       const ed = document.createElement("evcc-card-editor");
       window.__cfg = [];
       ed.addEventListener("config-changed", e => window.__cfg.push(JSON.parse(JSON.stringify(e.detail.config))));
-      ed.setConfig({ mode: "loadpoint" });
+      ed.setConfig(config);
       ed.hass = window.__hass;
       document.body.appendChild(ed);
       await new Promise(r => setTimeout(r, 900));
-    }""")
-    ed = lambda sel: page.locator(f"evcc-card-editor {sel}")
-    t.check(ed(f'button.disabled-enable[data-enable-entity="{btn}"]').count() == 1, "the editor lists the disabled entity with a switch", "")
+    }""", config)
+    ed     = lambda sel: page.locator(f"evcc-card-editor {sel}")
+    listed = lambda: page.evaluate("""() => [...document.querySelector("evcc-card-editor").shadowRoot.querySelectorAll('[data-panel="disabled"] code.disabled-id')]
+      .map(c => c.textContent)""")
+    # The editor names what this card's triangles point at, and nothing of
+    # the registry's other disabled entities: those are the same in every card.
+    mount({"mode": "loadpoint"})
+    t.check(listed() == [btn] and ed("details.disabled-optional").count() == 0,
+            "the editor lists only what this card misses, no optional list", json.dumps(listed()))
+    panel = ed('details[data-panel="disabled"]')
+    t.check(page.evaluate("""() => { const r = document.querySelector("evcc-card-editor").shadowRoot;
+              return r.querySelector(".form").lastElementChild === r.querySelector(".form-disabled"); }""")
+            and not panel.evaluate("d => d.open") and panel.locator(":scope > summary .panel-icon svg").count() == 1
+            and panel.locator(":scope > summary").inner_text().endswith("(1)"),
+            "last, folded, the warning triangle and the count in its title", panel.locator(":scope > summary").inner_text())
+    panel.locator(":scope > summary").click()
     ed(f'button.disabled-enable[data-enable-entity="{btn}"]').click(); page.wait_for_timeout(300)
     t.check([u["entity_id"] for u in updates(page)] == [btn], "the editor enables it in the registry", json.dumps(updates(page)))
     t.check("30 s" in (ed(".disabled-status").first.text_content() or ""), "and shows the reload", ed(".disabled-status").first.text_content())
+    for config, why in (({"mode": "loadpoint", "hide_settings": ["smart_cost_limit"]}, "its control hidden through hide_settings"),
+                        ({"mode": "loadpoint", "loadpoints": ["wp"]}, "a card for another loadpoint"),
+                        ({"mode": "battery"}, "the battery mode"),
+                        ({"mode": "site"}, "a mode without a triangle")):
+        mount(config)
+        t.check(btn not in listed(), f"not listed for {why}", json.dumps(listed()))
+    mount({"mode": "site"})
+    t.check(ed('ha-form [data-name="hide_disabled_hint"]').count() == 0, "a mode without a triangle has no switch for it", "")
+    mount({"mode": "loadpoint"})
+    t.check(ed('ha-form details[data-section="section_content"] [data-name="hide_disabled_hint"]').count() == 1,
+            "the switch for the triangle sits in the content panel", "")
+    ed('ha-form details[data-section="section_content"] summary').click()
     ed('ha-form [data-name="hide_disabled_hint"]').check(); page.wait_for_timeout(100)
     cfgs = page.evaluate("window.__cfg")
     t.check(cfgs and cfgs[-1].get("hide_disabled_hint") is True, "the checkbox writes hide_disabled_hint", json.dumps(cfgs[-1:] if cfgs else []))

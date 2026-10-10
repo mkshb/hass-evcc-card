@@ -1,4 +1,4 @@
-import { HIDEABLE_SETTINGS } from "../core/constants.js";
+import { HIDEABLE_SETTINGS, loadpointOption } from "../core/constants.js";
 import { featureKeyOf } from "../core/entity-discovery.js";
 import { stateVal, attr, displayUnit, isOn, isLive } from "../utils/state.js";
 import { stepDecimals, fmtNum } from "../utils/format.js";
@@ -150,7 +150,7 @@ export const socControl = {
   _renderSolarShare(ents, lpName) {
     const id = ents.solar_share;
     if (!id || this._isSettingHidden("solar_share")) return "";
-    if (Array.isArray(this._config.no_pv) && this._config.no_pv.includes(lpName)) return "";
+    if (loadpointOption(this._config, "no_pv", lpName)) return "";
     const share = parseFloat(stateVal(this._hass, id));
     if (isNaN(share)) return "";
 

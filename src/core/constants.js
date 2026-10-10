@@ -237,11 +237,27 @@ export const CARD_SIZE_OPTIONS        = ["small", "medium", "large"];
 export const DISABLED_LOADPOINT_MODES = ["hide", "dim", "show"];
 export const STATS_PERIOD_OPTIONS     = Object.keys(STATS_PERIOD_ALIASES);
 
-// The `loadpoints` option as a list, or null when it is not set. A single name
-// is shorthand for a list of one. Every reader of the option goes through here,
-// so the shorthand and "not set" mean the same thing everywhere; a value that
-// is set but empty never gets past validateCardConfig().
+// `no_plan` / `no_pv` for one loadpoint: true for every loadpoint of the card
+// (the way a card for one loadpoint writes it), or a list of names (a single
+// name is shorthand for a list of one).
+export function loadpointOption(config, key, lpName) {
+  const v = config?.[key];
+  if (v === true) return true;
+  return Array.isArray(v) ? v.includes(lpName) : v === lpName;
+}
+
+// The modes that show one loadpoint per card. Like the vehicle mode, a card
+// names its loadpoint with `loadpoint`; a list in `loadpoints` from before
+// still draws every loadpoint in it.
+export const SINGLE_LOADPOINT_MODES = ["loadpoint", "plan"];
+
+// The loadpoints a card is limited to, as a list, or null when it is not set:
+// `loadpoint` (one) or `loadpoints` (a list, a single name is shorthand for a
+// list of one). Every reader goes through here, so both spellings and "not
+// set" mean the same thing everywhere; a value that is set but empty never
+// gets past validateCardConfig().
 export function loadpointFilter(config) {
+  if (config?.loadpoint !== undefined && config?.loadpoint !== null) return [config.loadpoint];
   const raw = config?.loadpoints;
   if (raw === undefined || raw === null) return null;
   return Array.isArray(raw) ? raw : [raw];
@@ -302,9 +318,20 @@ export function validateCardConfig(config) {
     }
   }
 
+  if (c.loadpoint !== undefined && c.loadpoint !== null) {
+    if (typeof c.loadpoint !== "string" || !c.loadpoint.trim()) throw new Error("evcc-card: loadpoint has to be the name of one loadpoint");
+    if (c.loadpoints !== undefined && c.loadpoints !== null) throw new Error("evcc-card: use loadpoint for one loadpoint or loadpoints for a list, not both");
+  }
   const list = loadpointFilter(c);
   if (list && (!list.length || list.some(lp => typeof lp !== "string" || !lp.trim()))) {
     throw new Error("evcc-card: loadpoints has to be a loadpoint name or a list of names");
+  }
+  for (const key of ["no_plan", "no_pv"]) {
+    const v = c[key];
+    if (v === undefined || v === null || v === true || v === false) continue;
+    if (typeof v === "string" ? !v.trim() : (!Array.isArray(v) || v.some(lp => typeof lp !== "string"))) {
+      throw new Error(`evcc-card: ${key} has to be true or a list of loadpoint names`);
+    }
   }
 
   if (c.vehicle !== undefined && c.vehicle !== null && (typeof c.vehicle !== "string" || !c.vehicle.trim())) {

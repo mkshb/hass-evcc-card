@@ -187,10 +187,11 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 |---|---|---|---|
 | `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan`, `repeatplan`, `priority`, `vehicle`, `debug` |
 | `title` | `string` | *(auto)* | Replaces the default card header |
-| `loadpoints` | `list` | *(all)* | Filter charge points by name |
+| `loadpoint` | `string` | *(all)* | `loadpoint` and `plan` mode: the charge point of the card, by name. One card shows one charge point, add a card for each further one. Can be left out when evcc has just one charge point |
+| `loadpoints` | `list` | *(all)* | `compact` and `priority` mode: filter charge points by name. In `loadpoint` and `plan` mode a list from before still draws every charge point in it, as does leaving out `loadpoint` with several charge points; the visual editor offers to pick one. **Deprecated:** future versions will show one charge point per `loadpoint` or `plan` card, so best set `loadpoint` now and add a card for each further one |
 | `language` | `string` | *(auto)* | Override UI language |
 | `size` | `string` | *(auto)* | Fixed card scale: `small`, `medium` or `large`. When unset, the card auto-scales to its container width |
-| `no_plan` | `list` | *(none)* | Hide charge plan block for specific charge points |
+| `no_plan` | `boolean` / `list` | *(none)* | Hide the charge plan block: `true` for the charge point(s) of the card, or a list of charge point names |
 | `repeating_plan_vehicles` | `list` | *(all)* | Limit the `repeatplan` mode to specific vehicles |
 | `vehicle` | `string` | *(the only one)* | The vehicle of the `vehicle` mode, by the name ha-evcc uses in its entity ids (`ex30` for `sensor.evcc_ex30_configvehicle_soc`). Can be left out when evcc knows just one vehicle. See [`vehicle`](#vehicle) |
 | `vehicle_device` | `string` | *(auto)* | `vehicle` mode: the Home Assistant device of the vehicle's own integration, as a device id; `none` keeps the card without one |
@@ -200,7 +201,7 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 | `vehicle_actions` | `boolean` | `false` | `vehicle` mode: `true` lets the card send commands to the vehicle (lock, climate, the device's buttons) |
 | `vehicle_entities` | `map` | *(auto)* | `vehicle` mode: assigns entities to the roles of the vehicle by hand, see [Assigning entities](#assigning-entities) |
 | `plan_loadpoint_index` | `map` | *(auto)* | **YAML only** — Override the evcc loadpoint index (1-based) used for the plan preview, e.g. `{ openwb: 1, wp: 2 }`. Only needed if the auto-detected order does not match evcc |
-| `no_pv` | `list` | *(none)* | Treat specific charge points as having **no PV system**, mirroring evcc's own mode logic: the **Smart** mode is offered only when a dynamic tariff is configured (otherwise only **Off** / **Fast** remain). See [Charge modes](#charge-modes) below |
+| `no_pv` | `boolean` / `list` | *(none)* | YAML only. `true` for the charge point(s) of the card, or a list of charge point names: treat them as having **no PV system**: the **Smart** mode is offered only when a dynamic tariff is configured (otherwise only **Off** / **Fast** remain), the solar share slider is hidden. evcc itself does this only when neither a PV meter nor a grid meter is configured, so most installations do not need it. See [Charge modes](#charge-modes) below |
 | `disabled_loadpoints` | `string` | `hide` | How to treat charge points disabled in the evcc configuration (ha-evcc 2026.8.8+): `hide` removes them from the card, `dim` shows them grayed out with a "Disabled" badge, `show` keeps the previous behavior |
 | `site_details` | `string` | `expanded` | `collapsed` to hide the IN/OUT detail table by default in `site` and `flow` mode |
 | `charge_current_settings` | `string` | `collapsed` | `expanded` to show charge settings expanded by default |
@@ -211,7 +212,7 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 | `stats_period` | `string` | *(see note)* | Statistics period: `month`, `year`, `total`, `none`. Unconfigured, the `stats` mode opens on the most recent month and the footer under `site`/`grid`/`flow` summarises everything; `none` hides that footer. The older values `30d`, `365d` and `thisYear` still work |
 | `prefix` | `string` | *(auto)* | Entity prefix, auto-detected from ha-evcc. With more than one ha-evcc entry the visual editor offers the instance to use; the first entry is the default and needs no `prefix` |
 
-> **Invalid values are rejected.** `mode`, `size`, `disabled_loadpoints` and `stats_period` only accept the values listed above, and `prefix`, `language` and `loadpoints` have to be non-empty. A dashboard carrying something else shows the Home Assistant error card naming the option, instead of quietly falling back to another view.
+> **Invalid values are rejected.** `mode`, `size`, `disabled_loadpoints` and `stats_period` only accept the values listed above, and `prefix`, `language`, `loadpoint` and `loadpoints` have to be non-empty; `loadpoint` and `loadpoints` cannot be combined. A dashboard carrying something else shows the Home Assistant error card naming the option, instead of quietly falling back to another view.
 
 ---
 
@@ -242,7 +243,7 @@ evcc 0.316 replaced the **PV** mode with **Smart** and turned **Min+PV** into th
 
 **Heating loadpoints** carry evcc's own labels: **Normal** / **Smart** / **Boost** instead of Off / Smart / Fast.
 
-The **`no_pv`** option mirrors evcc's mode logic for a charge point without a PV system, where the Smart mode depends on a dynamic electricity tariff:
+The **`no_pv`** option (YAML only) mirrors evcc's mode logic for an installation without a PV meter and without a grid meter, where the Smart mode depends on a dynamic electricity tariff. With a grid meter evcc keeps the solar modes, so the card does too and the option is not needed:
 
 | Situation | Modes shown |
 | --- | --- |
@@ -286,7 +287,7 @@ Every slider in the card (target SoC, min SoC, current limits, battery boost, so
 
   The key is the ha-evcc feature name and has to match it exactly: `limit_soc` steers the target SoC and nothing else, `soc` steers nothing at all. `slider_steps` applies to settings ha-evcc provides as a `number` entity. The current limits and, depending on the ha-evcc version, min SoC and target SoC come as a `select`; their sliders walk the option list, so a step configured for them has no effect and the card says so in the browser console.
 
-- **Hide settings** - settings you never touch can be removed from the card with `hide_settings` (also available in the visual editor). The list applies to every charge point on the card; use separate cards with a `loadpoints` filter if charge points need different sets. When everything in the charge settings section is hidden, the section and its gear button disappear:
+- **Hide settings** - settings you never touch can be removed from the card with `hide_settings` (also available in the visual editor). The list applies to every charge point on the card; use a card per charge point (`loadpoint`) if charge points need different sets. When everything in the charge settings section is hidden, the section and its gear button disappear:
 
   ```yaml
   type: custom:evcc-card
