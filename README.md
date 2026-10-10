@@ -188,7 +188,7 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 | `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan`, `repeatplan`, `priority`, `vehicle`, `debug` |
 | `title` | `string` | *(auto)* | Replaces the default card header |
 | `loadpoint` | `string` | *(all)* | `loadpoint` and `plan` mode: the charge point of the card, by name. One card shows one charge point, add a card for each further one. Can be left out when evcc has just one charge point |
-| `loadpoints` | `list` | *(all)* | `compact` and `priority` mode: filter charge points by name. In `loadpoint` and `plan` mode a list from before still draws every charge point in it, as does leaving out `loadpoint` with several charge points; the visual editor offers to pick one. **Deprecated:** future versions will show one charge point per `loadpoint` or `plan` card, so best set `loadpoint` now and add a card for each further one |
+| `loadpoints` | `list` | *(all)* | `compact` and `priority` mode: filter charge points by name. In `loadpoint` and `plan` mode a list from before still draws every charge point in it, as does leaving out `loadpoint` with several charge points; the visual editor offers to pick one. **Deprecated:** future versions will show one charge point per `loadpoint` or `plan` card, so best set `loadpoint` now and add a card for each further one, see [One charge point per card](#one-charge-point-per-card) |
 | `language` | `string` | *(auto)* | Override UI language |
 | `size` | `string` | *(auto)* | Fixed card scale: `small`, `medium` or `large`. When unset, the card auto-scales to its container width |
 | `no_plan` | `boolean` / `list` | *(none)* | Hide the charge plan block: `true` for the charge point(s) of the card, or a list of charge point names |
@@ -213,6 +213,12 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 | `prefix` | `string` | *(auto)* | Entity prefix, auto-detected from ha-evcc. With more than one ha-evcc entry the visual editor offers the instance to use; the first entry is the default and needs no `prefix` |
 
 > **Invalid values are rejected.** `mode`, `size`, `disabled_loadpoints` and `stats_period` only accept the values listed above, and `prefix`, `language`, `loadpoint` and `loadpoints` have to be non-empty; `loadpoint` and `loadpoints` cannot be combined. A dashboard carrying something else shows the Home Assistant error card naming the option, instead of quietly falling back to another view.
+
+### One charge point per card
+
+A `loadpoint` or `plan` card that still lists several charge points under `loadpoints`, or leaves out `loadpoint` while evcc has several, keeps working for now, but future versions will show one charge point per card. The visual editor marks such a card with a warning: pick the charge point of the card under **Charge point** and add a card for each further one.
+
+<img src="images/one-charge-point-per-card.gif" width="800" alt="Switching a card with two charge points to one charge point per card in the visual editor">
 
 ---
 
