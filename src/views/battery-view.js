@@ -14,10 +14,11 @@ const HIST_STEP = 5 * 60 * 1000;
 const SUGGESTION_ACTIONS = ["normal", "hold", "charge", "holdcharge", "discharge"];
 
 // ha-evcc keeps evcc's optimizer result in memory, as evcc pushes it, so
-// asking again costs evcc nothing. evcc runs the optimizer again a few seconds
-// after the grid charge limit or grid discharging changed; the card asks
-// again that long after its own write. evcc's "optimize" button starts a run
-// at once; its icon turns until a new result is in, at most FORECAST_BUSY.
+// asking again costs evcc nothing. Since 0.317 evcc runs the optimizer at once
+// when the grid charge limit or grid discharging changed, before only on its
+// next scheduled run; the card asks again a few seconds after its own write.
+// evcc's "optimize" button starts a run at once; its icon turns until a new
+// result is in, at most FORECAST_BUSY.
 const FORECAST_TTL     = 30 * 1000;
 const FORECAST_RECHECK = [3000, 10000];
 const FORECAST_BUSY    = 15 * 1000;
@@ -227,9 +228,9 @@ export const batteryView = {
 
   // Called by every write (actions.js). After an accepted write of the grid
   // charge limit or grid discharging, evcc's "optimize" button is pressed when
-  // there is one (an evcc that computes again on its own ignores the second
-  // start while running), and the forecast is asked for again; an answer that
-  // has not changed draws nothing (_wsFetch).
+  // there is one (evcc before 0.317 does not compute again on its own, a later
+  // one starts a second run that only repeats its own), and the forecast is
+  // asked for again; an answer that has not changed draws nothing (_wsFetch).
   _battForecastWritten(entityId, call) {
     const site = this._cachedEntities?.site;
     if (this._config.mode !== "battery" || !site || !this._hasCmd("optimizer")) return;
