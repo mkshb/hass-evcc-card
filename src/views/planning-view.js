@@ -1,4 +1,5 @@
 import { discoverEntities } from "../core/entity-discovery.js";
+import { repeatPlanFilter } from "../core/constants.js";
 import { stateVal, isOn, unitStr } from "../utils/state.js";
 import { evccDate, fmtDuration, fmtNum } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
@@ -511,10 +512,11 @@ export const planningView = {
       .filter(g => g.plans.length > 0)
       .sort((x, y) => x.vehicleName.localeCompare(y.vehicleName));
 
-    // Config filter: repeating_plan_vehicles restricts to listed vehicle slugs
-    const filter = this._config.repeating_plan_vehicles;
-    if (Array.isArray(filter) && filter.length > 0) {
-      const allowed = new Set(filter.map(v => String(v).toLowerCase()));
+    // The card's vehicle (`vehicle`), or the list from before
+    // (`repeating_plan_vehicles`), compared without case.
+    const filter = repeatPlanFilter(this._config);
+    if (filter) {
+      const allowed = new Set(filter.map(v => v.toLowerCase()));
       result = result.filter(g => allowed.has(g.slug.toLowerCase()));
     }
 

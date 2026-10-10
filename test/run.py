@@ -1849,12 +1849,19 @@ def editor(browser, port, t):
     t.check(fm("loadpoint").input_value() == "openwb" and count() == 0, "the shorthand of one shows as that loadpoint, not rewritten", fm("loadpoint").input_value())
     mount({"mode": "loadpoint", "loadpoint": "openwb"})
     fm("mode").select_option("compact")
-    t.check(last().get("loadpoints") == ["openwb"] and "loadpoint" not in last(), "to the compact mode the loadpoint becomes a list of one", json.dumps(last()))
+    t.check(last().get("loadpoint") == "openwb" and "loadpoints" not in last(), "the compact mode keeps the one loadpoint", json.dumps(last()))
+    fm("mode").select_option("priority")
+    t.check(last().get("loadpoints") == ["openwb"] and "loadpoint" not in last(), "to the priority mode the loadpoint becomes a list of one", json.dumps(last()))
     fm("mode").select_option("plan")
     t.check(last().get("loadpoint") == "openwb" and "loadpoints" not in last(), "and back to one loadpoint per card", json.dumps(last()))
-    mount({"mode": "compact"})
+    mount({"mode": "compact", "loadpoints": ["openwb", "wp"]})
+    t.check(fm("loadpoint").input_value() == "__many" and fm("loadpoints").count() == 0 and fld(".form-warn .deprecated").count() == 1,
+            "the compact mode picks one loadpoint too, a list of several is marked", fm("loadpoint").input_value())
+    fm("loadpoint").select_option("wp")
+    t.check(last().get("loadpoint") == "wp" and "loadpoints" not in last(), "and a pick writes config.loadpoint", json.dumps(last()))
+    mount({"mode": "priority"})
     cb("loadpoints", "openwb").check()
-    t.check(last().get("loadpoints") == ["openwb"], "the compact mode keeps the list of loadpoints", json.dumps(last()))
+    t.check(last().get("loadpoints") == ["openwb"], "the priority mode keeps the list of loadpoints", json.dumps(last()))
     mount({"mode": "loadpoint"})
 
     # --- mode switch re-renders the form -----------------------------------------
@@ -1926,19 +1933,30 @@ def editor(browser, port, t):
     t.check(opts() == ["__unset", "month", "year", "total", "none"],
             "without a legacy value the list stays on the current vocabulary", json.dumps(opts()))
 
+    # One vehicle per repeatplan card, like the vehicle mode; a list of
+    # several from before keeps working and is marked as going away.
     fm("mode").select_option("repeatplan")
     page.wait_for_timeout(400)
-    t.check(fm("repeating_plan_vehicles").count() == 2,
-            "repeatplan offers the vehicles discovered from the registry",
-            str(fm("repeating_plan_vehicles").count()))
-    cb("repeating_plan_vehicles", "ex30").check()
-    t.check(last().get("repeating_plan_vehicles") == ["ex30"], "vehicle filter writes config.repeating_plan_vehicles", json.dumps(last()))
+    rv = lambda: fm("vehicle").locator("option").evaluate_all("os => os.map(o => o.value)")
+    t.check(rv() == ["__unset", "ex30", "id7"] and fm("repeating_plan_vehicles").count() == 0,
+            "repeatplan offers one vehicle out of those discovered, the first option draws them all", json.dumps(rv()))
+    t.check(fld(".form-warn .deprecated").count() == 1, "drawing several vehicles is marked as going away", "")
+    fm("vehicle").select_option("ex30")
+    t.check(last().get("vehicle") == "ex30" and "repeating_plan_vehicles" not in last(), "a pick writes config.vehicle", json.dumps(last()))
+    t.check(fld(".deprecated").count() == 0 and "__unset" not in rv(), "with one vehicle the note and the option for all are gone", json.dumps(rv()))
 
     mount({"mode": "repeatplan", "repeating_plan_vehicles": "EX30"})
-    t.check(cb("repeating_plan_vehicles", "ex30").is_checked() and count() == 0,
-            "a single name is shown as a list of one, without case and without rewriting it", "")
-    cb("repeating_plan_vehicles", "id7").check()
-    t.check(last().get("repeating_plan_vehicles") == ["ex30", "id7"], "and a second vehicle makes it a list", json.dumps(last()))
+    t.check(fm("vehicle").input_value() == "ex30" and count() == 0,
+            "a single name from before shows as that vehicle, without case and without rewriting it", fm("vehicle").input_value())
+    mount({"mode": "repeatplan", "repeating_plan_vehicles": ["ex30", "id7"]})
+    t.check(fm("vehicle").input_value() == "__many" and fm("vehicle").locator("option:checked").inner_text() == "\u26a0 Mehrere: Ex30, Id7" and count() == 0,
+            "a list of several from before shows as such, unchanged", fm("vehicle").locator("option:checked").inner_text())
+    fm("vehicle").select_option("id7")
+    t.check(last().get("vehicle") == "id7" and "repeating_plan_vehicles" not in last(), "picking one replaces the list", json.dumps(last()))
+    mount({"mode": "plan", "repeating_plan_vehicles": ["id7"]})
+    fm("mode").select_option("repeatplan")
+    t.check(last().get("vehicle") == "id7" and "repeating_plan_vehicles" not in last(), "to the repeatplan mode a list of one becomes its vehicle", json.dumps(last()))
+    mount({"mode": "repeatplan", "repeating_plan_vehicles": ["ex30", "id7"]})
 
     fm("mode").select_option("vehicle")
     page.wait_for_timeout(400)
@@ -2893,7 +2911,7 @@ def card_api(browser, port, t):
         ok_lp = (isinstance(lp, list) and len(lp) >= 1
                  and all(s["config"]["type"] == "custom:evcc-card" and s.get("label") for s in lp)
                  and lp[0]["config"]["mode"] == "loadpoint"
-                 and lp[0]["config"]["loadpoints"] == ["openwb"])
+                 and all(s["config"].get("loadpoint") == "openwb" and "loadpoints" not in s["config"] for s in lp))
         t.check(ok_lp, "a loadpoint entity suggests the card with that loadpoint filled in", json.dumps(lp)[:250])
         site = sug["site"] or []
         ok_site = (isinstance(site, list) and len(site) >= 1
@@ -2934,7 +2952,7 @@ def card_api(browser, port, t):
       const site = fn(window.__hass, "sensor.my_evcc_grid_power");
       return { lp: lp ? lp[0].config : null, site: site ? site[0].config : null };
     })()""")
-    ok_multi = (multi["lp"] and multi["lp"].get("prefix") == "my_evcc_" and multi["lp"].get("loadpoints") == ["openwb"]
+    ok_multi = (multi["lp"] and multi["lp"].get("prefix") == "my_evcc_" and multi["lp"].get("loadpoint") == "openwb"
                 and multi["site"] and multi["site"].get("prefix") == "my_evcc_" and "loadpoints" not in multi["site"])
     t.check(ok_multi, "a prefix with an underscore of its own is not cut short", json.dumps(multi))
     done(second)
@@ -3017,6 +3035,7 @@ def setconfig(browser, port, t):
         ({"vehicles": []}, "vehicles", "an empty vehicle list"),
         ({"vehicles": ["ex30", "id7"]}, "one vehicle", "several vehicles in one card"),
         ({"vehicle": ""}, "vehicle", "an empty vehicle name"),
+        ({"mode": "repeatplan", "vehicle": "ex30", "repeating_plan_vehicles": ["id7"]}, "not both", "vehicle and repeating_plan_vehicles together"),
         ({"vehicle_actions": "yes"}, "vehicle_actions", "vehicle_actions not a boolean"),
         ({"vehicle_devices": {"ex30": "none"}}, "vehicle_devices", "the map of devices per vehicle the mode started with"),
         ({"vehicle_images": {"ex30": "/local/a.png"}}, "vehicle_images", "the map of pictures per vehicle"),
@@ -3056,6 +3075,20 @@ def setconfig(browser, port, t):
     t.check(kept["before"] == kept["after"], "a rejected config leaves the card on the previous one", json.dumps(kept))
     t.check(not errors, "no console errors", "; ".join(errors)[:200])
     done(page)
+
+    # repeatplan shows one vehicle with `vehicle`, compared without case; the
+    # list from before still draws every vehicle in it.
+    t.group("setconfig - repeatplan for one vehicle")
+    blocks = {}
+    for key, cfg in (("all", {}), ("one", {"vehicle": "EX30"}), ("other", {"vehicle": "id7"}), ("list", {"repeating_plan_vehicles": ["ex30", "id7"]})):
+        page = new_page(browser, 480, 900)
+        errors = open_card(page, port, config={"mode": "repeatplan", **cfg})
+        blocks[key] = page.locator(in_card(".loadpoint .lp-name")).all_inner_texts() or page.locator(in_card(".empty")).count() * ["(empty)"]
+        t.check(not errors, f"{key}: no console errors", "; ".join(errors)[:200])
+        done(page)
+    # Only the EX30 of the mock has a scheduled plan, the id7's stay unavailable.
+    t.check(blocks["all"] == ["EX30"] and blocks["list"] == blocks["all"], "without a vehicle and with the list every vehicle with plans is drawn", json.dumps(blocks))
+    t.check(blocks["one"] == ["EX30"] and blocks["other"] == ["(empty)"], "vehicle: EX30 draws that one, vehicle: id7 nothing of the EX30", json.dumps(blocks))
 
 
 def widths(browser, port, t):

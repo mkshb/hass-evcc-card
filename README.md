@@ -187,13 +187,13 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 |---|---|---|---|
 | `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan`, `repeatplan`, `priority`, `vehicle`, `debug` |
 | `title` | `string` | *(auto)* | Replaces the default card header |
-| `loadpoint` | `string` | *(all)* | `loadpoint` and `plan` mode: the charge point of the card, by name. One card shows one charge point, add a card for each further one. Can be left out when evcc has just one charge point |
-| `loadpoints` | `list` | *(all)* | `compact` and `priority` mode: filter charge points by name. In `loadpoint` and `plan` mode a list from before still draws every charge point in it, as does leaving out `loadpoint` with several charge points; the visual editor offers to pick one. **Deprecated:** future versions will show one charge point per `loadpoint` or `plan` card, so best set `loadpoint` now and add a card for each further one, see [One charge point per card](#one-charge-point-per-card) |
+| `loadpoint` | `string` | *(all)* | `loadpoint`, `compact` and `plan` mode: the charge point of the card, by name. One card shows one charge point, add a card for each further one. Can be left out when evcc has just one charge point |
+| `loadpoints` | `list` | *(all)* | `priority` mode: filter charge points by name. In `loadpoint`, `compact` and `plan` mode a list from before still draws every charge point in it, as does leaving out `loadpoint` with several charge points; the visual editor offers to pick one. **Deprecated:** future versions will show one charge point per `loadpoint`, `compact` or `plan` card, so best set `loadpoint` now and add a card for each further one, see [One charge point per card](#one-charge-point-per-card) |
 | `language` | `string` | *(auto)* | Override UI language |
 | `size` | `string` | *(auto)* | Fixed card scale: `small`, `medium` or `large`. When unset, the card auto-scales to its container width |
 | `no_plan` | `boolean` / `list` | *(none)* | Hide the charge plan block: `true` for the charge point(s) of the card, or a list of charge point names |
-| `repeating_plan_vehicles` | `list` | *(all)* | Limit the `repeatplan` mode to specific vehicles |
-| `vehicle` | `string` | *(the only one)* | The vehicle of the `vehicle` mode, by the name ha-evcc uses in its entity ids (`ex30` for `sensor.evcc_ex30_configvehicle_soc`). Can be left out when evcc knows just one vehicle. See [`vehicle`](#vehicle) |
+| `repeating_plan_vehicles` | `list` | *(all)* | `repeatplan` mode: a list from before, still draws every vehicle in it, as does leaving out `vehicle` with several vehicles; the visual editor offers to pick one. **Deprecated:** future versions will show one vehicle per `repeatplan` card, so best set `vehicle` now and add a card for each further one |
+| `vehicle` | `string` | *(the only one)* | The vehicle of the `vehicle` and `repeatplan` mode, by the name ha-evcc uses in its entity ids (`ex30` for `sensor.evcc_ex30_configvehicle_soc`). Can be left out when evcc knows just one vehicle. See [`vehicle`](#vehicle) |
 | `vehicle_device` | `string` | *(auto)* | `vehicle` mode: the Home Assistant device of the vehicle's own integration, as a device id; `none` keeps the card without one |
 | `vehicle_image` | `string` | *(none)* | `vehicle` mode: a picture of the car, from the HA media (`media-source://...`), a path (`/local/ex30.png`) or an http(s) address |
 | `vehicle_image_connected` | `string` | *(none)* | `vehicle` mode: the picture while the car is plugged in at an evcc charge point, same forms as `vehicle_image` |
@@ -216,7 +216,9 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 
 ### One charge point per card
 
-A `loadpoint` or `plan` card that still lists several charge points under `loadpoints`, or leaves out `loadpoint` while evcc has several, keeps working for now, but future versions will show one charge point per card. The visual editor marks such a card with a warning: pick the charge point of the card under **Charge point** and add a card for each further one.
+A `loadpoint`, `compact` or `plan` card that still lists several charge points under `loadpoints`, or leaves out `loadpoint` while evcc has several, keeps working for now, but future versions will show one charge point per card. The visual editor marks such a card with a warning: pick the charge point of the card under **Charge point** and add a card for each further one.
+
+The same goes for the vehicles of a `repeatplan` card: a list under `repeating_plan_vehicles`, or no `vehicle` while several vehicles have repeating plans, keeps working for now. Pick the vehicle of the card under **Vehicle** and add a card for each further one.
 
 <img src="images/one-charge-point-per-card.gif" width="800" alt="Switching a card with two charge points to one charge point per card in the visual editor">
 
@@ -452,7 +454,7 @@ PV surplus priority management: reorder all loadpoints by drag-and-drop to set w
 
 ### `compact`
 
-Same content as `loadpoint`, but organized into four tabs - ideal for dashboards where vertical space is limited or multiple charge points are shown side by side:
+Same content as `loadpoint`, but organized into four tabs - ideal for dashboards where vertical space is limited or several charge points are shown side by side, one card each:
 
 | Tab | Contents |
 |---|---|
@@ -495,7 +497,7 @@ Minimalist charge plan view:
 
 Repeating charge plans per vehicle - evcc's weekly departure schedules:
 
-- One block per vehicle, listing each repeating plan
+- The repeating plans of one vehicle (`vehicle`), add a card for each further one
 - Active weekdays shown as badges, plus the departure time and target SoC
 - On/off toggle to activate or deactivate a plan directly from the dashboard
 

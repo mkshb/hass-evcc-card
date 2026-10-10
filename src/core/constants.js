@@ -249,7 +249,7 @@ export function loadpointOption(config, key, lpName) {
 // The modes that show one loadpoint per card. Like the vehicle mode, a card
 // names its loadpoint with `loadpoint`; a list in `loadpoints` from before
 // still draws every loadpoint in it.
-export const SINGLE_LOADPOINT_MODES = ["loadpoint", "plan"];
+export const SINGLE_LOADPOINT_MODES = ["loadpoint", "compact", "plan"];
 
 // The loadpoints a card is limited to, as a list, or null when it is not set:
 // `loadpoint` (one) or `loadpoints` (a list, a single name is shorthand for a
@@ -261,6 +261,19 @@ export function loadpointFilter(config) {
   const raw = config?.loadpoints;
   if (raw === undefined || raw === null) return null;
   return Array.isArray(raw) ? raw : [raw];
+}
+
+// The vehicles a `repeatplan` card is limited to, as a list, or null when it
+// is not set: `vehicle` (one, like the vehicle mode) or the list
+// `repeating_plan_vehicles` from before (a single name is shorthand for a list
+// of one). Compared without case by the readers.
+export function repeatPlanFilter(config) {
+  const one = config?.vehicle;
+  if (typeof one === "string" && one.trim()) return [one.trim()];
+  const raw = config?.repeating_plan_vehicles;
+  if (raw === undefined || raw === null || raw === "") return null;
+  const list = (Array.isArray(raw) ? raw : [raw]).map(String);
+  return list.length ? list : null;
 }
 
 // The vehicle a `vehicle` card shows. One card shows one vehicle: everything it
@@ -336,6 +349,9 @@ export function validateCardConfig(config) {
 
   if (c.vehicle !== undefined && c.vehicle !== null && (typeof c.vehicle !== "string" || !c.vehicle.trim())) {
     throw new Error("evcc-card: vehicle has to be the name of one vehicle");
+  }
+  if (c.vehicle !== undefined && c.vehicle !== null && c.repeating_plan_vehicles !== undefined && c.repeating_plan_vehicles !== null) {
+    throw new Error("evcc-card: use vehicle for one vehicle or repeating_plan_vehicles for a list, not both");
   }
   // The mode showed a block per vehicle at first. It shows one, so a list of
   // several says something the card no longer does, and saying so is better
