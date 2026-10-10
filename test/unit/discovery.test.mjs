@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { detectIntegration, detectPrefix, featureKeyOf, locateEntity, installedPrefixes, selectLoadpoints, discoverEntities, disabledCardEntities } from "../../src/core/entity-discovery.js";
-import { loadpointFilter } from "../../src/core/constants.js";
+import { loadpointFilter, loadpointOption } from "../../src/core/constants.js";
 
 // A site entity carries the prefix (pv_power is a site feature, no loadpoint).
 const entry = (prefix, entryId) => [
@@ -201,6 +201,20 @@ test("loadpointFilter turns the option into a list, or null when unset", () => {
   assert.equal(loadpointFilter(undefined), null);
   assert.deepEqual(loadpointFilter({ loadpoints: "openwb" }), ["openwb"]);
   assert.deepEqual(loadpointFilter({ loadpoints: ["openwb", "wp"] }), ["openwb", "wp"]);
+});
+
+test("loadpointFilter reads the one loadpoint of a card as a list of one", () => {
+  assert.deepEqual(loadpointFilter({ loadpoint: "wp" }), ["wp"]);
+  assert.deepEqual(selectLoadpoints({ openwb: {}, wp: {} }, { loadpoint: "wp" }), { wp: {} });
+});
+
+test("loadpointOption: true for every loadpoint of the card, else the list or a single name", () => {
+  assert.equal(loadpointOption({ no_plan: true }, "no_plan", "openwb"), true);
+  assert.equal(loadpointOption({ no_plan: ["wp"] }, "no_plan", "openwb"), false);
+  assert.equal(loadpointOption({ no_plan: ["wp"] }, "no_plan", "wp"), true);
+  assert.equal(loadpointOption({ no_pv: "wp" }, "no_pv", "wp"), true);
+  assert.equal(loadpointOption({}, "no_pv", "wp"), false);
+  assert.equal(loadpointOption({ no_pv: false }, "no_pv", "wp"), false);
 });
 
 test("selectLoadpoints narrows to the configured names and keeps their entities", () => {

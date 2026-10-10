@@ -82,7 +82,7 @@ export const debugView = {
     const maskValue = (key, val) => {
       if (!maskNames) return val;
       if (key === "title") return "***";
-      if (key === "loadpoints" || key === "no_plan" || key === "no_pv" || key === "repeating_plan_vehicles") {
+      if (key === "loadpoint" || key === "loadpoints" || key === "no_plan" || key === "no_pv" || key === "repeating_plan_vehicles") {
         if (Array.isArray(val)) return val.map(() => `lp_${++lpMaskCount.i}`);
         if (typeof val === "string") return `lp_${++lpMaskCount.i}`;
       }

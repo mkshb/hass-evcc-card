@@ -92,6 +92,35 @@ export function disabledCardEntities(hass, disabled, prefix = "evcc_", { vehicle
   return out.sort((a, b) => (!!b.need - !!a.need) || a.id.localeCompare(b.id));
 }
 
+// The disabled entities the warning triangles of one card point at, for the
+// editor: the needed ones of what this card shows. The loadpoint modes take
+// the loadpoints the card draws and leave out the controls hidden through
+// `hide_settings`, the battery mode takes the site, the vehicle mode the
+// card's vehicle (`vehicle`, see disabledCardEntities). A clear button counts
+// only where its limit is there. What depends on the moment stays in (a vehicle
+// charging by energy, the optimizer's forecast), so the triangle points at
+// these or fewer. Every other mode draws no triangle and gets none.
+export function cardDisabledEntities(hass, disabled, prefix = "evcc_", config = {}, { vehicle = null } = {}) {
+  const mode    = config?.mode || "loadpoint";
+  const off     = new Set(disabled || []);
+  const hidden  = key => Array.isArray(config?.hide_settings) && config.hide_settings.includes(key);
+  const entries = disabledCardEntities(hass, disabled, prefix, { vehicle }).filter(e => e.need);
+  if (mode === "loadpoint" || mode === "compact") {
+    const shown = new Set(Object.keys(selectLoadpoints(discoverEntities(hass, prefix).loadpoints, config)));
+    const there = (needs, owner) => {
+      const id = needs.replace(".", `.${prefix}${owner}_`);
+      return !!hass?.states?.[id] || off.has(id);
+    };
+    return entries.filter(({ need: n, owner }) => !n.site && !n.vehicle && shown.has(owner)
+      && !(n.hide && hidden(n.hide)) && (!n.needs || there(n.needs, owner)));
+  }
+  if (mode === "battery") {
+    return entries.filter(({ need: n }) => n.site && (!n.needs || !!hass?.states?.[n.needs.replace(".", `.${prefix}`)]));
+  }
+  if (mode === "vehicle") return entries.filter(e => e.need.vehicle);
+  return [];
+}
+
 // Backwards-compatible thin wrapper: the editor only needs the prefix.
 export async function detectPrefix(hass) {
   return (await detectIntegration(hass)).prefix;

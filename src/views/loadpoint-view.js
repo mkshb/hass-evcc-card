@@ -1,4 +1,4 @@
-import { SMART_MODE_ICON, CHARGE_MODES } from "../core/constants.js";
+import { SMART_MODE_ICON, CHARGE_MODES, loadpointOption } from "../core/constants.js";
 import { stateVal, attr, unitStr, isOn } from "../utils/state.js";
 import { fmtNum, fmtClock, fmtDuration, fmtRemainingDuration, evccDate, fmtCountdownFromISO, fmtCountdownFromTimestamp, socFillGradient, socTrackBg } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
@@ -23,8 +23,8 @@ export const loadpointView = {
     const statusLabel = charging ? this._t("charging") : connected ? this._t("connected") : this._t("ready");
     const statusClass = charging ? "charging" : connected ? "connected" : "ready";
 
-    const noPlan = Array.isArray(this._config.no_plan) && this._config.no_plan.includes(lpName);
-    const noPv   = Array.isArray(this._config.no_pv)   && this._config.no_pv.includes(lpName);
+    const noPlan = loadpointOption(this._config, "no_plan", lpName);
+    const noPv   = loadpointOption(this._config, "no_pv", lpName);
     const remaining = charging ? fmtRemainingDuration(this._hass, ents.charge_remaining_duration) : "";
 
     return `
@@ -55,8 +55,8 @@ export const loadpointView = {
     const connected   = ents.connected ? isOn(this._hass, ents.connected) : false;
     const statusLabel = charging ? this._t("charging") : connected ? this._t("connected") : this._t("ready");
     const statusClass = charging ? "charging" : connected ? "connected" : "ready";
-    const noPlan      = Array.isArray(this._config.no_plan) && this._config.no_plan.includes(lpName);
-    const noPv        = Array.isArray(this._config.no_pv)   && this._config.no_pv.includes(lpName);
+    const noPlan      = loadpointOption(this._config, "no_plan", lpName);
+    const noPv        = loadpointOption(this._config, "no_pv", lpName);
 
     if (this._tabState[lpName] === undefined) this._tabState[lpName] = 0;
     const activeTab = this._tabState[lpName];
@@ -309,7 +309,8 @@ export const loadpointView = {
   },
 
   // evcc's vehicle status (Vehicles/Status.vue): the vehicle limit, while it
-  // lies below the loadpoint's limit and a vehicle is connected; reached once
+  // lies below the loadpoint's limit, connected or not, as the marker on the
+  // SoC bar (since evcc 0.317); reached once
   // the SoC stands at it without charging; a warning when the plan aims above
   // it, and a tap then jumps to the plan. A heater's limit is a temperature and
   // shows whenever it is set.
@@ -327,9 +328,8 @@ export const loadpointView = {
       return chip("vehiclelimit", "vehiclelimit", ICON_HEATER_LIMIT, this._t("heaterLimitHint", { val }), moreInfo(ents.vehicle_limit_soc));
     }
     const num = id => id ? parseFloat(stateVal(this._hass, id)) : NaN;
-    const connected = ents.connected ? isOn(this._hass, ents.connected) : false;
     const lpLimit   = num(ents.effective_limit_soc);
-    if (!connected || limit >= (lpLimit > 0 ? lpLimit : 100)) return "";
+    if (limit >= (lpLimit > 0 ? lpLimit : 100)) return "";
     const charging = ents.charging ? isOn(this._hass, ents.charging) : false;
     const soc      = num(ents.vehicle_soc);
     const planSoc  = num(ents.effective_plan_soc);
