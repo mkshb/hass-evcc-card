@@ -1,6 +1,6 @@
 import { HIDEABLE_SETTINGS, SLIDER_STEP_KEYS, SINGLE_LOADPOINT_MODES, vehicleSlug, isVehicleImage, isMediaSourceId,
          loadpointFilter, loadpointOption } from "./core/constants.js";
-import { detectIntegration, discoverEntities, discoverVehicles, selectVehicle, cardDisabledEntities } from "./core/entity-discovery.js";
+import { detectIntegration, discoverEntities, discoverVehicles, selectVehicle, cardDisabledEntities, isLoadpointDisabled } from "./core/entity-discovery.js";
 import { enableEntity } from "./core/actions.js";
 import { disabledEntitiesHtml, disabledListCss, enableEntities } from "./components/disabled-entities.js";
 import { loadSharedTranslations, sharedTranslations, sharedTranslationsReady } from "./utils/translations.js";
@@ -651,8 +651,11 @@ export class EvccCardEditor extends HTMLElement {
       fields.push(many("loadpoints", ...this._listField("loadpoints", lps),
         { label: this._t("editorShowLoadpointsTitle"), helper: this._t("editorShowLoadpointsHint") }));
     }
-    // A card for one loadpoint has no other to hide it among.
-    if (showLoadpoints && !(single && oneLp)) {
+    // A card for one loadpoint has no other to hide it among, unless evcc has
+    // disabled that one: hiding it then empties the card.
+    const oneOff = oneLp && this._hass && isLoadpointDisabled(this._hass,
+      { disabled_in_config: `binary_sensor.${this._getPrefix()}${oneLp}_disabled_in_config` });
+    if (showLoadpoints && !(single && oneLp && !oneOff)) {
       fields.push(pick("disabled_loadpoints", [
         tOpt(UNSET,  "editorDisabledLoadpointsHide"),
         tOpt("dim",  "editorDisabledLoadpointsDim"),

@@ -1837,6 +1837,14 @@ def editor(browser, port, t):
     t.check(fld(".deprecated").count() == 0, "with one loadpoint the note is gone", "")
     opts = fm("loadpoint").locator("option").evaluate_all("os => os.map(o => o.value)")
     t.check("__many" not in opts and "__unset" not in opts, "and neither the list nor all of them can be picked again", json.dumps(opts))
+    # The one loadpoint disabled in evcc: hide would empty the card, so the
+    # choice how to treat it is offered again.
+    wp_off = """(on) => { const h = window.__hass, id = "binary_sensor.evcc_wp_disabled_in_config";
+      h.states = { ...h.states, [id]: { ...h.states[id], state: on ? "on" : "off" } }; }"""
+    page.evaluate(wp_off, True)
+    mount({"mode": "loadpoint", "loadpoint": "wp"})
+    t.check(fm("disabled_loadpoints").count() == 1, "for one loadpoint disabled in evcc, disabled_loadpoints is offered", "")
+    page.evaluate(wp_off, False)
     mount({"mode": "loadpoint", "loadpoints": "openwb"})
     t.check(fm("loadpoint").input_value() == "openwb" and count() == 0, "the shorthand of one shows as that loadpoint, not rewritten", fm("loadpoint").input_value())
     mount({"mode": "loadpoint", "loadpoint": "openwb"})
@@ -2858,10 +2866,13 @@ def card_api(browser, port, t):
     stubs = page.evaluate("""(() => { const C = window.__card.constructor, h = window.__hass;
       return { none: C.getStubConfig(), here: C.getStubConfig(h),
                one: C.getStubConfig({ ...h, entities: Object.fromEntries(Object.entries(h.entities).filter(([id]) => !id.includes("_wp_"))),
-                                         states: Object.fromEntries(Object.entries(h.states).filter(([id]) => !id.includes("_wp_"))) }) }; })()""")
+                                         states: Object.fromEntries(Object.entries(h.states).filter(([id]) => !id.includes("_wp_"))) }),
+               off: C.getStubConfig({ ...h, states: { ...h.states, "binary_sensor.evcc_openwb_disabled_in_config":
+                                         { ...h.states["binary_sensor.evcc_openwb_disabled_in_config"], state: "on" } } }) }; })()""")
     t.check(stubs["none"] == {"mode": "loadpoint"}, "without hass the stub is the plain loadpoint card", json.dumps(stubs["none"]))
     t.check(stubs["here"] == {"mode": "loadpoint", "loadpoint": "openwb"}, "with several loadpoints a new card starts on the first", json.dumps(stubs["here"]))
     t.check(stubs["one"] == {"mode": "loadpoint"}, "with one loadpoint it is left to the card", json.dumps(stubs["one"]))
+    t.check(stubs["off"] == {"mode": "loadpoint", "loadpoint": "wp"}, "a loadpoint disabled in evcc is passed over", json.dumps(stubs["off"]))
 
     t.group("cardapi - getEntitySuggestion")
     sug = page.evaluate("""(() => {

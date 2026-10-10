@@ -1,4 +1,4 @@
-import { detectIntegration, discoverEntities, installedPrefixes, selectLoadpoints, partitionDisabledLoadpoints } from "./core/entity-discovery.js";
+import { detectIntegration, discoverEntities, installedPrefixes, selectLoadpoints, partitionDisabledLoadpoints, isLoadpointDisabled } from "./core/entity-discovery.js";
 import { CARD_SIZES, CARD_SIZE_DETAILS, CARD_SIZE_FOOTER, RENDER_ATTRS, normalizeStatsPeriod, legacyStatsPeriod, validateCardConfig, loadpointFilter } from "./core/constants.js";
 import { stateVal, unitStr } from "./utils/state.js";
 import { escHtml } from "./utils/html.js";
@@ -386,13 +386,16 @@ export class EvccCard extends HTMLElement {
   }
 
   // HA hands the picker's hass in. With several loadpoints a new card starts
-  // on the first one, as one card per loadpoint is the way forward; with a
-  // second ha-evcc instance the editor's instance choice decides instead.
+  // on the first one that is not disabled in evcc, as one card per loadpoint
+  // is the way forward; with a second ha-evcc instance the editor's instance
+  // choice decides instead.
   static getStubConfig(hass) {
     const prefixes = installedPrefixes(hass);
     if (prefixes.length !== 1) return { mode: "loadpoint" };
-    const lps = Object.keys(discoverEntities(hass, prefixes[0]).loadpoints).sort();
-    return lps.length > 1 ? { mode: "loadpoint", loadpoint: lps[0] } : { mode: "loadpoint" };
+    const { loadpoints } = discoverEntities(hass, prefixes[0]);
+    const lps = Object.keys(loadpoints).sort();
+    if (lps.length < 2) return { mode: "loadpoint" };
+    return { mode: "loadpoint", loadpoint: lps.find(lp => !isLoadpointDisabled(hass, loadpoints[lp])) ?? lps[0] };
   }
 
   setConfig(config) {
