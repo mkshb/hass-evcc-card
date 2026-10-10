@@ -649,13 +649,17 @@ def editor(page, t):
     vehicles = demo_vehicles()
     open_view(page, "vehicle")
     page.evaluate("""async (prefix) => {
-        document.getElementById('e2e-editor')?.remove();
+        window.__e2eEd?.remove();
         const ed = document.createElement('evcc-card-editor'); ed.id = 'e2e-editor';
         window.__e2eCfg = [];
         ed.addEventListener('config-changed', e => window.__e2eCfg.push(JSON.parse(JSON.stringify(e.detail.config))));
         ed.setConfig({ type: 'custom:evcc-card', mode: 'vehicle', prefix });
         ed.hass = document.querySelector('home-assistant').hass;
-        document.body.appendChild(ed);
+        // Inside HA's element tree, as in the card dialog: HA's pickers take
+        // their translations from the context its root element provides.
+        ed.style.cssText = 'position:fixed;inset:0 auto auto 0;width:480px;max-height:100vh;overflow:auto;z-index:9999;background:#fff';
+        document.querySelector('home-assistant').shadowRoot.appendChild(ed);
+        window.__e2eEd = ed;
         await customElements.whenDefined('ha-selector');
         await new Promise(r => setTimeout(r, 1500)); }""", PREFIX)
     ed = page.locator("#e2e-editor")
@@ -689,7 +693,7 @@ def editor(page, t):
         page.wait_for_timeout(1200)
         pickers = ed.locator("[data-vehicle-role-pick] ha-selector ha-selector-entity").count()
         t.check(pickers == 14, "and HA's own entity picker for every role of the mapping", f"{pickers} ha-selector-entity")
-        ids = page.evaluate("""() => { const ed = document.getElementById('e2e-editor');
+        ids = page.evaluate("""() => { const ed = window.__e2eEd;
             const p = ed.shadowRoot.querySelector('[data-vehicle-role-pick][data-role="soc"] ha-selector');
             return p ? p.selector.entity.include_entities : null; }""")
         t.check(isinstance(ids, list) and all(i.startswith(("sensor.", "number.")) for i in ids),
@@ -702,11 +706,11 @@ def editor(page, t):
             "a mode switch through HA's form writes the whole config", json.dumps(cfg))
     adv = page.evaluate(f"""() => {{ const f = {FORM}; return f && f.shadowRoot ? f.shadowRoot.querySelectorAll('ha-form-expandable').length : -1; }}""")
     t.check(adv == 2, "the loadpoint mode has the folded content section and the slider steps", f"{adv} ha-form-expandable")
-    page.evaluate("() => document.getElementById('e2e-editor')?.remove()")
+    page.evaluate("() => window.__e2eEd?.remove()")
     t.check(not ERRORS, "no card errors", "; ".join(ERRORS)[:200])
 
 
-FORM = "document.getElementById('e2e-editor')?.shadowRoot.querySelector('ha-form')"
+FORM = "window.__e2eEd?.shadowRoot.querySelector('ha-form')"
 
 
 def form_pick(page, name, value):
@@ -744,7 +748,11 @@ def main():
     t = T("evcc-card e2e (HA-Dev + evcc demo)", frozen_time=None)
     with sync_playwright() as p:
         browser = launch(p, "chromium", a.headed)
-        ctx = browser.new_context(viewport={"width": 520, "height": 1400}, locale="de-DE", timezone_id="Europe/Berlin")
+        # No service worker: HA installs its own on the first visit of a fresh
+        # profile and reloads the page once it takes over, which would throw
+        # away whatever a group has mounted by then (the editor).
+        ctx = browser.new_context(viewport={"width": 520, "height": 1400}, locale="de-DE", timezone_id="Europe/Berlin",
+                                  service_workers="block")
         page = ctx.new_page()
         watch_errors(page)
         t.group("e2e setup")
