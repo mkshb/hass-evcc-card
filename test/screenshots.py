@@ -16,13 +16,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from run import serve, open_card, settle, in_card, new_page, done, OUT, T, launch
 
 WIDTH = 470
-LP = ["openwb"]   # the EV loadpoint; "wp" is a heating loadpoint and would double the height
+LP = "openwb"     # the EV loadpoint; "wp" is a heating loadpoint and would double the height
 
 # name -> card config. One entry per README image pair.
 SHOTS = {
-    "loadpoint":  {"mode": "loadpoint",  "loadpoints": LP},
-    "compact":    {"mode": "compact",    "loadpoints": LP},
-    "plan":       {"mode": "plan",       "loadpoints": LP},
+    "loadpoint":  {"mode": "loadpoint",  "loadpoint": LP},
+    "compact":    {"mode": "compact",    "loadpoint": LP},
+    "plan":       {"mode": "plan",       "loadpoint": LP},
     "site":       {"mode": "site"},
     "flow":       {"mode": "flow"},
     "grid":       {"mode": "grid"},

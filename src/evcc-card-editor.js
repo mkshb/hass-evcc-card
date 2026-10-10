@@ -1,5 +1,5 @@
 import { HIDEABLE_SETTINGS, SLIDER_STEP_KEYS, SINGLE_LOADPOINT_MODES, vehicleSlug, isVehicleImage, isMediaSourceId,
-         loadpointFilter, loadpointOption } from "./core/constants.js";
+         loadpointFilter, loadpointOption, repeatPlanFilter } from "./core/constants.js";
 import { detectIntegration, discoverEntities, discoverVehicles, selectVehicle, cardDisabledEntities, isLoadpointDisabled } from "./core/entity-discovery.js";
 import { enableEntity } from "./core/actions.js";
 import { disabledEntitiesHtml, disabledListCss, enableEntities } from "./components/disabled-entities.js";
@@ -626,11 +626,12 @@ export class EvccCardEditor extends HTMLElement {
       tOpt("large",  "editorSizeLarge"),
     ], c.size || UNSET, { label: this._t("editorSizeLabel"), section: "look" }));
 
-    // One loadpoint per card in the loadpoint and plan modes, picked like the
-    // vehicle: with a single loadpoint the card takes it by itself and the
-    // first option says so. A list of several from before is an option of its
-    // own and keeps drawing them all until another one is picked; the red
-    // note above the form then says that this goes away (_deprecatedHtml).
+    // One loadpoint per card in the loadpoint, compact and plan modes, picked
+    // like the vehicle: with a single loadpoint the card takes it by itself
+    // and the first option says so. A list of several from before is an
+    // option of its own and keeps drawing them all until another one is
+    // picked; the red note above the form then says that this goes away
+    // (_deprecatedHtml).
     if (single && lps.length) {
       const legacy = !c.loadpoint && filter && filter.length > 1;
       const value  = c.loadpoint ?? (legacy ? MANY : (filter ? filter[0] : UNSET));
@@ -664,11 +665,29 @@ export class EvccCardEditor extends HTMLElement {
       { label: this._t("editorDisabledLoadpointsLabel"), helper: this._t("editorDisabledLoadpointsHint"), section: "content" }));
     }
 
+    // One vehicle per repeatplan card, picked like the loadpoint above: a list
+    // of several from before is an option of its own and keeps drawing them
+    // all until another one is picked (_deprecatedHtml). Compared without
+    // case, as the card does.
     const rplanSlugs = mode === "repeatplan" ? this._availableVehicleSlugs : [];
     if (rplanSlugs.length) {
-      const title = slug => String(slug).replace(/_/g, " ").replace(/\b\w/g, ch => ch.toUpperCase());
-      fields.push(many("repeating_plan_vehicles", ...this._listField("repeating_plan_vehicles", rplanSlugs, { nocase: true, label: title }),
-        { label: this._t("editorVehicleFilterTitle"), helper: this._t("editorVehicleFilterHint") }));
+      const title  = slug => String(slug).replace(/_/g, " ").replace(/\b\w/g, ch => ch.toUpperCase());
+      const known  = v => rplanSlugs.find(s => s.toLowerCase() === String(v).toLowerCase()) ?? String(v);
+      const list   = repeatPlanFilter(c);
+      const legacy = !c.vehicle && list && list.length > 1;
+      const value  = c.vehicle ? known(c.vehicle) : legacy ? MANY : (list ? known(list[0]) : UNSET);
+      fields.push(pick("vehicle", [
+        ...(rplanSlugs.length === 1 ? [opt(UNSET, this._t("editorVehicleAuto", { val: title(rplanSlugs[0]) }))]
+          : value === UNSET ? [opt(UNSET, `\u26A0 ${this._t("editorVehicleAll")}`)] : []),
+        ...rplanSlugs.map(slug => opt(slug, title(slug))),
+        ...(value !== UNSET && value !== MANY && !rplanSlugs.includes(value) ? [opt(value, value)] : []),
+        ...(legacy ? [opt(MANY, `\u26A0 ${this._t("editorVehicleMany", { val: list.map(known).map(title).join(", ") })}`)] : []),
+      ], value, {
+        label: this._t("editorVehicleTitle"),
+        helper: (list || rplanSlugs).length === 1 ? this._t("editorRepeatPlanVehicleHint") : undefined,
+        write: v => (v === UNSET || v === MANY) ? undefined : v,
+        after: next => { next.repeating_plan_vehicles = undefined; },
+      }));
     }
 
     // The vehicle this card is for. One card shows one vehicle, so this is a
@@ -782,7 +801,7 @@ export class EvccCardEditor extends HTMLElement {
 
   // Brings `loadpoint` and `loadpoints` in line with the mode (`next`, the
   // config about to be written): a mode for one loadpoint takes a list of one
-  // as its loadpoint, a mode for several takes the one loadpoint as a list.
+  // as its loadpoint, the priority mode takes the one loadpoint as a list.
   // A card down to one loadpoint keeps `no_plan` / `no_pv` as `true` where its
   // loadpoint was in the list.
   _fitLoadpoints(next) {
@@ -793,8 +812,14 @@ export class EvccCardEditor extends HTMLElement {
       for (const key of ["no_plan", "no_pv"]) {
         if (next[key] !== undefined && next[key] !== true) next[key] = loadpointOption(next, key, next.loadpoint) || undefined;
       }
-    } else if (["compact", "priority"].includes(next.mode) && next.loadpoint) {
+    } else if (next.mode === "priority" && next.loadpoint) {
       Object.assign(next, { loadpoints: [next.loadpoint], loadpoint: undefined });
+    }
+    // The repeatplan mode shows one vehicle like the vehicle mode: a list of
+    // one from before becomes its `vehicle`.
+    if (next.mode === "repeatplan" && !next.vehicle) {
+      const list = repeatPlanFilter(next);
+      if (list && list.length === 1) Object.assign(next, { vehicle: list[0], repeating_plan_vehicles: undefined });
     }
   }
 
@@ -948,9 +973,15 @@ export class EvccCardEditor extends HTMLElement {
     this._addListeners();
   }
 
-  // Several loadpoints on a loadpoint or plan card go away in one of the next
-  // versions; until then the editor says so in red, above everything else.
+  // Several loadpoints on a loadpoint, compact or plan card, and several
+  // vehicles on a repeatplan card, go away in one of the next versions; until
+  // then the editor says so in red, above everything else.
   _deprecatedHtml(mode) {
+    if (mode === "repeatplan") {
+      const slugs = this._availableVehicleSlugs;
+      if (!slugs.length || (repeatPlanFilter(this._config) || slugs).length < 2) return "";
+      return `<div class="deprecated" role="alert">${this._esc(this._t("editorVehicleManyHint"))}</div>`;
+    }
     const lps = this._availableLoadpoints;
     if (!SINGLE_LOADPOINT_MODES.includes(mode) || !lps.length) return "";
     if ((loadpointFilter(this._config) || lps).length < 2) return "";

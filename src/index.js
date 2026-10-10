@@ -45,8 +45,8 @@ function entitySuggestion(hass, entityId) {
   const card = (mode, extra) => ({ type: "custom:evcc-card", mode, ...extra, ...base });
   return hit.loadpoint
     ? [
-        { label: "Loadpoint", config: card("loadpoint", { loadpoints: [hit.loadpoint] }) },
-        { label: "Compact",   config: card("compact",   { loadpoints: [hit.loadpoint] }) },
+        { label: "Loadpoint", config: card("loadpoint", { loadpoint: hit.loadpoint }) },
+        { label: "Compact",   config: card("compact",   { loadpoint: hit.loadpoint }) },
       ]
     : [
         { label: "Site", config: card("site") },
