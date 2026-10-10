@@ -3752,8 +3752,15 @@ def hints(browser, port, t):
     t.check(lit == 1, "a tap highlights the plan block", str(lit))
     done(page)
 
-    for case, st in (("not connected", {VL: "80", "binary_sensor.evcc_openwb_connected": "off", "binary_sensor.evcc_openwb_charging": "off"}),
-                     ("limit 0 (none)", {VL: "0"}),
+    # since evcc 0.317 the status shows the limit whether a vehicle is connected
+    # or not, as the marker on the SoC bar always did
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config=lp, set={VL: "80", "binary_sensor.evcc_openwb_connected": "off", "binary_sensor.evcc_openwb_charging": "off"})
+    t.check(limit(page) == ["vehiclelimit: Fahrzeuglimit 80 %"] and marker(page) is not None,
+            "not connected: the chip, as the marker", f"{chips(page)} {marker(page)}")
+    done(page)
+
+    for case, st in (("limit 0 (none)", {VL: "0"}),
                      ("limit unknown", {VL: "unknown"})):
         page = new_page(browser, 480, 1600)
         open_card(page, port, config=lp, set=st)

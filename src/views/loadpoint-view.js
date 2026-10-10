@@ -309,7 +309,8 @@ export const loadpointView = {
   },
 
   // evcc's vehicle status (Vehicles/Status.vue): the vehicle limit, while it
-  // lies below the loadpoint's limit and a vehicle is connected; reached once
+  // lies below the loadpoint's limit, connected or not, as the marker on the
+  // SoC bar (since evcc 0.317); reached once
   // the SoC stands at it without charging; a warning when the plan aims above
   // it, and a tap then jumps to the plan. A heater's limit is a temperature and
   // shows whenever it is set.
@@ -327,9 +328,8 @@ export const loadpointView = {
       return chip("vehiclelimit", "vehiclelimit", ICON_HEATER_LIMIT, this._t("heaterLimitHint", { val }), moreInfo(ents.vehicle_limit_soc));
     }
     const num = id => id ? parseFloat(stateVal(this._hass, id)) : NaN;
-    const connected = ents.connected ? isOn(this._hass, ents.connected) : false;
     const lpLimit   = num(ents.effective_limit_soc);
-    if (!connected || limit >= (lpLimit > 0 ? lpLimit : 100)) return "";
+    if (limit >= (lpLimit > 0 ? lpLimit : 100)) return "";
     const charging = ents.charging ? isOn(this._hass, ents.charging) : false;
     const soc      = num(ents.vehicle_soc);
     const planSoc  = num(ents.effective_plan_soc);
