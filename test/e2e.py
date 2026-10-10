@@ -318,6 +318,9 @@ def vehicle_view(page, t):
     configvehicle sensors, which the demo entry (no evcc password) has disabled."""
     t.group("e2e vehicle - the demo vehicles in the vehicle mode")
     reset_demo()
+    # a group before may have left a loadpoint charging that the reset switched
+    # off; evcc still reports it charging for a few seconds
+    wait_for(lambda: not any(lp["charging"] for lp in evcc_state()["loadpoints"] if lp.get("mode") == "off"), timeout=90)
     vehicles = demo_vehicles()
     lps = {title: (idx, slug) for idx, title, slug in demo_loadpoints()}
     st = evcc_state()
