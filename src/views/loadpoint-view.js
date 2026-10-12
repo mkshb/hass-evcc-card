@@ -1,6 +1,6 @@
 import { SMART_MODE_ICON, CHARGE_MODES, loadpointOption } from "../core/constants.js";
 import { stateVal, attr, unitStr, isOn } from "../utils/state.js";
-import { fmtNum, fmtClock, fmtDuration, fmtRemainingDuration, evccDate, fmtCountdownFromISO, fmtCountdownFromTimestamp, socFillGradient, socTrackBg } from "../utils/format.js";
+import { fmtNum, fmtPrice, priceCurrency, fmtClock, fmtDuration, fmtRemainingDuration, evccDate, fmtCountdownFromISO, fmtCountdownFromTimestamp, socFillGradient, socTrackBg } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
 
 // A value that maps onto one ha-evcc entity opens that entity's more-info
@@ -516,7 +516,7 @@ export const loadpointView = {
     const smartChip  = smartLimit !== null ? `
       <button class="smart-cost-chip ${smartActive ? "active" : ""}"
               data-lp-smart-cost-open="${escAttr(lpName)}">
-        ${isCo2Chip ? leafIcon : euroIcon} ≤ ${smartLimit} ${isCo2Chip ? "g" : escHtml(smartUnit)}
+        ${isCo2Chip ? leafIcon : euroIcon} ≤ ${isCo2Chip ? `${smartLimit} g` : escHtml(this._fmtPriceOf(ents.smart_cost_limit, smartLimit))}
       </button>` : "";
 
     const _boostLimitRaw = ents.battery_boost_limit
@@ -610,6 +610,18 @@ export const loadpointView = {
     `;
   },
 
+  // A price per kWh entity (or `value` in its unit) as evcc shows it, in the
+  // currency's subunit (fmtPrice). Empty without a number; an entity in
+  // another unit shows its value and unit as they are. Not escaped: the unit
+  // comes from the entity, so every call site puts it through escHtml.
+  _fmtPriceOf(entityId, value = null, unit = true) {
+    const v   = value ?? parseFloat(stateVal(this._hass, entityId));
+    const raw = unitStr(this._hass, entityId);
+    const cur = priceCurrency(raw);
+    if (cur === null) return isNaN(v) ? "" : `${v}${raw ? ` ${raw}` : ""}`;
+    return fmtPrice(v, cur, this._hass?.language, { unit });
+  },
+
   _renderSessionInfo(ents, charging = false) {
     const hasAny = ents.session_energy || ents.session_price || ents.session_price_per_kwh || ents.session_co2_per_kwh || ents.session_solar_percentage;
     if (!hasAny) return "";
@@ -629,7 +641,8 @@ export const loadpointView = {
       const unit = (unitStr(this._hass, entityId) || "").replace("/kWh", "").trim();
       return `${v.toFixed(decimals)}${unit ? " " + escHtml(unit) : ""}`;
     };
-    const pricePerKwh = ents.session_price_per_kwh   ? fmtPerKwh(ents.session_price_per_kwh, 3) : null;
+    // The label says per kWh, the value shows in ct as evcc's does.
+    const pricePerKwh = ents.session_price_per_kwh   ? (escHtml(this._fmtPriceOf(ents.session_price_per_kwh, null, "short")) || "—") : null;
     const co2PerKwh   = ents.session_co2_per_kwh     ? fmtPerKwh(ents.session_co2_per_kwh, 0)   : null;
     const solar       = ents.session_solar_percentage? (() => { const v = parseFloat(stateVal(this._hass, ents.session_solar_percentage)); return isNaN(v) ? "—" : `${Math.round(v)} %`; })() : null;
 

@@ -14,6 +14,53 @@ export function fmtNum(v, decimals) {
   return String(Number(n.toFixed(decimals)));
 }
 
+// evcc shows a price per kWh in the subunit of the currency where it has one,
+// with one decimal: 21,3 ct/kWh, not 0,213 €/kWh (assets/js/mixins/formatter.ts,
+// ENERGY_PRICE_IN_SUBUNIT). The card does the same everywhere it shows one.
+const PRICE_SUBUNITS = {
+  AUD: "c", BGN: "st", BRL: "¢", CAD: "¢", EUR: "ct", GBP: "p", ILS: "ag", NZD: "c",
+  NOK: "øre", PLN: "gr", USD: "¢", DKK: "øre", SEK: "öre", ZAR: "c", TRY: "krş", BYN: "к.",
+};
+// ha-evcc reports evcc's currency code, only EUR as its symbol.
+const CURRENCY_CODES = { "€": "EUR", "£": "GBP", "$": "USD" };
+
+// How a price per kWh in `currency` reads: { factor, unit, decimals }. Without
+// a subunit the value stays in the currency, with up to three decimals.
+export function priceScale(currency, lang = "en") {
+  const cur  = String(currency ?? "").trim();
+  // Nothing to scale without a currency: the value stays as it is and carries
+  // no unit at all, rather than a subunit it is not in (no tariff in the cache
+  // and a sensor without a unit, see _statsCurrency).
+  if (!cur) return { factor: 1, unit: "", decimals: 2 };
+  const code = CURRENCY_CODES[cur] ?? cur.toUpperCase();
+  // As in evcc: the Swiss Rappen is "Rp." in German, "ct." otherwise.
+  const sub  = code === "CHF" ? (String(lang).startsWith("de") ? "Rp." : "ct.") : PRICE_SUBUNITS[code];
+  return sub ? { factor: 100, unit: `${sub}/kWh`, decimals: 1 } : { factor: 1, unit: `${cur}/kWh`, decimals: 3 };
+}
+
+// The currency of a unit per kWh ("€/kWh" → "€"); null for any other unit, a
+// CO₂ intensity (g/kWh) and a bare "/kWh" without a currency included.
+export function priceCurrency(unit) {
+  const m = /^\s*(.*?)\s*\/\s*kWh\s*$/i.exec(String(unit ?? ""));
+  return m && m[1] && m[1] !== "g" ? m[1] : null;
+}
+
+// A price per kWh as the card shows it: "21,3 ct/kWh". `decimals` asks for
+// more than the scale's (a slider step finer than a tenth of a cent), `unit:
+// false` leaves the unit out, `unit: "short"` the "/kWh" where the label says
+// it already ("Price/kWh 21,3 ct"). Empty for anything that is not a number.
+// Not escaped: the unit carries the currency as ha-evcc reports it.
+export function fmtPrice(v, currency, lang = "en", { decimals, unit = true } = {}) {
+  const n = v === null || v === "" ? NaN : Number(v);
+  if (!Number.isFinite(n)) return "";
+  const s = priceScale(currency, lang);
+  const d = Math.max(decimals ?? 0, s.decimals);
+  const num = (n * s.factor).toLocaleString(lang, { minimumFractionDigits: s.factor > 1 ? d : 1, maximumFractionDigits: d });
+  if (!unit) return num;
+  const u = unit === "short" ? s.unit.replace(/\/kWh$/, "") : s.unit;
+  return u ? `${num} ${u}` : num;
+}
+
 // Parse an evcc-sourced timestamp that may be an RFC3339 string OR a unix
 // timestamp (seconds or ms). Mirrors ha-evcc 2026.7.0 dual-format handling
 // (marq24/ha-evcc, commit b2f0957). Returns a Date, or null if unparseable.

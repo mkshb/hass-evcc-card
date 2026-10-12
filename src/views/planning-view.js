@@ -1,7 +1,7 @@
 import { discoverEntities } from "../core/entity-discovery.js";
 import { repeatPlanFilter } from "../core/constants.js";
 import { stateVal, isOn, unitStr } from "../utils/state.js";
-import { evccDate, fmtDuration, fmtNum } from "../utils/format.js";
+import { evccDate, fmtDuration, fmtNum, fmtPrice, priceScale } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
 
 // Charge plan block with preview chart, plan mode and repeating plans. Methods are mixed into EvccCard.prototype.
@@ -307,7 +307,7 @@ export const planningView = {
         forecastRates = primary.data.rates;
       }
     }
-    const unit = isCo2 ? "g CO₂/kWh" : (preview.currency ? `${escHtml(preview.currency)}/kWh` : "");
+    const unit = isCo2 ? "g CO₂/kWh" : escHtml(priceScale(preview.currency, this._hass?.language).unit);
 
     const chart = this._renderPlanPreviewChart(forecastRates, preview.plan, preview, unit);
     const summary = this._renderPlanPreviewSummary(preview, unit);
@@ -452,7 +452,7 @@ export const planningView = {
     const avgLabel = isCo2 ? "CO₂-Emission Ø" : `${this._t("planPreviewCost")} Ø`;
     const avgStr = isCo2
       ? `${Math.round(avgVal)} g/kWh`
-      : `${avgVal.toFixed(2)} ${escHtml(currency)}/kWh`;
+      : escHtml(fmtPrice(avgVal, currency, this._hass?.language));
 
     return `<div class="plan-preview-header">
       <div class="plan-preview-left">

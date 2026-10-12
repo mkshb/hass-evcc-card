@@ -1699,6 +1699,59 @@ def interactions(browser, port, t):
     done(page)
 
 
+def price_display(browser, port, t):
+    """Prices per kWh read in the currency's subunit, as evcc shows them: the
+    limit sliders, their direct input, the chip and the session price."""
+    t.group("interaction - prices in ct")
+    page = new_page(browser, 480, 1400)
+    errors = open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"},
+                       set={"number.evcc_openwb_smart_cost_limit": "0.25"})
+    t.check(not errors, "renders without errors", "; ".join(errors)[:300])
+    val = page.locator(in_card('input[data-entity="number.evcc_openwb_smart_cost_limit"] + button.slider-val'))
+    t.check(val.inner_text().strip() == "25,0 ct/kWh", "the price limit shows in ct with one decimal", val.inner_text())
+    chip = page.locator(in_card(".smart-cost-chip")).inner_text()
+    t.check("25,0 ct/kWh" in chip, "and the chip says the same", chip)
+    session = page.locator(in_card(".session-item")).all_inner_texts()
+    t.check(any("8,5 ct" in x for x in session), "the session price per kWh in ct", json.dumps(session))
+    # the range input itself stays in the entity's unit, the label follows it
+    page.locator(in_card('input[data-entity="number.evcc_openwb_smart_cost_limit"]')).evaluate(
+        "el => { el.value = '0.305'; el.dispatchEvent(new Event('input')); }")
+    t.check(val.inner_text().strip() == "30,5 ct/kWh", "dragging updates the label in ct", val.inner_text())
+
+    val.click()
+    panel = page.locator(in_card(".slider-edit")); field = panel.locator(".slider-edit-input")
+    t.check(field.input_value() == "25,0" and panel.locator(".slider-edit-unit").inner_text() == "ct/kWh",
+            "direct input in ct", f"{field.input_value()} {panel.locator('.slider-edit-unit').inner_text()}")
+    panel.locator("[data-edit-inc]").click()
+    t.check(field.input_value() == "25,5", "+ walks the step in ct (0.005 €/kWh = 0,5 ct)", field.input_value())
+    page.evaluate("() => { window.__hass.serviceCalls.length = 0; }")
+    field.fill("21,3"); panel.locator("[data-edit-ok]").click()
+    call = [c for c in svc(page) if c["domain"] == "number"]
+    t.check(call == [{"domain": "number", "service": "set_value",
+                      "data": {"entity_id": "number.evcc_openwb_smart_cost_limit", "value": 0.215}}],
+            "typed 21,3 ct snaps to 21,5 and writes 0.215 €/kWh", json.dumps(call))
+    done(page)
+
+    # A currency whose limits run into the thousands of its subunit: the field
+    # of the direct input is read back, so it carries no digit grouping.
+    page = new_page(browser, 480, 1400)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"], "charge_current_settings": "expanded"},
+              set={"number.evcc_openwb_smart_cost_limit": "10"},
+              attrs={"number.evcc_openwb_smart_cost_limit": {"unit_of_measurement": "SEK/kWh", "min": -5, "max": 20, "step": 0.01}})
+    val = page.locator(in_card('input[data-entity="number.evcc_openwb_smart_cost_limit"] + button.slider-val'))
+    t.check(val.inner_text().strip() == "1.000,0 öre/kWh", "10 SEK/kWh reads as 1.000,0 öre/kWh", val.inner_text())
+    val.click()
+    field = page.locator(in_card(".slider-edit-input"))
+    t.check(field.input_value() == "1000,0", "the direct input shows it without a group separator", field.input_value())
+    page.evaluate("() => { window.__hass.serviceCalls.length = 0; }")
+    page.locator(in_card("[data-edit-ok]")).click()
+    call = [c for c in svc(page) if c["domain"] == "number"]
+    t.check(call == [{"domain": "number", "service": "set_value",
+                      "data": {"entity_id": "number.evcc_openwb_smart_cost_limit", "value": 10}}],
+            "and OK writes the value back unchanged", json.dumps(call))
+    done(page)
+
+
 def editor(browser, port, t):
     """The visual editor writes the whole card config on every change.
 
@@ -2427,7 +2480,7 @@ def tariff_modes(browser, port, t):
     page.locator(in_card(".slider-edit-input")).fill("80"); page.locator(in_card("[data-edit-ok]")).click()
     page.wait_for_timeout(1500)
     header = page.locator(in_card(".plan-preview-header")).inner_text()
-    t.check("\u20ac/kWh" in header and "g/kWh" not in header, "price tariff keeps currency per kWh", " ".join(header.split())[:160])
+    t.check("ct/kWh" in header and "g/kWh" not in header, "price tariff reads in ct per kWh, as evcc shows it", " ".join(header.split())[:160])
     done(page)
 
 
@@ -3475,6 +3528,9 @@ def escaping(browser, port, t):
          {"attrs": {"select.evcc_openwb_vehicle_name": {"vehicle": {"name": TEXT}}}}, ".vehicle-name"),
         ("charge power unit", {"mode": "loadpoint", "loadpoints": ["openwb"]},
          {"attrs": {"sensor.evcc_openwb_charge_power": {"unit_of_measurement": TEXT}}}, ".power-value"),
+        # A unit per kWh is read as a currency and shown with the value (fmtPrice).
+        ("session price unit", {"mode": "loadpoint", "loadpoints": ["openwb"]},
+         {"attrs": {"sensor.evcc_openwb_session_price_per_kwh": {"unit_of_measurement": TEXT + "/kWh"}}}, ".session-block"),
         ("loadpoint title",  {"mode": "site"},
          {"attrs": {"select.evcc_openwb_mode": {"loadpoint_title": TEXT}}}, ".site-table"),
         ("pv device title",  {"mode": "site"},
@@ -4423,7 +4479,7 @@ def battery_mode(browser, port, t):
     done(page)
 
 
-GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "editor": editor, "editor_vehicle_map": editor_vehicle_map, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
+GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "prices": price_display, "editor": editor, "editor_vehicle_map": editor_vehicle_map, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
           "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities, "solar_share": solar_share, "vehicle": vehicle_mode, "battery": battery_mode, "stable_height": stable_height}
 

@@ -1,6 +1,6 @@
 import { stateVal, attr, isOn, isLive } from "../utils/state.js";
 import { escHtml, escAttr } from "../utils/html.js";
-import { evccDate } from "../utils/format.js";
+import { evccDate, fmtPrice } from "../utils/format.js";
 
 const HOUR = 3600 * 1000;
 const DAY  = 24 * HOUR;
@@ -626,17 +626,20 @@ export const batteryView = {
     if (!slots.length) return null;
 
     // The feed-in tariff is always a price; the planner follows the cost type.
+    // A price reads in ct as in evcc (fmtPrice), a CO₂ intensity in g/kWh.
     const isCo2 = kind === "planner" && res.data.smartCostType === "co2";
-    const unit  = isCo2 ? "g/kWh" : `${res.data.currency ? escHtml(res.data.currency) : ""}/kWh`;
-    const fmt   = v => `${this._battNum(v, isCo2 ? 0 : 3)} ${unit}`;
+    const lang  = this._hass?.language || "en";
+    const fmt   = v => isCo2 ? `${this._battNum(v, 0)} g/kWh` : fmtPrice(v, res.data.currency, lang);
     const vals  = slots.map(r => r.v);
     const min   = Math.min(...vals), max = Math.max(...vals);
+    // The range with the unit once: "10,0 – 28,1 ct/kWh".
+    const range = isCo2 ? `${this._battNum(min, 0)} – ${fmt(max)}`
+      : `${fmtPrice(min, res.data.currency, lang, { unit: false })} – ${fmt(max)}`;
     const lo    = Math.min(min, 0);
     const span  = (max - lo) || 1;
 
     const W = 400, H = 44, MB = 12;
     const bw = W / slots.length;
-    const lang = this._hass?.language || "en";
     let activeMs = 0;
     // Charging green, discharging amber, as evcc tells the two apart.
     const hitColor = kind === "feedin" ? "var(--evcc-amber)" : "var(--evcc-green)";
@@ -656,7 +659,7 @@ export const batteryView = {
       html: `
       <div class="batt-slots">
         <svg viewBox="0 0 ${W} ${H}" class="batt-slots-svg">${bars}</svg>
-        <div class="batt-slots-legend"><span>${this._t(kind === "feedin" ? "battFeedInRate" : isCo2 ? "battCo2Rate" : "battGridRate")}</span><span>${fmt(min)} – ${fmt(max)}</span></div>
+        <div class="batt-slots-legend"><span>${this._t(kind === "feedin" ? "battFeedInRate" : isCo2 ? "battCo2Rate" : "battGridRate")}</span><span>${escHtml(range)}</span></div>
       </div>`,
     };
   },
