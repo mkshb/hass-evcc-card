@@ -19,20 +19,20 @@ All charge points and site entities are **automatically discovered** via the HA 
 </tr>
 <tr>
 <td>
-<a href="#loadpoint-default"><img src="images/loadpoint-dark.png" width="200"></a>
-<a href="#loadpoint-default"><img src="images/loadpoint-light.png" width="200"></a>
+<a href="#loadpoint-default"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/loadpoint-dark.png" width="200"></a>
+<a href="#loadpoint-default"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/loadpoint-light.png" width="200"></a>
 </td>
 <td>
-<a href="#site"><img src="images/site-dark.png" width="200"></a>
-<a href="#site"><img src="images/site-light.png" width="200"></a>
+<a href="#site"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/site-dark.png" width="200"></a>
+<a href="#site"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/site-light.png" width="200"></a>
 </td>
 <td>
-<a href="#flow"><img src="images/flow-dark.png" width="200"></a>
-<a href="#flow"><img src="images/flow-light.png" width="200"></a>
+<a href="#flow"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/flow-dark.png" width="200"></a>
+<a href="#flow"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/flow-light.png" width="200"></a>
 </td>
 <td>
-<a href="#grid"><img src="images/grid-dark.png" width="200"></a>
-<a href="#grid"><img src="images/grid-light.png" width="200"></a>
+<a href="#grid"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/grid-dark.png" width="200"></a>
+<a href="#grid"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/grid-light.png" width="200"></a>
 </td>
 </tr>
 <tr>
@@ -43,20 +43,20 @@ All charge points and site entities are **automatically discovered** via the HA 
 </tr>
 <tr>
 <td>
-<a href="#stats"><img src="images/stats-dark.png" width="200"></a>
-<a href="#stats"><img src="images/stats-light.png" width="200"></a>
+<a href="#stats"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/stats-dark.png" width="200"></a>
+<a href="#stats"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/stats-light.png" width="200"></a>
 </td>
 <td>
-<a href="#battery"><img src="images/battery-dark.png" width="200"></a>
-<a href="#battery"><img src="images/battery-light.png" width="200"></a>
+<a href="#battery"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/battery-dark.png" width="200"></a>
+<a href="#battery"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/battery-light.png" width="200"></a>
 </td>
 <td>
-<a href="#compact"><img src="images/compact-dark.png" width="200"></a>
-<a href="#compact"><img src="images/compact-light.png" width="200"></a>
+<a href="#compact"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/compact-dark.png" width="200"></a>
+<a href="#compact"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/compact-light.png" width="200"></a>
 </td>
 <td>
-<a href="#plan"><img src="images/plan-dark.png" width="200"></a>
-<a href="#plan"><img src="images/plan-light.png" width="200"></a>
+<a href="#plan"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/plan-dark.png" width="200"></a>
+<a href="#plan"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/plan-light.png" width="200"></a>
 </td>
 </tr>
 <tr>
@@ -67,16 +67,16 @@ All charge points and site entities are **automatically discovered** via the HA 
 </tr>
 <tr>
 <td>
-<a href="#priority"><img src="images/priority-dark.png" width="200"></a>
-<a href="#priority"><img src="images/priority-light.png" width="200"></a>
+<a href="#priority"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/priority-dark.png" width="200"></a>
+<a href="#priority"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/priority-light.png" width="200"></a>
 </td>
 <td>
-<a href="#repeatplan"><img src="images/repeatplan-dark.png" width="200"></a>
-<a href="#repeatplan"><img src="images/repeatplan-light.png" width="200"></a>
+<a href="#repeatplan"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/repeatplan-dark.png" width="200"></a>
+<a href="#repeatplan"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/repeatplan-light.png" width="200"></a>
 </td>
 <td>
-<a href="#vehicle"><img src="images/vehicle-dark.png" width="200"></a>
-<a href="#vehicle"><img src="images/vehicle-light.png" width="200"></a>
+<a href="#vehicle"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/vehicle-dark.png" width="200"></a>
+<a href="#vehicle"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/vehicle-light.png" width="200"></a>
 </td>
 <td></td>
 </tr>
@@ -220,7 +220,7 @@ A `loadpoint`, `compact` or `plan` card that still lists several charge points u
 
 The same goes for the vehicles of a `repeatplan` card: a list under `repeating_plan_vehicles`, or no `vehicle` while several vehicles have repeating plans, keeps working for now. Pick the vehicle of the card under **Vehicle** and add a card for each further one.
 
-<img src="images/one-charge-point-per-card.gif" width="800" alt="Switching a card with two charge points to one charge point per card in the visual editor">
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/one-charge-point-per-card.gif" width="800" alt="Switching a card with two charge points to one charge point per card in the visual editor">
 
 ---
 
@@ -309,9 +309,9 @@ Every slider in the card (target SoC, min SoC, current limits, battery boost, so
 >
 > The clear buttons (`button.evcc_<loadpoint>_smart_cost_limit`, `button.evcc_<loadpoint>_smart_feed_in_priority_limit`) ship **disabled by default** in ha-evcc. Without its clear button a limit could be set but never removed again, so the card offers the limit only once the button is enabled. See [Disabled entities](#disabled-entities).
 
-<img src="images/slider-input-dark.png" width="400"> <img src="images/slider-input-light.png" width="400">
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/slider-input-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/slider-input-light.png" width="400">
 
-<img src="images/loadpoint-dark.png" width="400"> <img src="images/loadpoint-light.png" width="400">
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/loadpoint-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/loadpoint-light.png" width="400">
 
 ---
 
@@ -328,7 +328,7 @@ Full site energy overview:
 
 The IN/OUT detail table can be toggled by clicking the power bar. It opens expanded by default; set `site_details` to `collapsed` in the editor to start collapsed instead.
 
-<img src="images/site-dark.png" width="400"> <img src="images/site-light.png" width="400">
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/site-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/site-light.png" width="400">
 
 ---
 
@@ -344,7 +344,7 @@ Sankey-style energy flow diagram showing how energy is distributed from sources 
 - Collapsible IN/OUT detail table below — click the diagram to toggle (same as `site` mode)
 - The diagram has a fixed height per installation, room for every node it could show, so nodes coming and going only redistribute the bands and the card keeps its height
 
-<img src="images/flow-dark.png" width="400"> <img src="images/flow-light.png" width="400">
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/flow-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/flow-light.png" width="400">
 
 ---
 
@@ -359,7 +359,7 @@ Compact site energy overview with a focus on the current grid status:
 
 > **Deprecation notice:** `mode: site2` still works but is deprecated and will be removed in a future release. Please migrate to `mode: grid`.
 
-<img src="images/grid-dark.png" width="400"> <img src="images/grid-light.png" width="400">
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/grid-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/grid-light.png" width="400">
 
 ---
 
@@ -408,7 +408,7 @@ The stat sensors exist in your ha-evcc integration but are disabled by default. 
 
 > **Single-year fallback:** If the **Total** tab detects that only one calendar year of data is available in the HA Recorder, it automatically falls back to showing the monthly breakdown of the current year - identical to the **This year** chart.
 
-<img src="images/stats-dark.png" width="400"> <img src="images/stats-light.png" width="400">
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/stats-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/stats-light.png" width="400">
 
 ---
 
@@ -433,7 +433,7 @@ Home battery, built after evcc's battery view:
 
 The suggestion comes from ha-evcc's battery SoC sensors. Forecast, highest and lowest need the ha-evcc WebSocket command `evcc_intg/optimizer` (ha-evcc 2026.10.1+); with an older ha-evcc the chart ends at "now". The card picks up a new optimizer result within 30 seconds, and a few seconds after the grid charge limit or grid discharging is changed in the card, as soon as evcc has computed it again (evcc releases after 0.316.2 do so right after the change).
 
-<img src="images/battery-dark.png" width="400"> <img src="images/battery-light.png" width="400">
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/battery-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/battery-light.png" width="400">
 
 ---
 
@@ -448,7 +448,7 @@ PV surplus priority management: reorder all loadpoints by drag-and-drop to set w
 - **Reset** discards unapplied changes and re-syncs the visible order to the current state
 - Respects the `loadpoints` config filter; loadpoints without a `priority` entity are shown disabled
 
-<img src="images/priority-dark.png" width="400"> <img src="images/priority-light.png" width="400">
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/priority-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/priority-light.png" width="400">
 
 ---
 
@@ -465,7 +465,7 @@ Same content as `loadpoint`, but organized into four tabs - ideal for dashboards
 
 The selected tab is remembered per charge point across re-renders.
 
-<img src="images/compact-dark.png" width="400"> <img src="images/compact-light.png" width="400">
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/compact-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/compact-light.png" width="400">
 
 ---
 
@@ -489,7 +489,7 @@ Minimalist charge plan view:
 
 > **Two ha-evcc instances:** the card names its own instance (`config_entry_id`) in every plan call, which ha-evcc 2026.9.4 or newer honours. An older ha-evcc ignores the field and sends the plan to the instance that was set up last, so with two instances a plan can land on the other evcc; update ha-evcc in that case.
 
-<img src="images/plan-dark.png" width="400"> <img src="images/plan-light.png" width="400">
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/plan-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/plan-light.png" width="400">
 
 ---
 
@@ -503,7 +503,7 @@ Repeating charge plans per vehicle - evcc's weekly departure schedules:
 
 > **Note:** Repeating plans can only be **created and edited in evcc itself** - the card only switches them on or off (an info icon in the header points this out). Requires the repeating plan entities from **ha-evcc 2026.6.1+** (`repeating_plan_*`); on older integration versions the entities do not exist yet and the mode shows an empty state.
 
-<img src="images/repeatplan-dark.png" width="400"> <img src="images/repeatplan-light.png" width="400">
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/repeatplan-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/repeatplan-light.png" width="400">
 
 ---
 
@@ -530,7 +530,7 @@ What the card shows:
 - **Charged in total**: energy, cost and charging time of all sessions of the vehicle
 - **Vehicle details**: everything else the vehicle's device reports, folded away
 
-<img src="images/vehicle-dark.png" width="400"> <img src="images/vehicle-light.png" width="400">
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/vehicle-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/vehicle-light.png" width="400">
 
 #### Where the values come from
 
@@ -717,12 +717,12 @@ The card was featured in YouTube videos - showing installation, configuration an
 <tr>
 <td align="center">
 <a href="https://www.youtube.com/watch?v=o-EA3kuslmQ">
-<img src="images/yt-o-EA3kuslmQ.jpg" width="360">
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/yt-o-EA3kuslmQ.jpg" width="360">
 </a>
 </td>
 <td align="center">
 <a href="https://www.youtube.com/watch?v=nQyiFg1RPy8">
-<img src="images/yt-nQyiFg1RPy8.jpg" width="360">
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/yt-nQyiFg1RPy8.jpg" width="360">
 </a>
 </td>
 </tr>
