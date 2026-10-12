@@ -130,7 +130,7 @@
   "battActiveTime": "Actieve tijd",
   "battActiveHours": "{active} van {total}",
   "battActiveNow": "nu",
-  "battGridRate": "Netprijs, komende 24 u",
+  "battGridRate": "Netprijzen, komende 24 u",
   "battCo2Rate": "CO₂-intensiteit, komende 24 u",
   "battFeedInRate": "Terugleververgoeding, komende 24 u",
   "battNow": "Nu",

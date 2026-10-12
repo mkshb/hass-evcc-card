@@ -130,7 +130,7 @@
   "battActiveTime": "Aktivno vrijeme",
   "battActiveHours": "{active} od {total}",
   "battActiveNow": "sada",
-  "battGridRate": "Cijena iz mreže, sljedeća 24 h",
+  "battGridRate": "Cijene iz mreže, sljedeća 24 h",
   "battCo2Rate": "CO₂ intenzitet, sljedeća 24 h",
   "battFeedInRate": "Tarifa za predaju, sljedeća 24 h",
   "battNow": "Sada",

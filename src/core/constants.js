@@ -214,7 +214,7 @@ export const CARD_SIZES = {
   grid:        7,
   site2:       7,   // legacy alias of grid
   stats:      10,
-  battery:     7,
+  battery:     8,
   vehicle:     8,
   debug:      20,
 };

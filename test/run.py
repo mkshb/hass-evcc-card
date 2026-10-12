@@ -12,7 +12,7 @@ companion app renders the frontend in). The WebKit run is functional only, its
 screenshots go to test/out/webkit/ and are not compared with images/ (text
 rendering differs between engines).
 """
-import argparse, datetime, http.server, json, os, re, socketserver, subprocess, sys, threading, time, urllib.parse
+import argparse, datetime, http.server, json, math, os, re, socketserver, subprocess, sys, threading, time, urllib.parse
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
@@ -4373,6 +4373,111 @@ def battery_mode(browser, port, t):
     t.check(page.evaluate("window.__moreInfo") == ["sensor.evcc_battery_soc"], "Enter opens more-info", str(page.evaluate("window.__moreInfo")))
     done(page)
 
+    # the tariff columns are the selector of the limit: hovering shows time and
+    # price in the legend, a click writes that price, rounded away from the
+    # column (up for charging, down for discharging) so the column that was
+    # clicked stays inside the limit
+    snap = lambda v, down: round(-0.5 + (math.floor((v + 0.5) / 0.005 + 1e-9) if down else math.ceil((v + 0.5) / 0.005 - 1e-9)) * 0.005, 6)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True, set={"number.evcc_battery_grid_charge_limit": "0.21"})
+    page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).click(); settle(page)
+    chart = page.locator(in_card(".batt-slots.pick")).first
+    t.check(chart.count() == 1, "grid charging: the chart selects the limit")
+    legend = chart.locator(".batt-slots-legend").inner_text()
+    t.check("Netzpreise" in legend and re.search(r"\d+,\d \u2013 \d+,\d ct/kWh", legend) is not None,
+            "the legend gives the range in ct with one decimal, the unit once", legend)
+    t.check(chart.locator("line.batt-slots-limit").count() == 1, "the limit draws as a line")
+    slot = chart.locator(".batt-slot").nth(8)
+    slot.hover(); page.wait_for_timeout(80)
+    info = chart.locator(".batt-slots-pick").inner_text()
+    t.check(":" in info and "20,2 ct/kWh" in info, "hovering a column shows its time and price", info)
+    v = float(slot.get_attribute("data-v"))
+    page.evaluate("() => { window.__hass.serviceCalls.length = 0; }")
+    slot.click(); settle(page)
+    call = [c for c in svc(page) if c["domain"] == "number"]
+    t.check(call == [{"domain": "number", "service": "set_value",
+                      "data": {"entity_id": "number.evcc_battery_grid_charge_limit", "value": snap(v, False)}}],
+            f"a click writes the column's price rounded up ({snap(v, False)})", str(call))
+    t.check(snap(v, False) >= v, "the charge limit lands at or above the column", str((v, snap(v, False))))
+    t.check(chart.locator(".batt-slots-pick").inner_text() == "", "the readout clears after the click")
+    done(page)
+
+    # on a touch screen the first tap only shows the price, the second writes
+    # it; every tap fires pointerover first, as a browser does
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True, set={"number.evcc_battery_grid_charge_limit": "0.21"})
+    page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).click(); settle(page)
+    page.evaluate("() => { window.__hass.serviceCalls.length = 0; }")
+    tap = """el => { for (const type of ['pointerover', 'pointerdown']) el.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerType: 'touch' }));
+                     el.dispatchEvent(new MouseEvent('click', { bubbles: true })); }"""
+    hit = page.locator(in_card(".batt-slots.pick .batt-slot")).nth(8).locator(".batt-slot-hit")
+    hit.evaluate(tap)
+    first = [c for c in svc(page) if c["domain"] == "number"]
+    shown = page.locator(in_card(".batt-slots.pick .batt-slots-pick")).inner_text()
+    t.check(not first and "ct/kWh" in shown, "touch: the first tap shows the price and writes nothing", f"{first} {shown}")
+    hit.evaluate(tap); settle(page)
+    second = [c for c in svc(page) if c["domain"] == "number"]
+    t.check(len(second) == 1, "touch: the second tap on the same column writes it", str(second))
+    done(page)
+
+    # without a pointer: the chart is one tab stop, the arrow keys walk the
+    # columns and show their price, Enter writes the one in focus
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True, set={"number.evcc_battery_grid_charge_limit": "0.21"})
+    page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).click(); settle(page)
+    chart = page.locator(in_card(".batt-slots.pick")).first
+    stops = (chart.get_attribute("tabindex"), chart.locator(".batt-slot").first.get_attribute("tabindex"))
+    t.check(stops == ("0", "-1"), "the chart is the tab stop, its columns are out of the tab order", str(stops))
+    chart.focus()
+    page.keyboard.press("ArrowRight"); page.keyboard.press("ArrowRight")
+    info = chart.locator(".batt-slots-pick").inner_text()
+    t.check("ct/kWh" in info, "the arrow keys show the column in focus", info)
+    page.evaluate("() => { window.__hass.serviceCalls.length = 0; }")
+    page.keyboard.press("Enter"); settle(page)
+    call = [c for c in svc(page) if c["domain"] == "number"]
+    t.check(len(call) == 1 and call[0]["data"]["entity_id"] == "number.evcc_battery_grid_charge_limit",
+            "Enter writes the price of the column in focus", str(call))
+    done(page)
+
+    # the same with the limit switched off: the click sets it and switches it on
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True, set={"number.evcc_battery_grid_charge_limit": "unknown"})
+    page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).click(); settle(page)
+    chart = page.locator(in_card(".batt-slots.pick")).first
+    t.check(chart.locator("line.batt-slots-limit").count() == 0, "no limit, no line")
+    chart.locator(".batt-slot").nth(8).click(); settle(page)
+    call = [c for c in svc(page) if c["domain"] == "number"]
+    t.check(len(call) == 1 and call[0]["data"]["entity_id"] == "number.evcc_battery_grid_charge_limit",
+            "a click switches an unset limit on", str(call))
+    done(page)
+
+    # grid discharging: the feed-in columns round the other way, and without
+    # discharging allowed evcc takes no limit, so the columns select nothing
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True,
+              set={"switch.evcc_battery_grid_discharge": "on", "number.evcc_battery_grid_discharge_limit": "0.09"})
+    page.locator(in_card('button.batt-tab[data-batt-tab="discharge"]')).click(); settle(page)
+    chart = page.locator(in_card(".batt-slots.pick")).first
+    t.check(chart.count() == 1, "grid discharging: the chart selects the limit")
+    slot = chart.locator(".batt-slot").nth(8)
+    v = float(slot.get_attribute("data-v"))
+    page.evaluate("() => { window.__hass.serviceCalls.length = 0; }")
+    slot.click(); settle(page)
+    call = [c for c in svc(page) if c["domain"] == "number"]
+    t.check(call == [{"domain": "number", "service": "set_value",
+                      "data": {"entity_id": "number.evcc_battery_grid_discharge_limit", "value": snap(v, True)}}],
+            f"a click writes the column's price rounded down ({snap(v, True)})", str(call))
+    t.check(snap(v, True) <= v, "the feed-in limit lands at or below the column", str((v, snap(v, True))))
+    done(page)
+
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True, set={"switch.evcc_battery_grid_discharge": "off"})
+    page.locator(in_card('button.batt-tab[data-batt-tab="discharge"]')).click(); settle(page)
+    t.check(page.locator(in_card(".batt-slots")).count() == 1
+            and page.locator(in_card(".batt-slots.pick")).count() == 0,
+            "discharging not allowed: the columns select nothing")
+    done(page)
+
     # grid charging and discharging as bands behind the SoC curve: the past
     # from the recorder (the mock charges from 1 to 4 and discharges from 18
     # to 19), the future from the tariff against the limit, fainter
@@ -4488,7 +4593,7 @@ def battery_mode(browser, port, t):
     page.locator(in_card('button.batt-tab[data-batt-tab="discharge"]')).click(); settle(page)
     t.check(page.locator(in_card("[data-batt-discharge]")).get_attribute("aria-checked") == "false", "grid discharging off")
     t.check(page.locator(in_card('input[data-entity="number.evcc_battery_grid_discharge_limit"]')).count() == 0, "no feed-in limit while discharging into the grid is off")
-    fills = lambda: page.locator(in_card(".batt-slots-svg rect")).evaluate_all("els => [...new Set(els.map(e => e.getAttribute('fill')))]")
+    fills = lambda: page.locator(in_card(".batt-slots-svg .batt-slot-bar")).evaluate_all("els => [...new Set(els.map(e => e.getAttribute('fill')))]")
     t.check("Einspeisetarif" in page.locator(in_card(".batt-slots-legend")).inner_text(),
             "grid discharging off: the feed-in rates of the next 24 h, as grid charging shows the grid rates")
     t.check(fills() == ["var(--secondary-text-color,#888)"], "and nothing highlighted while it is off", str(fills()))
@@ -4509,7 +4614,7 @@ def battery_mode(browser, port, t):
     page = new_page(browser, 480, 1600)
     open_card(page, port, mode="battery", battery_ext=True, set={"number.evcc_battery_grid_charge_limit": "2.0",
               "switch.evcc_battery_grid_discharge": "on", "number.evcc_battery_grid_discharge_limit": "-0.5"})
-    fills = lambda: page.locator(in_card(".batt-slots-svg rect")).evaluate_all("els => [...new Set(els.map(e => e.getAttribute('fill')))]")
+    fills = lambda: page.locator(in_card(".batt-slots-svg .batt-slot-bar")).evaluate_all("els => [...new Set(els.map(e => e.getAttribute('fill')))]")
     page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).click(); settle(page)
     t.check("var(--evcc-green)" in fills() and "var(--evcc-amber)" not in fills(), "grid charging: green slots", str(fills()))
     page.locator(in_card('button.batt-tab[data-batt-tab="discharge"]')).click(); settle(page)
