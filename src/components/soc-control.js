@@ -1,7 +1,7 @@
 import { HIDEABLE_SETTINGS, loadpointOption } from "../core/constants.js";
 import { featureKeyOf } from "../core/entity-discovery.js";
-import { stateVal, attr, displayUnit, isOn, isLive } from "../utils/state.js";
-import { stepDecimals, fmtNum } from "../utils/format.js";
+import { stateVal, attr, displayUnit, unitStr, isOn, isLive } from "../utils/state.js";
+import { stepDecimals, fmtNum, fmtPrice, priceCurrency, priceScale } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
 
 // Sliders with direct-input panel, step override, write-back and battery boost. Methods are mixed into EvccCard.prototype.
@@ -124,7 +124,7 @@ export const socControl = {
             // Feed-in priority: above this feed-in limit, evcc prioritizes selling to the
             // grid over PV-surplus charging. Unlike the smart charging limit it does not
             // follow evcc's cost type: evcc compares it with the feed-in tariff, so it is
-            // always a price (currency/kWh). _sliderRow renders the unit the entity reports.
+            // always a price (currency/kWh), which _sliderRow shows as evcc does (_sliderPrice).
             // The integration's binary_sensor is the authoritative "active" signal.
             const active     = ents.smart_feed_in_priority_active
               ? isOn(this._hass, ents.smart_feed_in_priority_active)
@@ -233,9 +233,32 @@ export const socControl = {
                  data-entity="${entityId}"
                  data-domain="${domain}"${locked ? " disabled" : ""} />
           <button type="button" class="slider-val" data-slider-edit${locked ? " disabled" : ""}
-                  title="${this._t("sliderEditHint")}">${unsetLabel && isNaN(_v) ? unsetLabel : zeroLabel && val === 0 ? zeroLabel : `${val} ${escHtml(unit)}`}</button>
+                  title="${this._t("sliderEditHint")}">${unsetLabel && isNaN(_v) ? unsetLabel : zeroLabel && val === 0 ? zeroLabel : escHtml(this._sliderText(entityId, val, step, unit))}</button>
         </div>
       </div>`;
+  },
+
+  // A price limit (currency per kWh) reads in the subunit of the currency, as
+  // evcc shows it: { currency, factor, unit, decimals }, see priceScale. null
+  // for every other slider, a CO₂ limit included. The entity keeps its own unit.
+  _sliderPrice(entityId) {
+    const currency = entityId ? priceCurrency(unitStr(this._hass, entityId)) : null;
+    return currency === null ? null : { currency, ...priceScale(currency, this._hass?.language) };
+  },
+
+  // The value next to a slider: "21,0 ct/kWh" for a price, the value and the
+  // entity's unit otherwise. A step finer than the price's decimals adds some.
+  _sliderText(entityId, value, step, unit = displayUnit(this._hass, entityId)) {
+    const price = this._sliderPrice(entityId);
+    if (!price) return `${value} ${unit}`;
+    return fmtPrice(value, price.currency, this._hass?.language, { decimals: stepDecimals(this._priceStep(step, price)) });
+  },
+
+  // A slider step in the unit the price shows in (0.005 €/kWh → 0.5 ct/kWh).
+  // An entity without a usable step falls back to one of its own units, as the
+  // sliders of every other kind do.
+  _priceStep(step, price) {
+    return Number(((Number(step) || 1) * price.factor).toPrecision(12));
   },
 
   // Optional per-feature step override from the card config, keyed by the
@@ -299,12 +322,17 @@ export const socControl = {
 
     const entityId = local ? null : input.dataset.entity;
     const domain   = local ? "number" : input.dataset.domain;
-    const unit     = local ? (local.unit ?? "") : displayUnit(this._hass, entityId);
+    // A price is edited in the unit it shows in (ct/kWh), see _sliderPrice:
+    // min, max, step and the value are scaled by `factor` for the panel and
+    // back for the write.
+    const price    = domain === "number" ? this._sliderPrice(entityId) : null;
+    const factor   = price?.factor ?? 1;
+    const unit     = local ? (local.unit ?? "") : price ? price.unit : displayUnit(this._hass, entityId);
     const opts     = domain === "select" ? this._sliderOptions(entityId) : [];
-    const min      = parseFloat(input.min), max = parseFloat(input.max);
-    const step     = parseFloat(input.step) || 1;
-    const decimals = domain === "select" ? 3 : stepDecimals(step);
-    const raw      = local ? parseFloat(local.value) : parseFloat(stateVal(this._hass, entityId));
+    const min      = parseFloat(input.min) * factor, max = parseFloat(input.max) * factor;
+    const step     = price ? this._priceStep(input.step, price) : (parseFloat(input.step) || 1);
+    const decimals = domain === "select" ? 3 : price ? Math.max(price.decimals, stepDecimals(step)) : stepDecimals(step);
+    const raw      = local ? parseFloat(local.value) : parseFloat(stateVal(this._hass, entityId)) * factor;
     let cur        = !isNaN(raw) ? raw : (domain === "select" ? (opts[0] ?? 0) : min);
 
     const panel = document.createElement("div");
@@ -353,7 +381,15 @@ export const socControl = {
       const clamped = Math.min(Math.max(v, min), max);
       return Number((Math.round((clamped - min) / step) * step + min).toFixed(decimals));
     };
-    const show  = () => { field.value = fmtNum(cur, decimals); };
+    // `parse` reads the field back, so a price stays a plain number: a
+    // locale's digit grouping ("1.000,0") or its own digits would not survive
+    // the trip. The decimal comma does, and it is what those keyboards type,
+    // so the field keeps it where the language uses one.
+    const comma = (1.1).toLocaleString(this._hass?.language || "en").includes(",");
+    const show  = () => {
+      field.value = price ? (comma ? cur.toFixed(decimals).replace(".", ",") : cur.toFixed(decimals))
+                          : fmtNum(cur, decimals);
+    };
     const nudge = dir => {
       if (domain === "select") {
         const i = opts.indexOf(snap(parse()));
@@ -365,11 +401,14 @@ export const socControl = {
     };
     const apply = () => {
       cur = snap(parse());
+      // Back in the entity's unit; the rounding drops what the scaling adds
+      // (21.5 / 100 = 0.21500000000000002).
+      const value = price ? Number((cur / factor).toFixed(decimals + 2)) : cur;
       // Reflect immediately; for entity sliders the next hass update re-renders anyway.
-      input.value     = domain === "select" ? String(Math.max(opts.indexOf(cur), 0)) : String(cur);
-      btn.textContent = local?.format ? local.format(cur) : `${fmtNum(cur, decimals)} ${unit}`;
+      input.value     = domain === "select" ? String(Math.max(opts.indexOf(cur), 0)) : String(value);
+      btn.textContent = local?.format ? local.format(cur) : price ? this._sliderText(entityId, value, input.step) : `${fmtNum(cur, decimals)} ${unit}`;
       if (local) local.onApply?.(cur);
-      else       this._sliderWrite(entityId, domain, cur);
+      else       this._sliderWrite(entityId, domain, value);
       this._closeSliderEdit();
     };
     show();
@@ -516,7 +555,7 @@ export const socControl = {
       });
       input.addEventListener("input", () => {
         const span = input.nextElementSibling;
-        if (span) span.textContent = `${this._sliderValueFor(input)} ${displayUnit(this._hass, input.dataset.entity)}`;
+        if (span) span.textContent = this._sliderText(input.dataset.entity, this._sliderValueFor(input), input.step);
       });
       input.addEventListener("pointerup", () => {
         this._isDragging = false;

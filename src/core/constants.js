@@ -1,4 +1,4 @@
-export const EVCC_CARD_VERSION = "0.9.5";
+export const EVCC_CARD_VERSION = "0.9.6";
 
 export const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -214,7 +214,7 @@ export const CARD_SIZES = {
   grid:        7,
   site2:       7,   // legacy alias of grid
   stats:      10,
-  battery:     7,
+  battery:     8,
   vehicle:     8,
   debug:      20,
 };

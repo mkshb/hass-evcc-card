@@ -320,7 +320,7 @@ export const statisticsLegacy = {
     const kpis = [
       kpi(kwh,   this._t("statsTotalCharged"), v => `${Math.round(v)} kWh`, null),
       kpi(solar, this._t("statsSolarShare"),   v => `${Math.round(v)} %`,   solar > 0 ? "var(--evcc-green)" : null),
-      kpi(price, this._t("statsAvgPrice"),     v => `${v.toFixed(2)} ${escHtml(unitStr(this._hass, priceId))}`, null),
+      kpi(price, this._t("statsAvgPrice"),     v => escHtml(this._fmtAvgPrice(priceId, v)), null),
     ].join("");
 
     const { kwhId: chartKwhId } = this._getStatEntityIds("total");

@@ -1,5 +1,5 @@
 import { stateVal, unitStr } from "../utils/state.js";
-import { evccDate } from "../utils/format.js";
+import { evccDate, fmtPrice, priceCurrency } from "../utils/format.js";
 import { normalizeStatsPeriod, legacyStatsPeriod } from "../core/constants.js";
 import { escHtml } from "../utils/html.js";
 
@@ -64,6 +64,14 @@ export const statisticsView = {
     if (p === "month") return { kind: "month", year: now.getFullYear(), month: now.getMonth() };
     if (p === "year")  return { kind: "year",  year: now.getFullYear() };
     return { kind: "total" };
+  },
+
+  // The average price per kWh of a statistics sensor, as evcc shows it (in
+  // ct, the label says per kWh); a sensor without a currency unit as it is.
+  _fmtAvgPrice(priceId, price) {
+    const unit = unitStr(this._hass, priceId);
+    const cur  = priceCurrency(unit);
+    return cur === null ? `${price.toFixed(2)}${unit ? ` ${unit}` : ""}` : fmtPrice(price, cur, this._hass?.language, { unit: "short" });
   },
 
   // Currency symbol for session price values (the sessions response carries none).
@@ -374,7 +382,7 @@ export const statisticsView = {
     const items = [
       `<span class="sf-item"><span class="sf-val">${Math.round(k.kwh)} kWh</span><span class="sf-lbl">${this._t("statsCharged")}</span></span>`,
       k.hasSolar ? `<span class="sf-item"><span class="sf-val" style="color:var(--evcc-green)">${Math.round(k.solarPct)} %</span><span class="sf-lbl">${this._t("statsSolarShare")}</span></span>` : "",
-      k.hasPrice ? `<span class="sf-item"><span class="sf-val">${k.avgPrice.toFixed(2)} ${escHtml(cur)}/kWh</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
+      k.hasPrice ? `<span class="sf-item"><span class="sf-val">${escHtml(fmtPrice(k.avgPrice, cur, this._hass?.language, { unit: "short" }))}</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
     ].filter(Boolean);
     if (k.kwh <= 0) return "";
     return `<div class="stats-footer"><div class="sf-period">${periodLabel}</div><div class="sf-items">${items.join('<span class="sf-sep"></span>')}</div></div>`;
@@ -407,7 +415,7 @@ export const statisticsView = {
     const items = [
       kwhId   ? `<span class="sf-item"><span class="sf-val">${Math.round(kwh)} kWh</span><span class="sf-lbl">${this._t("statsCharged")}</span></span>` : "",
       solarId ? `<span class="sf-item"><span class="sf-val" style="color:var(--evcc-green)">${Math.round(solar)} %</span><span class="sf-lbl">${this._t("statsSolarShare")}</span></span>` : "",
-      priceId ? `<span class="sf-item"><span class="sf-val">${price.toFixed(2)} ${escHtml(unitStr(this._hass, priceId))}</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
+      priceId ? `<span class="sf-item"><span class="sf-val">${escHtml(this._fmtAvgPrice(priceId, price))}</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
     ].filter(Boolean);
 
     if (items.length === 0) return "";

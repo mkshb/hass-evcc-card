@@ -130,7 +130,7 @@
   "battActiveTime": "Czas aktywności",
   "battActiveHours": "{active} z {total}",
   "battActiveNow": "teraz",
-  "battGridRate": "Cena energii z sieci, najbliższe 24 h",
+  "battGridRate": "Ceny energii z sieci, najbliższe 24 h",
   "battCo2Rate": "Intensywność CO₂, najbliższe 24 h",
   "battFeedInRate": "Taryfa za oddawanie energii, najbliższe 24 h",
   "battNow": "Teraz",

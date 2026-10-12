@@ -130,7 +130,7 @@
   "battActiveTime": "Aktive Zeit",
   "battActiveHours": "{active} von {total}",
   "battActiveNow": "jetzt",
-  "battGridRate": "Netzpreis, nächste 24 h",
+  "battGridRate": "Netzpreise, nächste 24 h",
   "battCo2Rate": "CO₂-Intensität, nächste 24 h",
   "battFeedInRate": "Einspeisetarif, nächste 24 h",
   "battNow": "Jetzt",

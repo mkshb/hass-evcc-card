@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import {
   stepDecimals, fmtNum, evccDate, fmtDuration, fmtClock, fmtRemainingDuration, durationSeconds,
   fmtCountdownFromISO, fmtCountdownFromTimestamp, socFillGradient, socTrackBg,
+  fmtPrice, priceCurrency, priceScale,
 } from "../../src/utils/format.js";
 
 const hassWith = (state, unit) => ({
@@ -233,4 +234,51 @@ test("socTrackBg tints the min and limit zones", () => {
 
 test("socTrackBg clamps values outside 0..100", () => {
   assert.equal(socTrackBg(-10, 150), "var(--divider-color, #e5e7eb)");
+});
+
+// --- prices ------------------------------------------------------------------
+
+test("fmtPrice shows a price per kWh in the currency's subunit, as evcc does", () => {
+  assert.equal(fmtPrice(0.213, "€", "de"), "21,3 ct/kWh");
+  assert.equal(fmtPrice(0.213, "EUR", "en"), "21.3 ct/kWh", "evcc's code works as well as ha-evcc's symbol");
+  assert.equal(fmtPrice(0.2, "€", "de"), "20,0 ct/kWh", "always one decimal");
+  assert.equal(fmtPrice(0.1, "GBP", "en"), "10.0 p/kWh");
+  assert.equal(fmtPrice(0.25, "CHF", "de"), "25,0 Rp./kWh");
+  assert.equal(fmtPrice(0.25, "CHF", "en"), "25.0 ct./kWh");
+  assert.equal(fmtPrice(-0.012, "€", "de"), "-1,2 ct/kWh", "negative prices keep their sign");
+});
+
+test("fmtPrice keeps a currency without subunit, with up to three decimals", () => {
+  assert.equal(fmtPrice(1.2345, "JPY", "en"), "1.235 JPY/kWh");
+  assert.equal(fmtPrice(2, "JPY", "en"), "2.0 JPY/kWh");
+});
+
+test("fmtPrice options and invalid values", () => {
+  assert.equal(fmtPrice(0.2125, "€", "de", { decimals: 2 }), "21,25 ct/kWh", "a finer slider step");
+  assert.equal(fmtPrice(0.213, "€", "de", { unit: false }), "21,3");
+  assert.equal(fmtPrice(0.213, "€", "de", { unit: "short" }), "21,3 ct", "for a label that says per kWh");
+  assert.equal(fmtPrice(1.5, "JPY", "en", { unit: "short" }), "1.5 JPY");
+  for (const v of [null, undefined, "", "unknown", NaN]) assert.equal(fmtPrice(v, "€", "de"), "", String(v));
+});
+
+test("priceCurrency reads the currency of a unit per kWh, nothing else", () => {
+  assert.equal(priceCurrency("€/kWh"), "€");
+  assert.equal(priceCurrency("CHF / kWh"), "CHF");
+  assert.equal(priceCurrency("g/kWh"), null, "a CO₂ intensity is no price");
+  assert.equal(priceCurrency("kWh"), null);
+  assert.equal(priceCurrency("%"), null);
+  assert.equal(priceCurrency(undefined), null);
+});
+
+test("priceScale gives factor, unit and decimals", () => {
+  assert.deepEqual(priceScale("€", "de"), { factor: 100, unit: "ct/kWh", decimals: 1 });
+  assert.deepEqual(priceScale("JPY", "en"), { factor: 1, unit: "JPY/kWh", decimals: 3 });
+});
+
+test("without a currency nothing is scaled and no unit is claimed", () => {
+  assert.equal(priceCurrency("/kWh"), null, "a unit per kWh without a currency is no price");
+  assert.deepEqual(priceScale("", "en"), { factor: 1, unit: "", decimals: 2 });
+  assert.deepEqual(priceScale(null, "en"), { factor: 1, unit: "", decimals: 2 });
+  assert.equal(fmtPrice(0.2, "", "en"), "0.2", "the value as it is, without a trailing space");
+  assert.equal(fmtPrice(0.2, "", "en", { unit: "short" }), "0.2");
 });
