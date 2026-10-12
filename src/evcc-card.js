@@ -417,7 +417,7 @@ export class EvccCard extends HTMLElement {
     // defaults to "total" rather than to the stats mode's most recent month.
     this._statsPeriod = legacyStatsPeriod(rawPeriod, "total");
     if (this._statsMetric == null) this._statsMetric = "energy"; // energy | cost | co2
-    if (this._statsGroup  == null) this._statsGroup  = "solar";  // solar | loadpoint | vehicle
+    if (this._statsGroup  == null) this._statsGroup  = "vehicle"; // vehicle | loadpoint
 
     if (!this._translationsReady && !this._loadingTranslations) {
       this._loadingTranslations = true;

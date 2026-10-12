@@ -84,12 +84,22 @@ export const statisticsView = {
     return u ? u.replace(/\s*\/\s*kwh$/i, "") : "";
   },
 
-  // --- metric + grouping for the EVCC-style stacked chart ------------------
+  // --- chart metric and breakdown ------------------------------------------
+  // A session field as a number; NaN where evcc reports none. Number(null) is
+  // 0, which would count a session without a price as one that cost nothing.
+  _sessionNum(v) { return v == null || v === "" ? NaN : Number(v); },
+
+  // Share of a session's energy that came from the sun, 0 to 1.
+  _solarFrac(s) {
+    const sp = this._sessionNum(s.solarPercentage);
+    return isFinite(sp) ? Math.max(0, Math.min(100, sp)) / 100 : 0;
+  },
+
   // Per-session value for the selected metric: energy (kWh) | cost (currency) | co2 (kg).
   _metricVal(s, metric) {
-    const e = Number(s.chargedEnergy);
-    if (metric === "cost") { const p = Number(s.price); return isFinite(p) ? p : null; }
-    if (metric === "co2")  { const c = Number(s.co2PerKWh); return (isFinite(e) && isFinite(c)) ? e * c / 1000 : null; }
+    const e = this._sessionNum(s.chargedEnergy);
+    if (metric === "cost") { const p = this._sessionNum(s.price); return isFinite(p) ? p : null; }
+    if (metric === "co2")  { const c = this._sessionNum(s.co2PerKWh); return (isFinite(e) && isFinite(c)) ? e * c / 1000 : null; }
     return isFinite(e) ? e : null;
   },
 
@@ -107,7 +117,7 @@ export const statisticsView = {
       const buckets = [];
       for (let day = 1; day <= days; day++) {
         const date = new Date(scope.year, scope.month, day);
-        buckets.push({ key: day,
+        buckets.push({ key: day, tick: (day - 1) % 7 === 0,
           labelStr:  date.toLocaleDateString(lang, { day: "numeric" }),
           labelFull: date.toLocaleDateString(lang, { day: "numeric", month: "short" }),
           isCurrent: scope.year === now.getFullYear() && scope.month === now.getMonth() && day === now.getDate() });
@@ -119,7 +129,7 @@ export const statisticsView = {
       const buckets = [];
       for (let m = 0; m <= last; m++) {
         const date = new Date(scope.year, m, 1);
-        buckets.push({ key: m,
+        buckets.push({ key: m, tick: true,
           labelStr:  date.toLocaleDateString(lang, { month: "short" }),
           labelFull: date.toLocaleDateString(lang, { month: "long", year: "numeric" }),
           isCurrent: scope.year === now.getFullYear() && m === now.getMonth() });
@@ -129,120 +139,136 @@ export const statisticsView = {
     // total: yearly; if ≤1 year of data, fall back to that year's months
     const years = [...new Set(sessions.map(s => { const d = this._sessionDate(s); return d ? d.getFullYear() : null; }).filter(v => v != null))].sort((a, b) => a - b);
     if (years.length <= 1) return this._scopeAxis({ kind: "year", year: years.length ? years[0] : now.getFullYear() }, sessions);
-    const buckets = years.map(y => ({ key: y, labelStr: String(y), labelFull: String(y), isCurrent: y === now.getFullYear() }));
+    const buckets = years.map(y => ({ key: y, tick: true, labelStr: String(y), labelFull: String(y), isCurrent: y === now.getFullYear() }));
     return { keyOf: d => d.getFullYear(), buckets };
   },
 
-  // Ordered series for the grouping. solar → [solar, grid]; loadpoint/vehicle → distinct (energy desc).
-  _groupSeries(scope, sessions, grouping) {
-    if (grouping === "solar") return [
-      { key: "__solar", label: this._t("statsGroupSolar"), color: "var(--evcc-green,#22c55e)" },
-      { key: "__grid",  label: this._t("grid"),            color: "var(--primary-color,#3b82f6)" },
-    ];
-    const pal = ["#3b82f6", "#22c55e", "#f59e0b", "#a855f7", "#ef4444", "#06b6d4", "#ec4899", "#84cc16"];
-    const field = grouping === "loadpoint" ? "loadpoint" : "vehicle";
-    const totals = {};
-    for (const s of sessions) {
-      const d = this._sessionDate(s); if (!d || !this._sessionInScope(d, scope)) continue;
-      const n = s[field] || "—";
-      totals[n] = (totals[n] || 0) + (Number(s.chargedEnergy) || 0);
-    }
-    return Object.entries(totals).sort((a, b) => b[1] - a[1]).map(([n], i) => ({ key: n, label: n, color: pal[i % pal.length] }));
-  },
-
-  // Stacked buckets: each bucket gets seg{seriesKey:value} + total for the chosen metric.
-  _sessionStacks(sessions, scope, metric, grouping, series) {
+  // The bars of the chart for the metric: energy splits into solar and grid,
+  // cost and CO₂ are one total each (the solar part carries next to none).
+  // Each bucket gets seg{seriesKey: value} and total.
+  _sessionBuckets(sessions, scope, metric) {
     const axis = this._scopeAxis(scope, sessions);
-    const pos = {}; axis.buckets.forEach((b, i) => { pos[b.key] = i; b.seg = {}; b.total = 0; });
-    const known = new Set(series.map(s => s.key));
-    const field = grouping === "loadpoint" ? "loadpoint" : "vehicle";
+    const pos = {};
+    axis.buckets.forEach((b, i) => { pos[b.key] = i; b.solar = 0; b.total = 0; });
     for (const s of sessions) {
       const d = this._sessionDate(s); if (!d) continue;
       const bk = axis.keyOf(d); if (bk == null || !(bk in pos)) continue;
       const v = this._metricVal(s, metric); if (v == null) continue;
       const b = axis.buckets[pos[bk]];
-      if (grouping === "solar") {
-        if (metric === "energy") {
-          const sp = Number(s.solarPercentage);
-          const frac = isFinite(sp) ? Math.max(0, Math.min(100, sp)) / 100 : 0;
-          b.seg.__solar = (b.seg.__solar || 0) + v * frac;
-          b.seg.__grid  = (b.seg.__grid  || 0) + v * (1 - frac);
-        } else {
-          // cost/CO₂: solar self-consumption carries ~no marginal cost/emissions → attribute to grid.
-          b.seg.__grid = (b.seg.__grid || 0) + v;
-        }
-      } else {
-        const key = s[field] || "—";
-        if (!known.has(key)) continue;
-        b.seg[key] = (b.seg[key] || 0) + v;
-      }
+      if (metric === "energy") b.solar += v * this._solarFrac(s);
       b.total += v;
     }
+    for (const b of axis.buckets) b.seg = metric === "energy" ? { solar: b.solar, grid: b.total - b.solar } : { total: b.total };
     return axis.buckets;
   },
 
-  _computeSessionStats(sessions, scope) {
-    let kwh = 0, solarKwh = 0, cost = 0, co2wSum = 0, co2w = 0;
-    let hasSolar = false, hasPrice = false, hasCo2 = false, count = 0;
+  // The scope split by vehicle or charge point, the largest first.
+  _sessionBreakdown(sessions, scope, field) {
+    const rows = {};
     for (const s of sessions) {
       const d = this._sessionDate(s);
       if (!d || !this._sessionInScope(d, scope)) continue;
-      const e = Number(s.chargedEnergy) || 0;
+      const name = s[field] || "—";
+      const r = rows[name] ??= { name, kwh: 0, solar: 0, cost: 0, hasPrice: false, count: 0 };
+      const e = this._sessionNum(s.chargedEnergy) || 0;
+      r.kwh += e; r.solar += e * this._solarFrac(s); r.count++;
+      const p = this._sessionNum(s.price);
+      if (isFinite(p)) { r.cost += p; r.hasPrice = true; }
+    }
+    return Object.values(rows).sort((a, b) => b.kwh - a.kwh);
+  },
+
+  _computeSessionStats(sessions, scope) {
+    let kwh = 0, solarKwh = 0, cost = 0, co2wSum = 0, co2w = 0, saved = 0, seconds = 0;
+    let hasSolar = false, hasPrice = false, hasCo2 = false, hasSaving = false, hasDuration = false, count = 0;
+    const vehicles = new Set(), loadpoints = new Set();
+    for (const s of sessions) {
+      const d = this._sessionDate(s);
+      if (!d || !this._sessionInScope(d, scope)) continue;
+      const e = this._sessionNum(s.chargedEnergy) || 0;
       kwh += e; count++;
-      const sp = Number(s.solarPercentage);
-      if (isFinite(sp)) { solarKwh += e * Math.max(0, Math.min(100, sp)) / 100; hasSolar = true; }
-      const p = Number(s.price);
+      vehicles.add(s.vehicle || "—"); loadpoints.add(s.loadpoint || "—");
+      if (isFinite(this._sessionNum(s.solarPercentage))) { solarKwh += e * this._solarFrac(s); hasSolar = true; }
+      const p = this._sessionNum(s.price);
       if (isFinite(p)) { cost += p; hasPrice = true; }
-      const c = Number(s.co2PerKWh);
+      // Saved: what the energy would have cost at the grid price evcc
+      // compares against, minus what it cost. Sessions without that price
+      // count with nothing.
+      const ref = this._sessionNum(s.referencePricePerKWh);
+      if (isFinite(p) && isFinite(ref) && ref > 0) { saved += e * ref - p; hasSaving = true; }
+      const c = this._sessionNum(s.co2PerKWh);
       if (isFinite(c)) { co2wSum += e * c; co2w += e; hasCo2 = true; }
+      // evcc reports the duration in nanoseconds.
+      const ns = this._sessionNum(s.chargeDuration);
+      if (isFinite(ns) && ns > 0) { seconds += ns / 1e9; hasDuration = true; }
     }
 
     return {
-      kwh,
+      kwh, solarKwh,
       solarPct:  (hasSolar && kwh > 0) ? solarKwh / kwh * 100 : null,
       avgPrice:  (hasPrice && kwh > 0) ? cost / kwh : null,
       totalCost: hasPrice ? cost : null,
+      saved:     hasSaving ? saved : null,
       avgCo2:    (hasCo2 && co2w > 0) ? co2wSum / co2w : null,
-      count, hasSolar, hasPrice, hasCo2,
+      seconds:   hasDuration ? seconds : null,
+      count, hasSolar, hasPrice, hasCo2, hasSaving,
+      vehicles: vehicles.size, loadpoints: loadpoints.size,
     };
   },
 
-  // KPI memo per (sessions cache timestamp, scope); the footer reuses this.
+  // The session names of the loadpoints the config leaves out of the
+  // statistics (stats_exclude_loadpoints, a heat pump for instance): each
+  // configured loadpoint by its evcc title, as the sessions name it, and by
+  // what was configured, both compared without case. Null for none.
+  _statsExcluded() {
+    const list = this._config?.stats_exclude_loadpoints;
+    if (!Array.isArray(list) || !list.length) return null;
+    const lps = this._cachedEntities?.loadpoints ?? {};
+    const names = new Set();
+    for (const lp of list) {
+      names.add(String(lp).toLowerCase());
+      if (lps[lp]) names.add(String(this._loadpointTitle(lp, lps[lp])).toLowerCase());
+    }
+    return names;
+  },
+
+  _statsExcludedKey() { return [...(this._statsExcluded() ?? [])].sort().join("|"); },
+
+  // The sessions the statistics count: all but those of excluded loadpoints.
+  // Memoised per session list and exclusion, so the KPI memo below and the
+  // chart see the same array on every render.
+  _statsSessions(sessions) {
+    const ex = this._statsExcluded();
+    if (!ex) return sessions;
+    const key = this._statsExcludedKey();
+    const m = this._statsSessionsMemo;
+    if (m && m.src === sessions && m.key === key) return m.out;
+    const out = sessions.filter(s => !ex.has(String(s.loadpoint ?? "").toLowerCase()));
+    this._statsSessionsMemo = { src: sessions, key, out };
+    return out;
+  },
+
+  // KPI memo per (sessions cache timestamp, exclusion, scope); the footer reuses this.
   _sessionStats(sessions, scope) {
     const ts = this._wsCache["sessions::"]?.ts ?? 0;
+    const ex = this._statsExcludedKey();
     const key = this._scopeKey(scope);
-    if (!this._sessionStatsMemo || this._sessionStatsMemo.ts !== ts) this._sessionStatsMemo = { ts, byKey: {} };
+    if (!this._sessionStatsMemo || this._sessionStatsMemo.ts !== ts || this._sessionStatsMemo.ex !== ex) this._sessionStatsMemo = { ts, ex, byKey: {} };
     if (!this._sessionStatsMemo.byKey[key]) this._sessionStatsMemo.byKey[key] = this._computeSessionStats(sessions, scope);
     return this._sessionStatsMemo.byKey[key];
   },
 
-  // Metric toggle (Energie / Kosten / CO₂) — selects what the bars represent.
-  _renderStatsMetricTabs() {
-    const cur = this._statsMetric ?? "energy";
-    const defs = [
-      { key: "energy", tKey: "statsMetricEnergy" },
-      { key: "cost",   tKey: "statsMetricCost"   },
-      { key: "co2",    tKey: "statsMetricCo2"    },
-    ];
-    const btns = defs.map(d => `<button class="stats-period-tab${d.key === cur ? " active" : ""}" data-metric="${d.key}">${this._t(d.tKey)}</button>`).join("");
+  // Small pill tabs in a section head. `attr` names the data attribute the
+  // listener reads; a single option needs no switch and renders nothing.
+  _renderStatsTabs(attr, cur, defs) {
+    if (defs.length < 2) return "";
+    const btns = defs.map(d => `<button class="stats-period-tab${d.key === cur ? " active" : ""}" data-${attr}="${d.key}">${this._t(d.tKey)}</button>`).join("");
     return `<div class="stats-period-tabs stats-period-tabs--small">${btns}</div>`;
   },
 
-  // Grouping toggle (Sonne / Ladepunkt / Fahrzeug) — selects how bars are stacked.
-  _renderStatsGroupTabs() {
-    const cur = this._statsGroup ?? "solar";
-    const defs = [
-      { key: "solar",     tKey: "statsGroupSolar"     },
-      { key: "loadpoint", tKey: "statsGroupLoadpoint" },
-      { key: "vehicle",   tKey: "statsGroupVehicle"   },
-    ];
-    const btns = defs.map(d => `<button class="stats-period-tab${d.key === cur ? " active" : ""}" data-group="${d.key}">${this._t(d.tKey)}</button>`).join("");
-    return `<div class="stats-period-tabs stats-period-tabs--small">${btns}</div>`;
-  },
-
-  // Scope tabs (Month / Year / Total) for the sessions stats path. Reuses the
-  // .stats-period-tab styling but carries data-scope (handled separately from the
-  // legacy entity-path data-period tabs).
+  // Scope tabs (Month / Year / Total) as one segmented control. Reuses the
+  // .stats-period-tab class but carries data-scope (handled separately from
+  // the legacy entity-path data-period tabs).
   _renderStatsScopeTabs() {
     const cur = this._statsScope ?? "month";
     const defs = [
@@ -253,124 +279,195 @@ export const statisticsView = {
     const btns = defs.map(d =>
       `<button class="stats-period-tab${d.key === cur ? " active" : ""}" data-scope="${d.key}">${this._t(d.tKey)}</button>`
     ).join("");
-    return `<div class="stats-period-tabs">${btns}</div>`;
+    return `<div class="stats-scope">${btns}</div>`;
   },
 
-  // Two independent steppers like EVCC: a month stepper (month scope only, wraps
-  // freely) and a year stepper (month + year scope, bounded to the data range).
-  // Steppers live on their OWN full-width line (CSS flex-basis:100%), right-aligned,
-  // always reserved (even in 'total') so switching Month/Year/Total never reflows
-  // the controls. The year stepper stays anchored right; month appears to its left
-  // only in month scope. Fixed label widths stop the year from shifting.
-  _renderStatsSteppers(sessions, scope) {
+  // One stepper for the selected period: "September 2026" in the month
+  // scope, "2026" in the year scope, none for the total. It runs from the
+  // first session to the later of the last session and today.
+  _renderStatsStepper(sessions, scope) {
+    if (scope.kind === "total") return "";
     const lang = this._statsLang();
     const now = new Date();
     const { min, max } = this._sessionRange(sessions);
-    const y = scope.year ?? (max ? max.getFullYear() : now.getFullYear());
-    const minY = min ? min.getFullYear() : y;
-    const maxY = max ? max.getFullYear() : y;
-    const one = (group, label, atStart, atEnd) => `
-      <div class="stats-stepper">
-        <button class="stats-step-btn" data-stats-step="prev" data-stats-unit="${group}" ${atStart ? "disabled" : ""} aria-label="prev">‹</button>
-        <span class="stats-step-label stats-step-label--${group}">${label}</span>
-        <button class="stats-step-btn" data-stats-step="next" data-stats-unit="${group}" ${atEnd ? "disabled" : ""} aria-label="next">›</button>
-      </div>`;
-    let inner = "";
-    if (scope.kind !== "total") {
-      const monthLbl = new Date(y, scope.kind === "month" ? scope.month : 0, 1).toLocaleDateString(lang, { month: "long" });
-      const month = scope.kind === "month" ? one("month", monthLbl, false, false) : "";
-      inner = month + one("year", String(y), y <= minY, y >= maxY);
+    const hi = max && max > now ? max : now;
+    const lo = min ?? hi;
+    const idx = (y, m) => y * 12 + m;
+    let label, atStart, atEnd;
+    if (scope.kind === "month") {
+      label   = new Date(scope.year, scope.month, 1).toLocaleDateString(lang, { month: "long", year: "numeric" });
+      atStart = idx(scope.year, scope.month) <= idx(lo.getFullYear(), lo.getMonth());
+      atEnd   = idx(scope.year, scope.month) >= idx(hi.getFullYear(), hi.getMonth());
+    } else {
+      label   = String(scope.year);
+      atStart = scope.year <= lo.getFullYear();
+      atEnd   = scope.year >= hi.getFullYear();
     }
-    return `<div class="stats-steppers">${inner}</div>`;
+    return `
+      <div class="stats-stepper">
+        <button class="stats-step-btn" data-stats-step="prev" ${atStart ? "disabled" : ""} aria-label="${this._t("statsPrev")}">‹</button>
+        <span class="stats-step-label">${escHtml(label)}</span>
+        <button class="stats-step-btn" data-stats-step="next" ${atEnd ? "disabled" : ""} aria-label="${this._t("statsNext")}">›</button>
+      </div>`;
   },
 
-  // EVCC-style stacked multi-series bar chart for the sessions stats. `series` is
-  // an ordered [{key,label,color}]; each bucket carries seg{key:value} + total.
-  // Stashes the data on the instance so the tooltip handler can look it up by index.
-  _renderSessionChart(buckets, series, metric, currency) {
+  // Bar chart of the sessions in the axis style of the battery chart: energy
+  // stacked into solar and grid, cost and CO₂ as one bar. Stashes the data on
+  // the instance so the tooltip handler can look a bar up by index.
+  _renderSessionChart(buckets, metric, currency) {
+    const series = metric === "energy"
+      ? [{ key: "solar", label: this._t("statsGroupSolar"), color: "var(--evcc-green)" },
+         { key: "grid",  label: this._t("grid"),            color: "var(--primary-color)" }]
+      : [{ key: "total", label: this._t(metric === "cost" ? "statsMetricCost" : "statsMetricCo2"), color: "var(--primary-color)" }];
     this._statsChartData = { buckets, series, metric, currency };
     const mf = this._metricFmt(metric, currency);
-    const ML = 22, MR = 6, MT = 20, MB = 18, W = 280, H = 110, CW = W - ML - MR, CH = H - MT - MB;
+    const W = 400, H = 120, ML = 26, MR = 4, MT = 12, MB = 18, CW = W - ML - MR, CH = H - MT - MB;
     const n = buckets.length || 1;
-    const GAP = n > 20 ? 1 : 2;
-    const bw = Math.max(1, Math.floor((CW - GAP * (n - 1)) / n));
-    const offset = Math.round((CW - (bw * n + GAP * (n - 1))) / 2);
-    const barX0 = i => ML + offset + i * (bw + GAP);
+    const slot = CW / n, gap = Math.min(4, slot * 0.25), bw = slot - gap;
     const maxVal = Math.max(...buckets.map(b => b.total || 0), 0.1);
-    const rawStep = maxVal / 5, stepExp = Math.floor(Math.log10(Math.max(rawStep, 0.001))), stepBase = Math.pow(10, stepExp), stepF = rawStep / stepBase;
+    const rawStep = maxVal / 3, stepBase = Math.pow(10, Math.floor(Math.log10(Math.max(rawStep, 0.001)))), stepF = rawStep / stepBase;
     const tickStep = (stepF <= 1 ? 1 : stepF <= 2 ? 2 : stepF <= 5 ? 5 : 10) * stepBase;
     const numTicks = Math.ceil(maxVal / tickStep), niceMax = tickStep * numTicks;
-    const toY = v => MT + CH - Math.round((v / niceMax) * CH);
-    const grid = Array.from({ length: numTicks + 1 }, (_, i) => {
-      const val = i * tickStep, y = toY(val), lbl = tickStep >= 1 ? Math.round(val) : val.toFixed(1);
-      return `<line x1="${ML}" y1="${y}" x2="${W - MR}" y2="${y}" stroke="var(--divider-color,#374151)" stroke-width="${i === 0 ? 1 : 0.5}" opacity="${i === 0 ? 0.9 : 0.35}"/>`
-           + `<text x="${ML - 3}" y="${y + 3}" text-anchor="end" font-size="6.5" fill="var(--secondary-text-color,#888)">${lbl}</text>`;
-    }).join("");
-    const axisLbl = `<text x="${ML - 3}" y="${MT - 8}" text-anchor="end" font-size="6.5" fill="var(--secondary-text-color,#888)">${mf.axis}</text>`;
-    const showEvery = n > 15 ? Math.ceil(n / 7) : 1;
+    const y = v => MT + CH - v / niceMax * CH;
+    const txt = (x, yy, anchor, s) => `<text x="${x}" y="${yy}" text-anchor="${anchor}" font-size="7" fill="var(--secondary-text-color,#888)">${s}</text>`;
+    let grid = "";
+    for (let i = 0; i <= numTicks; i++) {
+      const val = i * tickStep;
+      grid += `<line x1="${ML}" x2="${W - MR}" y1="${y(val)}" y2="${y(val)}" stroke="var(--divider-color,#444)" stroke-width="0.5"/>`
+            + txt(ML - 4, y(val) + 3, "end", tickStep >= 1 ? Math.round(val) : val.toFixed(1));
+    }
+    grid += txt(ML - 4, MT - 5, "end", mf.axis);
     const bars = buckets.map((b, i) => {
-      const x0 = barX0(i), cx = x0 + bw / 2;
-      const op = b.isCurrent ? "0.95" : "0.6";
-      let bottom = toY(0), segs = "";
+      const x0 = ML + i * slot + gap / 2, cx = x0 + bw / 2;
+      let acc = 0, bottom = y(0), segs = "";
       for (const s of series) {
         const val = b.seg[s.key] || 0; if (val <= 0) continue;
-        const h = Math.round((val / niceMax) * CH); if (h <= 0) continue;
-        const y = bottom - h;
-        segs += `<rect x="${x0}" y="${y}" width="${bw}" height="${h}" fill="${s.color}" opacity="${op}"/>`;
-        bottom = y;
+        acc += val;
+        const top = y(acc);
+        segs += `<rect x="${x0.toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${(bottom - top).toFixed(1)}" fill="${s.color}"/>`;
+        bottom = top;
       }
-      const showLabel = (i % showEvery === 0) || i === n - 1;
-      const labelSvg = showLabel ? `<text x="${cx}" y="${H - MB + 12}" text-anchor="middle" font-size="6.5" fill="var(--secondary-text-color,#888)" opacity="${b.isCurrent ? "1" : "0.75"}">${b.labelStr}</text>` : "";
-      const hit = `<rect class="evcc-bar" data-idx="${i}" x="${x0}" y="${MT}" width="${bw}" height="${CH}" fill="transparent" style="cursor:pointer"/>`;
-      return segs + hit + labelSvg;
+      const label = b.tick ? txt(cx.toFixed(1), H - 6, "middle", b.labelStr) : "";
+      const hit = `<rect class="evcc-bar" data-idx="${i}" x="${(ML + i * slot).toFixed(1)}" y="${MT}" width="${slot.toFixed(1)}" height="${CH}" fill="transparent"/>`;
+      return segs + hit + label;
     }).join("");
-    const legend = `<div class="stats-legend">${series.map(s => `<span class="sl-item"><span class="sl-dot" style="background:${s.color}"></span>${escHtml(s.label)}</span>`).join("")}</div>`;
-    return `<div class="evcc-chart-wrap"><svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">${grid}${axisLbl}${bars}</svg><div class="evcc-chart-tooltip" data-morph-keep hidden></div></div>${legend}`;
+    const legend = series.length > 1
+      ? `<div class="stats-legend">${series.map(s => `<span class="sl-item"><span class="sl-dot" style="background:${s.color}"></span>${escHtml(s.label)}</span>`).join("")}</div>`
+      : "";
+    return `<div class="evcc-chart-wrap"><svg viewBox="0 0 ${W} ${H}" class="stats-chart-svg" role="img">${grid}${bars}</svg><div class="evcc-chart-tooltip" data-morph-keep hidden></div></div>${legend}`;
+  },
+
+  // The scope by vehicle or charge point: one row each with a bar split into
+  // solar and grid, scaled to the largest row. Only where there is more than
+  // one of them; the switch only where both have more than one.
+  _renderStatsBreakdown(sessions, scope, k, cur) {
+    const opts = [
+      { key: "vehicle",   tKey: "statsGroupVehicle",   title: "statsByVehicle",   n: k.vehicles },
+      { key: "loadpoint", tKey: "statsGroupLoadpoint", title: "statsByLoadpoint", n: k.loadpoints },
+    ].filter(o => o.n > 1);
+    if (!opts.length) return "";
+    const sel = opts.find(o => o.key === this._statsGroup) ?? opts[0];
+    const rows = this._sessionBreakdown(sessions, scope, sel.key);
+    const max = Math.max(...rows.map(r => r.kwh), 0.1);
+    const pct = v => `${(v / max * 100).toFixed(1)}%`;
+    const kwh = v => `${v >= 100 ? Math.round(v) : v.toFixed(1)} kWh`;
+    const body = rows.map(r => {
+      const meta = [this._t("statsSessionCount", { n: r.count }), r.hasPrice ? `${r.cost.toFixed(2)} ${escHtml(cur)}`.trim() : ""].filter(Boolean).join(" · ");
+      return `
+        <div class="stats-group-row">
+          <div class="stats-group-top">
+            <span class="stats-group-name">${escHtml(r.name)}</span>
+            <span class="stats-group-val">${kwh(r.kwh)} <span class="stats-group-meta">· ${meta}</span></span>
+          </div>
+          <div class="stats-group-bar"><span style="width:${pct(r.solar)};background:var(--evcc-green)"></span><span style="width:${pct(r.kwh - r.solar)};background:var(--primary-color)"></span></div>
+        </div>`;
+    }).join("");
+    return `
+      <div class="stats-section">
+        <div class="stats-section-head">
+          <span class="stats-section-title">${this._t(sel.title)}</span>
+          ${this._renderStatsTabs("group", sel.key, opts)}
+        </div>
+        <div class="stats-groups">${body}</div>
+      </div>`;
   },
 
   _renderStatsBlockSessions(sessions) {
-    const scope   = this._statsScopeObj(sessions);
-    const metric  = this._statsMetric ?? "energy";
-    const grouping = this._statsGroup ?? "solar";
-    const cur     = this._statsCurrency();
-    const k       = this._sessionStats(sessions, scope);
+    const scope = this._statsScopeObj(sessions);
+    const cur   = this._statsCurrency();
+    const k     = this._sessionStats(sessions, scope);
+    const money = v => `${v.toFixed(2)} ${escHtml(cur)}`.trim();
+    const kwh   = v => v >= 100 ? String(Math.round(v)) : v.toFixed(1);
 
-    // KPI tiles (period summary, independent of the selected metric).
-    const kpi = (v, label, fmt, color) => `
-      <div class="stats-kpi">
-        <div class="stats-kpi-val"${color ? ` style="color:${color}"` : ""}>${v != null ? fmt(v) : "–"}</div>
-        <div class="stats-kpi-lbl">${label}</div>
-      </div>`;
-    const kpis = [ kpi(k.kwh, this._t("statsTotalCharged"), v => `${Math.round(v)} kWh`, null) ];
-    if (k.hasSolar) kpis.push(kpi(k.solarPct, this._t("statsSolarShare"), v => `${Math.round(v)} %`, k.solarPct > 0 ? "var(--evcc-green)" : null));
-    if (k.hasPrice) kpis.push(kpi(k.totalCost, this._t("statsTotalCost"), v => `${v.toFixed(2)} ${escHtml(cur)}`, null));
-    if (k.hasCo2)   kpis.push(kpi(k.avgCo2, this._t("statsAvgCo2"), v => `${v >= 10 ? Math.round(v) : v.toFixed(1)} g/kWh`, null));
+    const head = `
+      <div class="lp-header">
+        <span class="lp-name">${escHtml(this._config.title || this._t("statistics"))}</span>
+        ${this._renderStatsStepper(sessions, scope)}
+      </div>
+      ${this._renderStatsScopeTabs()}`;
 
-    // Stacked chart for the selected metric × grouping.
-    const series = this._groupSeries(scope, sessions, grouping);
-    const buckets = this._sessionStacks(sessions, scope, metric, grouping, series);
-    const hasBars = buckets.some(b => (b.total || 0) > 0);
-    const chartHtml = `
-      <div class="stats-chart-section">
-        ${hasBars ? this._renderSessionChart(buckets, series, metric, cur) : `<div class="stats-chart-loading">${this._t("statsNoSessions")}</div>`}
+    // Total, cost and what the solar energy and cheap hours saved; below it
+    // the split into solar and grid.
+    const side = [
+      k.hasPrice  ? `<div class="stats-hero-stat"><span class="stats-lbl">${this._t("cost")}</span><span class="stats-hero-stat-val">${money(k.totalCost)}</span></div>` : "",
+      k.hasSaving ? `<div class="stats-hero-stat"><span class="stats-lbl">${this._t("statsSaved")}</span><span class="stats-hero-stat-val stats-good">${money(k.saved)}</span></div>` : "",
+    ].join("");
+    const solarPct = k.solarPct != null ? Math.round(k.solarPct) : null;
+    const split = k.hasSolar && k.kwh > 0 ? `
+      <div class="stats-split" role="img" aria-label="${solarPct} % ${this._t("statsGroupSolar")}">
+        <span style="width:${(k.solarKwh / k.kwh * 100).toFixed(1)}%;background:var(--evcc-green)"></span><span style="width:${((k.kwh - k.solarKwh) / k.kwh * 100).toFixed(1)}%;background:var(--primary-color)"></span>
+      </div>
+      <div class="stats-split-lbl">
+        <span><b class="stats-good">${solarPct} % ${this._t("statsGroupSolar")}</b> · ${kwh(k.solarKwh)} kWh</span>
+        <span><b class="stats-grid">${this._t("grid")}</b> · ${kwh(k.kwh - k.solarKwh)} kWh</span>
+      </div>` : "";
+    const hero = `
+      <div class="stats-overview">
+      <div class="stats-hero">
+        <div class="stats-hero-main">
+          <span class="stats-lbl">${this._t("statsTotalCharged")}</span>
+          <span class="stats-hero-val">${kwh(k.kwh)}<small>kWh</small></span>
+        </div>
+        ${side ? `<div class="stats-hero-side">${side}</div>` : ""}
+      </div>
+      ${split}
       </div>`;
 
-    return `
-      <div>
-        <div class="lp-header">
-          <span class="lp-name">${escHtml(this._config.title || this._t("statistics"))}</span>
+    if (!k.count) {
+      return `<div class="stats">${head}${hero}<div class="stats-chart-loading">${this._t("statsNoSessions")}</div></div>`;
+    }
+
+    // The chart offers cost and CO₂ only where the sessions carry them.
+    const metrics = [
+      { key: "energy", tKey: "statsMetricEnergy" },
+      k.hasPrice ? { key: "cost", tKey: "statsMetricCost" } : null,
+      k.hasCo2   ? { key: "co2",  tKey: "statsMetricCo2"  } : null,
+    ].filter(Boolean);
+    const metric = metrics.some(m => m.key === this._statsMetric) ? this._statsMetric : "energy";
+    const buckets = this._sessionBuckets(sessions, scope, metric);
+    const chart = `
+      <div class="stats-section">
+        <div class="stats-section-head">
+          <span class="stats-section-title">${this._t("statsHistory")}</span>
+          ${this._renderStatsTabs("metric", metric, metrics)}
         </div>
-        <div class="stats-controls">
-          ${this._renderStatsScopeTabs()}
-          ${this._renderStatsSteppers(sessions, scope)}
-        </div>
-        <div class="stats-controls">
-          ${this._renderStatsMetricTabs()}
-          ${this._renderStatsGroupTabs()}
-        </div>
-        <div class="stats-kpi-row">${kpis.join("")}</div>
-        ${chartHtml}
+        ${this._renderSessionChart(buckets, metric, cur)}
       </div>`;
+
+    const item = (label, text) => `<div class="session-item"><span class="si-label">${label}</span><span class="si-value">${text}</span></div>`;
+    const totals = [
+      item(this._t("statsSessions"), k.count),
+      k.seconds != null ? item(this._t("vehicleChargeDuration"), `${Math.round(k.seconds / 3600)} h`) : "",
+      k.avgPrice != null ? item(this._t("statsAvgPrice"), escHtml(fmtPrice(k.avgPrice, cur, this._hass?.language, { unit: "short" }))) : "",
+      k.avgCo2 != null ? item(this._t("statsAvgCo2"), `${k.avgCo2 >= 10 ? Math.round(k.avgCo2) : k.avgCo2.toFixed(1)} g/kWh`) : "",
+    ].filter(Boolean);
+    // Four do not fit in one row; two rows of two rather than one left alone.
+    const footer = `
+      <div class="session-block stats-totals">
+        <div class="session-grid" style="grid-template-columns:repeat(${totals.length === 4 ? 2 : totals.length}, 1fr)">${totals.join("")}</div>
+      </div>`;
+
+    return `<div class="stats">${head}${hero}${chart}${this._renderStatsBreakdown(sessions, scope, k, cur)}${footer}</div>`;
   },
 
   _renderStatsFooterSessions(sessions) {
@@ -393,7 +490,7 @@ export const statisticsView = {
     if (this._hasCmd("sessions")) {
       const res = this._wsSessions();
       if (res && res.data && Array.isArray(res.data.sessions)) {
-        return this._renderStatsFooterSessions(res.data.sessions);
+        return this._renderStatsFooterSessions(this._statsSessions(res.data.sessions));
       }
       // pending/error → fall through to the entity path below
     }
@@ -430,7 +527,7 @@ export const statisticsView = {
     if (this._hasCmd("sessions")) {
       const res = this._wsSessions();
       if (res && res.data && Array.isArray(res.data.sessions)) {
-        return this._renderStatsBlockSessions(res.data.sessions);
+        return this._renderStatsBlockSessions(this._statsSessions(res.data.sessions));
       }
       if (!res) {
         return `
@@ -446,7 +543,7 @@ export const statisticsView = {
   },
 
   // Listeners of both statistics paths: the period, scope, metric and group
-  // tabs, the month and year steppers and the chart tooltip. Called by
+  // tabs, the period stepper and the chart tooltip. Called by
   // _attachListeners() after every render.
   _attachStatsListeners() {
     this._fresh("button.stats-period-tab").forEach(btn => {
@@ -460,15 +557,18 @@ export const statisticsView = {
       });
     });
 
-    // Two independent steppers: month (wraps 0-11) and year (sessions stats path).
+    // The period stepper (sessions stats path): a year in the year scope, a
+    // month in the month scope, across the turn of the year.
     this._fresh("button[data-stats-step]").forEach(btn => {
       btn.addEventListener("click", () => {
         const dir = btn.dataset.statsStep === "next" ? 1 : -1;
         const now = new Date();
-        if (btn.dataset.statsUnit === "year") {
-          this._statsYearSel = (this._statsYearSel ?? now.getFullYear()) + dir;
+        const year = this._statsYearSel ?? now.getFullYear();
+        if (this._statsScope === "year") {
+          this._statsYearSel = year + dir;
         } else {
           const m = (this._statsMonthSel ?? now.getMonth()) + dir;
+          this._statsYearSel  = year + Math.floor(m / 12);
           this._statsMonthSel = (m + 12) % 12;
         }
         this._render();
@@ -496,9 +596,12 @@ export const statisticsView = {
           const b = buckets[+bar.dataset.idx];
           if (!b || !(b.total > 0)) { tooltip.hidden = true; return; }
           const mf = this._metricFmt(metric, currency);
-          const rows = series.filter(s => (b.seg[s.key] || 0) > 0)
-            .map(s => `<div class="ectt-row">${dot(s.color)}<span class="ectt-name">${escHtml(s.label)}</span><span class="ectt-val">${mf.fmt(b.seg[s.key])} ${mf.unit}</span></div>`).join("");
-          tooltip.innerHTML = `<div class="ectt-header">${escHtml(b.labelFull || b.labelStr)}</div>${rows}<div class="ectt-summary">${mf.fmt(b.total)} ${mf.unit} ${this._t("total")}</div>`;
+          const row = (s, v) => `<div class="ectt-row">${dot(s.color)}<span class="ectt-name">${escHtml(s.label)}</span><span class="ectt-val">${mf.fmt(v)} ${mf.unit}</span></div>`;
+          // A single series is the total already: one row, no summary line.
+          const body = series.length > 1
+            ? series.filter(s => (b.seg[s.key] || 0) > 0).map(s => row(s, b.seg[s.key])).join("") + `<div class="ectt-summary">${mf.fmt(b.total)} ${mf.unit} ${this._t("total")}</div>`
+            : row(series[0], b.total);
+          tooltip.innerHTML = `<div class="ectt-header">${escHtml(b.labelFull || b.labelStr)}</div>${body}`;
           positionTooltip(bar);
           tooltip.dataset.activeBar = barKey(bar);
           return;
@@ -606,11 +709,7 @@ export const statsCss = `
       .stats-step-btn[disabled] { opacity: 0.35; cursor: default; }
       .stats-stepper { gap: 4px; }
       .stats-step-label { text-align: center; font-weight: 600; font-size: 0.85rem; white-space: nowrap; overflow: hidden; }
-      .stats-step-label--month { width: 74px; }
-      .stats-step-label--year { width: 42px; }
-      .stats-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
-      .stats-controls .stats-period-tabs { margin-bottom: 0; }
-      .stats-steppers { flex: 0 0 100%; display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-height: 26px; }
+      .stats-step-label { min-width: 8.5em; }
       .stats-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; margin-top: 8px; font-size: 0.74rem; color: var(--secondary-text-color); }
       .sl-item { display: inline-flex; align-items: center; gap: 5px; }
       .sl-dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
@@ -637,6 +736,44 @@ export const statsCss = `
         height: 75px; display: flex; align-items: center; justify-content: center;
         color: var(--secondary-text-color); font-size: .75rem; opacity: .5;
       }
+      .stats { display: flex; flex-direction: column; gap: 12px; }
+      .stats .lp-header { margin-bottom: 0; }
+      .stats-scope {
+        display: inline-flex; align-self: flex-start; gap: 2px; padding: 2px;
+        border: 1px solid var(--divider-color, #e5e7eb); border-radius: 999px;
+      }
+      .stats-scope .stats-period-tab { border: 0; padding: 2px 12px; }
+      .stats-overview { display: flex; flex-direction: column; gap: 6px; }
+      .stats-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 6px 16px; flex-wrap: wrap; }
+      .stats-hero-main, .stats-hero-stat { display: flex; flex-direction: column; gap: 2px; }
+      .stats-hero-side { display: flex; gap: 18px; }
+      .stats-lbl { font-size: .7rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .05em; }
+      .stats-hero-val { font-size: 1.9rem; font-weight: 700; line-height: 1; }
+      .stats-hero-val small { font-size: .95rem; font-weight: 600; margin-left: 4px; }
+      .stats-hero-stat-val { font-size: .95rem; font-weight: 600; white-space: nowrap; }
+      .stats-good { color: var(--evcc-green); }
+      .stats-grid { color: var(--primary-color); }
+      .stats-split, .stats-group-bar { display: flex; overflow: hidden; background: var(--divider-color, #333); }
+      .stats-split { height: 8px; border-radius: 4px; margin-top: 6px; }
+      .stats-split span, .stats-group-bar span { display: block; height: 100%; }
+      .stats-split-lbl { display: flex; justify-content: space-between; gap: 8px; font-size: .76rem; color: var(--secondary-text-color); }
+      .stats-split-lbl b { font-weight: 600; }
+      .stats-section { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--divider-color, #333); }
+      .stats-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 22px; }
+      .stats-section-title { font-size: .82rem; font-weight: 600; }
+      .stats-section .stats-period-tabs { margin-bottom: 0; }
+      .stats-chart-svg { width: 100%; display: block; }
+      .stats .evcc-chart-wrap { margin-left: 0; }
+      .stats .stats-legend { justify-content: flex-start; margin-top: 0; font-size: .72rem; }
+      .stats-groups { display: flex; flex-direction: column; gap: 10px; }
+      .stats-group-top { display: flex; justify-content: space-between; gap: 8px; font-size: .82rem; }
+      .stats-group-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .stats-group-val { font-weight: 600; white-space: nowrap; }
+      .stats-group-meta { font-weight: 400; font-size: .74rem; color: var(--secondary-text-color); }
+      .stats-group-bar { height: 6px; border-radius: 3px; margin-top: 4px; }
+      .stats .session-block { margin-top: 0; }
+      .stats-totals .session-grid { gap: 10px 16px; }
+      .stats-totals .si-label { white-space: nowrap; }
       .stats-solar-hint {
         font-size: .72rem; color: var(--secondary-text-color);
         margin-top: 10px; padding: 6px 10px;

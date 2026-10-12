@@ -347,6 +347,12 @@ export function validateCardConfig(config) {
     }
   }
 
+  const excluded = c.stats_exclude_loadpoints;
+  if (excluded !== undefined && excluded !== null
+      && (!Array.isArray(excluded) || excluded.some(lp => typeof lp !== "string" || !lp.trim()))) {
+    throw new Error("evcc-card: stats_exclude_loadpoints has to be a list of loadpoint names");
+  }
+
   if (c.vehicle !== undefined && c.vehicle !== null && (typeof c.vehicle !== "string" || !c.vehicle.trim())) {
     throw new Error("evcc-card: vehicle has to be the name of one vehicle");
   }

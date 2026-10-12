@@ -764,6 +764,12 @@ export class EvccCardEditor extends HTMLElement {
       ];
       if (LEGACY_PERIOD_LABELS[c.stats_period]) options.push(tOpt(c.stats_period, LEGACY_PERIOD_LABELS[c.stats_period]));
       fields.push(pick("stats_period", options, c.stats_period || UNSET, { label: this._t("editorStatsPeriodLabel"), section: "content" }));
+      // Loadpoints the statistics leave out, a heat pump for instance. Only
+      // where there is more than one to choose from.
+      if (lps.length > 1 || c.stats_exclude_loadpoints) {
+        fields.push(many("stats_exclude_loadpoints", ...this._listField("stats_exclude_loadpoints", lps),
+          { label: this._t("editorStatsExcludeTitle"), helper: this._t("editorStatsExcludeHint"), section: "content" }));
+      }
     }
 
     // Advanced, folded away: the step of each number slider. A named section of

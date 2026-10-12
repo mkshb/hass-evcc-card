@@ -986,6 +986,29 @@ def stats_period(browser, port, t):
                         f"{name}: reads the {want_legacy} entities", f"got {got_label} / {got_kwh}")
             done(page)
 
+    # stats_exclude_loadpoints leaves the sessions of a loadpoint out of the
+    # stats mode and of the footer. The config names the loadpoint by its key
+    # (wp), the sessions by its evcc title (WP).
+    t.group("stats_exclude_loadpoints - sessions left out")
+    hero = "() => window.__card.shadowRoot.querySelector('.stats-hero-val')?.textContent.trim() || ''"
+    groups = "() => [...window.__card.shadowRoot.querySelectorAll('.stats-group-name')].map(e => e.textContent.trim())"
+    page = new_page(browser, 480, 1400)
+    errors = open_card(page, port, config={"mode": "stats", "stats_period": "total"})
+    all_kwh, all_groups = page.evaluate(hero), page.evaluate(groups)
+    done(page)
+    page = new_page(browser, 480, 1400)
+    errors += open_card(page, port, config={"mode": "stats", "stats_period": "total", "stats_exclude_loadpoints": ["wp"]})
+    ex_kwh, ex_groups = page.evaluate(hero), page.evaluate(groups)
+    t.check(all_kwh.startswith("2532") and ex_kwh.startswith("2431") and not errors,
+            "stats: the excluded loadpoint's energy is not counted", f"{all_kwh} -> {ex_kwh}; {'; '.join(errors)[:120]}")
+    t.check("WP" in all_groups and "WP" not in ex_groups, "stats: the excluded loadpoint leaves the breakdown", f"{all_groups} -> {ex_groups}")
+    done(page)
+    page = new_page(browser, 480, 1400)
+    errors = open_card(page, port, config={"mode": "site", "stats_exclude_loadpoints": ["wp"]})
+    foot = page.locator(in_card(".stats-footer .sf-val")).first.inner_text().strip()
+    t.check(foot.startswith("2431") and not errors, "footer: the excluded loadpoint is not counted", foot)
+    done(page)
+
 
 def renderkey(browser, port, t):
     """The render key decides whether a hass update reaches the DOM.
@@ -1956,6 +1979,10 @@ def editor(browser, port, t):
     t.check(last().get("stats_period") == "month", "stats_period writes config.stats_period", json.dumps(last()))
     fm("stats_period").select_option("__unset")
     t.check("stats_period" not in last(), "stats_period back to its default drops the key", json.dumps(last()))
+    cb("stats_exclude_loadpoints", "wp").check()
+    t.check(last().get("stats_exclude_loadpoints") == ["wp"], "stats_exclude_loadpoints: checking a loadpoint writes it", json.dumps(last()))
+    cb("stats_exclude_loadpoints", "wp").uncheck()
+    t.check("stats_exclude_loadpoints" not in last(), "stats_exclude_loadpoints: emptied, the key goes", json.dumps(last()))
     done(page)
 
     # --- stats_period: what the editor shows must be what the card does ----------
@@ -3055,6 +3082,7 @@ def setconfig(browser, port, t):
         ({"stats_period": "month"}, "a current stats_period"),
         ({"stats_period": "365d"}, "a legacy stats_period"),
         ({"disabled_loadpoints": "dim"}, "a known disabled_loadpoints"),
+        ({"stats_exclude_loadpoints": ["wp"]}, "a loadpoint left out of the statistics"),
         ({"loadpoints": "openwb"}, "a single loadpoint as a string"),
         ({"mode": "loadpoint", "loadpoint": "openwb", "no_plan": True, "no_pv": True}, "one loadpoint, no_plan and no_pv as switches"),
         ({"no_plan": ["openwb"], "no_pv": "wp"}, "no_plan and no_pv as lists"),
@@ -3076,6 +3104,8 @@ def setconfig(browser, port, t):
         ({"size": "huge"}, "size", "an unknown size"),
         ({"disabled_loadpoints": "maybe"}, "disabled_loadpoints", "an unknown disabled_loadpoints"),
         ({"stats_period": "weekly"}, "stats_period", "an unknown stats_period"),
+        ({"stats_exclude_loadpoints": "wp"}, "stats_exclude_loadpoints", "stats_exclude_loadpoints as a string"),
+        ({"stats_exclude_loadpoints": [""]}, "stats_exclude_loadpoints", "a blank loadpoint to leave out"),
         ({"prefix": ""}, "prefix", "an empty prefix"),
         ({"prefix": 5}, "prefix", "a numeric prefix"),
         ({"language": ""}, "language", "an empty language"),
@@ -3535,7 +3565,7 @@ def escaping(browser, port, t):
          {"attrs": {"select.evcc_openwb_mode": {"loadpoint_title": TEXT}}}, ".site-table"),
         ("pv device title",  {"mode": "site"},
          {"attrs": {"sensor.evcc_pv_1_power": {"title": TEXT}}}, ".site-block"),
-        ("session names",    {"mode": "stats"}, {"wsname": TEXT}, ".stats-legend"),
+        ("session names",    {"mode": "stats"}, {"wsname": TEXT}, ".stats"),
         ("config dump",      {"mode": "debug", "title": TEXT}, {}, ".debug-yaml"),
         # An attribute payload: the vehicle ids become <option value="…">.
         ("vehicle option id", {"mode": "plan", "loadpoints": ["openwb"]},
