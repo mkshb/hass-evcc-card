@@ -6,7 +6,8 @@ Logs into HA-Dev with a browser, writes its own dashboard (one view per card mod
 every card with `prefix: evcc_demo_`), renders each mode against the real ha-evcc
 entities and drives changes through the whole stack: card, HA service,
 ha-evcc, evcc API, and back (mode, solar share, vehicle at a loadpoint, charge
-plan, vehicle limit, vehicle pictures). The vehicle mode and its editor are checked against the demo vehicles.
+plan, vehicle limit, vehicle pictures). The vehicle mode and its editor are checked against the demo vehicles,
+the statistics against evcc's own session list.
 Exit code 1 on failure, 2 when the setup is missing.
 
 This is not the mock suite (test/run.py). It needs the running stack and is run
@@ -72,6 +73,12 @@ def slugify(s):
 def demo_loadpoints():
     """[(1-based api index, title, slug)] of the demo loadpoints. ha-evcc slugifies the title."""
     return [(i + 1, lp["title"], slugify(lp["title"])) for i, lp in enumerate(evcc_state()["loadpoints"])]
+
+
+def demo_sessions():
+    """evcc's charging sessions, the list ha-evcc hands the card."""
+    s = evcc("sessions")
+    return s.get("result", s) if isinstance(s, dict) else s
 
 
 def demo_vehicles():
@@ -140,13 +147,22 @@ def ha_state(page, entity_id):
 
 def dashboard_config():
     """One view per mode. The vehicle mode shows one vehicle per card, so its view
-    carries a card per demo vehicle instead of one card for all of them."""
+    carries a card per demo vehicle instead of one card for all of them. The stats
+    view has a second card that leaves the heat pump out of the statistics."""
     slugs = sorted(slug for _, slug in demo_vehicles().values())
     def cards(mode):
         if mode == "vehicle" and slugs:
             return [{"type": "custom:evcc-card", "mode": "vehicle", "prefix": PREFIX, "vehicle": slug} for slug in slugs]
+        if mode == "stats":
+            return [{"type": "custom:evcc-card", "mode": "stats", "prefix": PREFIX},
+                    {"type": "custom:evcc-card", "mode": "stats", "prefix": PREFIX, "stats_exclude_loadpoints": [heat_pump_slug()]}]
         return [{"type": "custom:evcc-card", "mode": mode, "prefix": PREFIX}]
     return {"views": [{"title": mode, "path": mode, "cards": cards(mode)} for mode in MODES]}
+
+
+def heat_pump_slug():
+    """The loadpoint key of the demo heat pump, as the editor writes it into stats_exclude_loadpoints."""
+    return next((slug for _, title, slug in demo_loadpoints() if title == "Heat pump"), "heat_pump")
 
 
 def ensure_dashboard(page):
@@ -713,6 +729,68 @@ def editor(page, t):
     t.check(not ERRORS, "no card errors", "; ".join(ERRORS)[:200])
 
 
+def stats(page, t):
+    """The statistics against evcc's own session list: energy and count of the
+    newest month, the month before it through the stepper, the total, and a
+    second card that leaves the heat pump out by its loadpoint key while the
+    sessions name it by its title."""
+    t.group("e2e stats - the card's sums against evcc's sessions")
+    sessions = demo_sessions()
+    if not sessions:
+        t.fail("evcc has charging sessions to sum up", "the demo returned none"); return
+    # As the card prints the energy: whole kWh from 100 on, one decimal below.
+    fmt = lambda v: str(int(v + 0.5)) if v >= 100 else f"{v:.1f}"
+    def want(keep):
+        sel = [s for s in sessions if keep(s)]
+        return fmt(sum(s.get("chargedEnergy") or 0 for s in sel)), str(len(sel))
+    # created carries the offset of the evcc host, the same day and month the card reads in Europe/Berlin
+    months = sorted({s["created"][:7] for s in sessions})
+    hp_title = "Heat pump"
+    only_hp = {s.get("vehicle") for s in sessions if s.get("loadpoint") == hp_title} \
+              - {s.get("vehicle") for s in sessions if s.get("loadpoint") != hp_title}
+
+    open_view(page, "stats")
+    page.wait_for_timeout(1500)
+    cards = page.locator("evcc-card")
+    read = lambda i: cards.nth(i).evaluate("""el => { const r = el.shadowRoot;
+        return { kwh: r.querySelector('.stats-hero-val')?.firstChild?.textContent.trim() ?? null,
+                 count: r.querySelector('.stats-totals .si-value')?.textContent.trim() ?? null,
+                 step: r.querySelector('.stats-step-label')?.textContent.trim() ?? null,
+                 prev: r.querySelector('.stats-step-btn[data-stats-step="prev"]')?.disabled ?? null,
+                 groups: [...r.querySelectorAll('.stats-group-name')].map(e => e.textContent.trim()) }; }""")
+    click = lambda i, sel: (cards.nth(i).locator(sel).click(), page.wait_for_timeout(400))
+    t.check(cards.count() == 2, "the stats view has the plain card and the one without the heat pump", f"{cards.count()} cards")
+
+    got = read(0)
+    exp = want(lambda s: s["created"][:7] == months[-1])
+    t.check((got["kwh"], got["count"]) == exp, f"month {months[-1]}: energy and sessions as in evcc",
+            f"card {got['kwh']} kWh / {got['count']}, evcc {exp[0]} kWh / {exp[1]}; {got['step']}")
+    if len(months) > 1:
+        click(0, '.stats-step-btn[data-stats-step="prev"]')
+        got = read(0)
+        exp = want(lambda s: s["created"][:7] == months[-2])
+        t.check((got["kwh"], got["count"]) == exp, f"the stepper back to {months[-2]}: energy and sessions as in evcc",
+                f"card {got['kwh']} kWh / {got['count']}, evcc {exp[0]} kWh / {exp[1]}; {got['step']}")
+        if len(months) == 2:
+            t.check(got["prev"] is True, "at the month of the first session the stepper stops", f"prev disabled={got['prev']}")
+
+    click(0, '.stats-period-tab[data-scope="total"]')
+    got = read(0)
+    exp = want(lambda s: True)
+    t.check((got["kwh"], got["count"]) == exp, "total: energy and sessions as in evcc",
+            f"card {got['kwh']} kWh / {got['count']}, evcc {exp[0]} kWh / {exp[1]}")
+
+    click(1, '.stats-period-tab[data-scope="total"]')
+    got = read(1)
+    exp = want(lambda s: s.get("loadpoint") != hp_title)
+    t.check((got["kwh"], got["count"]) == exp, f"stats_exclude_loadpoints [{heat_pump_slug()}]: the heat pump's sessions are left out",
+            f"card {got['kwh']} kWh / {got['count']}, evcc without {hp_title} {exp[0]} kWh / {exp[1]}")
+    left = [g for g in got["groups"] if g in only_hp]
+    t.check(not left, "and what only charges at the heat pump leaves the breakdown", f"groups {got['groups']}, heat pump only {sorted(only_hp)}")
+    page.screenshot(path=str(OUT / "stats-total.png"), full_page=True)
+    t.check(not ERRORS, "no card errors", "; ".join(ERRORS)[:200])
+
+
 FORM = "window.__e2eEd?.shadowRoot.querySelector('ha-form')"
 
 
@@ -730,7 +808,7 @@ def form_pick(page, name, value):
 
 GROUPS = {"smoke": smoke, "roundtrip": roundtrip, "solar_share": solar_share,
           "vehicle": vehicle_view, "vehicle_switch": vehicle_switch, "charge_plan": charge_plan,
-          "vehicle_limit": vehicle_limit, "vehicle_pictures": vehicle_pictures, "editor": editor}
+          "vehicle_limit": vehicle_limit, "vehicle_pictures": vehicle_pictures, "editor": editor, "stats": stats}
 
 
 def main():

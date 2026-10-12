@@ -1009,6 +1009,25 @@ def stats_period(browser, port, t):
     t.check(foot.startswith("2431") and not errors, "footer: the excluded loadpoint is not counted", foot)
     done(page)
 
+    # The period stepper runs across the turn of the year and stops at the
+    # month of the first session (July 2025 in the fixture).
+    t.group("stats - period stepper")
+    page = new_page(browser, 480, 1400)
+    errors = open_card(page, port, config={"mode": "stats", "stats_period": "month"})
+    goto = lambda y, m: page.evaluate(f"() => {{ const c = window.__card; c._statsYearSel = {y}; c._statsMonthSel = {m}; c._lastRenderKey = null; c._render(); }}")
+    label = lambda: page.locator(in_card(".stats-step-label")).inner_text().strip()
+    step = lambda d: (page.locator(in_card(f'.stats-step-btn[data-stats-step="{d}"]')).click(), page.wait_for_timeout(100))
+    goto(2026, 0); step("prev")
+    t.check(label() == "Dezember 2025", "back from January 2026 lands on December 2025", label())
+    step("next")
+    t.check(label() == "Januar 2026", "and forward again on January 2026", label())
+    goto(2025, 6)
+    prev = page.locator(in_card('.stats-step-btn[data-stats-step="prev"]'))
+    t.check(label() == "Juli 2025" and prev.is_disabled() and not errors, "at the month of the first session the stepper stops", f"{label()}, prev disabled={prev.is_disabled()}")
+    page.locator(in_card('.stats-period-tab[data-scope="year"]')).click(); page.wait_for_timeout(100)
+    t.check(label() == "2025" and prev.is_disabled(), "the year scope steps whole years from the same selection", label())
+    done(page)
+
 
 def renderkey(browser, port, t):
     """The render key decides whether a hass update reaches the DOM.
