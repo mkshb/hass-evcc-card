@@ -4177,7 +4177,9 @@ def battery_mode(browser, port, t):
     on its own when ha-evcc offers it, and the grid charge/discharge limits."""
     t.group("battery - history, optimizer, grid limits")
     now = datetime.datetime.fromisoformat(FIXED_TIME).timestamp() * 1000
-    hist_calls = lambda page: [m for m in page.evaluate("window.__hass.wsCalls") if m["type"] == "history/history_during_period"]
+    # the SoC's requests; the grid sensors of the bands are asked for apart
+    hist_calls = lambda page: [m for m in page.evaluate("window.__hass.wsCalls") if m["type"] == "history/history_during_period"
+                               and m.get("entity_ids") == ["sensor.evcc_battery_soc"]]
     ms = lambda iso: datetime.datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp() * 1000
 
     # without the optimizer: two days back to now, read from the recorder
@@ -4369,6 +4371,65 @@ def battery_mode(browser, port, t):
     page.evaluate("() => { window.__moreInfo = []; }")
     page.locator(in_card(".batt-status-soc")).focus(); page.keyboard.press("Enter"); page.wait_for_timeout(100)
     t.check(page.evaluate("window.__moreInfo") == ["sensor.evcc_battery_soc"], "Enter opens more-info", str(page.evaluate("window.__moreInfo")))
+    done(page)
+
+    # grid charging and discharging as bands behind the SoC curve: the past
+    # from the recorder (the mock charges from 1 to 4 and discharges from 18
+    # to 19), the future from the tariff against the limit, fainter
+    bands = lambda page: page.locator(in_card(".batt-chart rect.batt-band")).evaluate_all(
+        "els => els.map(e => e.getAttribute('class'))")
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, mode="battery", battery_ext=True, optimizer=True,
+                       set={"number.evcc_battery_grid_charge_limit": "0.21", "switch.evcc_battery_grid_discharge": "on",
+                            "number.evcc_battery_grid_discharge_limit": "0.09"})
+    got = bands(page)
+    t.check(not errors, "bands: renders without errors", "; ".join(errors)[:200])
+    t.check("batt-band charge" in got and "batt-band discharge" in got, "the past: grid charging and discharging from the recorder", json.dumps(sorted(set(got))))
+    t.check("batt-band charge future" in got and "batt-band discharge future" in got, "the future: the slots that meet the limits", json.dumps(sorted(set(got))))
+    legend = page.locator(in_card(".batt-band-legend")).inner_text()
+    t.check("Netzladen" in legend and "Netzentladen" in legend, "a legend names both", legend)
+    curve = page.locator(in_card(".batt-chart svg > *")).evaluate_all("els => els.findIndex(e => e.tagName === 'path')")
+    first_band = page.locator(in_card(".batt-chart svg > *")).evaluate_all("els => els.findIndex(e => e.classList.contains('batt-band'))")
+    t.check(0 <= first_band < curve, "the bands lie behind the curve", f"{first_band} {curve}")
+    done(page)
+
+    # without a limit and with discharging not allowed nothing lies ahead;
+    # without a forecast the chart ends at now, the past stays
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True, optimizer=True,
+              set={"number.evcc_battery_grid_charge_limit": "unknown", "switch.evcc_battery_grid_discharge": "off"})
+    got = bands(page)
+    t.check(got and not any("future" in c for c in got), "no limit: only the past", json.dumps(sorted(set(got))))
+    done(page)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", set={"number.evcc_battery_grid_charge_limit": "0.21"})
+    got = bands(page)
+    t.check("batt-band charge" in got and not any("future" in c for c in got), "no forecast: the past only", json.dumps(sorted(set(got))))
+    done(page)
+
+    # priority and buffer SoC: a line each in the chart, and their values in
+    # the settings in the same colour, which is what explains the lines; a
+    # value of 0 or 100 has no line and keeps the usual colour
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", set={"select.evcc_priority_soc": "50", "select.evcc_buffer_soc": "80"})
+    refs = page.locator(in_card(".batt-chart line.batt-ref")).evaluate_all("els => els.map(e => [e.getAttribute('class'), e.getAttribute('stroke')])")
+    t.check(refs == [["batt-ref priority", "var(--batt-priority)"], ["batt-ref buffer", "var(--batt-buffer)"]],
+            "a line for the priority and one for the buffer SoC", json.dumps(refs))
+    sel = lambda id: page.locator(in_card(f'select.batt-inline-select[data-entity="{id}"]'))
+    t.check("priority" in sel("select.evcc_priority_soc").get_attribute("class")
+            and "buffer" in sel("select.evcc_buffer_soc").get_attribute("class"),
+            "the values in the text carry the colour of their line")
+    colors = [sel(id).evaluate("e => getComputedStyle(e).color") for id in ("select.evcc_priority_soc", "select.evcc_buffer_soc")]
+    t.check(colors[0] != colors[1], "two different colours", json.dumps(colors))
+    order = page.locator(in_card(".batt-chart svg > *")).evaluate_all(
+        "els => [els.findIndex(e => e.classList.contains('batt-ref')), els.findIndex(e => e.tagName === 'path')]")
+    t.check(0 <= order[0] < order[1], "the lines lie behind the curve", json.dumps(order))
+    done(page)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", set={"select.evcc_priority_soc": "0", "select.evcc_buffer_soc": "100"})
+    t.check(page.locator(in_card(".batt-chart line.batt-ref")).count() == 0, "0 and 100: no lines")
+    t.check(page.locator(in_card("select.batt-inline-select.priority, select.batt-inline-select.buffer")).count() == 0,
+            "and the values keep the usual colour")
     done(page)
 
     # the tab picked last comes back when the card is opened again, per ha-evcc

@@ -244,7 +244,11 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
           const to   = new Date(msg.end_time ?? Date.now()).getTime();
           for (const id of msg.entity_ids ?? []) {
             const pts = [];
-            for (let t = from; t <= to; t += 900000) pts.push({ s: String(mockSoc(t)), lu: t / 1000 });
+            // The battery's grid sensors: charging from the grid from 1 to 4
+            // at night, discharging into it from 18 to 19 in the evening.
+            const on = { "binary_sensor.evcc_battery_grid_charge_active": h => h >= 1 && h < 4,
+                         "binary_sensor.evcc_battery_grid_discharge_active": h => h >= 18 && h < 19 }[id];
+            for (let t = from; t <= to; t += 900000) pts.push({ s: on ? (on(new Date(t).getHours()) ? "on" : "off") : String(mockSoc(t)), lu: t / 1000 });
             out[id] = pts;
           }
           return Promise.resolve(out);

@@ -313,7 +313,9 @@ export const batteryView = {
   // hour, so a window that moves with the clock or with the forecast fetches
   // anew). Past windows don't change; the one reaching "now" is refetched
   // every five minutes.
-  _battHistory(entityId, start, end) {
+  // `convert` turns the recorder's states ({ t, s }) into what is cached; the
+  // default makes the SoC curve of them.
+  _battHistory(entityId, start, end, convert = null) {
     const key    = `${entityId}|${Math.floor(start / HOUR)}`;
     this._battHistCache    ??= {};
     this._battHistInflight ??= {};
@@ -329,8 +331,9 @@ export const batteryView = {
         no_attributes: true,
         significant_changes_only: false,
       }).then(res => {
-        const pts = this._battDownsample((res?.[entityId] ?? [])
-          .map(s => ({ t: (s.lu ?? s.lc ?? 0) * 1000, v: parseFloat(s.s) }))
+        const states = (res?.[entityId] ?? []).map(s => ({ t: (s.lu ?? s.lc ?? 0) * 1000, s: s.s }));
+        const pts = convert ? convert(states, end) : this._battDownsample(states
+          .map(p => ({ t: p.t, v: parseFloat(p.s) }))
           .filter(p => !isNaN(p.v)), HIST_STEP);
         // Keep the cache bounded: paging through 30 days leaves 30 windows.
         const keys = Object.keys(this._battHistCache);
@@ -370,6 +373,55 @@ export const batteryView = {
     if (dur > 0) out.push({ t: b0, v: acc / dur });
     out.push(pts[pts.length - 1]);
     return out;
+  },
+
+  // ── Grid charging and discharging in the chart ─────────────────────────
+  // Behind the SoC curve, as bands: green while the battery charges from the
+  // grid, amber while it discharges into it. The past comes from the recorder
+  // (ha-evcc's active sensors), the future from the tariff against the limit,
+  // the comparison evcc makes slot by slot and the tariff chart below shows.
+  // evcc's own chart has neither; the card adds them so the SoC's rise and
+  // fall can be read against them.
+
+  // The intervals ({ s, e }) in which a binary sensor was on, from its states.
+  // The last state holds on (e: Infinity): the cache is fetched again only
+  // every few minutes, the band runs on to "now" in between.
+  _battOnIntervals(states) {
+    const out = [];
+    states.forEach((p, i) => {
+      if (p.s !== "on") return;
+      const e = i + 1 < states.length ? states[i + 1].t : Infinity;
+      if (e > p.t) out.push({ s: p.t, e });
+    });
+    return out;
+  },
+
+  // The bands of the window: [{ s, e, kind: "charge" | "discharge", future }].
+  _battGridBands(site, win) {
+    const bands = [];
+    const histEnd = Math.min(win.end, win.now);
+    for (const [kind, id] of [["charge", site.battery_grid_charge_active], ["discharge", site.battery_grid_discharge_active]]) {
+      if (!id || !isLive(this._hass, id)) continue;
+      const past = this._battHistory(id, win.start, histEnd, states => this._battOnIntervals(states)) ?? [];
+      for (const b of past) bands.push({ s: b.s, e: Math.min(b.e, histEnd), kind, future: false });
+    }
+    if (win.end > win.now) {
+      const future = (kind, rateKind, limitId, hit) => {
+        const limit = limitId ? parseFloat(stateVal(this._hass, limitId)) : NaN;
+        if (isNaN(limit)) return;
+        for (const r of this._wsForecast(rateKind)?.data?.rates ?? []) {
+          const s = evccDate(r.start)?.getTime(), e = evccDate(r.end)?.getTime();
+          if (s == null || e == null || typeof r.value !== "number" || !hit(r.value, limit)) continue;
+          if (e > win.now && s < win.end) bands.push({ s: Math.max(s, win.now), e: Math.min(e, win.end), kind, future: true });
+        }
+      };
+      future("charge", "planner", site.battery_grid_charge_limit, (v, limit) => v <= limit);
+      // evcc takes a feed-in limit only while discharging into the grid is allowed.
+      if (isOn(this._hass, site.battery_grid_discharge)) {
+        future("discharge", "feedin", site.battery_grid_discharge_limit, (v, limit) => v >= limit);
+      }
+    }
+    return bands.filter(b => b.e > win.start && b.s < win.end);
   },
 
   _renderBattHistory(site, forecast) {
@@ -417,11 +469,28 @@ export const batteryView = {
         `<text x="${x(t)}" y="${H - 6}" text-anchor="middle" font-size="7" fill="var(--secondary-text-color,#888)">${lbl}</text>`;
     }
 
-    // Priority and buffer SoC as reference lines.
-    const ref = (id, color) => {
+    // Priority and buffer SoC as reference lines, in the colours their values
+    // carry in the settings below (_battRefLine), which is what explains them.
+    const ref = (id, kind) => {
       const v = id ? parseFloat(stateVal(this._hass, id)) : NaN;
-      return v > 0 && v < 100 ? `<line x1="${ML}" x2="${W - MR}" y1="${y(v)}" y2="${y(v)}" stroke="${color}" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.8"/>` : "";
+      return this._battRefLine(v) ? `<line class="batt-ref ${kind}" x1="${ML}" x2="${W - MR}" y1="${y(v)}" y2="${y(v)}" stroke="var(--batt-${kind})"
+          stroke-width="1.2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" opacity="0.9"/>` : "";
     };
+
+    // Bands behind everything else, the future ones fainter, as the forecast
+    // is drawn fainter than the history.
+    const bandColor = { charge: "var(--evcc-green)", discharge: "var(--evcc-amber)" };
+    const gridBands = this._battGridBands(site, win);
+    const bands = gridBands.map(b => {
+      const x0 = x(Math.max(b.s, win.start)), x1 = x(Math.min(b.e, win.end));
+      return `<rect class="batt-band ${b.kind}${b.future ? " future" : ""}" x="${x0.toFixed(1)}" y="${MT}" width="${Math.max(0.5, x1 - x0).toFixed(1)}" height="${CH}"
+          fill="${bandColor[b.kind]}" opacity="${b.future ? 0.12 : 0.22}"/>`;
+    }).join("");
+    // Always there, empty while there are no bands: the line it reserves in
+    // CSS keeps the card the same height when the first band shows up.
+    const kinds = ["charge", "discharge"].filter(k => gridBands.some(b => b.kind === k));
+    const legend = `<div class="batt-band-legend">${kinds.map(k =>
+      `<span><span class="batt-band-swatch ${k}"></span>${this._t(k === "charge" ? "battTabGridCharge" : "battTabGridDischarge")}</span>`).join("")}</div>`;
 
     const nowLine = win.now > win.start && win.now < win.end
       ? `<line x1="${x(win.now)}" x2="${x(win.now)}" y1="${MT}" y2="${MT + CH}" stroke="var(--primary-text-color,#fff)" stroke-width="0.6" opacity="0.6"/>` : "";
@@ -434,8 +503,8 @@ export const batteryView = {
             <line x1="0" y1="0" x2="0" y2="4" stroke="var(--evcc-blue)" stroke-width="1.5" opacity="0.35"/>
           </pattern>
         </defs>
-        ${grid}${ticks}
-        ${ref(site.priority_soc, "var(--evcc-blue)")}${ref(site.buffer_soc, "var(--evcc-bolt)")}
+        ${bands}${grid}${ticks}
+        ${ref(site.priority_soc, "priority")}${ref(site.buffer_soc, "buffer")}
         ${points.length > 1 ? `<path d="${area(points)}" fill="var(--evcc-blue)" opacity="0.15"/><path d="${path(points)}" fill="none" stroke="var(--evcc-blue)" stroke-width="1.5" stroke-linejoin="round"/>` : ""}
         ${fut.length > 1 ? `<path d="${area(fut)}" fill="url(#batt-stripes)"/><path d="${path(fut)}" fill="none" stroke="var(--evcc-blue)" stroke-width="1.5" stroke-dasharray="4 3"/>` : ""}
         ${nowLine}
@@ -453,7 +522,7 @@ export const batteryView = {
             <button class="batt-step" data-batt-step="1" ${canNext ? "" : "disabled"} aria-label="${this._t("battNextDay")}">›</button>
           </span>
         </div>
-        <div class="batt-chart${loading ? " loading" : ""}"${moreInfo(site.battery_soc)}>${svg}</div>
+        <div class="batt-chart${loading ? " loading" : ""}"${moreInfo(site.battery_soc)}>${svg}</div>${legend}
       </div>`;
   },
 
@@ -498,6 +567,12 @@ export const batteryView = {
       </div>`;
   },
 
+  // Whether a priority or buffer SoC draws as a line in the chart: 0 and 100
+  // mean none.
+  _battRefLine(v) {
+    return v > 0 && v < 100;
+  },
+
   _renderBattUsage(site) {
     const val = id => {
       if (!id) return null;
@@ -519,11 +594,13 @@ export const batteryView = {
     const bufferStartLabel = o => o === 0 ? this._t("battBufferStartNever")
       : o === 100 ? this._t("battBufferStartFull") : this._t("battBufferStartAbove", { soc: `${o} %` });
 
-    const inlineSelect = (entityId, v, filtered, labelFn) => {
+    // `line`: the value has a line in the chart and takes its colour.
+    const inlineSelect = (entityId, v, filtered, labelFn, line = null) => {
       if (!entityId || v === null || !filtered.length) return "";
       const options = filtered.map(o =>
         `<option value="${o}"${o === v ? " selected" : ""}>${labelFn ? labelFn(o) : `${o} %`}</option>`).join("");
-      return `<select class="batt-inline-select" data-entity="${entityId}">${options}</select>`;
+      const cls = line && this._battRefLine(v) ? ` ${line}` : "";
+      return `<select class="batt-inline-select${cls}" data-entity="${entityId}">${options}</select>`;
     };
 
     const item = (path, title, text, id) => `
@@ -534,12 +611,12 @@ export const batteryView = {
 
     const items = [];
     if (site.priority_soc && priorityVal !== null) {
-      const sel = inlineSelect(site.priority_soc, priorityVal, priorityOpts);
+      const sel = inlineSelect(site.priority_soc, priorityVal, priorityOpts, null, "priority");
       items.push(item(MDI.sun, this._t("battPriorityTitle"),
         this._t(priorityVal > 0 ? "battPriority" : "battPriorityNone", { soc: sel }), site.priority_soc));
     }
     if (site.buffer_soc && bufferVal !== null) {
-      const sel   = inlineSelect(site.buffer_soc, bufferVal, bufferOpts);
+      const sel   = inlineSelect(site.buffer_soc, bufferVal, bufferOpts, null, "buffer");
       const start = inlineSelect(site.buffer_start_soc, bufferStartVal, bufferStartOpts, bufferStartLabel);
       items.push(item(MDI.bolt, this._t("battBufferTitle"),
         this._t(bufferVal < 100 ? "battBuffer" : "battBufferNone", { soc: sel, start }), site.buffer_soc));
@@ -737,7 +814,11 @@ export const batteryView = {
 // Battery mode.
 // Part of the card stylesheet, see src/styles.js.
 export const batteryCss = `
-      .battery-block { padding: 0; display: flex; flex-direction: column; gap: 14px; }
+      .battery-block { padding: 0; display: flex; flex-direction: column; gap: 14px;
+        /* Priority and buffer SoC: their lines in the chart and their values in
+           the settings. Neither the blue of the curve nor the green and amber
+           of grid charging and discharging. */
+        --batt-priority: #a855f7; --batt-buffer: var(--evcc-bolt); }
       .battery-block [data-more-info] { cursor: pointer; }
       .battery-block [data-more-info]:hover { opacity: .75; }
       .battery-block .lp-header { margin-bottom: 0; }
@@ -774,6 +855,11 @@ export const batteryCss = `
       .batt-step-label { min-width: 64px; text-align: center; }
       .batt-chart-svg, .batt-slots-svg { width: 100%; display: block; }
       .batt-chart.loading { opacity: .5; }
+      .batt-band-legend { display: flex; gap: 12px; flex-wrap: wrap; min-height: 1.25em; font-size: .72rem; color: var(--secondary-text-color); }
+      .batt-band-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+      .batt-band-swatch { width: 10px; height: 10px; border-radius: 2px; opacity: .45; }
+      .batt-band-swatch.charge { background: var(--evcc-green); }
+      .batt-band-swatch.discharge { background: var(--evcc-amber); }
       .batt-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
       .batt-tab { padding: 3px 12px; border-radius: 999px; border: 1px solid var(--divider-color, #e5e7eb); background: transparent; color: var(--secondary-text-color); cursor: pointer; font-size: .76rem; font-weight: 600; font-family: inherit; }
       .batt-tab.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
@@ -791,6 +877,9 @@ export const batteryCss = `
       .batt-text-icon { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }
       .batt-text-title { font-size: .82rem; font-weight: 600; margin-bottom: 2px; }
       .batt-text-desc  { font-size: .76rem; color: var(--secondary-text-color); line-height: 1.4; }
+      /* Mixed with the text colour: readable on a light and a dark theme. */
+      .batt-inline-select.priority { color: color-mix(in srgb, var(--batt-priority) 80%, var(--primary-text-color)); border-bottom-color: currentColor; }
+      .batt-inline-select.buffer   { color: color-mix(in srgb, var(--batt-buffer) 65%, var(--primary-text-color)); border-bottom-color: currentColor; }
       .batt-inline-select { color: var(--primary-color, #00b4d8); font-weight: 600; font-size: .76rem; font-family: inherit; background: transparent; border: none; border-bottom: 1px dotted var(--primary-color, #00b4d8); cursor: pointer; padding: 0 2px; outline: none; appearance: none; -webkit-appearance: none; }
       .batt-discharge-toggle { width: 42px; height: 24px; border-radius: 12px; border: none; background: var(--divider-color, #444); position: relative; cursor: pointer; flex-shrink: 0; transition: background .2s; }
       .batt-discharge-toggle.on { background: var(--primary-color, #00b4d8); }
