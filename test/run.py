@@ -2640,6 +2640,22 @@ def discovery(browser, port, t):
         t.check(rows == want and clean and not errors, f"prefix evcc_ next to evcc_demo_: {label}",
                 f"rows={rows} modes={sorted(set(modes))[:4]}; {'; '.join(errors)[:120]}")
         done(page)
+
+    # An entity of someone else whose id only looks like ha-evcc's: a template
+    # sensor "sensor.evcc_optimizer_1_battery_suggested_charge_power" ends in
+    # _charge_power and would turn up as a third loadpoint. Without a unique id
+    # it is missing from the registry, with one it carries its own platform.
+    for platform, label in ((None, "not in the registry"), ("template", "registered by another platform")):
+        page = new_page(browser, 480, 1800)
+        errors = open_card(page, port, config={"mode": "loadpoint"})
+        page.evaluate("""platform => { const h = window.__hass, id = 'sensor.evcc_optimizer_1_battery_suggested_charge_power';
+            if (platform) h.entities = { ...h.entities, [id]: { entity_id: id, platform } };
+            h.states = { ...h.states, [id]: { entity_id: id, state: '3000', attributes: { unit_of_measurement: 'W' } } };
+            window.__card.hass = { ...h }; }""", platform)
+        settle(page)
+        rows = page.locator(in_card(".loadpoint")).count()
+        t.check(rows == 2 and not errors, f"an evcc_-named entity {label} is no loadpoint", f"rows={rows}; {'; '.join(errors)[:120]}")
+        done(page)
     for opt, want_rows, want_badge in (("hide", 1, 0), ("dim", 2, 1), ("show", 2, 0)):
         page = new_page(browser, 480, 1800)
         open_card(page, port, config={"mode": "loadpoint", "disabled_loadpoints": opt}, set={"binary_sensor.evcc_wp_disabled_in_config": "on"})

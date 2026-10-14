@@ -56,6 +56,7 @@ test("vehicles of an installation with a longer prefix stay out", () => {
   const reg = id => [id, { entity_id: id, platform: "evcc_intg" }];
   const entities = Object.fromEntries([
     reg("sensor.evcc_pv_power"), reg("sensor.evcc_demo_pv_power"),
+    reg("sensor.evcc_ex30_configvehicle_soc"), reg("sensor.evcc_demo_vehicle_1_configvehicle_soc"),
   ]);
   const hass = hassOf([
     "sensor.evcc_ex30_configvehicle_soc",
@@ -63,6 +64,20 @@ test("vehicles of an installation with a longer prefix stay out", () => {
   ], entities);
   assert.deepEqual(Object.keys(discoverVehicles(hass, "evcc_")), ["ex30"]);
   assert.deepEqual(Object.keys(discoverVehicles(hass, "evcc_demo_")), ["vehicle_1"]);
+});
+
+test("an entity that only looks like ha-evcc's is no vehicle", () => {
+  const reg = (id, platform = "evcc_intg") => [id, { entity_id: id, platform }];
+  const entities = Object.fromEntries([
+    reg("sensor.evcc_pv_power"), reg("sensor.evcc_ex30_configvehicle_soc"),
+    reg("sensor.evcc_my_car_configvehicle_soc", "template"),
+  ]);
+  const hass = hassOf([
+    "sensor.evcc_ex30_configvehicle_soc",
+    "sensor.evcc_my_car_configvehicle_soc",
+    "sensor.evcc_unregistered_configvehicle_soc",
+  ], entities);
+  assert.deepEqual(Object.keys(discoverVehicles(hass, "evcc_")), ["ex30"]);
 });
 
 test("the vehicle of a card: the name, the list of one the mode started with, or nothing", () => {
