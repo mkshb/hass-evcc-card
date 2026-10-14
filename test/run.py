@@ -4585,6 +4585,9 @@ def battery_mode(browser, port, t):
     refs = page.locator(in_card(".batt-chart line.batt-ref")).evaluate_all("els => els.map(e => [e.getAttribute('class'), e.getAttribute('stroke')])")
     t.check(refs == [["batt-ref priority", "var(--batt-priority)"], ["batt-ref buffer", "var(--batt-buffer)"]],
             "a line for the priority and one for the buffer SoC", json.dumps(refs))
+    dashes = page.locator(in_card(".batt-chart line.batt-ref")).evaluate_all("els => els.map(e => e.getAttribute('stroke-dasharray'))")
+    t.check(len(dashes) == 2 and all(dashes) and dashes[0] != dashes[1],
+            "the two lines differ in their dash pattern, not only in colour", json.dumps(dashes))
     sel = lambda id: page.locator(in_card(f'select.batt-inline-select[data-entity="{id}"]'))
     t.check("priority" in sel("select.evcc_priority_soc").get_attribute("class")
             and "buffer" in sel("select.evcc_buffer_soc").get_attribute("class"),
