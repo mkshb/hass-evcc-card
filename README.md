@@ -673,6 +673,18 @@ The solar share is taken from each charging session's recorded solar percentage.
 
 ---
 
+## Scope and requests
+
+The card shows the values ha-evcc provides and the controls evcc offers. It does not
+compute figures of its own from them, and it is built to work for most installations
+without extra options, not tailored to a single setup.
+
+Requests are welcome. To keep them manageable:
+
+- One topic per issue: what you want and why, in a few sentences.
+- Questions about evcc itself, inverters or other integrations belong in their own projects.
+- A request that helps only a few setups may be closed as not planned.
+
 ## Contributing
 
 Pull requests are welcome! Please open an issue first to discuss what you'd like to change.
