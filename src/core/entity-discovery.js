@@ -159,6 +159,7 @@ export function discoverEntities(hass, prefix = "evcc_") {
   // prefix, its loadpoints would turn up here as "demo_carport" and its
   // vehicles as meters, so anything under a longer installed prefix is skipped.
   const foreign = installedPrefixes(hass).filter(p => p.length > prefixLen && p.startsWith(prefix));
+  const own     = ownEntityCheck(hass);
 
   for (const entityId of Object.keys(hass.states)) {
     const dotIdx = entityId.indexOf(".");
@@ -168,6 +169,7 @@ export function discoverEntities(hass, prefix = "evcc_") {
 
     if (!slug.startsWith(prefix)) continue;
     if (foreign.some(p => slug.startsWith(p))) continue;
+    if (!own(entityId)) continue;
 
     const rest = slug.slice(prefixLen);
 
@@ -215,6 +217,19 @@ export function discoverEntities(hass, prefix = "evcc_") {
   return { loadpoints, site, meters };
 }
 
+// A check whether an entity id is ha-evcc's own. The prefix alone does not
+// tell: a template sensor or another integration may name an entity
+// "sensor.evcc_..._charge_power", and the discovery would take it for a
+// loadpoint. ha-evcc gives every entity a unique id, so each of them sits in
+// the registry that `hass.entities` mirrors; an id missing there or registered
+// by another platform is someone else's. Without the registry (an empty
+// `hass.entities`) every id counts, as before.
+function ownEntityCheck(hass) {
+  const registry = hass?.entities;
+  if (!registry || Object.keys(registry).length === 0) return () => true;
+  return entityId => registry[entityId]?.platform === "evcc_intg";
+}
+
 // The vehicles ha-evcc knows, keyed by the slug it puts into their entity ids
 // (slugify of the vehicle title in evcc). A vehicle shows up here as soon as one
 // of its own entities exists: the configvehicle_* sensors, a repeating plan
@@ -227,6 +242,7 @@ export function discoverVehicles(hass, prefix = "evcc_") {
   const vehicles = {};
   const foreign  = installedPrefixes(hass).filter(p => p.length > prefix.length && p.startsWith(prefix));
   const entry    = slug => (vehicles[slug] ??= { repeating_plans: [] });
+  const own      = ownEntityCheck(hass);
 
   for (const entityId of Object.keys(hass.states)) {
     const dotIdx = entityId.indexOf(".");
@@ -235,6 +251,7 @@ export function discoverVehicles(hass, prefix = "evcc_") {
     const slug   = entityId.slice(dotIdx + 1);
     if (!slug.startsWith(prefix)) continue;
     if (foreign.some(p => slug.startsWith(p))) continue;
+    if (!own(entityId)) continue;
     const rest = slug.slice(prefix.length);
 
     if (domain === "switch") {

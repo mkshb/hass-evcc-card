@@ -986,6 +986,48 @@ def stats_period(browser, port, t):
                         f"{name}: reads the {want_legacy} entities", f"got {got_label} / {got_kwh}")
             done(page)
 
+    # stats_exclude_loadpoints leaves the sessions of a loadpoint out of the
+    # stats mode and of the footer. The config names the loadpoint by its key
+    # (wp), the sessions by its evcc title (WP).
+    t.group("stats_exclude_loadpoints - sessions left out")
+    hero = "() => window.__card.shadowRoot.querySelector('.stats-hero-val')?.textContent.trim() || ''"
+    groups = "() => [...window.__card.shadowRoot.querySelectorAll('.stats-group-name')].map(e => e.textContent.trim())"
+    page = new_page(browser, 480, 1400)
+    errors = open_card(page, port, config={"mode": "stats", "stats_period": "total"})
+    all_kwh, all_groups = page.evaluate(hero), page.evaluate(groups)
+    done(page)
+    page = new_page(browser, 480, 1400)
+    errors += open_card(page, port, config={"mode": "stats", "stats_period": "total", "stats_exclude_loadpoints": ["wp"]})
+    ex_kwh, ex_groups = page.evaluate(hero), page.evaluate(groups)
+    t.check(all_kwh.startswith("2532") and ex_kwh.startswith("2431") and not errors,
+            "stats: the excluded loadpoint's energy is not counted", f"{all_kwh} -> {ex_kwh}; {'; '.join(errors)[:120]}")
+    t.check("WP" in all_groups and "WP" not in ex_groups, "stats: the excluded loadpoint leaves the breakdown", f"{all_groups} -> {ex_groups}")
+    done(page)
+    page = new_page(browser, 480, 1400)
+    errors = open_card(page, port, config={"mode": "site", "stats_exclude_loadpoints": ["wp"]})
+    foot = page.locator(in_card(".stats-footer .sf-val")).first.inner_text().strip()
+    t.check(foot.startswith("2431") and not errors, "footer: the excluded loadpoint is not counted", foot)
+    done(page)
+
+    # The period stepper runs across the turn of the year and stops at the
+    # month of the first session (July 2025 in the fixture).
+    t.group("stats - period stepper")
+    page = new_page(browser, 480, 1400)
+    errors = open_card(page, port, config={"mode": "stats", "stats_period": "month"})
+    goto = lambda y, m: page.evaluate(f"() => {{ const c = window.__card; c._statsYearSel = {y}; c._statsMonthSel = {m}; c._lastRenderKey = null; c._render(); }}")
+    label = lambda: page.locator(in_card(".stats-step-label")).inner_text().strip()
+    step = lambda d: (page.locator(in_card(f'.stats-step-btn[data-stats-step="{d}"]')).click(), page.wait_for_timeout(100))
+    goto(2026, 0); step("prev")
+    t.check(label() == "Dezember 2025", "back from January 2026 lands on December 2025", label())
+    step("next")
+    t.check(label() == "Januar 2026", "and forward again on January 2026", label())
+    goto(2025, 6)
+    prev = page.locator(in_card('.stats-step-btn[data-stats-step="prev"]'))
+    t.check(label() == "Juli 2025" and prev.is_disabled() and not errors, "at the month of the first session the stepper stops", f"{label()}, prev disabled={prev.is_disabled()}")
+    page.locator(in_card('.stats-period-tab[data-scope="year"]')).click(); page.wait_for_timeout(100)
+    t.check(label() == "2025" and prev.is_disabled(), "the year scope steps whole years from the same selection", label())
+    done(page)
+
 
 def renderkey(browser, port, t):
     """The render key decides whether a hass update reaches the DOM.
@@ -1956,6 +1998,10 @@ def editor(browser, port, t):
     t.check(last().get("stats_period") == "month", "stats_period writes config.stats_period", json.dumps(last()))
     fm("stats_period").select_option("__unset")
     t.check("stats_period" not in last(), "stats_period back to its default drops the key", json.dumps(last()))
+    cb("stats_exclude_loadpoints", "wp").check()
+    t.check(last().get("stats_exclude_loadpoints") == ["wp"], "stats_exclude_loadpoints: checking a loadpoint writes it", json.dumps(last()))
+    cb("stats_exclude_loadpoints", "wp").uncheck()
+    t.check("stats_exclude_loadpoints" not in last(), "stats_exclude_loadpoints: emptied, the key goes", json.dumps(last()))
     done(page)
 
     # --- stats_period: what the editor shows must be what the card does ----------
@@ -2594,6 +2640,22 @@ def discovery(browser, port, t):
         t.check(rows == want and clean and not errors, f"prefix evcc_ next to evcc_demo_: {label}",
                 f"rows={rows} modes={sorted(set(modes))[:4]}; {'; '.join(errors)[:120]}")
         done(page)
+
+    # An entity of someone else whose id only looks like ha-evcc's: a template
+    # sensor "sensor.evcc_optimizer_1_battery_suggested_charge_power" ends in
+    # _charge_power and would turn up as a third loadpoint. Without a unique id
+    # it is missing from the registry, with one it carries its own platform.
+    for platform, label in ((None, "not in the registry"), ("template", "registered by another platform")):
+        page = new_page(browser, 480, 1800)
+        errors = open_card(page, port, config={"mode": "loadpoint"})
+        page.evaluate("""platform => { const h = window.__hass, id = 'sensor.evcc_optimizer_1_battery_suggested_charge_power';
+            if (platform) h.entities = { ...h.entities, [id]: { entity_id: id, platform } };
+            h.states = { ...h.states, [id]: { entity_id: id, state: '3000', attributes: { unit_of_measurement: 'W' } } };
+            window.__card.hass = { ...h }; }""", platform)
+        settle(page)
+        rows = page.locator(in_card(".loadpoint")).count()
+        t.check(rows == 2 and not errors, f"an evcc_-named entity {label} is no loadpoint", f"rows={rows}; {'; '.join(errors)[:120]}")
+        done(page)
     for opt, want_rows, want_badge in (("hide", 1, 0), ("dim", 2, 1), ("show", 2, 0)):
         page = new_page(browser, 480, 1800)
         open_card(page, port, config={"mode": "loadpoint", "disabled_loadpoints": opt}, set={"binary_sensor.evcc_wp_disabled_in_config": "on"})
@@ -3055,6 +3117,7 @@ def setconfig(browser, port, t):
         ({"stats_period": "month"}, "a current stats_period"),
         ({"stats_period": "365d"}, "a legacy stats_period"),
         ({"disabled_loadpoints": "dim"}, "a known disabled_loadpoints"),
+        ({"stats_exclude_loadpoints": ["wp"]}, "a loadpoint left out of the statistics"),
         ({"loadpoints": "openwb"}, "a single loadpoint as a string"),
         ({"mode": "loadpoint", "loadpoint": "openwb", "no_plan": True, "no_pv": True}, "one loadpoint, no_plan and no_pv as switches"),
         ({"no_plan": ["openwb"], "no_pv": "wp"}, "no_plan and no_pv as lists"),
@@ -3076,6 +3139,8 @@ def setconfig(browser, port, t):
         ({"size": "huge"}, "size", "an unknown size"),
         ({"disabled_loadpoints": "maybe"}, "disabled_loadpoints", "an unknown disabled_loadpoints"),
         ({"stats_period": "weekly"}, "stats_period", "an unknown stats_period"),
+        ({"stats_exclude_loadpoints": "wp"}, "stats_exclude_loadpoints", "stats_exclude_loadpoints as a string"),
+        ({"stats_exclude_loadpoints": [""]}, "stats_exclude_loadpoints", "a blank loadpoint to leave out"),
         ({"prefix": ""}, "prefix", "an empty prefix"),
         ({"prefix": 5}, "prefix", "a numeric prefix"),
         ({"language": ""}, "language", "an empty language"),
@@ -3535,7 +3600,7 @@ def escaping(browser, port, t):
          {"attrs": {"select.evcc_openwb_mode": {"loadpoint_title": TEXT}}}, ".site-table"),
         ("pv device title",  {"mode": "site"},
          {"attrs": {"sensor.evcc_pv_1_power": {"title": TEXT}}}, ".site-block"),
-        ("session names",    {"mode": "stats"}, {"wsname": TEXT}, ".stats-legend"),
+        ("session names",    {"mode": "stats"}, {"wsname": TEXT}, ".stats"),
         ("config dump",      {"mode": "debug", "title": TEXT}, {}, ".debug-yaml"),
         # An attribute payload: the vehicle ids become <option value="…">.
         ("vehicle option id", {"mode": "plan", "loadpoints": ["openwb"]},
@@ -4520,6 +4585,9 @@ def battery_mode(browser, port, t):
     refs = page.locator(in_card(".batt-chart line.batt-ref")).evaluate_all("els => els.map(e => [e.getAttribute('class'), e.getAttribute('stroke')])")
     t.check(refs == [["batt-ref priority", "var(--batt-priority)"], ["batt-ref buffer", "var(--batt-buffer)"]],
             "a line for the priority and one for the buffer SoC", json.dumps(refs))
+    dashes = page.locator(in_card(".batt-chart line.batt-ref")).evaluate_all("els => els.map(e => e.getAttribute('stroke-dasharray'))")
+    t.check(len(dashes) == 2 and all(dashes) and dashes[0] != dashes[1],
+            "the two lines differ in their dash pattern, not only in colour", json.dumps(dashes))
     sel = lambda id: page.locator(in_card(f'select.batt-inline-select[data-entity="{id}"]'))
     t.check("priority" in sel("select.evcc_priority_soc").get_attribute("class")
             and "buffer" in sel("select.evcc_buffer_soc").get_attribute("class"),

@@ -4,11 +4,16 @@ title: "[FEATURE] "
 labels: ["enhancement"]
 
 body:
+  - type: markdown
+    attributes:
+      value: |
+        **One request per issue, kept short.** The card shows what ha-evcc provides and is meant to work for most installations without extra options. Please read [Scope and requests](https://github.com/mkshb/hass-evcc-card#scope-and-requests) first.
+
   - type: textarea
     id: problem
     attributes:
       label: Problem description
-      description: What problem does this feature solve?
+      description: What problem does this feature solve? A few sentences are enough.
     validations:
       required: true
 

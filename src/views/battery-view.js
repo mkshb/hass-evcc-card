@@ -471,10 +471,13 @@ export const batteryView = {
 
     // Priority and buffer SoC as reference lines, in the colours their values
     // carry in the settings below (_battRefLine), which is what explains them.
+    // The priority line is dotted, the buffer line dashed, so the two differ
+    // without telling the colours apart.
+    const dash = { priority: `stroke-dasharray="1.5 3" stroke-linecap="round"`, buffer: `stroke-dasharray="6 4"` };
     const ref = (id, kind) => {
       const v = id ? parseFloat(stateVal(this._hass, id)) : NaN;
       return this._battRefLine(v) ? `<line class="batt-ref ${kind}" x1="${ML}" x2="${W - MR}" y1="${y(v)}" y2="${y(v)}" stroke="var(--batt-${kind})"
-          stroke-width="1.2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" opacity="0.9"/>` : "";
+          stroke-width="1.2" ${dash[kind]} vector-effect="non-scaling-stroke" opacity="0.9"/>` : "";
     };
 
     // Bands behind everything else, the future ones fainter, as the forecast

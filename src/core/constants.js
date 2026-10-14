@@ -1,4 +1,4 @@
-export const EVCC_CARD_VERSION = "0.9.6";
+export const EVCC_CARD_VERSION = "0.9.7";
 
 export const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -345,6 +345,12 @@ export function validateCardConfig(config) {
     if (typeof v === "string" ? !v.trim() : (!Array.isArray(v) || v.some(lp => typeof lp !== "string"))) {
       throw new Error(`evcc-card: ${key} has to be true or a list of loadpoint names`);
     }
+  }
+
+  const excluded = c.stats_exclude_loadpoints;
+  if (excluded !== undefined && excluded !== null
+      && (!Array.isArray(excluded) || excluded.some(lp => typeof lp !== "string" || !lp.trim()))) {
+    throw new Error("evcc-card: stats_exclude_loadpoints has to be a list of loadpoint names");
   }
 
   if (c.vehicle !== undefined && c.vehicle !== null && (typeof c.vehicle !== "string" || !c.vehicle.trim())) {

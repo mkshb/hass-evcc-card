@@ -99,7 +99,7 @@ All charge points and site entities are **automatically discovered** via the HA 
 | **Repeating plans** | `repeatplan` mode lists evcc's weekly repeating charge plans per vehicle and toggles them on/off (ha-evcc 2026.6.1+) |
 | **Vehicle view** | `vehicle` mode shows one vehicle, plugged in or not: charge level, range, odometer, plans and totals from evcc, plus lock, doors, location and commands from the vehicle's own integration |
 | **Live plan preview** | In `plan` mode, a live chart previews the planned charging window over the upcoming tariff/forecast, with duration, power and average price/CO₂ (ha-evcc 2026.6.x+) |
-| **Session statistics** | `stats` mode is powered directly by evcc's charging-session history: no helper sensors or recorder setup, with metric (energy / cost / CO₂) and grouping (solar / charge point / vehicle) toggles (ha-evcc 2026.6.x+) |
+| **Session statistics** | `stats` mode is powered directly by evcc's charging-session history: no helper sensors or recorder setup, with energy, cost, savings, solar share and a breakdown by vehicle or charge point (ha-evcc 2026.6.x+) |
 | **Heating loadpoints** | Heat-pump / heating loadpoints are detected automatically: no EV charge plan, and the target/limit is shown as a temperature |
 | **Action indicators** | Pending phase switches (1↔3 phase) and PV-charging start/stop shown as inline countdown chips |
 | **Diagnostics** | Built-in `debug` mode collects card / HA / integration state into a copy-paste-ready bug report |
@@ -210,6 +210,7 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 | `hide_disabled_hint` | `boolean` | `false` | `true` hides the warning triangle that the `loadpoint` / `compact` card shows administrators while an entity it needs is disabled in Home Assistant. See [Disabled entities](#disabled-entities) |
 | `slider_steps` | `map` | *(entity)* | Override the step of a number slider per setting (visual editor: **Advanced**), e.g. `{ smart_cost_limit: 0.01, limit_soc: 5 }`. Keys are ha-evcc feature names and are matched exactly. Also sets the increment of the − / + buttons in the direct-input panel. Number entities only. See [Slider settings](#slider-settings) |
 | `stats_period` | `string` | *(see note)* | Statistics period: `month`, `year`, `total`, `none`. Unconfigured, the `stats` mode opens on the most recent month and the footer under `site`/`grid`/`flow` summarises everything; `none` hides that footer. The older values `30d`, `365d` and `thisYear` still work |
+| `stats_exclude_loadpoints` | `list` | | Charge points the session statistics leave out, in the `stats` mode and in the summary row under `site`/`grid`/`flow`, for example a heat pump: `[wp]`. Takes the charge point names the card uses elsewhere, or their evcc titles. Not applied on ha-evcc before 2026.6.x |
 | `prefix` | `string` | *(auto)* | Entity prefix, auto-detected from ha-evcc. With more than one ha-evcc entry the visual editor offers the instance to use; the first entry is the default and needs no `prefix` |
 
 > **Invalid values are rejected.** `mode`, `size`, `disabled_loadpoints` and `stats_period` only accept the values listed above, and `prefix`, `language`, `loadpoint` and `loadpoints` have to be non-empty; `loadpoint` and `loadpoints` cannot be combined. A dashboard carrying something else shows the Home Assistant error card naming the option, instead of quietly falling back to another view.
@@ -365,13 +366,13 @@ Compact site energy overview with a focus on the current grid status:
 
 ### `stats`
 
-Charging statistics, powered directly by evcc's **charging-session history** (ha-evcc 2026.6.x+). No helper sensors and no HA Recorder setup are required: the card reads the full session list once via the integration's WebSocket data API and computes everything in the browser. The header mirrors evcc's own statistics view:
+Charging statistics, powered directly by evcc's **charging-session history** (ha-evcc 2026.6.x+). No helper sensors and no HA Recorder setup are required: the card reads the full session list once via the integration's WebSocket data API and computes everything in the browser.
 
-- **Period:** **Month**, **Year** or **Total**, each with back/forward steppers to pick the exact month and year
-- **Metric:** switch the bars between **Energy** (kWh), **Cost** and **CO₂**
-- **Grouping:** stack the bars by **Solar** vs grid, by **charge point** or by **vehicle**, with a colour legend
-- **Tooltips:** hover or tap a bar to see every series and the total for that day, month or year
-- KPI tiles above the chart summarise the selected period (charged energy, solar share, cost, CO₂)
+- **Period:** **Month**, **Year** or **Total**, with one stepper in the header to pick the month or year
+- **Overview:** charged energy, cost and the amount **saved** against the grid price evcc compares with, plus a bar splitting the energy into **solar** and **grid**
+- **History:** bars for the period, energy split into solar and grid; switch them to **Cost** or **CO₂** where the sessions carry those values. Hover or tap a bar for its values
+- **By vehicle / by charge point:** one bar per vehicle or charge point with energy, sessions and cost. Shown when there is more than one of them
+- **Totals:** sessions, charge duration, average price and, where available, average CO₂
 
 | Period | Bars |
 |---|---|
@@ -382,9 +383,9 @@ Charging statistics, powered directly by evcc's **charging-session history** (ha
 - The data comes from a single request that is cached for 5 minutes on the card and additionally cached inside the integration, so switching periods, metrics and groupings is instant and puts practically no load on evcc.
 - A compact summary also appears as a footer row at the bottom of `site` and `grid` cards. The period shown there is controlled via `stats_period` (default: `total`); set `stats_period` to `none` to hide the footer entirely.
 
-> **Heating loadpoints** (heat pumps) are included like any other loadpoint; with the **charge point** or **vehicle** grouping they show up as their own series.
+> **Heating loadpoints** (heat pumps) are included like any other loadpoint and show up in the breakdown by vehicle or charge point. To leave one out, list it in `stats_exclude_loadpoints`.
 
-> **Note on the Solar grouping:** for the **Cost** and **CO₂** metrics the solar share carries no marginal cost/emissions, so those are attributed to the grid series (only **Energy** is split proportionally into solar and grid).
+> **Saved** is what the charged energy would have cost at the grid price evcc compares against (`referencePricePerKWh` of each session), minus what it actually cost. Sessions without that price are left out of it.
 
 <a name="enabling-stat-periods"></a>
 
@@ -671,6 +672,18 @@ Translations are stored as simple JSON files in the `dist/locales/` folder. Addi
 The solar share is taken from each charging session's recorded solar percentage. Sessions that evcc recorded before it started tracking that value are missing the underlying data, so a correct solar share cannot be calculated retroactively. Only sessions recorded after upgrading to a recent evcc/ha-evcc version will show solar share data. (On the older entity-based statistics fallback, the solar split additionally requires `sensor.evcc_stat_total_solar_k_wh_template`, introduced in ha-evcc **2026.3.3**.)
 
 ---
+
+## Scope and requests
+
+The card shows the values ha-evcc provides and the controls evcc offers. It does not
+compute figures of its own from them, and it is built to work for most installations
+without extra options, not tailored to a single setup.
+
+Requests are welcome. To keep them manageable:
+
+- One topic per issue: what you want and why, in a few sentences.
+- Questions about evcc itself, inverters or other integrations belong in their own projects.
+- A request that helps only a few setups may be closed as not planned.
 
 ## Contributing
 
