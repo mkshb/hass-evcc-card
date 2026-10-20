@@ -4258,6 +4258,16 @@ def battery_mode(browser, port, t):
     t.check(c and ms(c["start_time"]) == now - 48 * 3600e3 and ms(c["end_time"]) == now,
             "window: 48 h back to now", json.dumps(c))
     t.check(page.locator(in_card(".batt-chart-svg path[stroke-dasharray]")).count() == 0, "no forecast line without the optimizer")
+    # readability (#203): the weekdays on the axis bold, the numbers not; the
+    # stepper as bold as the section title
+    labels = page.evaluate("""() => [...document.querySelector('evcc-card').shadowRoot.querySelectorAll('.batt-chart-svg text')]
+        .map(e => ({ s: e.textContent, bold: e.getAttribute('font-weight') === '600' }))""")
+    days = [l["s"] for l in labels if not l["s"].isdigit()]
+    t.check(days == ["Do", "Fr"] and all(l["bold"] != l["s"].isdigit() for l in labels),
+            "axis: weekdays bold, hours and percent not", json.dumps(labels))
+    weights = page.evaluate("""() => ['.batt-section-title', '.batt-step-label'].map(s =>
+        getComputedStyle(document.querySelector('evcc-card').shadowRoot.querySelector(s)).fontWeight)""")
+    t.check(weights == ["600", "600"], "stepper label as bold as the section title", json.dumps(weights))
     t.check(not any(m["type"] == "evcc_intg/optimizer" for m in page.evaluate("window.__hass.wsCalls")),
             "no optimizer request when ha-evcc does not offer it")
     t.check(page.locator(in_card(".batt-optimizer")).count() == 0, "no optimizer row")

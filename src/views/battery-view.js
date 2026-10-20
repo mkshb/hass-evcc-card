@@ -457,16 +457,19 @@ export const batteryView = {
       `<line x1="${ML}" x2="${W - MR}" y1="${y(v)}" y2="${y(v)}" stroke="var(--divider-color,#444)" stroke-width="0.5"/>` +
       `<text x="${ML - 4}" y="${y(v) + 3}" text-anchor="end" font-size="7" fill="var(--secondary-text-color,#888)">${v}</text>`).join("");
 
-    // Hour ticks every six hours; midnight carries the weekday.
+    // Hour ticks every six hours; midnight carries the weekday, bold and in the
+    // text colour, as the days are what the eye finds its way by.
     const lang = this._hass?.language || "en";
     let ticks = "";
     const first = new Date(win.start); first.setMinutes(0, 0, 0);
     for (let t = first.getTime() + HOUR; t < win.end; t += HOUR) {
       const d = new Date(t);
       if (d.getHours() % 6) continue;
-      const lbl = d.getHours() === 0 ? d.toLocaleDateString(lang, { weekday: "short" }) : `${d.getHours()}`;
-      ticks += `<line x1="${x(t)}" x2="${x(t)}" y1="${MT}" y2="${MT + CH}" stroke="var(--divider-color,#444)" stroke-width="${d.getHours() === 0 ? 0.8 : 0.3}"/>` +
-        `<text x="${x(t)}" y="${H - 6}" text-anchor="middle" font-size="7" fill="var(--secondary-text-color,#888)">${lbl}</text>`;
+      const midnight = d.getHours() === 0;
+      const lbl  = midnight ? d.toLocaleDateString(lang, { weekday: "short" }) : `${d.getHours()}`;
+      const font = midnight ? `font-weight="600" fill="var(--primary-text-color,#fff)"` : `fill="var(--secondary-text-color,#888)"`;
+      ticks += `<line x1="${x(t)}" x2="${x(t)}" y1="${MT}" y2="${MT + CH}" stroke="var(--divider-color,#444)" stroke-width="${midnight ? 0.8 : 0.3}"/>` +
+        `<text x="${x(t)}" y="${H - 6}" text-anchor="middle" font-size="7" ${font}>${lbl}</text>`;
     }
 
     // Priority and buffer SoC as reference lines, in the colours their values
@@ -992,7 +995,7 @@ export const batteryCss = `
       .batt-section { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--divider-color, #333); }
       .batt-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
       .batt-section-title { font-size: .82rem; font-weight: 600; }
-      .batt-stepper { display: inline-flex; align-items: center; gap: 4px; font-size: .74rem; color: var(--secondary-text-color); }
+      .batt-stepper { display: inline-flex; align-items: center; gap: 4px; font-size: .82rem; font-weight: 600; color: var(--primary-text-color); }
       .batt-step { background: none; border: none; color: var(--primary-text-color); font-size: 1rem; line-height: 1; padding: 2px 6px; cursor: pointer; border-radius: 4px; }
       .batt-step:disabled { opacity: .3; cursor: default; }
       .batt-step-label { min-width: 64px; text-align: center; }
