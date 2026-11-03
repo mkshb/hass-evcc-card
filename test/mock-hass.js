@@ -27,6 +27,8 @@
 //            (button.evcc_optimize)
 //   optimizer: true  ha-evcc offers evcc_intg/optimizer and evcc's optimizer reports a
 //            battery forecast (generated from now on, like the recorder history)
+//   capsVersion: "2026.6.3"  the version evcc_intg/capabilities reports; 2026.6.3
+//            also leaves out the loadpoint list, as that release did
 // A battery SoC by time of day: charges from 9 to 14 h, discharges overnight.
 function mockSoc(t) {
   const h = new Date(t).getHours() + new Date(t).getMinutes() / 60;
@@ -34,7 +36,7 @@ function mockSoc(t) {
   return Math.max(5, Math.min(100, Math.round(v)));
 }
 
-export async function createMockHass({ batteryExt = false, optimizer = false, language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, admin = true, drop = [], vehicleDevice = true, optimize = false } = {}) {
+export async function createMockHass({ batteryExt = false, optimizer = false, language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, admin = true, drop = [], vehicleDevice = true, optimize = false, capsVersion = null } = {}) {
   const base = new URL("./fixtures/", import.meta.url);
   const json = (p) => fetch(new URL(p, base)).then(r => r.ok ? r.json() : Promise.reject(new Error(`fixture ${p}: ${r.status}`)));
 
@@ -131,7 +133,9 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
   };
 
   const fx = ws ? {
-    capabilities: await json("ws/capabilities.json").then(c => optimizer ? { ...c, commands: [...c.commands, "optimizer"] } : c),
+    capabilities: await json("ws/capabilities.json").then(c => optimizer ? { ...c, commands: [...c.commands, "optimizer"] } : c)
+      // An older ha-evcc by its version; 2026.6.3 also lacks the loadpoint list.
+      .then(c => { if (!capsVersion) return c; const o = { ...c, version: capsVersion }; if (capsVersion === "2026.6.3") delete o.loadpoints; return o; }),
     sessions:     await json("ws/sessions.json"),
     forecast: {
       grid:    await json("ws/forecast_grid.json"),

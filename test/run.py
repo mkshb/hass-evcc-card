@@ -151,8 +151,9 @@ def done(page):
 
 def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="de", ws=True, set=None, disable=None,
               rename=None, attrs=None, tariff=None, second=None, wsname=None, admin=True, drop=None,
-              vehicle_device=True, optimizer=False, battery_ext=False, optimize=False):
+              vehicle_device=True, optimizer=False, battery_ext=False, optimize=False, caps_version=None):
     q = {"w": width, "lang": lang}
+    if caps_version: q["capsver"] = caps_version
     if optimizer: q["optimizer"] = 1
     if battery_ext: q["battext"] = 1
     if optimize: q["optimize"] = 1
@@ -255,7 +256,7 @@ def min_version(browser, port, t):
     page.wait_for_timeout(300)
     note = page.locator(in_card(".plan-preview .plan-preview-info"))
     text = note.inner_text().strip() if note.count() else ""
-    t.check("2026.6.3" in text and not errors, "plan preview names the required ha-evcc in its place", text or "; ".join(errors)[:300])
+    t.check("2026.6.4" in text and not errors, "plan preview names the required ha-evcc in its place", text or "; ".join(errors)[:300])
     t.check(page.locator(in_card(".plan-preview svg")).count() == 0, "no preview chart without the API")
     done(page)
 
@@ -263,9 +264,9 @@ def min_version(browser, port, t):
     errors = open_card(page, port, mode="debug", lang="en", ws=False)
     page.wait_for_timeout(300)
     body = page.locator(in_card("ha-card")).inner_text()
-    t.check("older than 2026.6.3" in body and not errors, "debug view names the minimum ha-evcc", "found" if "older than 2026.6.3" in body else body[:200])
+    t.check("older than 2026.6.4" in body and not errors, "debug view names the minimum ha-evcc", "found" if "older than 2026.6.4" in body else body[:200])
     report = page.evaluate("window.__card._buildDebugReport()") or ""
-    t.check("older than 2026.6.3" in report, "debug report names the minimum ha-evcc", "found" if "older than 2026.6.3" in report else report[:200])
+    t.check("older than 2026.6.4" in report, "debug report names the minimum ha-evcc", "found" if "older than 2026.6.4" in report else report[:200])
     done(page)
 
     page = new_page(browser, 480, 900)
@@ -274,7 +275,7 @@ def min_version(browser, port, t):
     page.locator("#host").screenshot(path=str(OUT / "stats-too-old.png"))
     note = page.locator(in_card(".stats .stats-note"))
     text = note.inner_text().strip() if note.count() else ""
-    t.check("2026.6.3" in text and not errors, "stats mode names the required ha-evcc in its place", text or "; ".join(errors)[:300])
+    t.check("2026.6.4" in text and not errors, "stats mode names the required ha-evcc in its place", text or "; ".join(errors)[:300])
     # Probing capabilities is how the card finds out the API is missing; asking
     # the recorder or a data command after that reply would be the bug.
     calls = [c["type"] for c in page.evaluate("window.__hass.wsCalls")]
@@ -288,7 +289,7 @@ def min_version(browser, port, t):
     page.locator("#host").screenshot(path=str(OUT / "site-footer-too-old.png"))
     foot = page.locator(in_card(".stats-footer .stats-note"))
     text = foot.inner_text().strip() if foot.count() else ""
-    t.check("2026.6.3" in text and page.locator(in_card(".stats-footer .sf-items")).count() == 0 and not errors,
+    t.check("2026.6.4" in text and page.locator(in_card(".stats-footer .sf-items")).count() == 0 and not errors,
             "the footer under site names the required ha-evcc instead of figures", text or "; ".join(errors)[:300])
     done(page)
 
@@ -298,10 +299,44 @@ def min_version(browser, port, t):
     t.check(page.locator(in_card(".stats-footer")).count() == 0 and not errors, "stats_period: none hides the footer note too")
     done(page)
 
+    # ha-evcc 2026.6.3 has the API but not the loadpoint list: the plan preview
+    # cannot name the loadpoint and says so, the statistics work as they are.
+    page = new_page(browser, 480, 900)
+    errors = open_card(page, port, config={"mode": "plan", "loadpoint": "openwb"}, lang="en", caps_version="2026.6.3")
+    page.wait_for_timeout(300)
+    note = page.locator(in_card(".plan-preview .plan-preview-info"))
+    text = note.inner_text().strip() if note.count() else ""
+    t.check("2026.6.4" in text and not errors, "2026.6.3: plan preview names the required ha-evcc", text or "; ".join(errors)[:300])
+    calls = [c["type"] for c in page.evaluate("window.__hass.wsCalls")]
+    t.check("evcc_intg/plan_preview" not in calls, "2026.6.3: no preview is asked for a guessed loadpoint", str(calls)[:200])
+    done(page)
+
+    # A guest vehicle plans in kWh on the loadpoint, which needs the evcc index.
+    page = new_page(browser, 480, 900)
+    errors = open_card(page, port, config={"mode": "plan", "loadpoint": "openwb"}, lang="en", caps_version="2026.6.3",
+                       set={"select.evcc_openwb_vehicle_name": "null"})
+    page.locator(in_card("button.plan-btn.save")).click(); page.wait_for_timeout(300)
+    svc = [c for c in page.evaluate("window.__hass.serviceCalls") if "plan" in c.get("service", "")]
+    err = page.locator(in_card(".plan-error"))
+    t.check(not svc and err.count() == 1 and not errors, "2026.6.3: a kWh plan writes nothing to a guessed loadpoint and says so",
+            json.dumps(svc)[:200] or (err.inner_text() if err.count() else ""))
+    done(page)
+
+    page = new_page(browser, 480, 900)
+    errors = open_card(page, port, config={"mode": "stats"}, lang="en", caps_version="2026.6.3")
+    page.wait_for_timeout(300)
+    t.check(page.locator(in_card(".stats-note")).count() == 0 and page.locator(in_card(".stats-hero-val")).count() == 1 and not errors,
+            "2026.6.3: the statistics work without a note", "; ".join(errors)[:200])
+    page.evaluate("window.__card._render()")
+    body = page.evaluate("window.__card._buildDebugReport()") or ""
+    t.check("too old" in body and "Loadpoint index map: **missing**" in body, "2026.6.3: debug report flags the version and the missing index map",
+            body[body.find("Integration version"):][:200])
+    done(page)
+
     page = new_page(browser, 480, 900)
     errors = open_card(page, port, config={"mode": "plan", "loadpoint": "openwb"}, lang="en")
     page.wait_for_timeout(300)
-    t.check("2026.6.3" not in page.locator(in_card("ha-card")).inner_text() and not errors,
+    t.check("2026.6.4" not in page.locator(in_card("ha-card")).inner_text() and not errors,
             "a current ha-evcc shows no version note", "; ".join(errors)[:300])
     done(page)
 
@@ -2322,7 +2357,7 @@ def contracts(browser, port, t):
     done(page)
 
     # Deleting needs no kWh target, only the 1-based evcc loadpoint index, which the
-    # card resolves through the capabilities command (here: the sorted-name fallback).
+    # card resolves through the loadpoint list of the capabilities command.
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]},
               set={"select.evcc_openwb_vehicle_name": "null", "binary_sensor.evcc_openwb_plan_active": "on"})

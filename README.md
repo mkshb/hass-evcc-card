@@ -110,7 +110,7 @@ All charge points and site entities are **automatically discovered** via the HA 
 ## Prerequisites
 
 - [Home Assistant](https://www.home-assistant.io/) (2023.x or newer)
-- [ha-evcc](https://github.com/marq24/ha-evcc) **2026.6.3 or newer**, installed and configured, with a running [EVCC](https://evcc.io/) instance connected to it. This is the first release with the WebSocket data API that the plan preview and the statistics rely on. On an older ha-evcc the plan preview and the statistics show a note with the required version instead, and the debug view says so too.
+- [ha-evcc](https://github.com/marq24/ha-evcc) **2026.6.4 or newer**, installed and configured, with a running [EVCC](https://evcc.io/) instance connected to it. This is the first release whose WebSocket data API delivers what the plan preview, plans in kWh and the statistics rely on. On an older ha-evcc the plan preview and the statistics show a note with the required version instead, and the debug view says so too.
 - For the SoC forecast of the optimizer, grid discharging and the clear button of the grid charge limit in the `battery` mode, ha-evcc **2026.10.1 or newer** is required, for the button that recomputes the forecast **2026.10.2 or newer**.
 
 ---
@@ -199,7 +199,6 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 | `vehicle_image_charging` | `string` | *(none)* | `vehicle` mode: the picture while the car charges at an evcc charge point, same forms as `vehicle_image` |
 | `vehicle_actions` | `boolean` | `false` | `vehicle` mode: `true` lets the card send commands to the vehicle (lock, climate, the device's buttons) |
 | `vehicle_entities` | `map` | *(auto)* | `vehicle` mode: assigns entities to the roles of the vehicle by hand, see [Assigning entities](#assigning-entities) |
-| `plan_loadpoint_index` | `map` | *(auto)* | **YAML only** — Override the evcc loadpoint index (1-based) used for the plan preview, e.g. `{ openwb: 1, wp: 2 }`. Only needed if the auto-detected order does not match evcc |
 | `no_pv` | `boolean` / `list` | *(none)* | YAML only. `true` for the charge point(s) of the card, or a list of charge point names: treat them as having **no PV system**: the **Smart** mode is offered only when a dynamic tariff is configured (otherwise only **Off** / **Fast** remain), the solar share slider is hidden. evcc itself does this only when neither a PV meter nor a grid meter is configured, so most installations do not need it. See [Charge modes](#charge-modes) below |
 | `disabled_loadpoints` | `string` | `hide` | How to treat charge points disabled in the evcc configuration (ha-evcc 2026.8.8+): `hide` removes them from the card, `dim` shows them grayed out with a "Disabled" badge, `show` keeps the previous behavior |
 | `site_details` | `string` | `expanded` | `collapsed` to hide the IN/OUT detail table by default in `site` and `flow` mode |

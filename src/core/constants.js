@@ -1,9 +1,11 @@
 export const EVCC_CARD_VERSION = "0.10.0";
 
-// The oldest ha-evcc the card supports: the first release with the WebSocket
-// data API (evcc_intg/capabilities, sessions, plan_preview). On an older one
-// the capabilities probe fails and each feature of the API says so in its place.
-export const HA_EVCC_MIN_VERSION = "2026.6.3";
+// The oldest ha-evcc the card supports: the first release whose WebSocket data
+// API (evcc_intg/capabilities, sessions, plan_preview) also names the evcc index
+// of each loadpoint, which the plan preview and plans in kWh need. 2026.6.3
+// brought the API without that list. On an older ha-evcc each feature that
+// misses something says so in its place.
+export const HA_EVCC_MIN_VERSION = "2026.6.4";
 
 export const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },

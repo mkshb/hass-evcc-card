@@ -1,4 +1,6 @@
 import { discoverEntities } from "./entity-discovery.js";
+import { HA_EVCC_MIN_VERSION } from "./constants.js";
+import { versionBelow } from "../utils/version.js";
 import { stateVal } from "../utils/state.js";
 
 // ha-evcc WebSocket data API (capabilities, forecast, sessions, plan_preview). Methods are mixed into EvccCard.prototype.
@@ -13,9 +15,11 @@ export const evccApi = {
   },
 
   // ha-evcc older than HA_EVCC_MIN_VERSION: the capabilities probe is done and
-  // brought no command. False while it runs, so nothing flashes on page load.
+  // brought no command (before 2026.6.3) or an older version (2026.6.3, which
+  // lacks the loadpoint list). False while it runs, so nothing flashes on page load.
   _haEvccTooOld() {
-    return !!this._capsLoaded && !this._caps?.commands?.length;
+    if (!this._capsLoaded) return false;
+    return !this._caps?.commands?.length || versionBelow(this._caps.version, HA_EVCC_MIN_VERSION);
   },
 
   // Probe capabilities once. Older ha-evcc versions lack the command and the
@@ -195,26 +199,12 @@ export const evccApi = {
     return null;
   },
 
-  // plan_preview expects the integer evcc loadpoint index (1-based), but the card
-  // keys loadpoints by name slug. Resolution order:
-  //   1. authoritative map from evcc_intg/capabilities (ha-evcc 2026.6.x+)
-  //   2. explicit config override  plan_loadpoint_index: { <slug>: <int> }
-  //   3. fallback heuristic: position in the deterministically sorted discovery list
-  // The map is exact; the override + heuristic only cover older integrations that
-  // do not yet return the loadpoint list in their capabilities response.
-  // Returns the 1-based index, or null if the loadpoint is unknown.
+  // The evcc loadpoint index (1-based) that plan_preview and the loadpoint plan
+  // services expect, while the card keys loadpoints by name slug. Only the list
+  // from evcc_intg/capabilities knows it; guessing would show or write the plan
+  // of another loadpoint. Returns null if the loadpoint is not in that list.
   _lpIndex(lpName) {
-    const fromCaps = this._lpIndexMap?.[lpName];
-    if (fromCaps != null) return fromCaps;
-    const override = this._config?.plan_loadpoint_index;
-    if (override && override[lpName] != null) {
-      const n = parseInt(override[lpName], 10);
-      if (n > 0) return n;
-    }
-    const prefix = this._getPrefix();
-    const names = Object.keys(discoverEntities(this._hass, prefix).loadpoints).sort();
-    const idx = names.indexOf(lpName);
-    return idx >= 0 ? idx + 1 : null;
+    return this._lpIndexMap?.[lpName] ?? null;
   },
 
   // Debounced plan preview fetch — called after SOC/time/vehicle changes.

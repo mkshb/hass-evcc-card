@@ -272,7 +272,7 @@ export const planningView = {
 
   // Plan preview: shows charging slot chart + summary when SOC and time are set.
   _renderPlanPreview(lpName) {
-    if (!this._hasCmd("plan_preview")) {
+    if (this._haEvccTooOld() || !this._hasCmd("plan_preview")) {
       return this._haEvccTooOld()
         ? `<div class="plan-preview"><div class="plan-preview-info">${escHtml(this._t("planPreviewTooOld", { ver: HA_EVCC_MIN_VERSION }))}</div></div>`
         : "";
