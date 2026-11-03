@@ -111,6 +111,7 @@ All charge points and site entities are **automatically discovered** via the HA 
 
 - [Home Assistant](https://www.home-assistant.io/) (2023.x or newer)
 - [ha-evcc](https://github.com/marq24/ha-evcc) **2026.6.4 or newer**, installed and configured, with a running [EVCC](https://evcc.io/) instance connected to it. This is the first release whose WebSocket data API delivers what the plan preview, plans in kWh and the statistics rely on. On an older ha-evcc the plan preview and the statistics show a note with the required version instead, and the debug view says so too.
+- [EVCC](https://evcc.io/) **0.316 or newer** is recommended. Older versions with the **PV** and **Min+PV** modes still work, but from 0.11.0 on the card will need evcc 0.316, see [Charge modes](#charge-modes).
 - For the SoC forecast of the optimizer, grid discharging and the clear button of the grid charge limit in the `battery` mode, ha-evcc **2026.10.1 or newer** is required, for the button that recomputes the forecast **2026.10.2 or newer**.
 
 ---
@@ -247,6 +248,8 @@ The card renders the modes the ha-evcc mode entity offers, so it follows whateve
 | before 0.316 | **Off** / **PV** / **Min+PV** / **Fast** |
 
 evcc 0.316 replaced the **PV** mode with **Smart** and turned **Min+PV** into the **Always charge** setting of the Smart mode: charge without interruption at least at the minimum current, either permanently (**On**) or for the running session only (**Once**). ha-evcc 2026.8.3 or newer detects this on startup, so after updating evcc, reload the ha-evcc integration once (or restart Home Assistant) for the new modes to appear. Switch devices (a heat pump with SG-Ready, a heating rod) get no Always charge row, as in evcc itself.
+
+> **Upcoming:** the card still shows the PV and Min+PV modes of evcc before 0.316. From 0.11.0 on it will only support the Smart mode, so please update evcc to 0.316 or newer.
 
 **Heating loadpoints** carry evcc's own labels: **Normal** / **Smart** / **Boost** instead of Off / Smart / Fast.
 
