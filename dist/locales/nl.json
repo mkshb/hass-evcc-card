@@ -207,6 +207,7 @@
   "disabledWhatBattGridChargeClear": "Netladen van de thuisbatterij (knop „Limiet wissen”)",
   "disabledWhatOptimize": "SoC-prognose opnieuw berekenen (evcc-optimizer)",
   "disabledWhatLimitEnergy": "Limiet voor voertuigen zonder SoC",
+  "disabledWhatPlanEnergy": "Plandoel voor voertuigen zonder SoC",
   "disabledWhatPhaseAction": "Aftellen van de faseomschakeling",
   "disabledWhatPhaseCurrents": "Stroom per fase",
   "disabledWhatVehicleData": "Voertuigwaarden zonder laadpunt (laadniveau, actieradius, kilometerstand)",

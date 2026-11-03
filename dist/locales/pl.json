@@ -207,6 +207,7 @@
   "disabledWhatBattGridChargeClear": "Ładowanie domowego magazynu z sieci (przycisk „Usuń limit”)",
   "disabledWhatOptimize": "Ponowne obliczenie prognozy SoC (optymalizator evcc)",
   "disabledWhatLimitEnergy": "Limit dla pojazdów bez SoC",
+  "disabledWhatPlanEnergy": "Cel planu dla pojazdów bez SoC",
   "disabledWhatPhaseAction": "Odliczanie przełączenia faz",
   "disabledWhatPhaseCurrents": "Prąd na fazę",
   "disabledWhatVehicleData": "Wartości pojazdu bez punktu ładowania (poziom naładowania, zasięg, przebieg)",

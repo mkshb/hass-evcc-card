@@ -207,6 +207,7 @@
   "disabledWhatBattGridChargeClear": "Netzladen der Hausbatterie (Button „Limit löschen“)",
   "disabledWhatOptimize": "SoC-Prognose neu berechnen (evcc-Optimizer)",
   "disabledWhatLimitEnergy": "Ladelimit für Fahrzeuge ohne SoC",
+  "disabledWhatPlanEnergy": "Planziel für Fahrzeuge ohne SoC",
   "disabledWhatPhaseAction": "Countdown der Phasenumschaltung",
   "disabledWhatPhaseCurrents": "Stromwerte je Phase",
   "disabledWhatVehicleData": "Fahrzeugwerte ohne Ladepunkt (Ladestand, Reichweite, Kilometerstand)",

@@ -52,8 +52,10 @@ export const planningView = {
     const planState = this._planState[lpName];
     if (planState.kind !== kind) { planState.kind = kind; planState.energy = null; }
     if (kind === "energy" && planState.energy == null) {
+      // The saved target from ha-evcc; while its sensor is off (ha-evcc creates
+      // it disabled) the value this card sent last, rather than 10 kWh (#207).
       const planned = ents.plan_energy ? parseFloat(stateVal(this._hass, ents.plan_energy)) : NaN;
-      planState.energy = Math.min(maxEnergy, planned > 0 ? Math.round(planned) : 10);
+      planState.energy = Math.min(maxEnergy, planned > 0 ? Math.round(planned) : (this._planEnergySent[lpName] ?? 10));
     }
 
     if (this._planState[lpName].soc == null) {
@@ -480,6 +482,7 @@ export const planningView = {
         <div class="loadpoint">
           <div class="lp-header">
             <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
+            ${this._renderDisabledWarn(ents, lpName, { planOnly: true })}
           </div>
           ${planHtml}
           ${sessionHtml}
@@ -762,7 +765,8 @@ export const planningView = {
           try {
             if (target.kind === "soc") await this._setVehiclePlan(vehicleDbId, target.value, startdate);
             else                       await this._setLoadpointPlan(lpIdx, target.value, startdate);
-            window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } }));
+            window.dispatchEvent(new CustomEvent("evcc-plan-reset",
+              { detail: { lpName, energy: target.kind === "energy" ? target.value : null } }));
             showSuccess();
           } catch(e) {
             showError(`❌ ${e?.message || JSON.stringify(e) || "Unknown error"}`);
@@ -785,14 +789,14 @@ export const planningView = {
         };
         if (vehicleDbId) {
           this._deleteVehiclePlan(vehicleDbId)
-            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } })); })
+            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName, energy: null } })); })
             .catch(e => console.warn("[evcc-card] delete plan:", e));
         } else {
           // Deleting works without a kWh target, it only needs the evcc index.
           const lpIdx = this._lpIndex(lpName);
           if (lpIdx == null) { console.warn("[evcc-card] delete plan: no loadpoint index for", lpName); return; }
           this._deleteLoadpointPlan(lpIdx)
-            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } })); })
+            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName, energy: null } })); })
             .catch(e => console.warn("[evcc-card] delete plan:", e));
         }
       });

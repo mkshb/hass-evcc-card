@@ -4041,6 +4041,41 @@ def disabled_entities(browser, port, t):
             "no clear button in ha-evcc at all: no limit and nothing to enable", str(got))
     done(page)
 
+    # #207: a plan in kWh (guest vehicle, no SoC) reads its saved target from
+    # plan_energy, which ha-evcc creates disabled. The triangle names it while
+    # the plan block plans in kWh, in the plan mode too, and the card keeps the
+    # target it sent instead of falling back to 10 kWh.
+    t.group("disabled entities - kWh plan target (#207)")
+    pe    = "sensor.evcc_openwb_plan_energy"
+    guest = {"select.evcc_openwb_vehicle_name": "null", "binary_sensor.evcc_openwb_plan_active": "on"}
+    warn  = lambda page: page.evaluate("window.__card.shadowRoot.querySelector('.lp-disabled-warn')?.getAttribute('title') ?? null")
+    for label, config, st, want in (
+            ("loadpoint mode, guest vehicle", {"mode": "loadpoint", "loadpoint": "openwb"}, guest, True),
+            ("plan mode, guest vehicle", {"mode": "plan", "loadpoint": "openwb"}, guest, True),
+            ("loadpoint mode, vehicle with SoC", {"mode": "loadpoint", "loadpoint": "openwb"}, {}, False),
+            ("loadpoint mode, guest vehicle, no_plan", {"mode": "loadpoint", "loadpoint": "openwb", "no_plan": True}, guest, False)):
+        page = new_page(browser, 480, 1800)
+        errors = open_card(page, port, config=config, set=st, disable=[pe], lang="en")
+        got = warn(page)
+        ok = ("Plan target for vehicles without SoC" in (got or "")) if want else ("Plan target" not in (got or ""))
+        t.check(ok and not errors, f"{label}: {'the triangle names' if want else 'no triangle for'} plan_energy", repr(got))
+        done(page)
+
+    page = new_page(browser, 480, 1800)
+    errors = open_card(page, port, config={"mode": "plan", "loadpoint": "openwb"}, set=guest, disable=[pe])
+    page.evaluate("() => { window.__card._planState.openwb.energy = 23; }")
+    page.locator(in_card("button.plan-btn.save")).click()
+    page.wait_for_timeout(1800); settle(page)
+    sent = [c for c in svc(page) if c.get("service") == "set_loadpoint_plan"]
+    shown = page.locator(in_card("button.plan-soc-val")).inner_text().strip()
+    t.check(sent and sent[-1]["data"].get("energy") == 23, "the kWh plan goes out with 23 kWh", json.dumps(sent[-1:] )[:200])
+    t.check(shown == "23 kWh" and not errors, "after saving the plan block keeps 23 kWh, not 10 kWh", shown)
+    page.locator(in_card("button.plan-btn.delete")).click()
+    page.wait_for_timeout(1800); settle(page)
+    shown = page.locator(in_card("button.plan-soc-val")).inner_text().strip()
+    t.check(shown == "10 kWh", "after deleting the plan it starts from 10 kWh again", shown)
+    done(page)
+
     t.group("disabled entities - triangle, debug view and enabling")
     page = new_page(browser, 480, 1800)
     errors += open_card(page, port, config=cfg, set=limit, disable=[btn])

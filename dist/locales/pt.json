@@ -207,6 +207,7 @@
   "disabledWhatBattGridChargeClear": "Carregamento da bateria doméstica pela rede (botão «Limpar limite»)",
   "disabledWhatOptimize": "Recalcular a previsão do SoC (otimizador do evcc)",
   "disabledWhatLimitEnergy": "Limite para veículos sem SoC",
+  "disabledWhatPlanEnergy": "Objetivo do plano para veículos sem SoC",
   "disabledWhatPhaseAction": "Contagem decrescente da mudança de fases",
   "disabledWhatPhaseCurrents": "Corrente por fase",
   "disabledWhatVehicleData": "Valores do veículo sem ponto de carregamento (nível de carga, autonomia, quilometragem)",

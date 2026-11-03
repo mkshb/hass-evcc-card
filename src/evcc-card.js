@@ -77,8 +77,15 @@ export class EvccCard extends HTMLElement {
     this._wsCache     = {};     // cacheKey -> { ts, data }
     this._wsInflight  = {};     // cacheKey -> Promise (de-dup concurrent fetches)
 
+    // The kWh target each loadpoint's plan was last saved with from a card on
+    // this page, kept while ha-evcc's plan_energy sensor is off (#207).
+    this._planEnergySent = {};
     this._onPlanReset = (e) => {
       const lpName = e.detail?.lpName;
+      if (lpName && e.detail && "energy" in e.detail) {
+        if (e.detail.energy > 0) this._planEnergySent[lpName] = e.detail.energy;
+        else delete this._planEnergySent[lpName];
+      }
       setTimeout(() => {
         if (lpName) {
           delete this._planState[lpName];

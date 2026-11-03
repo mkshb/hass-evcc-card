@@ -475,6 +475,8 @@ export const SLIDER_STEP_KEYS = [
 //   hide:   the hide_settings key that drops the control, and the triangle with it
 //   needs:  the control only exists next to this entity, enabled or disabled
 //   energy: only while the vehicle charges by energy instead of SoC
+//   plan:   the target of a charge plan in kWh: only while the plan block plans
+//           in kWh, also in the plan mode, never with `no_plan`
 //   what:   translation key naming what the card is missing
 //   vehicle: a sensor of a vehicle, not of a loadpoint; its triangle sits in the
 //            header of the vehicle mode, and only for a vehicle without the
@@ -493,6 +495,8 @@ export const DISABLED_NEEDED = [
   // Site level, only while evcc's optimizer delivers a forecast: the battery mode recomputes it through it.
   { domain: "button", suffix: "optimize",                     site: true, optimizer: true,                          what: "disabledWhatOptimize" },
   { domain: "number", suffix: "limit_energy",                 hide: "limit_soc",                    energy: true,                                   what: "disabledWhatLimitEnergy" },
+  // The plan block reads the kWh target of a saved plan from it (#207).
+  { domain: "sensor", suffix: "plan_energy",                  plan: true,                                                                           what: "disabledWhatPlanEnergy" },
   { domain: "sensor", suffix: "phase_action",                 needs: "select.phases_configured",                                              what: "disabledWhatPhaseAction" },
   { domain: "sensor", suffix: "charge_currents_0",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
   { domain: "sensor", suffix: "charge_currents_1",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },

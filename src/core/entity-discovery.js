@@ -1,4 +1,4 @@
-import { FEATURES, DISABLED_NEEDED, VEHICLE_FEATURES, VEHICLE_SESSION_INFIX, VEHICLE_SESSION_FEATURES, loadpointFilter, vehicleSlug } from "./constants.js";
+import { FEATURES, DISABLED_NEEDED, VEHICLE_FEATURES, VEHICLE_SESSION_INFIX, VEHICLE_SESSION_FEATURES, loadpointFilter, loadpointOption, vehicleSlug } from "./constants.js";
 import { isOn } from "../utils/state.js";
 
 // Longest suffix first: `limit_soc` has to win over `soc` for the same entity.
@@ -95,7 +95,8 @@ export function disabledCardEntities(hass, disabled, prefix = "evcc_", { vehicle
 // The disabled entities the warning triangles of one card point at, for the
 // editor: the needed ones of what this card shows. The loadpoint modes take
 // the loadpoints the card draws and leave out the controls hidden through
-// `hide_settings`, the battery mode takes the site, the vehicle mode the
+// `hide_settings` and the plan with `no_plan`, the plan mode takes only what
+// its plan block needs, the battery mode takes the site, the vehicle mode the
 // card's vehicle (`vehicle`, see disabledCardEntities). A clear button counts
 // only where its limit is there. What depends on the moment stays in (a vehicle
 // charging by energy, the optimizer's forecast), so the triangle points at
@@ -112,7 +113,12 @@ export function cardDisabledEntities(hass, disabled, prefix = "evcc_", config = 
       return !!hass?.states?.[id] || off.has(id);
     };
     return entries.filter(({ need: n, owner }) => !n.site && !n.vehicle && shown.has(owner)
-      && !(n.hide && hidden(n.hide)) && (!n.needs || there(n.needs, owner)));
+      && !(n.hide && hidden(n.hide)) && !(n.plan && loadpointOption(config, "no_plan", owner))
+      && (!n.needs || there(n.needs, owner)));
+  }
+  if (mode === "plan") {
+    const shown = new Set(Object.keys(selectLoadpoints(discoverEntities(hass, prefix).loadpoints, config)));
+    return entries.filter(({ need: n, owner }) => n.plan && shown.has(owner));
   }
   if (mode === "battery") {
     return entries.filter(({ need: n }) => n.site && (!n.needs || !!hass?.states?.[n.needs.replace(".", `.${prefix}`)]));
