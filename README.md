@@ -112,7 +112,7 @@ All charge points and site entities are **automatically discovered** via the HA 
 - [Home Assistant](https://www.home-assistant.io/) (2023.x or newer)
 - [ha-evcc](https://github.com/marq24/ha-evcc) **2026.6.4 or newer**, installed and configured, with a running [EVCC](https://evcc.io/) instance connected to it. This is the first release whose WebSocket data API delivers what the plan preview, plans in kWh and the statistics rely on. On an older ha-evcc the plan preview and the statistics show a note with the required version instead, and the debug view says so too.
 - [EVCC](https://evcc.io/) **0.316 or newer** is recommended. Older versions with the **PV** and **Min+PV** modes still work, but from 0.11.0 on the card will need evcc 0.316, see [Charge modes](#charge-modes).
-- For the SoC forecast of the optimizer, grid discharging and the clear button of the grid charge limit in the `battery` mode, ha-evcc **2026.10.1 or newer** is required, for the button that recomputes the forecast **2026.10.2 or newer**.
+- For the SoC forecast of the optimizer, grid discharging and the clear button of the grid charge limit in the `battery` mode, ha-evcc **2026.10.1 or newer** is required, for the button that recomputes the forecast **2026.10.2 or newer**. The `optimizer` mode needs ha-evcc **2026.10.1 or newer** as well.
 
 ---
 
@@ -185,7 +185,7 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan`, `repeatplan`, `priority`, `vehicle`, `debug` |
+| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `optimizer`, `site`, `flow`, `grid`, `stats`, `plan`, `repeatplan`, `priority`, `vehicle`, `debug` |
 | `title` | `string` | *(auto)* | Replaces the default card header |
 | `loadpoint` | `string` | *(the only one)* | `loadpoint`, `compact` and `plan` mode: the charge point of the card, by name. One card shows one charge point, add a card for each further one. Can be left out when evcc has just one charge point, see [One charge point per card](#one-charge-point-per-card) |
 | `loadpoints` | `list` | *(all)* | `priority` mode: filter charge points by name |
@@ -411,6 +411,24 @@ Home battery, built after evcc's battery view:
 The suggestion comes from ha-evcc's battery SoC sensors. Forecast, highest and lowest need the ha-evcc WebSocket command `evcc_intg/optimizer` (ha-evcc 2026.10.1+); with an older ha-evcc the chart ends at "now". The card picks up a new optimizer result within 30 seconds, and a few seconds after the grid charge limit or grid discharging is changed in the card, as soon as evcc has computed it again (evcc releases after 0.316.2 do so right after the change).
 
 <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/battery-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/battery-light.png" width="400">
+
+---
+
+### `optimizer`
+
+What evcc's optimizer (experimental in evcc) plans for the coming hours, to read along, without any control:
+
+- **Header**: the status of the last run, when it was computed, what the grid costs over the plan (import at the grid price less export at the feed-in rate) and, with a fixed tariff, the price itself. The button next to the status has evcc compute the plan again (`button.<prefix>optimize`, ha-evcc 2026.10.2+, disabled by default; administrators see the warning triangle to enable it)
+- **Summary**: per home battery what it does now, until when and what follows, with the highest and lowest SoC; per vehicle its next charge window, the power and the SoC it reaches, and its target when it has a plan
+- **Plan as a chart**: one chart per lane on a shared time axis, a day per page, drawn like the state of charge chart of the `battery` mode. The grid price when it changes over the plan; the power as bars like the tariff chart of the plan (consumption and the charging of vehicles and battery above zero, the battery's discharging below it), with the solar forecast and the grid (import above, export below zero) as lines; the SoC of each home battery and vehicle, dashed and hatched like the forecast in the `battery` mode, with what the battery does (solar charging, grid charging, discharging, holding) and when the vehicle charges as faint bands behind it. A click on an entry of the power legend hides that series and fits the scale to the rest. Hover, tap or the arrow keys pick a time slot, its values show below the chart
+- **Plan as a list**: the moments something changes, grouped by day. An entry opens the chart at its time. The view picked last comes back, per browser and ha-evcc instance
+
+evcc's own suggestions are not part of what ha-evcc passes on, so the card reads the battery's action off the plan: charging or discharging power, the state of charge against its limits and the grid. A battery that only pauses for one slot keeps its action in the summary and the list. The plan comes from the ha-evcc WebSocket command `evcc_intg/optimizer` (ha-evcc 2026.10.1+), the card asks for it again every minute. While the optimizer is off, the card says so.
+
+```yaml
+type: custom:evcc-card
+mode: optimizer
+```
 
 ---
 

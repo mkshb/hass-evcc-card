@@ -19,7 +19,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT  = ROOT / "test" / "out"
-MODES = ["loadpoint", "compact", "battery", "vehicle", "site", "flow", "grid", "stats", "plan", "repeatplan", "priority", "debug"]
+MODES = ["loadpoint", "compact", "battery", "optimizer", "vehicle", "site", "flow", "grid", "stats", "plan", "repeatplan", "priority", "debug"]
 # What a mode needs beyond its name to show anything: the vehicle mode shows one
 # vehicle per card, the loadpoint, compact and plan modes one charge point, and
 # each asks which one when it is not told.
@@ -156,7 +156,7 @@ def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="d
               vehicle_device=True, optimizer=False, battery_ext=False, optimize=False, caps_version=None):
     q = {"w": width, "lang": lang}
     if caps_version: q["capsver"] = caps_version
-    if optimizer: q["optimizer"] = 1
+    if optimizer: q["optimizer"] = 1 if optimizer is True else optimizer
     if battery_ext: q["battext"] = 1
     if optimize: q["optimize"] = 1
     if not ws: q["ws"] = 0
@@ -3113,7 +3113,7 @@ def card_api(browser, port, t):
     t.group("cardapi - getGridOptions")
     grid = page.evaluate("""(() => {
       const out = {};
-      for (const mode of ["loadpoint","compact","plan","repeatplan","priority","site","flow","grid","stats","battery","debug"]) {
+      for (const mode of ["loadpoint","compact","plan","repeatplan","priority","site","flow","grid","stats","battery","optimizer","debug"]) {
         window.__card.setConfig({ mode, loadpoints: ["openwb"] });
         out[mode] = window.__card.getGridOptions();
       }
@@ -4324,6 +4324,194 @@ def solar_share(browser, port, t):
     done(page)
 
 
+# The optimizer mode runs on a recorded optimizer result (test/fixtures/ws/
+# optimizer.json), so the browser clock stands at the time it was recorded.
+OPT_TIME = "2026-11-03T20:47:00+01:00"
+
+
+def optimizer_mode(browser, port, t):
+    def opt_page(variant="plan", height=1600, time=OPT_TIME, **kw):
+        page = new_page(browser, 480, height)
+        page.clock.set_fixed_time(time)
+        errors = open_card(page, port, config=kw.pop("config", {"mode": "optimizer"}), optimizer=variant, **kw)
+        return page, errors
+    text = lambda page, sel: page.evaluate(f"() => [...window.__card.shadowRoot.querySelectorAll({json.dumps(sel)})].map(e => e.textContent.replace(/\\s+/g, ' ').trim())")
+    click = lambda page, sel: (page.evaluate(f"() => window.__card.shadowRoot.querySelector({json.dumps(sel)}).click()"), settle(page))
+
+    t.group("optimizer - header, summary and pages")
+    page, errors = opt_page(battery_ext=True, optimize=True)
+    t.check(not errors, "renders a recorded plan without errors", "; ".join(errors)[:300])
+    t.check(text(page, ".opt-status") == ["Optimal"], "the status of the run", str(text(page, ".opt-status")))
+    btn = page.locator(in_card(".optimizer-block button.batt-recompute"))
+    t.check(btn.count() == 1 and btn.get_attribute("aria-label") == "Plan neu berechnen", "the recompute button, labelled for the plan")
+    meta = text(page, ".opt-meta span")
+    t.check(meta[:2] == ["Plan von 20:45", "Netzkosten 2,68 €"], "plan time and grid costs of the plan", str(meta))
+    t.check(len(meta) == 3 and meta[2].startswith("Bezug 20,2") and "Einspeisung 8,1" in meta[2], "a fixed price stands in the header", str(meta))
+    rows = text(page, ".opt-row")
+    t.check(len(rows) == 2 and rows[0].startswith("SpeicherEntladen bis 21:15") and "danach Leer" in rows[0]
+            and "Höchststand (voll) morgen 14:30 · Tiefststand (leer) 21:15" in rows[0], "the battery: action now, until when, what then, highest and lowest", rows[0] if rows else "")
+    t.check(len(rows) == 2 and rows[1] == "openWB (EX30)Laden morgen 11:30 bis 12:00 bis 2,2 kW · 51 → 52 %", "the vehicle: its charge window, power and SoC", rows[1] if len(rows) > 1 else "")
+    lanes = text(page, ".opt-lane-name")
+    t.check("Strompreis" not in lanes and lanes[:3] == ["Leistung", "Speicher", "openWB (EX30)"], "no price lane for a fixed price; power, battery, vehicle", str(lanes))
+    t.check(text(page, ".opt-step-label") == ["Heute"] and page.locator(in_card("button.opt-step[data-opt-step='-1']")).is_disabled(), "the first page is today, no page before it")
+    t.check(text(page, ".opt-dt") == ["Di 20:45 bis 21:00"], "the running slot is selected", str(text(page, ".opt-dt")))
+    click(page, "button.opt-step[data-opt-step='1']")
+    t.check(text(page, ".opt-step-label") == ["Morgen"] and page.locator(in_card("button.opt-step[data-opt-step='1']")).is_disabled(), "the next page is tomorrow, the last one")
+    t.check(text(page, ".opt-dt") == ["Mi 00:00 bis 00:15"], "a new page selects its first slot", str(text(page, ".opt-dt")))
+    areas = page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('.opt-bars')].map(e => e.dataset.series)")
+    t.check(areas == ["demand:0", "demand:1", "vehicle:0", "battery:0", "battery:0"], "tomorrow: consumption, vehicle, battery charging above and discharging below zero", str(areas))
+    t.check(page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('.opt-line')].map(e => e.dataset.series)") == ["pv", "grid"], "solar and grid as lines")
+
+    # The pointer and the arrow keys move the selection; a render keeps it.
+    box = page.locator(in_card(".opt-chart")).bounding_box()
+    page.mouse.move(box["x"] + box["width"] * (26 + (12 * 3600 + 60) / 86400 * 370) / 400, box["y"] + 40)
+    t.check(text(page, ".opt-dt") == ["Mi 12:00 bis 12:15"], "the mouse over the chart picks its slot", str(text(page, ".opt-dt")))
+    vals = text(page, ".opt-detail .opt-dv")
+    t.check(vals == ["3,5 kW", "1,4 kW", "0 kW", "Laden mit PV · +2,1 kW · 67 %", "lädt nicht · 52 %"], "the values of that slot", str(vals))
+    page.locator(in_card(".opt-chart")).focus()
+    page.keyboard.press("ArrowRight")
+    t.check(text(page, ".opt-dt") == ["Mi 12:15 bis 12:30"], "the arrow key moves on by a slot", str(text(page, ".opt-dt")))
+    page.keyboard.press("End")
+    t.check(text(page, ".opt-dt") == ["Mi 23:45 bis 00:00"], "End jumps to the last slot of the page", str(text(page, ".opt-dt")))
+    page.evaluate("() => { const c = window.__card; c._lastRenderKey = null; c._render(); }")
+    settle(page)
+    t.check(text(page, ".opt-dt") == ["Mi 23:45 bis 00:00"] and text(page, ".opt-step-label") == ["Morgen"], "a render keeps page and slot")
+
+    t.group("optimizer - legend")
+    legend = text(page, "button.opt-leg")
+    t.check(legend == ["Haus", "WP", "openWB (EX30)", "Speicher", "PV-Prognose", "Netz"], "the power lane's entries are buttons", str(legend))
+    t.check(text(page, ".opt-legend > span") == ["Laden mit PV", "Entladen"], "the colours of the battery band are no buttons", str(text(page, ".opt-legend > span")))
+    scale = lambda: page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('.opt-chart-svg text')].map(e => e.textContent).find(x => x.endsWith(' kW'))")
+    kw = scale()
+    for name in ("Haus", "WP", "PV-Prognose"):
+        page.evaluate(f"() => [...window.__card.shadowRoot.querySelectorAll('button.opt-leg')].find(b => b.textContent.trim() === {json.dumps(name)}).click()")
+        settle(page)
+    pressed = page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('button.opt-leg')].map(b => b.getAttribute('aria-pressed'))")
+    t.check(pressed == ["false", "false", "true", "true", "false", "true"], "a click hides the series, the button says so", str(pressed))
+    t.check(page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('.opt-bars, .opt-line')].map(e => e.dataset.series)") == ["vehicle:0", "battery:0", "battery:0", "grid"],
+            "their areas and lines are gone", str(page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('.opt-bars, .opt-line')].map(e => e.dataset.series)")))
+    t.check(kw == "4 kW" and scale() == "3 kW", "the scale follows what is left", f"{kw} -> {scale()}")
+    t.check("Verbrauch" in text(page, ".opt-detail .opt-dk"), "the values under the chart keep every series")
+    page.evaluate("() => { const c = window.__card; c._lastRenderKey = null; c._render(); }")
+    settle(page)
+    t.check(page.locator(in_card("button.opt-leg[aria-pressed='false']")).count() == 3, "a render keeps them hidden")
+    page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('button.opt-leg')][0].click()")
+    settle(page)
+    t.check(page.locator(in_card("button.opt-leg[aria-pressed='false']")).count() == 2, "a second click shows it again")
+
+    t.group("optimizer - list")
+    click(page, "button.opt-seg-btn[data-opt-view='list']")
+    evs = text(page, ".opt-ev")
+    t.check(len(evs) == 7 and evs[0] == "jetzt Speicher entlädt bis 21:15 · 15 → 10 %", "seven changes, the first one now", str(evs[:2]))
+    t.check(evs[3] == "11:30 openWB (EX30) lädt bis 12:00 · bis 2,2 kW · 51 → 52 %", "the vehicle's charge window among them", evs[3] if len(evs) > 3 else "")
+    t.check(text(page, ".opt-ev-day") == ["Heute", "Morgen"], "grouped by day", str(text(page, ".opt-ev-day")))
+    t.check(page.locator(in_card(".opt-stepper")).count() == 0 and page.locator(in_card(".opt-chart")).count() == 0, "the list shows all days, no pages, no chart")
+    t.check(page.evaluate("localStorage.getItem('evcc-card-optimizer-view')") == '{"evcc_":"list"}', "the view is remembered per instance")
+    page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('button.opt-ev')][3].click()")
+    settle(page)
+    t.check(text(page, ".opt-step-label") == ["Morgen"] and text(page, ".opt-dt") == ["Mi 11:30 bis 11:45"], "an entry opens the chart on its day and slot",
+            f"{text(page, '.opt-step-label')} {text(page, '.opt-dt')}")
+    done(page)
+
+    t.group("optimizer - recompute and triangle")
+    page, _ = opt_page(battery_ext=True, optimize=True)
+    page.locator(in_card("button.batt-recompute")).click(); page.wait_for_timeout(200)
+    presses = [c for c in svc(page) if c["domain"] == "button"]
+    t.check(presses == [{"domain": "button", "service": "press", "data": {"entity_id": "button.evcc_optimize"}}], "a click presses button.evcc_optimize", json.dumps(presses))
+    done(page)
+    page, _ = opt_page()
+    t.check(page.locator(in_card("button.batt-recompute")).count() == 0, "without the button entity, no recompute button")
+    done(page)
+    page, _ = opt_page(battery_ext=True, optimize=True, disable=["button.evcc_optimize"])
+    t.check(page.locator(in_card(".optimizer-block .lp-disabled-warn")).count() == 1, "a disabled optimize button: the triangle in the header")
+    done(page)
+
+    t.group("optimizer - price and goal")
+    page, errors = opt_page("plan,price,goal")
+    lanes = text(page, ".opt-lane-name")
+    t.check(lanes[:2] == ["Strompreis", "Leistung"] and not errors, "a changing price gets a lane on top", str(lanes))
+    t.check(len(text(page, ".opt-meta span")) == 2, "and no fixed price in the header", str(text(page, ".opt-meta span")))
+    t.check("Ziel 80 % bis morgen 07:00" in text(page, ".opt-row")[1], "the vehicle's target in the summary", text(page, ".opt-row")[1])
+    click(page, "button.opt-step[data-opt-step='1']")
+    t.check(page.locator(in_card(".opt-chart-svg circle")).count() == 1, "the target as a dot on its day")
+    t.check(text(page, ".opt-detail .opt-dk")[0] == "Strompreis", "the price of the slot under the chart", str(text(page, ".opt-detail .opt-dk")[:1]))
+    done(page)
+
+    t.group("optimizer - negative prices")
+    page, errors = opt_page("plan,price,negative")
+    price = lambda: page.evaluate("""() => {
+      const svg = window.__card.shadowRoot.querySelector('.opt-chart-svg');
+      const zero = [...svg.querySelectorAll('text')].find(e => e.textContent === '0');
+      const zy = parseFloat(zero.getAttribute('y')) - 3;
+      const bars = [...svg.querySelectorAll('rect.opt-price-bar')];
+      return { labels: [...svg.querySelectorAll('text')].map(e => e.textContent),
+               below: bars.filter(r => Math.abs(parseFloat(r.getAttribute('y')) - zy) < 0.1).length,
+               above: bars.filter(r => Math.abs(parseFloat(r.getAttribute('y')) + parseFloat(r.getAttribute('height')) - zy) < 0.1).length };
+    }""")
+    got = price()
+    t.check(got["labels"] == ["34,0", "0", "-5,0"] and not errors, "the price axis reaches below zero, over the whole plan", json.dumps(got))
+    t.check(got["below"] == 0 and got["above"] > 0, "today: every bar above the zero line", json.dumps(got))
+    click(page, "button.opt-step[data-opt-step='1']")
+    got = price()
+    t.check(got["below"] == 8, "tomorrow 12 to 14 h: eight bars below the zero line", json.dumps(got))
+    done(page)
+
+    t.group("optimizer - a plan computed a while ago")
+    # The plan starts at 20:45; at 21:20 its first two slots are over.
+    page, errors = opt_page(time="2026-11-03T21:20:00+01:00")
+    rows = text(page, ".opt-row")
+    t.check(not errors and rows[:1] == ["SpeicherLeer bis morgen 08:15 danach Laden mit PV · Höchststand (voll) morgen 14:30"],
+            "the summary starts at the running slot, the lowest SoC at 21:15 is over", rows[0] if rows else "")
+    t.check(text(page, ".opt-dt") == ["Di 21:15 bis 21:30"], "the running slot is selected", str(text(page, ".opt-dt")))
+    page.locator(in_card(".opt-chart")).focus()
+    page.keyboard.press("ArrowRight")
+    t.check(text(page, ".opt-dt") == ["Di 21:30 bis 21:45"], "the arrow key moves on from the running slot", str(text(page, ".opt-dt")))
+    click(page, "button.opt-seg-btn[data-opt-view='list']")
+    evs = text(page, ".opt-ev")
+    t.check(evs[:2] == ["jetzt Speicher ist leer (10 %) bis 08:15", "08:15 Speicher lädt mit PV bis 14:30 · 10 → 100 %"] and len(evs) == 6,
+            "the list starts now, the discharging until 21:15 is gone", str(evs[:2]))
+    done(page)
+
+    t.group("optimizer - without a plan")
+    for variant, kw, want, name in (
+        ("plan,off", {}, "Der Optimizer in evcc ist aus oder hat noch keinen Plan berechnet.", "optimizer off: says so"),
+        (False, {}, "Die Optimizer-Ansicht braucht ha-evcc 2026.10.1 oder neuer.", "ha-evcc without the optimizer command: names the version"),
+        ("plan", {"caps_version": "2026.6.3"}, "Die Optimizer-Ansicht braucht ha-evcc 2026.10.1 oder neuer.", "ha-evcc below the minimum: names the version"),
+    ):
+        page, errors = opt_page(variant, **kw)
+        t.check(text(page, ".opt-note") == [want] and not errors, name, f"{text(page, '.opt-note')} {errors}")
+        done(page)
+
+    # Partial results: no request part, no home battery, no vehicle, a vehicle
+    # without capacity. Nothing may crash or print NaN or undefined.
+    page, _ = opt_page()
+    got = page.evaluate("""() => {
+      const c = window.__card, base = JSON.parse(c._wsCache.optimizer.json).data, out = {};
+      const cases = {
+        noReq:     d => { delete d.evopt.req; },
+        noHome:    d => { d.evopt.res.batteries.pop(); d.evopt.details.batteryDetails.pop(); d.evopt.req.batteries.pop(); },
+        noVehicle: d => { d.evopt.res.batteries.shift(); d.evopt.details.batteryDetails.shift(); d.evopt.req.batteries.shift(); },
+        noCap:     d => { d.evopt.details.batteryDetails[0].capacity = 0; },
+        noDemand:  d => { delete d.evopt.details.demandDetails; },
+        empty:     d => { d.evopt.details.timestamp = []; },
+      };
+      for (const [name, fn] of Object.entries(cases)) {
+        const d = JSON.parse(JSON.stringify(base)); fn(d);
+        c._wsCache.optimizer = { ts: Date.now(), result: { data: d }, json: name };
+        c._lastRenderKey = null; c._render();
+        const txt = c.shadowRoot.querySelector('.optimizer-block')?.textContent || '';
+        const svg = c.shadowRoot.querySelector('.opt-chart-svg')?.outerHTML || '';
+        out[name] = { bad: /NaN|undefined|null/.test(txt + svg), note: c.shadowRoot.querySelector('.opt-note')?.textContent || null,
+                      rows: c.shadowRoot.querySelectorAll('.opt-row').length };
+      }
+      return out;
+    }""")
+    t.check(not any(v["bad"] for v in got.values()), "partial results print no NaN, undefined or null", json.dumps(got))
+    t.check(got["noHome"]["rows"] == 1 and got["noVehicle"]["rows"] == 1 and got["noReq"]["rows"] == 2, "a missing battery or vehicle leaves its row out", json.dumps(got))
+    t.check(got["empty"]["note"] == "Der Optimizer in evcc ist aus oder hat noch keinen Plan berechnet.", "a result without slots counts as no plan", json.dumps(got["empty"]))
+    done(page)
+
+
 def battery_mode(browser, port, t):
     """The battery mode: SoC history from the HA recorder, what the optimizer adds
     on its own when ha-evcc offers it, and the grid charge/discharge limits."""
@@ -4812,7 +5000,7 @@ def battery_mode(browser, port, t):
 
 GROUPS = {"unit": unit, "render": render_smoke, "min_version": min_version, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "prices": price_display, "editor": editor, "editor_vehicle_map": editor_vehicle_map, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
-          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities, "solar_share": solar_share, "vehicle": vehicle_mode, "battery": battery_mode, "stable_height": stable_height}
+          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities, "solar_share": solar_share, "vehicle": vehicle_mode, "battery": battery_mode, "optimizer": optimizer_mode, "stable_height": stable_height}
 
 
 # The groups that take longest go to the workers first, so the run is not left

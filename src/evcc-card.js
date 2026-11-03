@@ -18,6 +18,7 @@ import { flowView } from "./views/flow-view.js";
 import { gridView } from "./views/grid-view.js";
 import { statisticsView } from "./views/statistics-view.js";
 import { batteryView } from "./views/battery-view.js";
+import { optimizerView } from "./views/optimizer-view.js";
 import { vehicleView } from "./views/vehicle-view.js";
 import { debugView } from "./views/debug-view.js";
 import { listeners } from "./listeners.js";
@@ -490,9 +491,9 @@ export class EvccCard extends HTMLElement {
     // compared against: a loadpoint card is not redrawn because the PV power
     // moved. Every read goes through hass.states[id], so a recording proxy on
     // the states table catches them all, including the ones views make past
-    // the discovery (tariff sensors, clear buttons, stat_* entities) and the
-    // ones that find nothing. A render that bailed out early (translations
-    // still loading) leaves the previous set in place.
+    // the discovery (tariff sensors, clear buttons) and the ones that find
+    // nothing. A render that bailed out early (translations still loading)
+    // leaves the previous set in place.
     const real  = this._hass;
     const reads = new Set();
     // The same proxy hands out the value the card just wrote for an entity HA
@@ -578,6 +579,8 @@ export class EvccCard extends HTMLElement {
             ? this._renderDebugBlock(loadpoints, site, meters)
             : this._config.mode === "battery"
             ? this._renderBatteryBlock(site)
+            : this._config.mode === "optimizer"
+            ? this._renderOptimizerBlock(site)
             : this._config.mode === "vehicle"
             ? this._renderVehicleMode(lpEnabled)
             : this._config.mode === "site"
@@ -680,7 +683,7 @@ export class EvccCard extends HTMLElement {
 
 // Mode views, components and shared behaviour are plain objects of methods
 // (no framework): mix them into the prototype, refusing silent overrides.
-const mixins = [actions, evccApi, loadpointView, socControl, disabledEntities, planningView, priorityView, siteView, flowView, gridView, statisticsView, batteryView, vehicleView, debugView, listeners, styles];
+const mixins = [actions, evccApi, loadpointView, socControl, disabledEntities, planningView, priorityView, siteView, flowView, gridView, statisticsView, batteryView, optimizerView, vehicleView, debugView, listeners, styles];
 for (const m of mixins) {
   for (const key of Object.keys(m)) {
     if (key in EvccCard.prototype) throw new Error(`evcc-card: duplicate method ${key}`);

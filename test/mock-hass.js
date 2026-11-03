@@ -27,6 +27,14 @@
 //            (button.evcc_optimize)
 //   optimizer: true  ha-evcc offers evcc_intg/optimizer and evcc's optimizer reports a
 //            battery forecast (generated from now on, like the recorder history)
+//   optimizer: "plan"  instead, the full result of a real optimizer run
+//            (test/fixtures/ws/optimizer.json, recorded 2026-11-03 20:45 Europe/Berlin,
+//            fixed price, a home battery and a vehicle that charges twice);
+//            the test sets the clock to that time. Added after a comma:
+//            "price" makes the grid price vary over the day ("negative" with it:
+//            below zero from 12 to 14 h), "goal" gives the vehicle a target of
+//            80 % at 07:00. "off": the optimizer is off
+//            (evopt and batteryForecast null).
 //   capsVersion: "2026.6.3"  the version evcc_intg/capabilities reports; 2026.6.3
 //            also leaves out the loadpoint list, as that release did
 // A battery SoC by time of day: charges from 9 to 14 h, discharges overnight.
@@ -132,6 +140,7 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
     return out;
   };
 
+  const optVariants = typeof optimizer === "string" ? optimizer.split(",") : [];
   const fx = ws ? {
     capabilities: await json("ws/capabilities.json").then(c => optimizer ? { ...c, commands: [...c.commands, "optimizer"] } : c)
       // An older ha-evcc by its version; 2026.6.3 also lacks the loadpoint list.
@@ -143,7 +152,23 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
       planner: await json("ws/forecast_planner.json"),
     },
     plan_preview: await json("ws/plan_preview.json"),
+    optimizer:    optVariants.includes("plan") ? await json("ws/optimizer.json") : null,
   } : null;
+  if (fx?.optimizer) {
+    const ev = fx.optimizer.evopt, ts = ev.details.timestamp;
+    if (optVariants.includes("price")) {
+      // Cheap at noon, dear in the evening; per Wh, as evcc sends it.
+      ev.req.time_series.p_N = ts.map(t => {
+        const h = new Date(t).getHours();
+        if (optVariants.includes("negative") && h >= 12 && h < 14) return -0.05 / 1000;
+        return (h >= 11 && h < 15 ? 0.14 : h >= 17 && h < 21 ? 0.34 : 0.24) / 1000;
+      });
+    }
+    if (optVariants.includes("goal")) {
+      const k = ts.findIndex(t => t.startsWith("2026-11-04T06:45"));
+      ev.req.batteries[0].s_goal = ts.map((_, j) => j === k ? 55200 : 0);
+    }
+  }
 
   // A feed-in tariff for the grid discharge view, varying over the day (the
   // grid fixture is a flat price): highest in the evening, lowest at noon.
@@ -264,6 +289,8 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
         // slots over 48 h; plus the highest/lowest evcc derives from it.
         case "evcc_intg/optimizer": {
           if (!fx || !optimizer) return Promise.reject(new Error("mock: no optimizer"));
+          if (optVariants.includes("off")) return Promise.resolve({ evopt: null, batteryForecast: null });
+          if (fx.optimizer) return Promise.resolve(JSON.parse(JSON.stringify(fx.optimizer)));
           const now = Date.now();
           const ts = [now];
           for (let t = Math.ceil((now + 1) / 900000) * 900000; t < now + 48 * 3600000; t += 900000) ts.push(t);

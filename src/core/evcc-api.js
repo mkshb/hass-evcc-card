@@ -134,6 +134,14 @@ export const evccApi = {
     return this._wsFetch("evcc_intg/forecast", { kind }, `forecast:${kind}`, 5 * 60 * 1000);
   },
 
+  // evcc's optimizer result, passed through by ha-evcc (2026.10.1+) as evcc
+  // pushes it:  { evopt, batteryForecast }, both null while the optimizer is
+  // off. ha-evcc holds it in memory, so asking again costs evcc nothing.
+  _wsOptimizer() {
+    if (!this._hasCmd("optimizer")) return null;
+    return this._wsFetch("evcc_intg/optimizer", {}, "optimizer", 30 * 1000);
+  },
+
   // year/month optional  →  { sessions[] }
   _wsSessions(year, month) {
     if (!this._hasCmd("sessions")) return null;

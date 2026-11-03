@@ -123,6 +123,7 @@ export function cardDisabledEntities(hass, disabled, prefix = "evcc_", config = 
   if (mode === "battery") {
     return entries.filter(({ need: n }) => n.site && (!n.needs || !!hass?.states?.[n.needs.replace(".", `.${prefix}`)]));
   }
+  if (mode === "optimizer") return entries.filter(({ need: n }) => n.site && n.optimizer);
   if (mode === "vehicle") return entries.filter(e => e.need.vehicle);
   return [];
 }

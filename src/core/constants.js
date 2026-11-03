@@ -6,6 +6,8 @@ export const EVCC_CARD_VERSION = "0.10.0";
 // brought the API without that list. On an older ha-evcc each feature that
 // misses something says so in its place.
 export const HA_EVCC_MIN_VERSION = "2026.6.4";
+// The optimizer mode reads evcc's optimizer result through evcc_intg/optimizer.
+export const HA_EVCC_OPTIMIZER_VERSION = "2026.10.1";
 
 export const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -203,6 +205,7 @@ export const CARD_SIZES = {
   grid:        7,
   stats:      10,
   battery:     8,
+  optimizer:  12,
   vehicle:     8,
   debug:      20,
 };
@@ -218,7 +221,7 @@ export const CARD_SIZE_FOOTER  = { site: 1, flow: 1, grid: 1 };
 // height table is an estimate that may or may not know it.
 export const CARD_MODES = [
   "loadpoint", "compact", "plan", "repeatplan", "priority",
-  "site", "flow", "grid", "stats", "battery", "vehicle", "debug",
+  "site", "flow", "grid", "stats", "battery", "optimizer", "vehicle", "debug",
 ];
 export const CARD_SIZE_OPTIONS        = ["small", "medium", "large"];
 export const DISABLED_LOADPOINT_MODES = ["hide", "dim", "show"];

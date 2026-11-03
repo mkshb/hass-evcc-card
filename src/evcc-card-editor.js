@@ -37,6 +37,7 @@ const MODE_DESC = {
   flow:       "editorModeDescFlow",
   grid:       "editorModeDescGrid",
   battery:    "editorModeDescBattery",
+  optimizer:  "editorModeDescOptimizer",
   vehicle:    "editorModeDescVehicle",
   stats:      "editorModeDescStats",
   plan:       "editorModeDescPlan",
@@ -56,6 +57,7 @@ const TITLE_PLACEHOLDER = {
   grid:       "editorTitlePlaceholderGrid",
   stats:      "editorTitlePlaceholderStats",
   battery:    "editorTitlePlaceholderBattery",
+  optimizer:  "editorTitlePlaceholderOptimizer",
   vehicle:    "editorTitlePlaceholderVehicle",
 };
 
@@ -570,6 +572,7 @@ export class EvccCardEditor extends HTMLElement {
       tOpt("flow",       "editorModeFlow"),
       tOpt("grid",       "editorModeGrid"),
       tOpt("battery",    "editorModeBattery"),
+      tOpt("optimizer",  "editorModeOptimizer"),
       tOpt("vehicle",    "editorModeVehicle"),
       tOpt("stats",      "editorModeStats"),
       tOpt("plan",       "editorModePlan"),
@@ -707,7 +710,7 @@ export class EvccCardEditor extends HTMLElement {
         { label: this._t("editorHideSettingsTitle"), helper: this._t("editorHideSettingsHint"), section: "content" }));
     }
     // The switch for the warning triangle, in the modes that draw one.
-    if (["loadpoint", "compact", "battery", "vehicle"].includes(mode)) {
+    if (["loadpoint", "compact", "battery", "optimizer", "vehicle"].includes(mode)) {
       fields.push(flag("hide_disabled_hint", { label: this._t("editorHideDisabledHint"), section: "content" }));
     }
     if (showSiteDetails) {
