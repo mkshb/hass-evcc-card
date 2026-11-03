@@ -22,10 +22,6 @@ const CLEAR_ICON = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="tr
 // turns it back into a missing key.
 const UNSET = "__unset";
 
-// The value of the option that stands for a list of several loadpoints from
-// before, in the modes that show one loadpoint per card.
-const MANY = "__many";
-
 // A value from the form as it goes into the config: the unset option, an empty
 // field, a switch that is off and an empty list all drop the key.
 function unsetToUndefined(v) {
@@ -88,8 +84,6 @@ const EDITOR_CSS = `
   .field-label { font-size: .875rem; font-weight: 500; color: var(--primary-text-color); }
   .section-title { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--secondary-text-color); }
   .hint { font-size: .75rem; color: var(--secondary-text-color); }
-  .deprecated { padding: 8px 12px; border-radius: 4px; font-size: .875rem; color: var(--error-color, #db4437);
-                background: rgba(219, 68, 55, .1); border-left: 4px solid var(--error-color, #db4437); }
   .ha-select, .ha-input {
     width: 100%; padding: 8px 12px; border-radius: 4px; font-size: 1rem;
     background: var(--card-background-color, #fff);
@@ -622,24 +616,16 @@ export class EvccCardEditor extends HTMLElement {
 
     // One loadpoint per card in the loadpoint, compact and plan modes, picked
     // like the vehicle: with a single loadpoint the card takes it by itself
-    // and the first option says so. A list of several from before is an
-    // option of its own and keeps drawing them all until another one is
-    // picked; the red note above the form then says that this goes away
-    // (_deprecatedHtml).
+    // and the first option says so, with several one has to be picked.
     if (single && lps.length) {
-      const legacy = !c.loadpoint && filter && filter.length > 1;
-      const value  = c.loadpoint ?? (legacy ? MANY : (filter ? filter[0] : UNSET));
-      // Drawing them all is phasing out: offered only while the card does it.
+      const value = c.loadpoint ?? (filter ? filter[0] : UNSET);
       fields.push(pick("loadpoint", [
-        ...(lps.length === 1 ? [opt(UNSET, this._t("editorLoadpointAuto", { val: lps[0] }))]
-          : value === UNSET ? [opt(UNSET, `\u26A0 ${this._t("editorLoadpointAll")}`)] : []),
+        opt(UNSET, lps.length === 1 ? this._t("editorLoadpointAuto", { val: lps[0] }) : this._t("editorLoadpointPick")),
         ...lps.map(lp => opt(lp, lp)),
-        ...(value !== UNSET && value !== MANY && !lps.includes(value) ? [opt(value, value)] : []),
-        ...(legacy ? [opt(MANY, `\u26A0 ${this._t("editorLoadpointMany", { val: filter.join(", ") })}`)] : []),
+        ...(value !== UNSET && !lps.includes(value) ? [opt(value, value)] : []),
       ], value, {
         label: this._t("editorLoadpointTitle"),
         helper: oneLp ? this._t("editorLoadpointHint") : undefined,
-        write: v => (v === UNSET || v === MANY) ? undefined : v,
         after: next => { next.loadpoints = undefined; this._fitLoadpoints(next); },
       }));
     } else if (showLoadpoints && lps.length) {
@@ -659,27 +645,21 @@ export class EvccCardEditor extends HTMLElement {
       { label: this._t("editorDisabledLoadpointsLabel"), helper: this._t("editorDisabledLoadpointsHint"), section: "content" }));
     }
 
-    // One vehicle per repeatplan card, picked like the loadpoint above: a list
-    // of several from before is an option of its own and keeps drawing them
-    // all until another one is picked (_deprecatedHtml). Compared without
-    // case, as the card does.
+    // One vehicle per repeatplan card, picked like the loadpoint above.
+    // Compared without case, as the card does.
     const rplanSlugs = mode === "repeatplan" ? this._availableVehicleSlugs : [];
     if (rplanSlugs.length) {
       const title  = slug => String(slug).replace(/_/g, " ").replace(/\b\w/g, ch => ch.toUpperCase());
       const known  = v => rplanSlugs.find(s => s.toLowerCase() === String(v).toLowerCase()) ?? String(v);
       const list   = repeatPlanFilter(c);
-      const legacy = !c.vehicle && list && list.length > 1;
-      const value  = c.vehicle ? known(c.vehicle) : legacy ? MANY : (list ? known(list[0]) : UNSET);
+      const value  = c.vehicle ? known(c.vehicle) : (list ? known(list[0]) : UNSET);
       fields.push(pick("vehicle", [
-        ...(rplanSlugs.length === 1 ? [opt(UNSET, this._t("editorVehicleAuto", { val: title(rplanSlugs[0]) }))]
-          : value === UNSET ? [opt(UNSET, `\u26A0 ${this._t("editorVehicleAll")}`)] : []),
+        opt(UNSET, rplanSlugs.length === 1 ? this._t("editorVehicleAuto", { val: title(rplanSlugs[0]) }) : this._t("editorVehiclePick")),
         ...rplanSlugs.map(slug => opt(slug, title(slug))),
-        ...(value !== UNSET && value !== MANY && !rplanSlugs.includes(value) ? [opt(value, value)] : []),
-        ...(legacy ? [opt(MANY, `\u26A0 ${this._t("editorVehicleMany", { val: list.map(known).map(title).join(", ") })}`)] : []),
+        ...(value !== UNSET && !rplanSlugs.includes(value) ? [opt(value, value)] : []),
       ], value, {
         label: this._t("editorVehicleTitle"),
         helper: (list || rplanSlugs).length === 1 ? this._t("editorRepeatPlanVehicleHint") : undefined,
-        write: v => (v === UNSET || v === MANY) ? undefined : v,
         after: next => { next.repeating_plan_vehicles = undefined; },
       }));
     }
@@ -709,14 +689,12 @@ export class EvccCardEditor extends HTMLElement {
       if (selectVehicle(vehicles, c)) fields.push(flag("vehicle_actions", { label: this._t("editorVehicleActions"), section: "content" }));
     }
 
-    // For one loadpoint a switch that writes `true`, for several a list of names.
-    // `no_pv` has no field: evcc offers the solar modes whenever a grid meter
-    // is configured, so it only matters without one and stays a YAML option.
-    if (showNoPlan && lps.length && single && oneLp) {
+    // A switch that writes `true` once the card has its loadpoint. `no_pv` has
+    // no field: evcc offers the solar modes whenever a grid meter is
+    // configured, so it only matters without one and stays a YAML option.
+    if (showNoPlan && oneLp) {
       fields.push({ name: "no_plan", schema: { name: "no_plan", selector: { boolean: {} } }, value: loadpointOption(c, "no_plan", oneLp),
                     label: this._t("editorNoPlan"), section: "content", write: v => v ? true : undefined });
-    } else if (showNoPlan && lps.length) {
-      fields.push(many("no_plan", ...this._listField("no_plan", lps), { label: this._t("editorNoPlanForTitle"), section: "content" }));
     }
     if (mode === "battery") fields.push(flag("hide_soc_chart", { label: this._t("editorHideSocChart"), section: "content" }));
     if (showChargeCurrent) {
@@ -805,6 +783,9 @@ export class EvccCardEditor extends HTMLElement {
     if (SINGLE_LOADPOINT_MODES.includes(next.mode || "loadpoint")) {
       const list = loadpointFilter(next);
       if (!next.loadpoint && list && list.length === 1) Object.assign(next, { loadpoint: list[0], loadpoints: undefined });
+      // A list of several (from the priority mode) cannot stay: the card asks
+      // for one loadpoint, and so does the editor.
+      if (!next.loadpoint && list && list.length > 1) next.loadpoints = undefined;
       if (!next.loadpoint) return;
       for (const key of ["no_plan", "no_pv"]) {
         if (next[key] !== undefined && next[key] !== true) next[key] = loadpointOption(next, key, next.loadpoint) || undefined;
@@ -936,14 +917,12 @@ export class EvccCardEditor extends HTMLElement {
       root.innerHTML = `
         <style>${EDITOR_CSS}${disabledListCss}</style>
         <div class="form">
-          <div class="form-warn"></div>
           <div class="form-main"></div>
           <div class="form-extra"></div>
           <div class="form-look"></div>
           <div class="form-disabled"></div>
         </div>`;
       this._slots = { disabled: root.querySelector(".form-disabled"), main: root.querySelector(".form-main"),
-                      warn: root.querySelector(".form-warn"),
                       extra: root.querySelector(".form-extra"), look: root.querySelector(".form-look") };
     }
 
@@ -952,7 +931,6 @@ export class EvccCardEditor extends HTMLElement {
     const disabledEntries = this._disabledEntries();
     this._disabledKey     = disabledEntries.map(e => e.id).join(",");
 
-    this._slots.warn.innerHTML     = this._deprecatedHtml(mode);
     this._slots.extra.innerHTML    = this._extraHtml(mode);
     this._slots.disabled.innerHTML = this._disabledHtml(disabledEntries);
 
@@ -968,21 +946,6 @@ export class EvccCardEditor extends HTMLElement {
     }
 
     this._addListeners();
-  }
-
-  // Several loadpoints on a loadpoint, compact or plan card, and several
-  // vehicles on a repeatplan card, go away in one of the next versions; until
-  // then the editor says so in red, above everything else.
-  _deprecatedHtml(mode) {
-    if (mode === "repeatplan") {
-      const slugs = this._availableVehicleSlugs;
-      if (!slugs.length || (repeatPlanFilter(this._config) || slugs).length < 2) return "";
-      return `<div class="deprecated" role="alert">${this._esc(this._t("editorVehicleManyHint"))}</div>`;
-    }
-    const lps = this._availableLoadpoints;
-    if (!SINGLE_LOADPOINT_MODES.includes(mode) || !lps.length) return "";
-    if ((loadpointFilter(this._config) || lps).length < 2) return "";
-    return `<div class="deprecated" role="alert">${this._esc(this._t("editorLoadpointManyHint"))}</div>`;
   }
 
   // Everything below the form that HA's form cannot express: what is missing

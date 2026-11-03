@@ -1,5 +1,5 @@
 import { detectIntegration, discoverEntities, installedPrefixes, selectLoadpoints, partitionDisabledLoadpoints, isLoadpointDisabled } from "./core/entity-discovery.js";
-import { CARD_SIZES, CARD_SIZE_DETAILS, CARD_SIZE_FOOTER, RENDER_ATTRS, normalizeStatsPeriod, validateCardConfig, loadpointFilter } from "./core/constants.js";
+import { CARD_SIZES, CARD_SIZE_DETAILS, CARD_SIZE_FOOTER, RENDER_ATTRS, SINGLE_LOADPOINT_MODES, normalizeStatsPeriod, validateCardConfig, loadpointFilter } from "./core/constants.js";
 import { stateVal, unitStr } from "./utils/state.js";
 import { escHtml } from "./utils/html.js";
 import { morphInto } from "./utils/morph.js";
@@ -339,26 +339,12 @@ export class EvccCard extends HTMLElement {
   _estimatedCardSize() {
     const mode = this._config?.mode || "loadpoint";
     let rows = CARD_SIZES[mode] ?? CARD_SIZES.loadpoint;
-    if (mode === "loadpoint" || mode === "compact") rows *= this._sizedLoadpointCount();
     if (mode === "battery" && this._config?.hide_soc_chart === true) rows -= 3;
     if (this._config?.site_details !== "collapsed") rows += CARD_SIZE_DETAILS[mode] ?? 0;
     if (normalizeStatsPeriod(this._config?.stats_period, "total") !== "none") {
       rows += CARD_SIZE_FOOTER[mode] ?? 0;
     }
     return Math.max(1, rows);
-  }
-
-  // How many loadpoints the card would draw: the discovered ones narrowed by the
-  // `loadpoints` filter. Nothing is discovered before the first render, so a
-  // configured filter still yields a count there and everything else falls back
-  // to one loadpoint rather than to zero.
-  _sizedLoadpointCount() {
-    const filter = loadpointFilter(this._config);
-    const found  = this._cachedEntities?.loadpoints || {};
-    const n = Object.keys(found).length
-      ? Object.keys(selectLoadpoints(found, this._config)).length
-      : (filter ? filter.length : 0);
-    return Math.max(1, n);
   }
 
   // Width only, on purpose. A cell of the sections grid is 56 px high with an
@@ -550,7 +536,16 @@ export class EvccCard extends HTMLElement {
     }
     const { loadpoints, site, meters } = this._cachedEntities;
 
-    const visible = selectLoadpoints(loadpoints, this._config);
+    let visible = selectLoadpoints(loadpoints, this._config);
+    // The loadpoint, compact and plan modes show one loadpoint. Without
+    // `loadpoint` the card takes the only one evcc has enabled; with several
+    // it asks to pick one, like the vehicle mode.
+    let pickOne = false;
+    if (SINGLE_LOADPOINT_MODES.includes(this._config.mode || "loadpoint") && !loadpointFilter(this._config)) {
+      const enabled = Object.keys(visible).filter(lp => !isLoadpointDisabled(this._hass, visible[lp]));
+      if (enabled.length > 1) pickOne = true;
+      else if (enabled.length === 1) visible = { [enabled[0]]: visible[enabled[0]] };
+    }
 
     // disabled_loadpoints: hide (default) | dim | show - how to treat
     // loadpoints that are disabled in the evcc config (ha-evcc 2026.8.8+).
@@ -586,6 +581,8 @@ export class EvccCard extends HTMLElement {
               ? this._renderSiteBlock2(site, loadpoints)
               : this._config.mode === "stats"
               ? this._renderStatsBlock()
+              : pickOne
+              ? this._renderPickLoadpoint(loadpoints)
               : this._config.mode === "plan"
                 ? this._renderPlanMode(lpEnabled)
                 : this._config.mode === "repeatplan"

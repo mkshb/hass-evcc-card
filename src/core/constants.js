@@ -234,8 +234,8 @@ export function loadpointOption(config, key, lpName) {
 }
 
 // The modes that show one loadpoint per card. Like the vehicle mode, a card
-// names its loadpoint with `loadpoint`; a list in `loadpoints` from before
-// still draws every loadpoint in it.
+// names its loadpoint with `loadpoint`; `loadpoints` with a single name from
+// before still works, a list of several is rejected in validateCardConfig().
 export const SINGLE_LOADPOINT_MODES = ["loadpoint", "compact", "plan"];
 
 // The loadpoints a card is limited to, as a list, or null when it is not set:
@@ -250,10 +250,10 @@ export function loadpointFilter(config) {
   return Array.isArray(raw) ? raw : [raw];
 }
 
-// The vehicles a `repeatplan` card is limited to, as a list, or null when it
-// is not set: `vehicle` (one, like the vehicle mode) or the list
-// `repeating_plan_vehicles` from before (a single name is shorthand for a list
-// of one). Compared without case by the readers.
+// The vehicle a `repeatplan` card is limited to, as a list of one, or null
+// when it is not set: `vehicle` (like the vehicle mode) or
+// `repeating_plan_vehicles` from before with a single name; a list of several
+// is rejected in validateCardConfig(). Compared without case by the readers.
 export function repeatPlanFilter(config) {
   const one = config?.vehicle;
   if (typeof one === "string" && one.trim()) return [one.trim()];
@@ -329,6 +329,12 @@ export function validateCardConfig(config) {
   if (list && (!list.length || list.some(lp => typeof lp !== "string" || !lp.trim()))) {
     throw new Error("evcc-card: loadpoints has to be a loadpoint name or a list of names");
   }
+  // One loadpoint per loadpoint, compact or plan card since 0.10.0 (`mode`
+  // defaults to loadpoint). Said like the vehicle mode says it.
+  const mode = c.mode || "loadpoint";
+  if (SINGLE_LOADPOINT_MODES.includes(mode) && list && list.length > 1) {
+    throw new Error(`evcc-card: mode ${mode} shows one charge point. Use loadpoint: ${list[0]} and a card per charge point instead of loadpoints: [${list.join(", ")}]`);
+  }
   for (const key of ["no_plan", "no_pv"]) {
     const v = c[key];
     if (v === undefined || v === null || v === true || v === false) continue;
@@ -348,6 +354,10 @@ export function validateCardConfig(config) {
   }
   if (c.vehicle !== undefined && c.vehicle !== null && c.repeating_plan_vehicles !== undefined && c.repeating_plan_vehicles !== null) {
     throw new Error("evcc-card: use vehicle for one vehicle or repeating_plan_vehicles for a list, not both");
+  }
+  const rplan = repeatPlanFilter(c);
+  if (mode === "repeatplan" && rplan && rplan.length > 1) {
+    throw new Error(`evcc-card: mode repeatplan shows one vehicle. Use vehicle: ${rplan[0]} and a card per vehicle instead of repeating_plan_vehicles: [${rplan.join(", ")}]`);
   }
   // The mode showed a block per vehicle at first. It shows one, so a list of
   // several says something the card no longer does, and saying so is better

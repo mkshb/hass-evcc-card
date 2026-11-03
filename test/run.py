@@ -21,8 +21,10 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT  = ROOT / "test" / "out"
 MODES = ["loadpoint", "compact", "battery", "vehicle", "site", "flow", "grid", "stats", "plan", "repeatplan", "priority", "debug"]
 # What a mode needs beyond its name to show anything: the vehicle mode shows one
-# vehicle per card and asks which one when it is not told.
-MODE_CONFIG = {"vehicle": {"vehicle": "ex30"}}
+# vehicle per card, the loadpoint, compact and plan modes one charge point, and
+# each asks which one when it is not told.
+MODE_CONFIG = {"vehicle": {"vehicle": "ex30"}, "loadpoint": {"loadpoint": "openwb"},
+               "compact": {"loadpoint": "openwb"}, "plan": {"loadpoint": "openwb"}}
 
 
 def mode_config(mode, **extra):
@@ -168,8 +170,7 @@ def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="d
     if tariff:  q["tariff"] = tariff
     if second:  q["second"] = json.dumps(second)
     if wsname:  q["wsname"] = wsname
-    if config is not None: q["config"] = json.dumps(config)
-    else: q["mode"] = mode or "loadpoint"
+    q["config"] = json.dumps(config if config is not None else mode_config(mode or "loadpoint"))
     if dark: q["dark"] = 1
     errors = []
     listeners = [("pageerror", lambda e: errors.append(f"pageerror: {e}")),
@@ -1898,7 +1899,7 @@ def editor(browser, port, t):
         && r.querySelector(".form-look").nextElementSibling === r.querySelector(".form-disabled"); }"""),
             "language and size come last, only the disabled entities follow", "")
     t.check(sec("look").locator('[data-name="language"]').count() == 1 and sec("look").locator('[data-name="size"]').count() == 1
-            and sec("content").locator('[data-name="hide_settings"]').count() > 0 and sec("content").locator('[data-name="no_plan"]').count() > 0,
+            and sec("content").locator('[data-name="hide_settings"]').count() > 0,
             "language and size, and the display options, sit in their panels", "")
     t.check(fld('ha-form > [data-field="mode"]').count() == 1 and fld('ha-form > [data-field="loadpoint"]').count() == 1,
             "mode and loadpoint stay on top", "")
@@ -1919,10 +1920,11 @@ def editor(browser, port, t):
         t.check(sel not in last(), f"{sel} back to its default drops the key", json.dumps(last()))
 
     # --- checkbox groups ---------------------------------------------------------
-    # A loadpoint card that draws all loadpoints still has the lists; the
-    # loadpoint list itself belongs to the modes for several.
+    # The loadpoint list belongs to the priority mode, no_plan is a switch once
+    # the card has its loadpoint (below).
     t.check(fld('ha-form [data-name="no_pv"]').count() == 0, "no_pv has no field, it stays a YAML option", "")
-    for field, a, b in (("no_plan", "openwb", "wp"), ("hide_settings", "min_soc", "phases")):
+    t.check(fld('ha-form [data-name="no_plan"]').count() == 0, "no no_plan field before the card has its loadpoint", "")
+    for field, a, b in (("hide_settings", "min_soc", "phases"),):
         cb(field, a).check()
         t.check(last().get(field, [])[-1:] == [a], f"{field}: checking {a} appends it", json.dumps(last().get(field)))
         cb(field, b).check()
@@ -1931,23 +1933,22 @@ def editor(browser, port, t):
         cb(field, a).uncheck()
         t.check(a not in last().get(field, []) and b in last().get(field, []),
                 f"{field}: unchecking removes only that entry", json.dumps(last().get(field)))
-    cb("no_plan", "wp").uncheck()
-    t.check("no_plan" not in last(), "emptying a checkbox group drops the key", json.dumps(last()))
+    cb("hide_settings", "phases").uncheck()
+    cb("hide_settings", "priority").uncheck()
+    t.check("hide_settings" not in last(), "emptying a checkbox group drops the key", json.dumps(last()))
 
     # --- one loadpoint per card ----------------------------------------------------
     # The loadpoint and plan modes pick one loadpoint, like the vehicle mode;
-    # no_plan / no_pv become switches that write true. A list of several from
-    # before is an option of its own and keeps working until something is picked.
+    # no_plan / no_pv become switches that write true.
     lp = fm("loadpoint")
     opts = lp.locator("option").evaluate_all("os => os.map(o => o.value)")
-    t.check(opts[0] == "__unset" and "openwb" in opts and "wp" in opts and fm("loadpoints").count() == 0,
-            "the loadpoint mode offers one loadpoint, the first option draws them all", json.dumps(opts))
-    t.check(lp.locator('option[value="__unset"]').inner_text() == "\u26a0 Alle Ladepunkte",
-            "drawing them all is marked with a warning sign", lp.locator('option[value="__unset"]').inner_text())
+    t.check(opts == ["__unset", "openwb", "wp"] and fm("loadpoints").count() == 0,
+            "the loadpoint mode offers one loadpoint", json.dumps(opts))
+    t.check(lp.locator('option[value="__unset"]').inner_text() == "Ladepunkt wählen",
+            "with several nothing is preselected, the first option asks to pick one", lp.locator('option[value="__unset"]').inner_text())
+    t.check(fld(".deprecated").count() == 0, "no note about several loadpoints any more", "")
     lp.select_option("openwb")
     t.check(last().get("loadpoint") == "openwb" and "loadpoints" not in last(), "a pick writes config.loadpoint", json.dumps(last()))
-    t.check(fm("loadpoint").locator('option[value="__unset"]').count() == 0,
-            "once one is picked, all of them is no longer offered", json.dumps(fm("loadpoint").locator("option").evaluate_all("os => os.map(o => o.value)")))
     t.check(fm("disabled_loadpoints").count() == 0 and fld('ha-form input[type=checkbox][data-name="no_plan"]').count() == 1,
             "for one loadpoint: no disabled_loadpoints, no_plan is a single switch", "")
     t.check(fld('ha-form [data-name="no_pv"]').count() == 0, "no no_pv switch either", "")
@@ -1955,18 +1956,10 @@ def editor(browser, port, t):
     t.check(last().get("no_plan") is True, "the switch writes no_plan: true", json.dumps(last()))
     fm("no_plan").uncheck()
     t.check("no_plan" not in last(), "and off drops it again", json.dumps(last()))
-    mount({"mode": "loadpoint", "loadpoints": ["openwb", "wp"], "no_plan": ["openwb"], "no_pv": ["wp"]})
-    t.check(fm("loadpoint").input_value() == "__many" and fm("loadpoint").locator("option:checked").inner_text() == "\u26a0 Mehrere: openwb, wp" and count() == 0,
-            "a list of several from before shows as such, unchanged", fm("loadpoint").locator("option:checked").inner_text())
-    warn = fld(".form-warn .deprecated")
-    t.check(warn.count() == 1 and "Künftige Versionen" in warn.inner_text() and fld(".form > div").first.locator(".deprecated").count() == 1,
-            "several loadpoints: a red note on top says they go away", warn.inner_text() if warn.count() else "")
+    mount({"mode": "loadpoint", "no_plan": ["openwb"], "no_pv": ["wp"]})
     fm("loadpoint").select_option("wp")
-    t.check(last().get("loadpoint") == "wp" and "loadpoints" not in last() and "no_plan" not in last() and last().get("no_pv") is True,
-            "picking one turns the lists into its switches", json.dumps(last()))
-    t.check(fld(".deprecated").count() == 0, "with one loadpoint the note is gone", "")
-    opts = fm("loadpoint").locator("option").evaluate_all("os => os.map(o => o.value)")
-    t.check("__many" not in opts and "__unset" not in opts, "and neither the list nor all of them can be picked again", json.dumps(opts))
+    t.check(last().get("loadpoint") == "wp" and "no_plan" not in last() and last().get("no_pv") is True,
+            "picking one turns the lists of names into its switches", json.dumps(last()))
     # The one loadpoint disabled in evcc: hide would empty the card, so the
     # choice how to treat it is offered again.
     wp_off = """(on) => { const h = window.__hass, id = "binary_sensor.evcc_wp_disabled_in_config";
@@ -1984,9 +1977,12 @@ def editor(browser, port, t):
     t.check(last().get("loadpoints") == ["openwb"] and "loadpoint" not in last(), "to the priority mode the loadpoint becomes a list of one", json.dumps(last()))
     fm("mode").select_option("plan")
     t.check(last().get("loadpoint") == "openwb" and "loadpoints" not in last(), "and back to one loadpoint per card", json.dumps(last()))
-    mount({"mode": "compact", "loadpoints": ["openwb", "wp"]})
-    t.check(fm("loadpoint").input_value() == "__many" and fm("loadpoints").count() == 0 and fld(".form-warn .deprecated").count() == 1,
-            "the compact mode picks one loadpoint too, a list of several is marked", fm("loadpoint").input_value())
+    mount({"mode": "priority", "loadpoints": ["openwb", "wp"]})
+    fm("mode").select_option("compact")
+    t.check("loadpoints" not in last() and "loadpoint" not in last(),
+            "a list of several from the priority mode does not follow into a mode for one", json.dumps(last()))
+    t.check(fm("loadpoint").input_value() == "__unset" and fm("loadpoints").count() == 0,
+            "the compact mode then asks for its loadpoint", fm("loadpoint").input_value())
     fm("loadpoint").select_option("wp")
     t.check(last().get("loadpoint") == "wp" and "loadpoints" not in last(), "and a pick writes config.loadpoint", json.dumps(last()))
     mount({"mode": "priority"})
@@ -2064,30 +2060,24 @@ def editor(browser, port, t):
                 f"older value {value} shows as {shown} in the editor", f"value {sel_val()} in {opts()}")
         t.check(count() == 0, f"older value {value} is not rewritten on open", json.dumps(page.evaluate("window.__cfg")))
 
-    # One vehicle per repeatplan card, like the vehicle mode; a list of
-    # several from before keeps working and is marked as going away.
+    # One vehicle per repeatplan card, like the vehicle mode.
     fm("mode").select_option("repeatplan")
     page.wait_for_timeout(400)
     rv = lambda: fm("vehicle").locator("option").evaluate_all("os => os.map(o => o.value)")
     t.check(rv() == ["__unset", "ex30", "id7"] and fm("repeating_plan_vehicles").count() == 0,
-            "repeatplan offers one vehicle out of those discovered, the first option draws them all", json.dumps(rv()))
-    t.check(fld(".form-warn .deprecated").count() == 1, "drawing several vehicles is marked as going away", "")
+            "repeatplan offers one vehicle out of those discovered", json.dumps(rv()))
+    t.check(fm("vehicle").locator('option[value="__unset"]').inner_text() in ("Fahrzeug wählen", "Pick a vehicle"),
+            "with several nothing is preselected, the first option asks to pick one", fm("vehicle").locator('option[value="__unset"]').inner_text())
     fm("vehicle").select_option("ex30")
     t.check(last().get("vehicle") == "ex30" and "repeating_plan_vehicles" not in last(), "a pick writes config.vehicle", json.dumps(last()))
-    t.check(fld(".deprecated").count() == 0 and "__unset" not in rv(), "with one vehicle the note and the option for all are gone", json.dumps(rv()))
 
     mount({"mode": "repeatplan", "repeating_plan_vehicles": "EX30"})
     t.check(fm("vehicle").input_value() == "ex30" and count() == 0,
             "a single name from before shows as that vehicle, without case and without rewriting it", fm("vehicle").input_value())
-    mount({"mode": "repeatplan", "repeating_plan_vehicles": ["ex30", "id7"]})
-    t.check(fm("vehicle").input_value() == "__many" and fm("vehicle").locator("option:checked").inner_text() == "\u26a0 Mehrere: Ex30, Id7" and count() == 0,
-            "a list of several from before shows as such, unchanged", fm("vehicle").locator("option:checked").inner_text())
-    fm("vehicle").select_option("id7")
-    t.check(last().get("vehicle") == "id7" and "repeating_plan_vehicles" not in last(), "picking one replaces the list", json.dumps(last()))
     mount({"mode": "plan", "repeating_plan_vehicles": ["id7"]})
     fm("mode").select_option("repeatplan")
     t.check(last().get("vehicle") == "id7" and "repeating_plan_vehicles" not in last(), "to the repeatplan mode a list of one becomes its vehicle", json.dumps(last()))
-    mount({"mode": "repeatplan", "repeating_plan_vehicles": ["ex30", "id7"]})
+    mount({"mode": "repeatplan"})
 
     fm("mode").select_option("vehicle")
     page.wait_for_timeout(400)
@@ -2660,17 +2650,25 @@ def discovery(browser, port, t):
 
     # A second installation whose prefix extends the first one: "evcc demo" next
     # to "evcc". Every demo entity id starts with evcc_ too, and the production
-    # card would read the demo loadpoints as "demo_openwb" and "demo_wp".
-    for cfg, want, label in (({"mode": "loadpoint"}, 2, "the production card shows only its own two loadpoints"),
-                             ({"mode": "loadpoint", "prefix": "evcc_demo_"}, 2, "the demo card shows the two demo loadpoints")):
+    # card would read the demo loadpoints as "demo_openwb" and "demo_wp". A card
+    # without `loadpoint` lists the loadpoints it found and asks to pick one.
+    listed = lambda page: page.locator(in_card(".empty code")).inner_text().strip() if page.locator(in_card(".empty code")).count() else ""
+    for cfg, label in (({"mode": "loadpoint"}, "the production card offers only its own two loadpoints"),
+                       ({"mode": "loadpoint", "prefix": "evcc_demo_"}, "the demo card offers the two demo loadpoints")):
         page = new_page(browser, 480, 1800)
         errors = open_card(page, port, config=cfg, second={"prefix": "evcc_demo_"})
-        rows = page.locator(in_card(".loadpoint")).count()
+        if "prefix" not in cfg: page.locator("#host").screenshot(path=str(OUT / "loadpoint-pick-one.png"))
+        got = listed(page)
+        t.check(got == "openwb, wp" and not errors, f"prefix evcc_ next to evcc_demo_: {label}", f"{got!r}; {'; '.join(errors)[:120]}")
+        done(page)
+    for cfg, label in (({"mode": "loadpoint", "loadpoint": "openwb"}, "the production card"),
+                       ({"mode": "loadpoint", "loadpoint": "openwb", "prefix": "evcc_demo_"}, "the demo card")):
+        page = new_page(browser, 480, 1800)
+        errors = open_card(page, port, config=cfg, second={"prefix": "evcc_demo_"})
         modes = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('button.mode-btn')].map(b => b.dataset.entity)")
         own = cfg.get("prefix", "evcc_")
-        clean = all(m.startswith(f"select.{own}") and (own != "evcc_" or not m.startswith("select.evcc_demo_")) for m in modes)
-        t.check(rows == want and clean and not errors, f"prefix evcc_ next to evcc_demo_: {label}",
-                f"rows={rows} modes={sorted(set(modes))[:4]}; {'; '.join(errors)[:120]}")
+        clean = bool(modes) and all(m.startswith(f"select.{own}") and (own != "evcc_" or not m.startswith("select.evcc_demo_")) for m in modes)
+        t.check(clean and not errors, f"prefix evcc_ next to evcc_demo_: {label} controls its own openwb", f"{sorted(set(modes))[:4]}; {'; '.join(errors)[:120]}")
         done(page)
 
     # An entity of someone else whose id only looks like ha-evcc's: a template
@@ -2685,15 +2683,23 @@ def discovery(browser, port, t):
             h.states = { ...h.states, [id]: { entity_id: id, state: '3000', attributes: { unit_of_measurement: 'W' } } };
             window.__card.hass = { ...h }; }""", platform)
         settle(page)
-        rows = page.locator(in_card(".loadpoint")).count()
-        t.check(rows == 2 and not errors, f"an evcc_-named entity {label} is no loadpoint", f"rows={rows}; {'; '.join(errors)[:120]}")
+        got = listed(page)
+        t.check(got == "openwb, wp" and not errors, f"an evcc_-named entity {label} is no loadpoint", f"{got!r}; {'; '.join(errors)[:120]}")
         done(page)
-    for opt, want_rows, want_badge in (("hide", 1, 0), ("dim", 2, 1), ("show", 2, 0)):
+    # The card's own loadpoint disabled in evcc: hidden, dimmed or shown.
+    for opt, want_rows, want_badge in (("hide", 0, 0), ("dim", 1, 1), ("show", 1, 0)):
         page = new_page(browser, 480, 1800)
-        open_card(page, port, config={"mode": "loadpoint", "disabled_loadpoints": opt}, set={"binary_sensor.evcc_wp_disabled_in_config": "on"})
+        open_card(page, port, config={"mode": "loadpoint", "loadpoint": "wp", "disabled_loadpoints": opt}, set={"binary_sensor.evcc_wp_disabled_in_config": "on"})
         rows, badge = page.locator(in_card(".loadpoint")).count(), page.locator(in_card(".lp-badge.disabled")).count()
         t.check(rows == want_rows and badge == want_badge, f"disabled_loadpoints: {opt} → {want_rows} loadpoint(s), {want_badge} disabled badge", f"rows={rows} badge={badge}")
         done(page)
+    # Without `loadpoint` the card takes the only loadpoint evcc has enabled.
+    page = new_page(browser, 480, 1800)
+    errors = open_card(page, port, config={"mode": "loadpoint", "disabled_loadpoints": "dim"}, set={"binary_sensor.evcc_wp_disabled_in_config": "on"})
+    lps = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('button.mode-btn')].map(b => b.dataset.entity.split('_')[1])")
+    t.check(set(lps) == {"openwb"} and page.locator(in_card(".lp-badge.disabled")).count() == 0 and not errors,
+            "without loadpoint the card takes the only enabled one", json.dumps(sorted(set(lps))))
+    done(page)
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["wp"]})
     labels = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.slider-row label')].map(l => l.textContent.trim())")
@@ -2934,8 +2940,8 @@ def card_api(browser, port, t):
     getCardSize() feeds the masonry layout (one unit is 50 px). Without it HA
     assumes a single row for everything from the compact line to a debug dump.
     The numbers live in CARD_SIZES; the checks pin the contract, not the values:
-    never 0, never undefined, larger for a taller mode, and scaling with the
-    number of loadpoints where the card repeats a block per loadpoint.
+    never 0, never undefined, larger for a taller mode, and dropping the blocks
+    a configuration switches off.
     """
     t.group("cardapi - getCardSize")
     page = new_page(browser, 480, 2400)
@@ -2991,7 +2997,7 @@ def card_api(browser, port, t):
         ["site collapsed", { mode: "site", site_details: "collapsed", stats_period: "none" }],
         ["flow",           { mode: "flow" }],
         ["loadpoint",      { mode: "loadpoint", loadpoints: ["openwb"] }],
-        ["two loadpoints", { mode: "loadpoint", loadpoints: ["openwb", "wp"] }],
+        ["compact",        { mode: "compact" }],
         ["debug",          { mode: "debug" }],
       ]) {
         const c = document.createElement("evcc-card");
@@ -3005,7 +3011,7 @@ def card_api(browser, port, t):
             f"unbrauchbar: {bad}" if bad else json.dumps(est))
     t.check(est["site collapsed"] < est["site"], "the estimate drops the table and the footer when they are off",
             json.dumps(est))
-    t.check(est["two loadpoints"] == 2 * est["loadpoint"], "the estimate scales with the loadpoint count",
+    t.check(est["compact"] < est["loadpoint"], "one loadpoint per card: the compact estimate stays below the loadpoint one",
             json.dumps(est))
     t.check(not errors, "no console errors while sizing", "; ".join(errors)[:200])
 
@@ -3143,7 +3149,9 @@ def setconfig(browser, port, t):
     """
     VALID = [
         ({}, "an empty config"),
-        ({"mode": "loadpoint", "loadpoints": ["openwb"]}, "a normal config"),
+        ({"mode": "loadpoint", "loadpoints": ["openwb"]}, "a list of one loadpoint from before"),
+        ({"mode": "priority", "loadpoints": ["openwb", "wp"]}, "a list of loadpoints in the priority mode"),
+        ({"mode": "repeatplan", "repeating_plan_vehicles": ["id7"]}, "a list of one vehicle from before"),
         ({"mode": "flow", "size": "large"}, "a known size"),
         ({"stats_period": "month"}, "a current stats_period"),
         ({"stats_period": "365d"}, "a legacy stats_period"),
@@ -3168,6 +3176,10 @@ def setconfig(browser, port, t):
     INVALID = [
         ({"mode": "quatsch"}, "mode", "an unknown mode"),
         ({"mode": "site2"}, "mode: grid", "the former mode name site2, pointing to grid"),
+        ({"loadpoints": ["openwb", "wp"]}, "loadpoint: openwb and a card per charge point", "several loadpoints on a card of the default mode"),
+        ({"mode": "compact", "loadpoints": ["openwb", "wp"]}, "mode compact shows one charge point", "several loadpoints on a compact card"),
+        ({"mode": "plan", "loadpoints": ["wp", "openwb"]}, "loadpoint: wp", "several loadpoints on a plan card, the first one suggested"),
+        ({"mode": "repeatplan", "repeating_plan_vehicles": ["ex30", "id7"]}, "vehicle: ex30 and a card per vehicle", "several vehicles on a repeatplan card"),
         ({"size": "huge"}, "size", "an unknown size"),
         ({"disabled_loadpoints": "maybe"}, "disabled_loadpoints", "an unknown disabled_loadpoints"),
         ({"stats_period": "weekly"}, "stats_period", "an unknown stats_period"),
@@ -3226,19 +3238,27 @@ def setconfig(browser, port, t):
     t.check(not errors, "no console errors", "; ".join(errors)[:200])
     done(page)
 
-    # repeatplan shows one vehicle with `vehicle`, compared without case; the
-    # list from before still draws every vehicle in it.
+    # repeatplan shows one vehicle with `vehicle`, compared without case.
     t.group("setconfig - repeatplan for one vehicle")
     blocks = {}
-    for key, cfg in (("all", {}), ("one", {"vehicle": "EX30"}), ("other", {"vehicle": "id7"}), ("list", {"repeating_plan_vehicles": ["ex30", "id7"]})):
+    # A plan for the id7 as well, so two vehicles have plans.
+    id7 = {"switch.evcc_id7_repeating_plan_2": "on"}
+    id7_attrs = {"switch.evcc_id7_repeating_plan_2": {"weekdays": [1, 2, 3], "time": "07:30", "soc": 80}}
+    for key, cfg, extra in (("all", {}, False), ("one", {"vehicle": "EX30"}, False), ("other", {"vehicle": "id7"}, False),
+                            ("two", {}, True), ("two, one", {"vehicle": "id7"}, True)):
         page = new_page(browser, 480, 900)
-        errors = open_card(page, port, config={"mode": "repeatplan", **cfg})
-        blocks[key] = page.locator(in_card(".loadpoint .lp-name")).all_inner_texts() or page.locator(in_card(".empty")).count() * ["(empty)"]
+        errors = open_card(page, port, config={"mode": "repeatplan", **cfg}, set=id7 if extra else None, attrs=id7_attrs if extra else None)
+        empty = page.locator(in_card(".empty"))
+        blocks[key] = page.locator(in_card(".loadpoint .lp-name")).all_inner_texts() or [empty.inner_text().strip() if empty.count() else "(nothing)"]
         t.check(not errors, f"{key}: no console errors", "; ".join(errors)[:200])
         done(page)
     # Only the EX30 of the mock has a scheduled plan, the id7's stay unavailable.
-    t.check(blocks["all"] == ["EX30"] and blocks["list"] == blocks["all"], "without a vehicle and with the list every vehicle with plans is drawn", json.dumps(blocks))
-    t.check(blocks["one"] == ["EX30"] and blocks["other"] == ["(empty)"], "vehicle: EX30 draws that one, vehicle: id7 nothing of the EX30", json.dumps(blocks))
+    t.check(blocks["all"] == ["EX30"], "without a vehicle the only vehicle with plans is drawn", json.dumps(blocks))
+    t.check(blocks["one"] == ["EX30"] and blocks["other"] != ["EX30"], "vehicle: EX30 draws that one, vehicle: id7 nothing of the EX30", json.dumps(blocks))
+    t.check("ex30, id7" in blocks["two"][0] and len(blocks["two"]) == 1,
+            "two vehicles with plans and none picked: the card asks for one and lists them", json.dumps(blocks))
+    t.check(len(blocks["two, one"]) == 1 and blocks["two, one"][0] != "EX30" and "ex30" not in blocks["two, one"][0],
+            "two vehicles with plans, vehicle: id7 draws only the id7", json.dumps(blocks))
 
 
 def widths(browser, port, t):

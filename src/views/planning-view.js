@@ -601,21 +601,30 @@ export const planningView = {
           </span>`;
   },
 
+  // One vehicle per card: the card's `vehicle`, else the only vehicle with
+  // repeating plans. With several and none picked it asks which, like the
+  // vehicle mode.
   _renderRepeatPlansMode() {
     const groups = this._discoverRepeatingPlans();
     if (groups.length === 0) {
       return `<div class="empty"><p>${this._t("noRepeatingPlans")}</p></div>`;
     }
-    return groups.map(g => {
-      const name = (groups.length === 1 && this._config.title) ? this._config.title : g.vehicleName;
+    if (groups.length > 1) {
+      const list = `<code>${groups.map(g => escHtml(g.slug)).join(", ")}</code>`;
       return `
+        <div class="empty">
+          <p>${this._t("vehiclePickOne")}</p>
+          <p>${this._t("availableVehicles", { list })}</p>
+        </div>`;
+    }
+    const g = groups[0];
+    return `
         <div class="loadpoint">
           <div class="lp-header">
-            <span class="lp-name">${escHtml(name)}</span>
+            <span class="lp-name">${escHtml(this._config.title || g.vehicleName)}</span>
           </div>
           ${this._renderRepeatPlansBlock(g)}
         </div>`;
-    }).join("");
   },
 
   // Listeners of the charge plan block: precondition, target slider with its
