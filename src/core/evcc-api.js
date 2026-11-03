@@ -12,6 +12,12 @@ export const evccApi = {
     return Array.isArray(this._caps?.commands) && this._caps.commands.includes(name);
   },
 
+  // ha-evcc older than HA_EVCC_MIN_VERSION: the capabilities probe is done and
+  // brought no command. False while it runs, so nothing flashes on page load.
+  _haEvccTooOld() {
+    return !!this._capsLoaded && !this._caps?.commands?.length;
+  },
+
   // Probe capabilities once. Older ha-evcc versions lack the command and the
   // callWS rejects — we then mark the feature set empty so the UI degrades.
   _loadCapabilities() {

@@ -238,6 +238,7 @@
   "planEnd": "Ende",
   "planPreviewLoading": "Vorschau wird geladen…",
   "planPreviewError": "Vorschau nicht verfügbar",
+  "planPreviewTooOld": "Die Vorschau benötigt ha-evcc {ver} oder neuer",
   "planPreviewDuration": "Dauer",
   "planPreviewPower": "Leistung",
   "planPreviewCost": "Geschätzte Kosten",

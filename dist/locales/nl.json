@@ -238,6 +238,7 @@
   "planEnd": "Einde",
   "planPreviewLoading": "Voorbeeld laden…",
   "planPreviewError": "Voorbeeld niet beschikbaar",
+  "planPreviewTooOld": "De voorvertoning vereist ha-evcc {ver} of nieuwer",
   "planPreviewDuration": "Duur",
   "planPreviewPower": "Vermogen",
   "planPreviewCost": "Geschatte kosten",

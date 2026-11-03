@@ -96,10 +96,10 @@ All charge points and site entities are **automatically discovered** via the HA 
 | **Slider controls** | Adjust Target SoC, Min SoC, Priority, smart charging limit, feed-in priority limit, battery boost, solar share, Max current and Min current inline |
 | **Phase switching** | Auto / 1-phase / 3-phase control built in |
 | **Plan strategies** | Continuous charging and battery preconditioning settings inline in the plan block |
-| **Repeating plans** | `repeatplan` mode lists evcc's weekly repeating charge plans per vehicle and toggles them on/off (ha-evcc 2026.6.1+) |
+| **Repeating plans** | `repeatplan` mode lists evcc's weekly repeating charge plans per vehicle and toggles them on/off |
 | **Vehicle view** | `vehicle` mode shows one vehicle, plugged in or not: charge level, range, odometer, plans and totals from evcc, plus lock, doors, location and commands from the vehicle's own integration |
-| **Live plan preview** | In `plan` mode, a live chart previews the planned charging window over the upcoming tariff/forecast, with duration, power and average price/CO₂ (ha-evcc 2026.6.x+) |
-| **Session statistics** | `stats` mode is powered directly by evcc's charging-session history: no helper sensors or recorder setup, with energy, cost, savings, solar share and a breakdown by vehicle or charge point (ha-evcc 2026.6.x+) |
+| **Live plan preview** | In `plan` mode, a live chart previews the planned charging window over the upcoming tariff/forecast, with duration, power and average price/CO₂ |
+| **Session statistics** | `stats` mode is powered directly by evcc's charging-session history: no helper sensors or recorder setup, with energy, cost, savings, solar share and a breakdown by vehicle or charge point |
 | **Heating loadpoints** | Heat-pump / heating loadpoints are detected automatically: no EV charge plan, and the target/limit is shown as a temperature |
 | **Action indicators** | Pending phase switches (1↔3 phase) and PV-charging start/stop shown as inline countdown chips |
 | **Diagnostics** | Built-in `debug` mode collects card / HA / integration state into a copy-paste-ready bug report |
@@ -110,8 +110,7 @@ All charge points and site entities are **automatically discovered** via the HA 
 ## Prerequisites
 
 - [Home Assistant](https://www.home-assistant.io/) (2023.x or newer)
-- [ha-evcc](https://github.com/marq24/ha-evcc) integration installed and configured, with a running [EVCC](https://evcc.io/) instance connected to it
-- For the **live plan preview** and the **session-based statistics**, ha-evcc **2026.6.x or newer** is required (it ships evcc's WebSocket data API). On older versions these features fall back automatically and the rest of the card keeps working.
+- [ha-evcc](https://github.com/marq24/ha-evcc) **2026.6.3 or newer**, installed and configured, with a running [EVCC](https://evcc.io/) instance connected to it. This is the first release with the WebSocket data API that the plan preview and the statistics rely on. On an older ha-evcc the plan preview shows a note with the required version instead, and the debug view says so too.
 - For the SoC forecast of the optimizer, grid discharging and the clear button of the grid charge limit in the `battery` mode, ha-evcc **2026.10.1 or newer** is required, for the button that recomputes the forecast **2026.10.2 or newer**.
 
 ---
@@ -366,7 +365,7 @@ Compact site energy overview with a focus on the current grid status:
 
 ### `stats`
 
-Charging statistics, powered directly by evcc's **charging-session history** (ha-evcc 2026.6.x+). No helper sensors and no HA Recorder setup are required: the card reads the full session list once via the integration's WebSocket data API and computes everything in the browser.
+Charging statistics, powered directly by evcc's **charging-session history**. No helper sensors and no HA Recorder setup are required: the card reads the full session list once via the integration's WebSocket data API and computes everything in the browser.
 
 - **Period:** **Month**, **Year** or **Total**, with one stepper in the header to pick the month or year
 - **Overview:** charged energy, cost and the amount **saved** against the grid price evcc compares with, plus a bar splitting the energy into **solar** and **grid**
@@ -477,7 +476,7 @@ Minimalist charge plan view:
 - Vehicle selector, including evcc's **Guest vehicle** (no vehicle assigned while a car is plugged in; **No vehicle** when nothing is plugged in). The loadpoint header names the guest vehicle as well
 - Target time picker
 - Target SoC slider (tap the value to type it, see [Slider settings](#slider-settings))
-- **Live preview** - as soon as a target SoC and time are set, a chart previews the planned charging window over the upcoming tariff/forecast, with the expected duration, charging power and the average price or CO₂ of the plan (ha-evcc 2026.6.x+). It updates while you drag and is debounced and cached so it never floods evcc
+- **Live preview** - as soon as a target SoC and time are set, a chart previews the planned charging window over the upcoming tariff/forecast, with the expected duration, charging power and the average price or CO₂ of the plan. It updates while you drag and is debounced and cached so it never floods evcc
 - **Continuous charging** toggle - keeps the charge running without interruption once started
 - **Preconditioning** select - pre-heats/cools the battery before reaching the target SoC (off / minutes / hours / all)
 - Activate / delete plan
@@ -502,7 +501,7 @@ Repeating charge plans per vehicle - evcc's weekly departure schedules:
 - Active weekdays shown as badges, plus the departure time and target SoC
 - On/off toggle to activate or deactivate a plan directly from the dashboard
 
-> **Note:** Repeating plans can only be **created and edited in evcc itself** - the card only switches them on or off (an info icon in the header points this out). Requires the repeating plan entities from **ha-evcc 2026.6.1+** (`repeating_plan_*`); on older integration versions the entities do not exist yet and the mode shows an empty state.
+> **Note:** Repeating plans can only be **created and edited in evcc itself** - the card only switches them on or off (an info icon in the header points this out).
 
 <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/repeatplan-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/repeatplan-light.png" width="400">
 

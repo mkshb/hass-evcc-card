@@ -238,6 +238,7 @@
   "planEnd": "Kraj",
   "planPreviewLoading": "Učitavanje pregleda…",
   "planPreviewError": "Pregled nije dostupan",
+  "planPreviewTooOld": "Za pregled je potreban ha-evcc {ver} ili noviji",
   "planPreviewDuration": "Trajanje",
   "planPreviewPower": "Snaga",
   "planPreviewCost": "Procijenjeni trošak",

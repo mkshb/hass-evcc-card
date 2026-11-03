@@ -243,6 +243,39 @@ def render_smoke(browser, port, t):
 
 
 
+def min_version(browser, port, t):
+    """ha-evcc older than HA_EVCC_MIN_VERSION: the capabilities probe fails.
+
+    The plan preview says which ha-evcc it needs in its place, the debug view
+    names the minimum, and a current ha-evcc shows no such note.
+    """
+    t.group("min version - note on an ha-evcc without the WebSocket data API")
+    page = new_page(browser, 480, 900)
+    errors = open_card(page, port, config={"mode": "plan", "loadpoint": "openwb"}, lang="en", ws=False)
+    page.wait_for_timeout(300)
+    note = page.locator(in_card(".plan-preview .plan-preview-info"))
+    text = note.inner_text().strip() if note.count() else ""
+    t.check("2026.6.3" in text and not errors, "plan preview names the required ha-evcc in its place", text or "; ".join(errors)[:300])
+    t.check(page.locator(in_card(".plan-preview svg")).count() == 0, "no preview chart without the API")
+    done(page)
+
+    page = new_page(browser, 480, 900)
+    errors = open_card(page, port, mode="debug", lang="en", ws=False)
+    page.wait_for_timeout(300)
+    body = page.locator(in_card("ha-card")).inner_text()
+    t.check("older than 2026.6.3" in body and not errors, "debug view names the minimum ha-evcc", "found" if "older than 2026.6.3" in body else body[:200])
+    report = page.evaluate("window.__card._buildDebugReport()") or ""
+    t.check("older than 2026.6.3" in report, "debug report names the minimum ha-evcc", "found" if "older than 2026.6.3" in report else report[:200])
+    done(page)
+
+    page = new_page(browser, 480, 900)
+    errors = open_card(page, port, config={"mode": "plan", "loadpoint": "openwb"}, lang="en")
+    page.wait_for_timeout(300)
+    t.check("2026.6.3" not in page.locator(in_card("ha-card")).inner_text() and not errors,
+            "a current ha-evcc shows no version note", "; ".join(errors)[:300])
+    done(page)
+
+
 def stats_fallback(browser, port, t):
     """Stats mode on an ha-evcc without evcc_intg/sessions.
 
@@ -4723,7 +4756,7 @@ def battery_mode(browser, port, t):
     done(page)
 
 
-GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "prices": price_display, "editor": editor, "editor_vehicle_map": editor_vehicle_map, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
+GROUPS = {"unit": unit, "render": render_smoke, "min_version": min_version, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "prices": price_display, "editor": editor, "editor_vehicle_map": editor_vehicle_map, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
           "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities, "solar_share": solar_share, "vehicle": vehicle_mode, "battery": battery_mode, "stable_height": stable_height}
 

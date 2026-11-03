@@ -1,5 +1,10 @@
 export const EVCC_CARD_VERSION = "0.10.0";
 
+// The oldest ha-evcc the card supports: the first release with the WebSocket
+// data API (evcc_intg/capabilities, sessions, plan_preview). On an older one
+// the capabilities probe fails and each feature of the API says so in its place.
+export const HA_EVCC_MIN_VERSION = "2026.6.3";
+
 export const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
   { suffix: "min_current",         domain: "select",        type: "select_slider", lp: true,  core: true },

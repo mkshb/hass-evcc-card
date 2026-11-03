@@ -1,5 +1,5 @@
 import { discoverEntities } from "../core/entity-discovery.js";
-import { repeatPlanFilter } from "../core/constants.js";
+import { repeatPlanFilter, HA_EVCC_MIN_VERSION } from "../core/constants.js";
 import { stateVal, isOn, unitStr } from "../utils/state.js";
 import { evccDate, fmtDuration, fmtNum, fmtPrice, priceScale } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
@@ -272,7 +272,11 @@ export const planningView = {
 
   // Plan preview: shows charging slot chart + summary when SOC and time are set.
   _renderPlanPreview(lpName) {
-    if (!this._hasCmd("plan_preview")) return "";
+    if (!this._hasCmd("plan_preview")) {
+      return this._haEvccTooOld()
+        ? `<div class="plan-preview"><div class="plan-preview-info">${escHtml(this._t("planPreviewTooOld", { ver: HA_EVCC_MIN_VERSION }))}</div></div>`
+        : "";
+    }
     const state = this._planState[lpName];
     const target = this._planTarget(state);
     if (!target || !state.time) return "";

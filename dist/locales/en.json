@@ -238,6 +238,7 @@
   "planEnd": "End",
   "planPreviewLoading": "Loading preview…",
   "planPreviewError": "Preview unavailable",
+  "planPreviewTooOld": "The preview needs ha-evcc {ver} or newer",
   "planPreviewDuration": "Duration",
   "planPreviewPower": "Power",
   "planPreviewCost": "Est. cost",

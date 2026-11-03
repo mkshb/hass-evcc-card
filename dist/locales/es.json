@@ -238,6 +238,7 @@
   "planEnd": "Fin",
   "planPreviewLoading": "Cargando vista previa…",
   "planPreviewError": "Vista previa no disponible",
+  "planPreviewTooOld": "La vista previa requiere ha-evcc {ver} o posterior",
   "planPreviewDuration": "Duración",
   "planPreviewPower": "Potencia",
   "planPreviewCost": "Coste estimado",
