@@ -1,5 +1,5 @@
 import { detectIntegration, discoverEntities, installedPrefixes, selectLoadpoints, partitionDisabledLoadpoints, isLoadpointDisabled } from "./core/entity-discovery.js";
-import { CARD_SIZES, CARD_SIZE_DETAILS, CARD_SIZE_FOOTER, RENDER_ATTRS, normalizeStatsPeriod, legacyStatsPeriod, validateCardConfig, loadpointFilter } from "./core/constants.js";
+import { CARD_SIZES, CARD_SIZE_DETAILS, CARD_SIZE_FOOTER, RENDER_ATTRS, normalizeStatsPeriod, validateCardConfig, loadpointFilter } from "./core/constants.js";
 import { stateVal, unitStr } from "./utils/state.js";
 import { escHtml } from "./utils/html.js";
 import { morphInto } from "./utils/morph.js";
@@ -16,7 +16,6 @@ import { priorityView } from "./views/priority-view.js";
 import { siteView } from "./views/site-view.js";
 import { flowView } from "./views/flow-view.js";
 import { gridView } from "./views/grid-view.js";
-import { statisticsLegacy } from "./views/statistics-legacy.js";
 import { statisticsView } from "./views/statistics-view.js";
 import { batteryView } from "./views/battery-view.js";
 import { vehicleView } from "./views/vehicle-view.js";
@@ -47,9 +46,6 @@ export class EvccCard extends HTMLElement {
     this._planState     = {};
     this._planPreviewDebounce = {};
     this._tabState      = {};
-    this._statsPeriod   = "total";
-    this._chartCache     = {};
-    this._chartCacheTime = {};
     this._translations  = sharedTranslations();
     this._translationsReady = false;
 
@@ -405,17 +401,11 @@ export class EvccCard extends HTMLElement {
     this._config = config || {};
     this._debugReturn = null;
     this._syncIntegrationInstance();
-    // Both stats paths are fed from the same normalised value, so the current
-    // vocabulary (month/year/total/none) and the legacy one (30d/365d/thisYear)
-    // steer them the same way. The stats mode opens on the most recent month
-    // when nothing is configured; `none` only hides the footer, so the full view
-    // shows that default too.
-    const rawPeriod  = config?.stats_period;
-    const scope      = normalizeStatsPeriod(rawPeriod, "month");
+    // The stats mode opens on the most recent month when nothing is
+    // configured; `none` only hides the footer, so the full view shows that
+    // default too. 30d/365d/thisYear from before land on month or year.
+    const scope      = normalizeStatsPeriod(config?.stats_period, "month");
     this._statsScope = scope === "none" ? "month" : scope;
-    // The legacy path keeps a configured legacy value exactly as it is, and
-    // defaults to "total" rather than to the stats mode's most recent month.
-    this._statsPeriod = legacyStatsPeriod(rawPeriod, "total");
     if (this._statsMetric == null) this._statsMetric = "energy"; // energy | cost | co2
     if (this._statsGroup  == null) this._statsGroup  = "vehicle"; // vehicle | loadpoint
 
@@ -686,7 +676,7 @@ export class EvccCard extends HTMLElement {
 
 // Mode views, components and shared behaviour are plain objects of methods
 // (no framework): mix them into the prototype, refusing silent overrides.
-const mixins = [actions, evccApi, loadpointView, socControl, disabledEntities, planningView, priorityView, siteView, flowView, gridView, statisticsLegacy, statisticsView, batteryView, vehicleView, debugView, listeners, styles];
+const mixins = [actions, evccApi, loadpointView, socControl, disabledEntities, planningView, priorityView, siteView, flowView, gridView, statisticsView, batteryView, vehicleView, debugView, listeners, styles];
 for (const m of mixins) {
   for (const key of Object.keys(m)) {
     if (key in EvccCard.prototype) throw new Error(`evcc-card: duplicate method ${key}`);

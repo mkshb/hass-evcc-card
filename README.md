@@ -110,7 +110,7 @@ All charge points and site entities are **automatically discovered** via the HA 
 ## Prerequisites
 
 - [Home Assistant](https://www.home-assistant.io/) (2023.x or newer)
-- [ha-evcc](https://github.com/marq24/ha-evcc) **2026.6.3 or newer**, installed and configured, with a running [EVCC](https://evcc.io/) instance connected to it. This is the first release with the WebSocket data API that the plan preview and the statistics rely on. On an older ha-evcc the plan preview shows a note with the required version instead, and the debug view says so too.
+- [ha-evcc](https://github.com/marq24/ha-evcc) **2026.6.3 or newer**, installed and configured, with a running [EVCC](https://evcc.io/) instance connected to it. This is the first release with the WebSocket data API that the plan preview and the statistics rely on. On an older ha-evcc the plan preview and the statistics show a note with the required version instead, and the debug view says so too.
 - For the SoC forecast of the optimizer, grid discharging and the clear button of the grid charge limit in the `battery` mode, ha-evcc **2026.10.1 or newer** is required, for the button that recomputes the forecast **2026.10.2 or newer**.
 
 ---
@@ -208,8 +208,8 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 | `hide_soc_chart` | `boolean` | `false` | `battery` mode: `true` leaves out the state of charge chart, for a card that is only used for the settings. Highest and lowest SoC of the optimizer stay in the status |
 | `hide_disabled_hint` | `boolean` | `false` | `true` hides the warning triangle that the `loadpoint` / `compact` card shows administrators while an entity it needs is disabled in Home Assistant. See [Disabled entities](#disabled-entities) |
 | `slider_steps` | `map` | *(entity)* | Override the step of a number slider per setting (visual editor: **Advanced**), e.g. `{ smart_cost_limit: 0.01, limit_soc: 5 }`. Keys are ha-evcc feature names and are matched exactly. Also sets the increment of the − / + buttons in the direct-input panel. Number entities only. See [Slider settings](#slider-settings) |
-| `stats_period` | `string` | *(see note)* | Statistics period: `month`, `year`, `total`, `none`. Unconfigured, the `stats` mode opens on the most recent month and the footer under `site`/`grid`/`flow` summarises everything; `none` hides that footer. The older values `30d`, `365d` and `thisYear` still work |
-| `stats_exclude_loadpoints` | `list` | | Charge points the session statistics leave out, in the `stats` mode and in the summary row under `site`/`grid`/`flow`, for example a heat pump: `[wp]`. Takes the charge point names the card uses elsewhere, or their evcc titles. Not applied on ha-evcc before 2026.6.x |
+| `stats_period` | `string` | *(see note)* | Statistics period: `month`, `year`, `total`, `none`. Unconfigured, the `stats` mode opens on the most recent month and the footer under `site`/`grid`/`flow` summarises everything; `none` hides that footer. The older values `30d`, `365d` and `thisYear` are still accepted and show the month (`30d`) or the year (`365d`, `thisYear`) |
+| `stats_exclude_loadpoints` | `list` | | Charge points the session statistics leave out, in the `stats` mode and in the summary row under `site`/`grid`/`flow`, for example a heat pump: `[wp]`. Takes the charge point names the card uses elsewhere, or their evcc titles |
 | `prefix` | `string` | *(auto)* | Entity prefix, auto-detected from ha-evcc. With more than one ha-evcc entry the visual editor offers the instance to use; the first entry is the default and needs no `prefix` |
 
 > **Invalid values are rejected.** `mode`, `size`, `disabled_loadpoints` and `stats_period` only accept the values listed above, and `prefix`, `language`, `loadpoint` and `loadpoints` have to be non-empty; `loadpoint` and `loadpoints` cannot be combined. A dashboard carrying something else shows the Home Assistant error card naming the option, instead of quietly falling back to another view.
@@ -385,28 +385,6 @@ Charging statistics, powered directly by evcc's **charging-session history**. No
 > **Heating loadpoints** (heat pumps) are included like any other loadpoint and show up in the breakdown by vehicle or charge point. To leave one out, list it in `stats_exclude_loadpoints`.
 
 > **Saved** is what the charged energy would have cost at the grid price evcc compares against (`referencePricePerKWh` of each session), minus what it actually cost. Sessions without that price are left out of it.
-
-<a name="enabling-stat-periods"></a>
-
-#### Older ha-evcc versions (fallback)
-
-On ha-evcc versions **before 2026.6.x** the WebSocket session API is not available. The card then falls back to the previous statistics implementation, which is built on dedicated `stat_*` sensor entities and the HA Recorder. In that mode the period tabs are **30 days / 365 days / This year / Total**, each bar is split into a **green** (solar) and **blue** (grid) portion via `sensor.evcc_stat_total_solar_k_wh_template`, and the data is fetched lazily per tab and cached for 5 minutes.
-
-> **Periods not showing data?** The **Total** period is enabled by default in ha-evcc. The sensor entities for **30 days**, **365 days** and **This year** are **disabled by default** in Home Assistant and must be enabled manually. If a period tab shows a warning instead of statistics, follow the steps below.
-
-The stat sensors exist in your ha-evcc integration but are disabled by default. To enable them:
-
-1. In Home Assistant, open **Settings** -> **Devices & Services**
-2. Click on the **ha-evcc** integration
-3. Open your evcc device (e.g. *"evcc Solar Charging [evcc]"*)
-4. Scroll down to the section that says **"X disabled entities"** and click on it
-5. Enable the statistics entities for the periods you want: **30 days** (`stat30_*`), **365 days** (`stat365_*`) and/or **This year** (`stat_this_year_*`)
-6. Each period has three entities: `_charged_kwh`, `_solar_percentage` and `_avg_price` - enable all three for full statistics. Since ha-evcc **2026.2** there is also `_solar_k_wh_template` which is needed for the solar/grid split in the bar chart
-7. Wait a moment or reload the ha-evcc integration - the stat periods should then appear in the card
-
-> **Note:** After enabling, it may take a few minutes until the first values appear, as Home Assistant needs to record the initial data points for these entities.
-
-> **Single-year fallback:** If the **Total** tab detects that only one calendar year of data is available in the HA Recorder, it automatically falls back to showing the monthly breakdown of the current year - identical to the **This year** chart.
 
 <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/stats-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/stats-light.png" width="400">
 
@@ -668,7 +646,7 @@ Translations are stored as simple JSON files in the `dist/locales/` folder. Addi
 
 ### Why does the solar share show 0 % or nothing for older charging sessions?
 
-The solar share is taken from each charging session's recorded solar percentage. Sessions that evcc recorded before it started tracking that value are missing the underlying data, so a correct solar share cannot be calculated retroactively. Only sessions recorded after upgrading to a recent evcc/ha-evcc version will show solar share data. (On the older entity-based statistics fallback, the solar split additionally requires `sensor.evcc_stat_total_solar_k_wh_template`, introduced in ha-evcc **2026.3.3**.)
+The solar share is taken from each charging session's recorded solar percentage. Sessions that evcc recorded before it started tracking that value are missing the underlying data, so a correct solar share cannot be calculated retroactively. Only sessions recorded after upgrading to a recent evcc/ha-evcc version will show solar share data.
 
 ---
 

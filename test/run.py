@@ -269,59 +269,40 @@ def min_version(browser, port, t):
     done(page)
 
     page = new_page(browser, 480, 900)
+    errors = open_card(page, port, config={"mode": "stats"}, lang="en", ws=False)
+    page.wait_for_timeout(300)
+    page.locator("#host").screenshot(path=str(OUT / "stats-too-old.png"))
+    note = page.locator(in_card(".stats .stats-note"))
+    text = note.inner_text().strip() if note.count() else ""
+    t.check("2026.6.3" in text and not errors, "stats mode names the required ha-evcc in its place", text or "; ".join(errors)[:300])
+    # Probing capabilities is how the card finds out the API is missing; asking
+    # the recorder or a data command after that reply would be the bug.
+    calls = [c["type"] for c in page.evaluate("window.__hass.wsCalls")]
+    asked = [c for c in calls if c.startswith("recorder/") or (c.startswith("evcc_intg/") and c != "evcc_intg/capabilities")]
+    t.check(not asked, "nothing but the capabilities is asked without the API", str(asked)[:200])
+    done(page)
+
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, config={"mode": "site"}, lang="en", ws=False)
+    page.wait_for_timeout(300)
+    page.locator("#host").screenshot(path=str(OUT / "site-footer-too-old.png"))
+    foot = page.locator(in_card(".stats-footer .stats-note"))
+    text = foot.inner_text().strip() if foot.count() else ""
+    t.check("2026.6.3" in text and page.locator(in_card(".stats-footer .sf-items")).count() == 0 and not errors,
+            "the footer under site names the required ha-evcc instead of figures", text or "; ".join(errors)[:300])
+    done(page)
+
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, config={"mode": "site", "stats_period": "none"}, lang="en", ws=False)
+    page.wait_for_timeout(300)
+    t.check(page.locator(in_card(".stats-footer")).count() == 0 and not errors, "stats_period: none hides the footer note too")
+    done(page)
+
+    page = new_page(browser, 480, 900)
     errors = open_card(page, port, config={"mode": "plan", "loadpoint": "openwb"}, lang="en")
     page.wait_for_timeout(300)
     t.check("2026.6.3" not in page.locator(in_card("ha-card")).inner_text() and not errors,
             "a current ha-evcc shows no version note", "; ".join(errors)[:300])
-    done(page)
-
-
-def stats_fallback(browser, port, t):
-    """Stats mode on an ha-evcc without evcc_intg/sessions.
-
-    The card then reconstructs the chart from the stat_* template sensors and
-    the HA recorder, which the mock serves from `recorder/statistics_during_period`.
-    """
-    t.group("stats fallback - stat_* entities and the HA recorder")
-    page = new_page(browser, 480, 900)
-    errors = open_card(page, port, mode="stats", ws=False)
-    page.locator("#host").screenshot(path=str(OUT / "stats-fallback.png"))
-    t.check(page.locator(in_card("ha-card")).count() > 0 and not errors, "renders without the WebSocket data API", "; ".join(errors)[:300])
-
-    calls = page.evaluate("window.__hass.wsCalls")
-    rec = [c for c in calls if c["type"] == "recorder/statistics_during_period"]
-    t.check(len(rec) >= 1, "asks the recorder for statistics", f"{len(rec)} call(s)")
-    # Probing capabilities is how the card finds out the API is missing; asking for
-    # data after that reply would be the bug.
-    data_cmds = [c["type"] for c in calls if str(c["type"]).startswith("evcc_intg/") and c["type"] != "evcc_intg/capabilities"]
-    t.check(not data_cmds, "no evcc_intg data command is attempted after capabilities fails", str(data_cmds)[:200])
-    if rec:
-        q = rec[-1]
-        t.check(q.get("types") == ["sum"] and q.get("period") in ("day", "month") and "start_time" in q,
-                "recorder query asks for sum buckets over a period", json.dumps({k: q.get(k) for k in ("period", "types", "start_time")}))
-        t.check("sensor.evcc_stat_total_charged_kwh" in (q.get("statistic_ids") or []),
-                "recorder query names the cumulative kWh sensor", json.dumps(q.get("statistic_ids")))
-
-    bars = page.locator(in_card("rect.evcc-bar")).count()
-    t.check(bars > 0, "chart is rebuilt from recorder deltas", f"{bars} bars")
-    totals = [float(v) for v in page.evaluate("[...window.__card.shadowRoot.querySelectorAll('rect.evcc-bar')].map(r => r.dataset.total)") if v]
-    solars = [float(v) for v in page.evaluate("[...window.__card.shadowRoot.querySelectorAll('rect.evcc-bar')].map(r => r.dataset.solar)") if v]
-    t.check(bool(totals) and all(v >= 0 for v in totals), "every bar carries a non-negative delta", f"{len(totals)} values, min {min(totals) if totals else '-'}")
-    t.check(bool(solars) and any(v > 0 for v in solars), "the solar split survives the fallback", f"{len(solars)} values, max {max(solars) if solars else '-'}")
-    t.check(all(sv <= tv + 0.05 for sv, tv in zip(solars, totals)), "no bar claims more solar than total energy",
-            str([(s, v) for s, v in zip(solars, totals) if s > v + 0.05][:3]))
-
-    # The period tabs pick a different recorder resolution; "30d" is the only one
-    # that asks for day buckets, so without this the daily branch never runs.
-    tab = page.locator(in_card('.stats-period-tab[data-period="30d"]'))
-    t.check(tab.count() == 1, "legacy period tabs are offered", f"{tab.count()} tab(s) named 30d")
-    if tab.count() == 1:
-        tab.click()
-        page.wait_for_timeout(900)
-        daily = [c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "recorder/statistics_during_period" and c.get("period") == "day"]
-        t.check(len(daily) >= 1, "30d tab queries day buckets", f"{len(daily)} call(s)")
-        n = page.locator(in_card("rect.evcc-bar")).count()
-        t.check(n == 30, "30d chart shows one bar per day", f"{n} bars")
     done(page)
 
 
@@ -942,82 +923,68 @@ def render_attrs():
 
 
 def stats_period(browser, port, t):
-    """`stats_period` has to steer both stats paths the same way.
+    """`stats_period` steers the stats mode and the compact footer.
 
-    The editor writes month/year/total/none, older dashboards carry
-    30d/365d/thisYear/total, and the card runs either the sessions path or the
-    entity/recorder fallback depending on the ha-evcc version. Every combination
-    has to land on the period the user asked for.
+    The editor writes month/year/total/none, older dashboards may still carry
+    30d/365d/thisYear, which land on the month or the year. Every value has to
+    land on the period the user asked for.
     """
-    # config value -> (tab with the sessions API, tab on the legacy path)
+    # config value -> active scope tab of the stats mode
     CASES = [
-        ("month",    "month", "30d"),
-        ("year",     "year",  "thisYear"),
-        ("total",    "total", "total"),
-        ("none",     "month", "total"),    # none only hides the footer
-        ("30d",      "month", "30d"),
-        ("365d",     "year",  "365d"),     # a rolling window, kept as configured
-        ("thisYear", "year",  "thisYear"),
-        (None,       "month", "total"),    # unconfigured: newest month / everything
+        ("month",    "month"),
+        ("year",     "year"),
+        ("total",    "total"),
+        ("none",     "month"),    # none only hides the footer
+        ("30d",      "month"),
+        ("365d",     "year"),
+        ("thisYear", "year"),
+        (None,       "month"),    # unconfigured: newest month
     ]
     active = """(() => { const el = window.__card.shadowRoot.querySelector('.stats-period-tab.active');
-                         return el ? (el.dataset.scope ?? el.dataset.period) : null; })()"""
+                         return el ? el.dataset.scope : null; })()"""
 
-    for ws, label in ((True, "sessions API"), (False, "legacy path")):
-        t.group(f"stats_period - {label}")
-        for value, want_ws, want_legacy in CASES:
-            want = want_ws if ws else want_legacy
-            config = {"mode": "stats"}
-            if value: config["stats_period"] = value
-            page = new_page(browser, 480, 1200)
-            errors = open_card(page, port, config=config, ws=ws)
-            got = page.evaluate(active)
-            t.check(got == want and not errors, f"stats_period: {value or '(unset)'} selects {want}",
-                    f"got {got}; {'; '.join(errors)[:120]}")
-            done(page)
+    t.group("stats_period - stats mode")
+    for value, want in CASES:
+        config = {"mode": "stats"}
+        if value: config["stats_period"] = value
+        page = new_page(browser, 480, 1200)
+        errors = open_card(page, port, config=config)
+        got = page.evaluate(active)
+        t.check(got == want and not errors, f"stats_period: {value or '(unset)'} selects {want}",
+                f"got {got}; {'; '.join(errors)[:120]}")
+        done(page)
 
     # The compact footer under site/grid/flow carries the same period. `none`
     # is about this footer only, it never hides the tabs of the stats mode.
     loc = json.loads((ROOT / f"dist/locales/{LOCALE.split('-')[0]}.json").read_text(encoding="utf-8"))
-    # Rounded kWh of the stat_*_charged_kwh entities in the fixtures. Distinct
-    # per period, so the number shows which entity the footer actually read.
-    LEGACY_KWH  = {"30d": "170", "365d": "2150", "thisYear": "1605", "total": "2527"}
-    LEGACY_TKEY = {"30d": "statsPeriod30d", "365d": "statsPeriod365d", "thisYear": "statsPeriodThisYear", "total": "statsPeriodTotal"}
-    # config value -> (label key with the sessions API, legacy period without it)
+    # config value -> label key of the footer, None where it is hidden
     FOOTER = [
-        ("month",    "statsPeriodMonth", "30d"),
-        ("year",     "statsPeriodYear",  "thisYear"),
-        ("total",    "statsPeriodTotal", "total"),
-        ("30d",      "statsPeriodMonth", "30d"),
-        ("365d",     "statsPeriodYear",  "365d"),     # a rolling window on the legacy path
-        ("thisYear", "statsPeriodYear",  "thisYear"),
-        (None,       "statsPeriodTotal", "total"),
-        ("none",     None,               None),       # hidden on both paths
+        ("month",    "statsPeriodMonth"),
+        ("year",     "statsPeriodYear"),
+        ("total",    "statsPeriodTotal"),
+        ("30d",      "statsPeriodMonth"),
+        ("365d",     "statsPeriodYear"),
+        ("thisYear", "statsPeriodYear"),
+        (None,       "statsPeriodTotal"),
+        ("none",     None),
     ]
 
-    for ws, label in ((True, "sessions API"), (False, "legacy path")):
-        t.group(f"stats_period - compact footer, {label}")
-        for value, want_ws_key, want_legacy in FOOTER:
-            config = {"mode": "site"}
-            if value: config["stats_period"] = value
-            page = new_page(browser, 480, 1600)
-            errors = open_card(page, port, config=config, ws=ws)
-            foot = page.locator(in_card(".stats-footer"))
-            name = f"footer with stats_period {value or '(unset)'}"
-            if want_legacy is None:
-                t.check(foot.count() == 0 and not errors, f"{name}: hidden", f"found {foot.count()}")
-            elif ws:
-                # the label is uppercased in CSS, so compare case-insensitively
-                got = page.locator(in_card(".stats-footer .sf-period")).inner_text().strip()
-                want = loc[want_ws_key]
-                t.check(got.casefold() == want.casefold() and not errors, f"{name}: sessions footer says {want}", f"got {got}")
-            else:
-                got_label = page.locator(in_card(".stats-footer .sf-period")).inner_text().strip()
-                got_kwh   = page.locator(in_card(".stats-footer .sf-val")).first.inner_text().strip()
-                want_label, want_kwh = loc[LEGACY_TKEY[want_legacy]], LEGACY_KWH[want_legacy]
-                t.check(got_label.casefold() == want_label.casefold() and got_kwh.startswith(want_kwh) and not errors,
-                        f"{name}: reads the {want_legacy} entities", f"got {got_label} / {got_kwh}")
-            done(page)
+    t.group("stats_period - compact footer")
+    for value, want_key in FOOTER:
+        config = {"mode": "site"}
+        if value: config["stats_period"] = value
+        page = new_page(browser, 480, 1600)
+        errors = open_card(page, port, config=config)
+        foot = page.locator(in_card(".stats-footer"))
+        name = f"footer with stats_period {value or '(unset)'}"
+        if want_key is None:
+            t.check(foot.count() == 0 and not errors, f"{name}: hidden", f"found {foot.count()}")
+        else:
+            # the label is uppercased in CSS, so compare case-insensitively
+            got = page.locator(in_card(".stats-footer .sf-period")).inner_text().strip()
+            want = loc[want_key]
+            t.check(got.casefold() == want.casefold() and not errors, f"{name}: says {want}", f"got {got}")
+        done(page)
 
     # stats_exclude_loadpoints leaves the sessions of a loadpoint out of the
     # stats mode and of the footer. The config names the loadpoint by its key
@@ -2056,14 +2023,11 @@ def editor(browser, port, t):
         t.check(got["value"] == "__unset" and got["label"] == want,
                 f"{mode}: unconfigured shows \"{want}\", not a preselected period", json.dumps(got))
         t.check(count() == 0, f"{mode}: showing the default emits nothing", f"{count()} events")
-    for value in ("30d", "365d", "thisYear"):
+    for value, shown in (("30d", "month"), ("365d", "year"), ("thisYear", "year")):
         mount({"mode": "stats", "language": "en", "stats_period": value})
-        t.check(sel_val() == value and value in opts(), f"legacy value {value} stays selected in the editor",
-                f"value {sel_val()} in {opts()}")
-        t.check(count() == 0, f"legacy value {value} is not rewritten on open", json.dumps(page.evaluate("window.__cfg")))
-    mount({"mode": "stats", "language": "en", "stats_period": "month"})
-    t.check(opts() == ["__unset", "month", "year", "total", "none"],
-            "without a legacy value the list stays on the current vocabulary", json.dumps(opts()))
+        t.check(sel_val() == shown and opts() == ["__unset", "month", "year", "total", "none"],
+                f"older value {value} shows as {shown} in the editor", f"value {sel_val()} in {opts()}")
+        t.check(count() == 0, f"older value {value} is not rewritten on open", json.dumps(page.evaluate("window.__cfg")))
 
     # One vehicle per repeatplan card, like the vehicle mode; a list of
     # several from before keeps working and is marked as going away.
@@ -4756,7 +4720,7 @@ def battery_mode(browser, port, t):
     done(page)
 
 
-GROUPS = {"unit": unit, "render": render_smoke, "min_version": min_version, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "prices": price_display, "editor": editor, "editor_vehicle_map": editor_vehicle_map, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
+GROUPS = {"unit": unit, "render": render_smoke, "min_version": min_version, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "prices": price_display, "editor": editor, "editor_vehicle_map": editor_vehicle_map, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
           "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities, "solar_share": solar_share, "vehicle": vehicle_mode, "battery": battery_mode, "stable_height": stable_height}
 

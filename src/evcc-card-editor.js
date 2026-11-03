@@ -1,5 +1,5 @@
 import { HIDEABLE_SETTINGS, SLIDER_STEP_KEYS, SINGLE_LOADPOINT_MODES, vehicleSlug, isVehicleImage, isMediaSourceId,
-         loadpointFilter, loadpointOption, repeatPlanFilter } from "./core/constants.js";
+         loadpointFilter, loadpointOption, repeatPlanFilter, normalizeStatsPeriod } from "./core/constants.js";
 import { detectIntegration, discoverEntities, discoverVehicles, selectVehicle, cardDisabledEntities, isLoadpointDisabled } from "./core/entity-discovery.js";
 import { enableEntity } from "./core/actions.js";
 import { disabledEntitiesHtml, disabledListCss, enableEntities } from "./components/disabled-entities.js";
@@ -77,12 +77,6 @@ const LANGUAGES = [
 const SECTION_TITLES = {
   content: "editorSectionContent",
   look:    "editorSectionLook",
-};
-
-const LEGACY_PERIOD_LABELS = {
-  "30d":      "editorStatsPeriod30d",
-  "365d":     "editorStatsPeriod365d",
-  "thisYear": "editorStatsPeriodThisYear",
 };
 
 const EDITOR_CSS = `
@@ -749,11 +743,8 @@ export class EvccCardEditor extends HTMLElement {
       // its own default (the stats mode opens on the most recent month, the
       // compact footer under site/flow/grid sums everything up). The editor
       // names that default instead of preselecting an option the card does not
-      // use. The legacy vocabulary stays valid in existing YAML and keeps its
-      // own meaning (365d is a rolling window, not the calendar year), so a
-      // configured legacy value is offered as an option of its own rather than
-      // showing a neighbouring one, and rewritten only when something else is
-      // picked.
+      // use. 30d/365d/thisYear from before show as the month or the year they
+      // land on, and stay in the YAML until something else is picked.
       const options = [
         tOpt(UNSET,   "editorStatsPeriodDefault", {
                         val: mode === "stats" ? this._t("statsPeriodMonth") : this._t("editorStatsPeriodTotal") }),
@@ -762,8 +753,8 @@ export class EvccCardEditor extends HTMLElement {
         tOpt("total", "editorStatsPeriodTotal"),
         tOpt("none",  "editorStatsPeriodNone"),
       ];
-      if (LEGACY_PERIOD_LABELS[c.stats_period]) options.push(tOpt(c.stats_period, LEGACY_PERIOD_LABELS[c.stats_period]));
-      fields.push(pick("stats_period", options, c.stats_period || UNSET, { label: this._t("editorStatsPeriodLabel"), section: "content" }));
+      const period = c.stats_period ? normalizeStatsPeriod(c.stats_period, c.stats_period) : UNSET;
+      fields.push(pick("stats_period", options, period, { label: this._t("editorStatsPeriodLabel"), section: "content" }));
       // Loadpoints the statistics leave out, a heat pump for instance. Only
       // where there is more than one to choose from.
       if (lps.length > 1 || c.stats_exclude_loadpoints) {

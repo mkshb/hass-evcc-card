@@ -287,34 +287,6 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
           });
         }
 
-        case "recorder/statistics_during_period": {
-          const monthly = msg.period !== "day";
-          const now = new Date();
-          const cursor = new Date(msg.start_time);
-          if (monthly) cursor.setDate(1);
-          cursor.setHours(0, 0, 0, 0);
-          const starts = [];
-          while (cursor <= now && starts.length < 400) {
-            starts.push(new Date(cursor));
-            if (monthly) cursor.setMonth(cursor.getMonth() + 1);
-            else cursor.setDate(cursor.getDate() + 1);
-          }
-          const out = {};
-          for (const id of msg.statistic_ids ?? []) {
-            // The solar template sensor tracks a share of the same energy, so it
-            // rises more slowly and stays below the total.
-            const solar = id.includes("solar");
-            const step  = monthly ? 90 : 8;
-            let sum = solar ? 400 : 650;   // meter reading before the window opens
-            out[id] = starts.map((start, i) => {
-              sum += (step + (i % 4) * (monthly ? 15 : 2)) * (solar ? 0.6 : 1);
-              const next = starts[i + 1] ?? now;
-              return { start: start.toISOString(), end: next.toISOString(), sum: Math.round(sum * 10) / 10 };
-            });
-          }
-          return Promise.resolve(out);
-        }
-
         // Enabling an entity: HA answers with the entry and, for an integration
         // that can unload, the delay after which it reloads it on its own. The
         // entity only gets a state after that reload, which a test plays by

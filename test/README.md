@@ -11,7 +11,7 @@ Groups in `run.py` (`--only <group>`, repeatable):
 |---|---|
 | `unit` | Pure functions from `src/utils` in node, no browser: number/step formatting, the dual-format evcc timestamp parser, duration and countdown strings, the SoC gradients, HTML escaping, the `stats_period` normalisation, entity discovery, and that `package.json` still carries the version from `src/core/constants.js` |
 | `render` | Every card mode in light and dark, screenshot per mode, fails on any console error; stats bar chart from sessions  Plus one shared stylesheet: a rendered card adopts one `CSSStyleSheet` and inlines no `<style>`, a second card gets the same parsed sheet, and re-renders do not adopt it twice |
-| `stats_fallback` | Stats mode on an ha-evcc without `evcc_intg/sessions`: the recorder is queried for sum buckets, the chart is rebuilt from the deltas, the solar split survives, the `30d` tab switches to day buckets |
+| `min_version` | ha-evcc older than the minimum (no WebSocket data API): the plan preview, the stats mode and the footer under `site` name the required version in their place, the debug view and report name it too, no recorder or data command is asked; a current ha-evcc shows no such note |
 | `stats_period` | Every `stats_period` value steers both stats paths the same way: the current vocabulary (`month`/`year`/`total`/`none`), the legacy one older dashboards carry (`30d`/`365d`/`thisYear`), and the unconfigured default, each with and without the sessions API; plus `none` hiding the footer under `site`. Then `stats_exclude_loadpoints`: the sessions of the excluded loadpoint leave the totals, the breakdown and the footer; and the period stepper across the turn of the year in both directions, stopping at the month of the first session |
 | `renderkey` | A hass update only reaches the DOM when the render key changes. Changed select options and number bounds must trigger a render, an update that changes nothing must not; a change to a foreign entity, or the same states table pushed again, must not even build the key (HA keeps the state object of an untouched entity, so an identity check per evcc entity settles it), while a language change alone still renders; the render records the entities it read through a proxy on `hass.states`, and only those count: a loadpoint card showing `openwb` ignores the heating loadpoint but follows the tariff sensor it reads past the discovery; and `RENDER_ATTRS` must list every attribute the card reads: the group proxies the attribute objects during a render of every mode and fails on anything outside the list |
 | `lifecycle` | Detach and re-attach the same card element, the way Lovelace re-mounts on a view switch: the `evcc-plan-reset` listener and the countdown interval must come back, a re-mount must cost no backend call and keeps the WebSocket caches (the sessions behind the footer are not fetched again within their TTL and the footer keeps its figures), a render pending at detach is cancelled and picked up again on re-mount; the site and flow toggles work through the delegation before and after a re-mount, the markup carries no inline handler, and a click on a flow node opens more-info without folding the table |
@@ -300,22 +300,16 @@ matching keyword:
 | `attrs=<json>` | `attrs={...}` | Override entity attributes (JSON, because values may contain any character) |
 | `disable=<id>,...` | `disable=[...]` | Mark registry entries `disabled_by` and drop their state, as HA does for entities disabled by default |
 | `rename=<from>:<to>` | `rename=(from, to)` | Rename the entity prefix everywhere, for multi-instance setups |
-| `ws=0` | `ws=False` | No ha-evcc WebSocket data API, so the entity and recorder fallbacks run |
+| `ws=0` | `ws=False` | No ha-evcc WebSocket data API, as on an ha-evcc older than the card's minimum: the plan preview and the statistics show their note |
 | `tariff=co2` | `tariff="co2"` | The data API reports a co2 signal instead of prices: `smartCostType: "co2"`, no currency, and the rate values are replaced by a fixed daily emission curve (180..420 g/kWh, lowest around midday) |
 | `wsname=<text>` | `wsname="…"` | Put this text into every name the data API reports: the `loadpoint` and `vehicle` of each session and the currency. Used by the `escaping` group |
 | `second=<json>` | `second={...}` | Clone the fixture as a second ha-evcc config entry, `{prefix, entryId, first}`. ha-evcc builds the entity prefix from the entry title, so two instances always mean two prefixes and two entry ids; `first` puts the clone ahead of the original in the registry |
-
-`recorder/statistics_during_period` is answered by the mock as well, generated
-over the window the card asks for so the series always ends at "now", and
-derived from the bucket index so two runs produce the same chart. That is what
-the `stats_fallback` group renders its chart from.
 
 ### WebSocket data API fixtures
 
 The `evcc_intg/*` commands are served from `fixtures/ws/`, so the stats mode
 runs its sessions path and the plan preview works. `?ws=0` on the harness (or
-`ws=False` in `open_card`) disables them and exercises the entity/recorder
-fallbacks instead.
+`ws=False` in `open_card`) disables them, as on an ha-evcc that is too old.
 
 The fixtures are the raw evcc API responses, read-only, wrapped the way
 ha-evcc's `evcc_card_websocket.py` returns them:
