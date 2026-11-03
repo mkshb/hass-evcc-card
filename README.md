@@ -356,8 +356,6 @@ Compact site energy overview with a focus on the current grid status:
 - Three sections of chips: generation (PV), grid & battery (saying the direction: import or export, charging or discharging), consumption (home and every charge point with vehicle SoC/temperature)
 - Chips without power stay, dimmed, so the card keeps its height while the power moves (on a card of about 400 px or less the direction labels of grid and battery can still wrap their section)
 
-> **Deprecation notice:** `mode: site2` still works but is deprecated and will be removed in a future release. Please migrate to `mode: grid`.
-
 <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/grid-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/grid-light.png" width="400">
 
 ---

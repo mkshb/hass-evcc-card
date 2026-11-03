@@ -201,7 +201,6 @@ export const CARD_SIZES = {
   site:        3,
   flow:        6,
   grid:        7,
-  site2:       7,   // legacy alias of grid
   stats:      10,
   battery:     8,
   vehicle:     8,
@@ -211,16 +210,15 @@ export const CARD_SIZES = {
 // The expandable detail table under the flow bar (`site_details`), and the
 // statistics footer (`stats_period: none` removes it). Both measured at 420 px.
 export const CARD_SIZE_DETAILS = { site: 8, flow: 6 };
-export const CARD_SIZE_FOOTER  = { site: 1, flow: 1, grid: 1, site2: 1 };
+export const CARD_SIZE_FOOTER  = { site: 1, flow: 1, grid: 1 };
 
 // Every mode the card renders, and the values the other enumerated options take.
 // setConfig() rejects anything outside these lists. The modes are spelled out
 // rather than read off CARD_SIZES: a mode is a view and a _render branch, the
-// height table is an estimate that may or may not know it. `site2` is the
-// former name of `grid` and stays valid so dashboards carrying it keep working.
+// height table is an estimate that may or may not know it.
 export const CARD_MODES = [
   "loadpoint", "compact", "plan", "repeatplan", "priority",
-  "site", "flow", "grid", "site2", "stats", "battery", "vehicle", "debug",
+  "site", "flow", "grid", "stats", "battery", "vehicle", "debug",
 ];
 export const CARD_SIZE_OPTIONS        = ["small", "medium", "large"];
 export const DISABLED_LOADPOINT_MODES = ["hide", "dim", "show"];
@@ -307,6 +305,9 @@ export function validateCardConfig(config) {
       throw new Error(`evcc-card: ${key} "${c[key]}" is not valid. Use one of: ${valid.join(", ")}`);
     }
   };
+  // `site2`, the former name of `grid`, went away in 0.10.0; the message says
+  // what to write instead of listing every mode.
+  if (c.mode === "site2") throw new Error("evcc-card: mode site2 is gone. Use mode: grid, the card looks the same");
   oneOf("mode",                CARD_MODES);
   oneOf("size",                CARD_SIZE_OPTIONS);
   oneOf("disabled_loadpoints", DISABLED_LOADPOINT_MODES);

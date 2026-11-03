@@ -3144,7 +3144,6 @@ def setconfig(browser, port, t):
     VALID = [
         ({}, "an empty config"),
         ({"mode": "loadpoint", "loadpoints": ["openwb"]}, "a normal config"),
-        ({"mode": "site2"}, "the legacy mode name site2"),
         ({"mode": "flow", "size": "large"}, "a known size"),
         ({"stats_period": "month"}, "a current stats_period"),
         ({"stats_period": "365d"}, "a legacy stats_period"),
@@ -3168,6 +3167,7 @@ def setconfig(browser, port, t):
     ]
     INVALID = [
         ({"mode": "quatsch"}, "mode", "an unknown mode"),
+        ({"mode": "site2"}, "mode: grid", "the former mode name site2, pointing to grid"),
         ({"size": "huge"}, "size", "an unknown size"),
         ({"disabled_loadpoints": "maybe"}, "disabled_loadpoints", "an unknown disabled_loadpoints"),
         ({"stats_period": "weekly"}, "stats_period", "an unknown stats_period"),

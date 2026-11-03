@@ -582,7 +582,7 @@ export class EvccCard extends HTMLElement {
               ? this._renderSiteBlock(site, loadpoints)
               : this._config.mode === "flow"
               ? this._renderFlowBlock(site, loadpoints)
-              : (this._config.mode === "grid" || this._config.mode === "site2")
+              : this._config.mode === "grid"
               ? this._renderSiteBlock2(site, loadpoints)
               : this._config.mode === "stats"
               ? this._renderStatsBlock()
