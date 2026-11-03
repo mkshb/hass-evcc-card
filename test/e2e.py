@@ -146,13 +146,17 @@ def ha_state(page, entity_id):
 
 
 def dashboard_config():
-    """One view per mode. The vehicle mode shows one vehicle per card, so its view
-    carries a card per demo vehicle instead of one card for all of them. The stats
-    view has a second card that leaves the heat pump out of the statistics."""
+    """One view per mode. The vehicle mode shows one vehicle per card, and the
+    loadpoint, compact and plan modes one loadpoint per card, so their views
+    carry a card per demo vehicle or loadpoint. The stats view has a second card
+    that leaves the heat pump out of the statistics."""
     slugs = sorted(slug for _, slug in demo_vehicles().values())
+    lps   = [slug for _, _, slug in demo_loadpoints()]
     def cards(mode):
         if mode == "vehicle" and slugs:
             return [{"type": "custom:evcc-card", "mode": "vehicle", "prefix": PREFIX, "vehicle": slug} for slug in slugs]
+        if mode in ("loadpoint", "compact", "plan"):
+            return [{"type": "custom:evcc-card", "mode": mode, "prefix": PREFIX, "loadpoint": slug} for slug in lps]
         if mode == "stats":
             return [{"type": "custom:evcc-card", "mode": "stats", "prefix": PREFIX},
                     {"type": "custom:evcc-card", "mode": "stats", "prefix": PREFIX, "stats_exclude_loadpoints": [heat_pump_slug()]}]
@@ -184,7 +188,8 @@ def open_view(page, mode):
 
 
 def card_shadow_text(page):
-    return page.locator("evcc-card").first.evaluate("el => el.shadowRoot?.textContent || ''")
+    """The text of every card of the view: the loadpoint modes carry one card per loadpoint."""
+    return page.locator("evcc-card").evaluate_all("els => els.map(el => el.shadowRoot?.textContent || '').join('\\n')")
 
 
 ERRORS = []   # page errors and card-related console errors, cleared by every check
@@ -227,8 +232,10 @@ def smoke(page, t):
             detail += f", rows={rows}, named={names}"
         elif mode in ("plan", "priority"):
             names = named(text)
-            ok = ok and len(names) >= 1
-            detail += f", named={names}"
+            # A card that asks to pick a loadpoint lists them all and would pass.
+            asks  = page.locator("evcc-card .empty").count()
+            ok = ok and len(names) >= 1 and (mode != "plan" or asks == 0)
+            detail += f", named={names}" + (f", asks to pick={asks}" if mode == "plan" else "")
         if mode == "debug":
             ok = ok and PREFIX in text
             detail += f", prefix shown={PREFIX in text}"
@@ -248,8 +255,8 @@ def roundtrip(page, t):
     open_view(page, "loadpoint")
     btn = lambda value: page.locator(f'evcc-card button.mode-btn[data-entity="{entity}"][data-value="{value}"]')
     # document.querySelector stops at HA's shadow roots; the locator pierces them
-    active = lambda: page.locator("evcc-card").first.evaluate(
-        "(el, e) => { const b = el.shadowRoot?.querySelector(`button.mode-btn.active[data-entity=\"${e}\"]`); return b ? b.dataset.value : null; }", entity)
+    active = lambda: page.locator("evcc-card").evaluate_all(
+        "(els, e) => { for (const el of els) { const b = el.shadowRoot?.querySelector(`button.mode-btn.active[data-entity=\"${e}\"]`); if (b) return b.dataset.value; } return null; }", entity)
 
     t.check(btn("now").count() == 1, "the Garage mode buttons are rendered", f"{btn('now').count()} button(s) for {entity}")
     start = wait_for(lambda: active() == "off" and "off", timeout=30)
@@ -285,10 +292,9 @@ def solar_share(page, t):
         return
     reset_demo()
     open_view(page, "loadpoint")
-    card  = page.locator("evcc-card").first
     input = page.locator(f'evcc-card input[type="range"][data-entity="{entity}"]')
-    label = lambda: card.evaluate(
-        "(el, e) => el.shadowRoot?.querySelector(`input[data-entity=\"${e}\"]`)?.nextElementSibling?.textContent.trim() ?? null", entity)
+    label = lambda: page.locator("evcc-card").evaluate_all(
+        "(els, e) => { for (const el of els) { const i = el.shadowRoot?.querySelector(`input[data-entity=\"${e}\"]`); if (i) return i.nextElementSibling?.textContent.trim() ?? null; } return null; }", entity)
 
     page.locator(f'evcc-card [data-lp-current-toggle="{slug}"]').click()
     t.check(input.count() == 1, "the Garage has the solar share slider", f"{input.count()} slider(s) for {entity}")
@@ -531,9 +537,10 @@ def vehicle_limit(page, t):
     from datetime import datetime, timedelta, timezone
     reset_demo()
     open_view(page, "loadpoint")
-    probe = lambda: page.locator("evcc-card").first.evaluate("""(el, prefix) => {
+    # One card per loadpoint: every card of the view is read.
+    probe = lambda: page.locator("evcc-card").evaluate_all("""(els, prefix) => {
         const out = {};
-        for (const lp of el.shadowRoot?.querySelectorAll('.loadpoint') || []) {
+        for (const lp of els.flatMap(el => [...(el.shadowRoot?.querySelectorAll('.loadpoint') || [])])) {
           const mode = lp.querySelector('button.mode-btn')?.dataset.entity || '';
           const slug = mode.startsWith('select.' + prefix) ? mode.slice(7 + prefix.length, -5) : null;
           if (!slug) continue;
