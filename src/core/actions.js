@@ -56,10 +56,14 @@ export const actions = {
   // The value is noted here and the render reads it in place of the state
   // (see the states proxy in _render) until HA reports anything else for
   // the entity, a failed call drops it, and a stale note expires on its own.
+  // A failed call drops only its own note: two quick writes to one control
+  // (a mode pressed twice) must not lose the second when the first fails late.
   _expect(entityId, value, call) {
     const state = this._hass?.states?.[entityId]?.state;
-    if (state != null) this._expected[entityId] = { value, from: state, ts: Date.now() };
-    call?.catch?.(() => { delete this._expected[entityId]; });
+    if (state == null) return call;
+    const note = { value, from: state, ts: Date.now() };
+    this._expected[entityId] = note;
+    call?.catch?.(() => { if (this._expected[entityId] === note) delete this._expected[entityId]; });
     return call;
   },
 

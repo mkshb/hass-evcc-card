@@ -233,27 +233,29 @@ export class EvccCard extends HTMLElement {
     const chosen  = (wanted && this._evccInstances.find(i => i.prefix === wanted)) || this._evccInstances[0] || null;
     const entryId = chosen?.entryId ?? null;
     if (entryId === this._entryId) return;
-    this._entryId     = entryId;
-    this._caps        = null;
-    this._capsLoaded  = false;
-    this._capsLoading = null;
-    this._lpIndexMap  = {};
-    this._lpTitleMap  = {};
-    this._wsCache     = {};
-    this._wsInflight  = {};
-    this._loadCapabilities();
+    this._switchEntry(entryId);
   }
 
-  // The evcc entity ids under the current prefix. Re-filtered only when the
-  // entity count or the prefix changes, not on every value update. Returns true
-  // when the list was rebuilt, so a caller comparing states knows the set moved.
+  // The evcc entity ids under the current prefix. Re-filtered only when the set
+  // changes, not on every value update: the set is the same when there are as
+  // many evcc ids as before and every one known is still there. Counting all
+  // states instead missed an evcc entity coming in the same update as another
+  // one going (a rename, ha-evcc adding one while something else is removed).
+  // The count is one pass over the ids, as the count of all states was; with
+  // 3000 states it costs about a fifth more (half a millisecond per update).
+  // Returns true when the list was rebuilt, so a caller comparing states knows
+  // the set moved.
   _refreshEvccIds(hass) {
-    const prefix     = this._getPrefix();
-    const stateCount = Object.keys(hass.states).length;
-    if (this._evccIds && this._evccIdsCount === stateCount && this._evccIdsPrefix === prefix) return false;
-    this._evccIdsCount  = stateCount;
+    const prefix = this._getPrefix();
+    const states = hass.states;
+    const ours   = id => { const dot = id.indexOf("."); return dot > 0 && id.startsWith(prefix, dot + 1); };
+    const ids    = Object.keys(states);
+    let count = 0;
+    for (let i = 0; i < ids.length; i++) if (ours(ids[i])) count++;
+    const known = this._evccIds;
+    if (known && this._evccIdsPrefix === prefix && known.length === count && known.every(id => id in states)) return false;
     this._evccIdsPrefix = prefix;
-    this._evccIds       = Object.keys(hass.states).filter(id => id.split(".")[1]?.startsWith(prefix));
+    this._evccIds       = ids.filter(ours);
     return true;
   }
 
@@ -284,8 +286,8 @@ export class EvccCard extends HTMLElement {
       return true;
     }
     // The entities the last render read, or every evcc entity before the
-    // first render. An entity that appears or disappears moves the count and
-    // has forced a full check above.
+    // first render. An evcc entity that appears or disappears has moved the
+    // set and forced a full check above.
     const ids = this._readIds ?? this._evccIds;
     for (const id of ids) if (hass.states[id] !== seen[id]) return true;
     return false;
@@ -482,6 +484,14 @@ export class EvccCard extends HTMLElement {
 
   _render() {
     if (!this._hass) return;
+    // A detached card draws nothing, whoever asks: a plan reset in its delay,
+    // a vehicle command or a WebSocket answer can end after the detach. The
+    // keys go, so the hass setter that connectedCallback calls renders anew.
+    if (!this.isConnected) {
+      this._lastRenderKey = null;
+      this._seenStates    = null;
+      return;
+    }
     // Whoever asks for the render, the hass setter, a WebSocket result, a plan
     // reset or a tab: nothing replaces the DOM under the user's hands. The
     // interaction that holds it renders when it ends (pointerup, panel close,

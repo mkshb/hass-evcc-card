@@ -10,6 +10,22 @@ export const evccApi = {
   // that does not map to entities (forecast curves, raw session history, plan
   // previews). Reads are slow-changing, so results are cached with a TTL.
 
+  // Another ha-evcc instance (or the same one again): everything derived from
+  // the entry starts over, and requests still running for the one before are
+  // no longer the ones in _wsInflight / _capsLoading, which is how their
+  // answers know to stay out (_wsFetch, _loadCapabilities).
+  _switchEntry(entryId) {
+    this._entryId     = entryId;
+    this._caps        = null;
+    this._capsLoaded  = false;
+    this._capsLoading = null;
+    this._lpIndexMap  = {};
+    this._lpTitleMap  = {};
+    this._wsCache     = {};
+    this._wsInflight  = {};
+    this._loadCapabilities();
+  },
+
   _hasCmd(name) {
     return Array.isArray(this._caps?.commands) && this._caps.commands.includes(name);
   },
@@ -28,9 +44,12 @@ export const evccApi = {
     if (this._capsLoaded || this._capsLoading || !this._hass) return this._capsLoading;
     // A prefix change swaps the entry while this is in flight; the answer for
     // the old entry is then dropped and the new one's probe is already running.
+    // The entry id alone would take an answer back after a switch to another
+    // instance and back (A, B, A), so the probe must still be the one running.
     const entryId = this._entryId;
-    const stale   = () => entryId !== this._entryId;
-    this._capsLoading = this._hass
+    let probe;
+    const stale   = () => entryId !== this._entryId || this._capsLoading !== probe;
+    probe = this._capsLoading = this._hass
       .callWS({ type: "evcc_intg/capabilities", entry_id: entryId })
       .then(res => {
         if (stale()) return;
@@ -87,8 +106,13 @@ export const evccApi = {
     if (cached && (now - cached.ts) < ttlMs) return cached.result;
 
     if (!this._wsInflight[cacheKey]) {
+      // An answer counts only while its request is the one in flight for this
+      // key: a switch of the instance empties _wsInflight (_switchEntry), so a
+      // request of an earlier lifecycle stays out of the cache and leaves the
+      // request running now alone, also after a switch back to the same entry.
       const entryId = this._entryId;
-      const stale   = () => entryId !== this._entryId;   // entry swapped meanwhile, see _syncIntegrationInstance
+      let request;
+      const stale   = () => entryId !== this._entryId || this._wsInflight[cacheKey] !== request;
       let changed = true;
       // Stores the answer, keeping the cached object when it is the same.
       const store = (result) => {
@@ -97,7 +121,7 @@ export const evccApi = {
         changed = !prev || prev.json !== json;
         this._wsCache[cacheKey] = { ts: Date.now(), result: changed ? result : prev.result, json };
       };
-      this._wsInflight[cacheKey] = this._hass
+      request = this._wsInflight[cacheKey] = this._hass
         .callWS({ type, entry_id: entryId, ...params })
         .then(data => {
           if (stale()) return;

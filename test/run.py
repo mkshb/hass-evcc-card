@@ -332,6 +332,16 @@ def min_version(browser, port, t):
             json.dumps(svc)[:200] or (err.inner_text() if err.count() else ""))
     done(page)
 
+    # Deleting a kWh plan needs the index as well: without it nothing is sent.
+    page = new_page(browser, 480, 900)
+    errors = open_card(page, port, config={"mode": "plan", "loadpoint": "openwb"}, lang="en", caps_version="2026.6.3",
+                       set={"select.evcc_openwb_vehicle_name": "null", "binary_sensor.evcc_openwb_plan_active": "on"})
+    page.locator(in_card("button.plan-btn.delete")).click(); page.wait_for_timeout(300)
+    svc = [c for c in page.evaluate("window.__hass.serviceCalls") if "plan" in c.get("service", "")]
+    t.check(page.evaluate("window.__card._lpIndex('openwb')") is None and not svc, "2026.6.3: deleting a kWh plan sends nothing without the evcc index",
+            json.dumps(svc)[:200])
+    done(page)
+
     page = new_page(browser, 480, 900)
     errors = open_card(page, port, config={"mode": "stats"}, lang="en", caps_version="2026.6.3")
     page.wait_for_timeout(300)
@@ -1232,6 +1242,51 @@ def renderkey(browser, port, t):
     # Every attribute the card reads while rendering has to be in RENDER_ATTRS,
     # otherwise its changes are invisible again. Proxying the attribute objects
     # catches every access path, including destructuring and direct lookups.
+    # The set of evcc entities is not re-read on every update (_refreshEvccIds).
+    # An evcc entity that appears in the same update as another entity goes
+    # (a rename, ha-evcc adding one while something else is removed) leaves
+    # the number of states as it was, and must reach the card all the same.
+    t.group("renderkey - the set of evcc entities")
+    pw = "sensor.evcc_openwb_charge_power"
+    page = new_page(browser, 480, 1400)
+    errors = open_card(page, port, config={"mode": "loadpoint", "loadpoint": "openwb"}, drop=[pw])
+    page.evaluate("""() => {
+      window.__push = (mut) => {
+        const st = { ...window.__hass.states };
+        mut(st);
+        window.__hass.states = st;
+        window.__card.hass = { ...window.__hass, states: st };
+      };
+    }""")
+    power = lambda: page.locator(in_card(".power-value")).first.inner_text().strip() if page.locator(in_card(".power-value")).count() else ""
+    page.evaluate("() => window.__push(st => { st['sun.sun'] = { entity_id: 'sun.sun', state: 'above_horizon', attributes: {} }; })")
+    page.wait_for_timeout(500)
+    before = power()
+    # As in HA, the new entity comes with its registry entry (hass.entities),
+    # which is what tells the discovery it belongs to ha-evcc.
+    page.evaluate(f"""() => {{
+      const h = window.__hass;
+      h.entities = {{ ...h.entities, '{pw}': {{ entity_id: '{pw}', platform: 'evcc_intg' }} }};
+      window.__push(st => {{
+        delete st['sun.sun'];
+        st['{pw}'] = {{ entity_id: '{pw}', state: '4.2', attributes: {{ unit_of_measurement: 'kW', device_class: 'power' }} }};
+      }});
+    }}""")
+    page.wait_for_timeout(500)
+    t.check(before == "" and power() == "4.2 kW" and not errors, "an evcc entity appearing as a foreign one goes: the card shows it", f"before {before!r}, after {power()!r} {errors}")
+    page.evaluate(f"() => window.__push(st => {{ st['{pw}'] = {{ ...st['{pw}'], state: '7.3' }}; }})")
+    page.wait_for_timeout(500)
+    t.check(power() == "7.3 kW", "and follows its next value", power())
+    # An entity renamed within the prefix: the old id goes, the new one comes.
+    ids = page.evaluate("() => window.__card._evccIds.length")
+    page.evaluate(f"""() => window.__push(st => {{
+      st['sensor.evcc_openwb_renamed'] = {{ ...st['{pw}'] }}; delete st['{pw}'];
+    }})""")
+    page.wait_for_timeout(500)
+    known = page.evaluate(f"() => {{ const ids = window.__card._evccIds; return [ids.length, ids.includes('{pw}'), ids.includes('sensor.evcc_openwb_renamed')]; }}")
+    t.check(known == [ids, False, True], "a rename within the prefix replaces the id in the card's set", str(known))
+    done(page)
+
     t.group("renderkey - RENDER_ATTRS is complete")
     declared = render_attrs()
     t.check(bool(declared), "RENDER_ATTRS is readable from the source", str(declared))
@@ -1348,6 +1403,30 @@ def lifecycle(browser, port, t):
     page.evaluate("() => document.getElementById('host').appendChild(window.__card)")
     page.wait_for_timeout(500)
     t.check("5151" in (page.evaluate("window.__card._lastRenderKey") or ""), "re-mount renders the update that was pending at detach")
+
+    # Callbacks that outlive the detach (the 1.5 s delay of a plan reset, a
+    # vehicle command that ends, a WebSocket answer) change what they change,
+    # but draw nothing on the detached card; the re-mount draws it.
+    page.evaluate("""() => {
+      const c = window.__card, host = c.parentNode, orig = c._renderNow.bind(c);
+      window.__drawn = 0;
+      c._renderNow = function (...a) { window.__drawn++; return orig(...a); };
+      c._planState = { openwb: { soc: 77 } };
+      window.dispatchEvent(new CustomEvent('evcc-plan-reset', { detail: { lpName: 'openwb' } }));
+      let finish; const call = new Promise(r => { finish = r; });
+      c._command('lock.evcc_test', call, false);
+      host.removeChild(c);
+      window.__drawn = 0;
+      finish();
+      c._wsCache = {}; c._wsSessions();
+    }""")
+    page.wait_for_timeout(2000)
+    after = page.evaluate("() => ({ drawn: window.__drawn, plan: window.__card._planState.openwb ?? null })")
+    t.check(after == {"drawn": 0, "plan": None}, "late callbacks after the detach: the plan state is reset, nothing is drawn", json.dumps(after))
+    page.evaluate("() => document.getElementById('host').appendChild(window.__card)")
+    page.wait_for_timeout(600)
+    t.check(page.evaluate("window.__drawn") > 0 and page.locator(in_card("ha-card")).count() == 1, "the re-mount draws the card again",
+            str(page.evaluate("window.__drawn")))
     t.check(not errors, "no console errors across the re-mounts", "; ".join(errors)[:200])
     done(page)
 
@@ -3676,6 +3755,8 @@ def escaping(browser, port, t):
         ("pv device title",  {"mode": "site"},
          {"attrs": {"sensor.evcc_pv_1_power": {"title": TEXT}}}, ".site-block"),
         ("session names",    {"mode": "stats"}, {"wsname": TEXT}, ".stats"),
+        # The currency of the forecast stands in the header, the axis and the legend.
+        ("forecast currency", {"mode": "forecast"}, {"wsname": TEXT, "dynamic": True}, ".fc-block"),
         ("config dump",      {"mode": "debug", "title": TEXT}, {}, ".debug-yaml"),
         # An attribute payload: the vehicle ids become <option value="…">.
         ("vehicle option id", {"mode": "plan", "loadpoints": ["openwb"]},
