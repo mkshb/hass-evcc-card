@@ -206,12 +206,20 @@ def render_smoke(browser, port, t):
     for mode in MODES:
         for dark in (False, True):
             page = new_page(browser, 480, 900)
-            errors = open_card(page, port, config=mode_config(mode), dark=dark)
+            # The optimizer mode draws a plan only with a result to draw: the
+            # recorded one, at the time it was recorded (see optimizer_mode).
+            extra = {}
+            if mode == "optimizer":
+                page.clock.set_fixed_time(OPT_TIME)
+                extra = {"optimizer": "plan"}
+            errors = open_card(page, port, config=mode_config(mode), dark=dark, **extra)
             has_card = page.locator(in_card("ha-card")).count() > 0
             name = f"render {mode}{' dark' if dark else ''}"
             shot = OUT / f"{mode}{'-dark' if dark else ''}.png"
             page.locator("#host").screenshot(path=str(shot))
             t.check(has_card and not errors, name, "; ".join(errors)[:300])
+            if mode == "optimizer":
+                t.check(page.locator(in_card(".opt-chart")).count() == 1, f"optimizer{' dark' if dark else ''}: the plan, not a note")
             if mode == "stats" and not dark:
                 bars = page.locator(in_card(".evcc-chart-wrap svg rect")).count()
                 t.check(bars > 0, "stats: bar chart rendered from sessions", f"{bars} bars")
