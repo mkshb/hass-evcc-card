@@ -206,6 +206,7 @@ export const CARD_SIZES = {
   stats:      10,
   battery:     8,
   optimizer:  12,
+  forecast:    8,
   vehicle:     8,
   debug:      20,
 };
@@ -221,7 +222,7 @@ export const CARD_SIZE_FOOTER  = { site: 1, flow: 1, grid: 1 };
 // height table is an estimate that may or may not know it.
 export const CARD_MODES = [
   "loadpoint", "compact", "plan", "repeatplan", "priority",
-  "site", "flow", "grid", "stats", "battery", "optimizer", "vehicle", "debug",
+  "site", "flow", "grid", "stats", "battery", "optimizer", "forecast", "vehicle", "debug",
 ];
 export const CARD_SIZE_OPTIONS        = ["small", "medium", "large"];
 export const DISABLED_LOADPOINT_MODES = ["hide", "dim", "show"];

@@ -38,6 +38,7 @@ const MODE_DESC = {
   grid:       "editorModeDescGrid",
   battery:    "editorModeDescBattery",
   optimizer:  "editorModeDescOptimizer",
+  forecast:   "editorModeDescForecast",
   vehicle:    "editorModeDescVehicle",
   stats:      "editorModeDescStats",
   plan:       "editorModeDescPlan",
@@ -58,6 +59,7 @@ const TITLE_PLACEHOLDER = {
   stats:      "editorTitlePlaceholderStats",
   battery:    "editorTitlePlaceholderBattery",
   optimizer:  "editorTitlePlaceholderOptimizer",
+  forecast:   "editorTitlePlaceholderForecast",
   vehicle:    "editorTitlePlaceholderVehicle",
 };
 
@@ -573,6 +575,7 @@ export class EvccCardEditor extends HTMLElement {
       tOpt("grid",       "editorModeGrid"),
       tOpt("battery",    "editorModeBattery"),
       tOpt("optimizer",  "editorModeOptimizer"),
+      tOpt("forecast",   "editorModeForecast"),
       tOpt("vehicle",    "editorModeVehicle"),
       tOpt("stats",      "editorModeStats"),
       tOpt("plan",       "editorModePlan"),

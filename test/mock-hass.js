@@ -35,6 +35,9 @@
 //            below zero from 12 to 14 h), "goal" gives the vehicle a target of
 //            80 % at 07:00. "off": the optimizer is off
 //            (evopt and batteryForecast null).
+//   dynamic: true  the grid price varies over the day as on a dynamic tariff
+//            (cheap at noon and at night, dear in the evening) and is known until
+//            the end of tomorrow, as such a tariff publishes it
 //   capsVersion: "2026.6.3"  the version evcc_intg/capabilities reports; 2026.6.3
 //            also leaves out the loadpoint list, as that release did
 // A battery SoC by time of day: charges from 9 to 14 h, discharges overnight.
@@ -44,7 +47,7 @@ function mockSoc(t) {
   return Math.max(5, Math.min(100, Math.round(v)));
 }
 
-export async function createMockHass({ batteryExt = false, optimizer = false, language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, admin = true, drop = [], vehicleDevice = true, optimize = false, capsVersion = null } = {}) {
+export async function createMockHass({ batteryExt = false, optimizer = false, language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, admin = true, drop = [], vehicleDevice = true, optimize = false, capsVersion = null, dynamic = false } = {}) {
   const base = new URL("./fixtures/", import.meta.url);
   const json = (p) => fetch(new URL(p, base)).then(r => r.ok ? r.json() : Promise.reject(new Error(`fixture ${p}: ${r.status}`)));
 
@@ -177,6 +180,18 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
     return { ...r, value: Math.round((0.08 + 0.05 * Math.cos(((h - 19) / 24) * 2 * Math.PI)) * 1000) / 1000 };
   }) };
 
+  // A dynamic tariff: a price per quarter hour by time of day, published until
+  // the end of tomorrow.
+  const dynamicPrice = (obj) => {
+    const end = new Date(); end.setHours(0, 0, 0, 0); end.setDate(end.getDate() + 2);
+    const at = (iso) => {
+      const d = new Date(iso), h = d.getHours();
+      const base = h < 5 ? 0.24 : h < 8 ? 0.29 : h < 11 ? 0.26 : h < 15 ? 0.17 : h < 17 ? 0.23 : h < 21 ? 0.36 : 0.27;
+      return Math.round((base + 0.004 * (d.getMinutes() / 15)) * 10000) / 10000;
+    };
+    return { ...obj, rates: obj.rates.filter(r => new Date(r.start) < end).map(r => ({ ...r, value: at(r.start) })) };
+  };
+
   // Every name the integration passes through from evcc, replaced in one go.
   if (fx && wsName) {
     fx.sessions = { ...fx.sessions, sessions: fx.sessions.sessions.map(s => ({ ...s, loadpoint: wsName, vehicle: wsName })) };
@@ -229,8 +244,10 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
           return fx ? Promise.resolve(fx.capabilities) : Promise.reject(new Error("mock: WebSocket data API not available"));
         case "evcc_intg/forecast": {
           const f = fx?.forecast[msg.kind];
-          // The feed-in tariff is a price in every setup, never CO2.
-          return f ? Promise.resolve(msg.kind === "feedin" ? rebase(f) : asCo2(rebase(f))) : Promise.reject(new Error(`mock: no forecast fixture for kind ${msg.kind}`));
+          if (f && dynamic && msg.kind === "grid") return Promise.resolve(dynamicPrice(rebase(f)));
+          // Only the planner follows smartCostType, as in ha-evcc: grid and
+          // feed-in stay the price tariffs, solar the solar forecast.
+          return f ? Promise.resolve(msg.kind === "planner" ? asCo2(rebase(f)) : rebase(f)) : Promise.reject(new Error(`mock: no forecast fixture for kind ${msg.kind}`));
         }
         case "evcc_intg/sessions": {
           if (!fx) return Promise.reject(new Error("mock: no sessions"));

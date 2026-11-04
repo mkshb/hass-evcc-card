@@ -19,7 +19,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT  = ROOT / "test" / "out"
-MODES = ["loadpoint", "compact", "battery", "optimizer", "vehicle", "site", "flow", "grid", "stats", "plan", "repeatplan", "priority", "debug"]
+MODES = ["loadpoint", "compact", "battery", "optimizer", "forecast", "vehicle", "site", "flow", "grid", "stats", "plan", "repeatplan", "priority", "debug"]
 # What a mode needs beyond its name to show anything: the vehicle mode shows one
 # vehicle per card, the loadpoint, compact and plan modes one charge point, and
 # each asks which one when it is not told.
@@ -153,8 +153,9 @@ def done(page):
 
 def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="de", ws=True, set=None, disable=None,
               rename=None, attrs=None, tariff=None, second=None, wsname=None, admin=True, drop=None,
-              vehicle_device=True, optimizer=False, battery_ext=False, optimize=False, caps_version=None):
+              vehicle_device=True, optimizer=False, battery_ext=False, optimize=False, caps_version=None, dynamic=False):
     q = {"w": width, "lang": lang}
+    if dynamic: q["dyn"] = 1
     if caps_version: q["capsver"] = caps_version
     if optimizer: q["optimizer"] = 1 if optimizer is True else optimizer
     if battery_ext: q["battext"] = 1
@@ -3121,7 +3122,7 @@ def card_api(browser, port, t):
     t.group("cardapi - getGridOptions")
     grid = page.evaluate("""(() => {
       const out = {};
-      for (const mode of ["loadpoint","compact","plan","repeatplan","priority","site","flow","grid","stats","battery","optimizer","debug"]) {
+      for (const mode of ["loadpoint","compact","plan","repeatplan","priority","site","flow","grid","stats","battery","optimizer","forecast","debug"]) {
         window.__card.setConfig({ mode, loadpoints: ["openwb"] });
         out[mode] = window.__card.getGridOptions();
       }
@@ -5005,10 +5006,126 @@ def battery_mode(browser, port, t):
     t.check(page.locator(in_card(".lp-disabled-warn")).count() == 0, "no triangle at a loadpoint for the battery's clear button")
     done(page)
 
+# The forecast mode on a dynamic tariff (test/mock-hass.js `dynamic`): prices
+# by time of day, known until the end of tomorrow. The clock stands on a
+# Friday evening, so the rest of today joins tomorrow's page.
+FC_TIME   = "2026-09-18T20:15:00+02:00"
+FC_LIMITS = {"number.evcc_openwb_smart_cost_limit": 0.22, "number.evcc_battery_grid_charge_limit": 0.18}
+
+
+def forecast_mode(browser, port, t):
+    def fc_page(time=FC_TIME, **kw):
+        page = new_page(browser, 480, 1200)
+        page.clock.set_fixed_time(time)
+        errors = open_card(page, port, config=kw.pop("config", {"mode": "forecast"}), **kw)
+        return page, errors
+    text = lambda page, sel: page.evaluate(f"() => [...window.__card.shadowRoot.querySelectorAll({json.dumps(sel)})].map(e => e.textContent.replace(/\\s+/g, ' ').trim())")
+    click = lambda page, sel: (page.evaluate(f"() => window.__card.shadowRoot.querySelector({json.dumps(sel)}).click()"), settle(page))
+    count = lambda page, sel: page.locator(in_card(sel)).count()
+
+    t.group("forecast - header")
+    page, errors = fc_page(dynamic=True, set=FC_LIMITS)
+    t.check(not errors, "renders without errors", "; ".join(errors)[:300])
+    t.check(text(page, ".fc-now") == ["36,4ct"], "the price now, large", str(text(page, ".fc-now")))
+    stats = text(page, "button.fc-jump.batt-stat")
+    t.check(stats == ["Tiefstwert17,0 ct · morgen 11:00", "Höchstwert37,2 ct · 20:45"], "lowest and highest price ahead with their time", str(stats))
+    t.check(text(page, ".fc-chip") == ["Jetzt teuer"], "the chip says how the price now ranks", str(text(page, ".fc-chip")))
+    t.check(text(page, "button.fc-hint") == ["günstig ab morgen 00:00 · in 3 h 45 min"], "when it turns cheap, and how long until then", str(text(page, "button.fc-hint")))
+
+    t.group("forecast - chart and pages")
+    t.check(text(page, ".opt-step-label") == ["Heute und morgen"], "a short rest of today joins tomorrow", str(text(page, ".opt-step-label")))
+    t.check(page.locator(in_card('button.fc-step[data-fc-step="-1"]')).is_disabled(), "no page before the first")
+    t.check([n.split("heute")[0] for n in text(page, ".opt-lane-name")] == ["PV-Prognose", "Strompreis"], "the solar forecast on top, the price below", str(text(page, ".opt-lane-name")))
+    bars, cheap = count(page, ".fc-bar"), count(page, ".fc-bar.fc-cheap")
+    t.check(bars == 111, "a bar per quarter hour from now to the end of tomorrow", str(bars))
+    t.check(30 <= cheap <= 45, "about a third of them green", f"{cheap} of {bars}")
+    t.check(count(page, "line.fc-limit-smart") == 1 and count(page, "line.fc-limit-batt") == 1, "the smart cost limit and the grid charge limit as lines")
+    leg = page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('.fc-leg-limit')].map(e => [e.dataset.moreInfo, e.textContent.trim()])")
+    t.check(leg == [["number.evcc_openwb_smart_cost_limit", "Smart-Laden 22,0 ct"], ["number.evcc_battery_grid_charge_limit", "Speicher-Netzladen 18,0 ct"]],
+            "the limits in the legend with their value, opening their entity", str(leg))
+    pv = text(page, ".fc-lane-sub")
+    t.check(len(pv) == 1 and pv[0].startswith("heute noch ") and " · morgen " in pv[0], "the solar energy of the days on the page", str(pv))
+    det = text(page, ".fc-detail .opt-dt")
+    t.check(det == ["Fr 20:15 bis 20:30jetzt"], "the values of now under the chart", str(det))
+
+    # The lowest price opens its slot; the arrow keys walk on from there.
+    click(page, "button.fc-jump.batt-stat")
+    t.check(text(page, ".fc-detail .opt-dt") == ["Sa 11:00 bis 11:15in 14 h 45 min"], "the lowest price shows its slot", str(text(page, ".fc-detail .opt-dt")))
+    page.locator(in_card(".fc-chart")).focus()
+    page.keyboard.press("ArrowRight")
+    t.check(text(page, ".fc-detail .opt-dt") == ["Sa 11:15 bis 11:30in 15 h"], "the arrow keys move the cursor", str(text(page, ".fc-detail .opt-dt")))
+    vals = text(page, ".fc-detail .opt-dv")
+    t.check(len(vals) == 3 and vals[1] == "17,4 ct/kWh" and vals[2].endswith("ct/kWh"), "solar, grid price and feed-in of the slot", str(vals))
+
+    click(page, 'button.fc-step[data-fc-step="1"]')
+    t.check(text(page, ".opt-step-label") == ["Sonntag"], "the next page is the next day", str(text(page, ".opt-step-label")))
+    t.check(count(page, ".fc-bar") == 0 and "noch keine Preise" in page.locator(in_card(".fc-chart")).inner_text(), "a day without prices says so in the price lane")
+    t.check(text(page, ".fc-detail .opt-dv")[1] == "noch kein Preis", "and in the values", str(text(page, ".fc-detail .opt-dv")))
+    done(page)
+
+    t.group("forecast - limits and tariffs")
+    page, _ = fc_page(dynamic=True, set=FC_LIMITS, attrs={"number.evcc_openwb_smart_cost_limit": {"unit_of_measurement": "g/kWh"}})
+    t.check(count(page, "line.fc-limit-smart") == 0 and count(page, "line.fc-limit-batt") == 1, "a CO₂ limit is no line on the price, and without a CO₂ lane none at all")
+    done(page)
+    page, _ = fc_page(dynamic=True)
+    t.check(count(page, ".fc-limit") == 0 and count(page, ".fc-leg-limit") == 0, "limits that are not set draw nothing")
+    done(page)
+    page, errors = fc_page(time="2026-09-18T12:00:00+02:00", dynamic=True)
+    t.check(text(page, ".fc-chip") == ["Jetzt günstig"] and text(page, ".batt-optimizer span:last-child") == ["günstig bis 17:00 · noch 5 h"],
+            "cheap now: until when", f"{text(page, '.fc-chip')} {text(page, '.batt-optimizer span:last-child')}")
+    t.check(text(page, ".opt-step-label") == ["Heute"], "a long rest of today keeps its own page", str(text(page, ".opt-step-label")))
+    done(page)
+    page, errors = fc_page()
+    t.check(not errors and count(page, ".fc-bar") == 0 and count(page, "button.fc-jump") == 0 and count(page, ".fc-chip") == 0,
+            "a fixed price: no price lane, no lowest and highest", "; ".join(errors)[:300])
+    t.check(text(page, ".fc-now") == ["20,2ct"] and len(text(page, ".opt-lane-name")) == 1 and text(page, ".opt-lane-name")[0].startswith("PV-Prognose"), "the price now, then the solar forecast alone",
+            f"{text(page, '.fc-now')} {text(page, '.opt-lane-name')}")
+    done(page)
+
+    t.group("forecast - CO₂")
+    co2 = {"number.evcc_openwb_smart_cost_limit": {"unit_of_measurement": "g/kWh"}}
+    page, errors = fc_page(dynamic=True, tariff="co2", set={**FC_LIMITS, "number.evcc_openwb_smart_cost_limit": 250}, attrs=co2)
+    lanes = [n.split("heute")[0] for n in text(page, ".opt-lane-name")]
+    t.check(not errors and lanes == ["PV-Prognose", "Strompreis", "CO₂-Intensität"], "evcc optimizes for CO₂: a lane for it under the price", f"{lanes} {errors}")
+    where = page.evaluate("""() => [...window.__card.shadowRoot.querySelectorAll('.opt-lane')].map(l => [l.querySelectorAll('line.fc-limit-smart').length, l.querySelectorAll('line.fc-limit-batt').length])""")
+    t.check(where == [[0, 0], [0, 1], [1, 0]], "the limit in g/kWh on the CO₂ lane, the grid charge limit in a price on the price lane", str(where))
+    t.check(count(page, ".opt-lane:nth-child(3) .fc-bar.fc-cheap") > 0, "the cleanest third green")
+    leg = text(page, ".fc-leg-limit")
+    t.check("Smart-Laden 250 g" in leg and "Speicher-Netzladen 18,0 ct" in leg, "each limit in the legend in its unit", str(leg))
+    rows = text(page, ".fc-detail .opt-dk")
+    t.check(rows[:3] == ["PV-Prognose", "Strompreis", "CO₂-Intensität"] and text(page, ".fc-detail .opt-dv")[2].endswith(" g/kWh"), "the CO₂ value of the slot under the chart", f"{rows} {text(page, '.fc-detail .opt-dv')}")
+    done(page)
+    page, _ = fc_page(dynamic=True)
+    t.check("CO₂-Intensität" not in text(page, ".opt-lane-name"), "evcc optimizes for the price: no CO₂ lane", str(text(page, ".opt-lane-name")))
+    done(page)
+
+    t.group("forecast - without a forecast")
+    for kw, want, name in (
+        ({"caps_version": "2026.6.3"}, "Die Vorhersage braucht ha-evcc 2026.6.4 oder neuer.", "ha-evcc below the minimum: names the version"),
+        ({"ws": False}, "Die Vorhersage braucht ha-evcc 2026.6.4 oder neuer.", "ha-evcc without the data API: names the version"),
+    ):
+        page, errors = fc_page(**kw)
+        t.check(text(page, ".opt-note") == [want], name, f"{text(page, '.opt-note')} {errors}")
+        done(page)
+    # Rates that lie behind or carry nothing usable draw a note, no NaN.
+    page, _ = fc_page()
+    got = page.evaluate("""() => {
+      const c = window.__card;
+      for (const k of ["grid", "solar", "feedin"]) {
+        const e = c._wsCache["forecast:" + k];
+        e.result = { data: { ...e.result.data, rates: [{ start: "2020-01-01T00:00:00Z", end: "2020-01-01T00:15:00Z", value: 1 }, { start: "x", end: null, value: "y" }] } };
+        e.ts = Date.now();
+      }
+      c._render();
+      return c.shadowRoot.querySelector(".fc-block").textContent.replace(/\\s+/g, " ").trim();
+    }""")
+    t.check(got.endswith("evcc hat keine Vorhersage für die nächsten Stunden.") and "NaN" not in got and "undefined" not in got, "old or broken rates: a note", got)
+    done(page)
+
 
 GROUPS = {"unit": unit, "render": render_smoke, "min_version": min_version, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "prices": price_display, "editor": editor, "editor_vehicle_map": editor_vehicle_map, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
-          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities, "solar_share": solar_share, "vehicle": vehicle_mode, "battery": battery_mode, "optimizer": optimizer_mode, "stable_height": stable_height}
+          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities, "solar_share": solar_share, "vehicle": vehicle_mode, "battery": battery_mode, "optimizer": optimizer_mode, "forecast": forecast_mode, "stable_height": stable_height}
 
 
 # The groups that take longest go to the workers first, so the run is not left

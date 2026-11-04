@@ -7,6 +7,7 @@ import { gridCss } from "./views/grid-view.js";
 import { statsCss } from "./views/statistics-view.js";
 import { batteryCss } from "./views/battery-view.js";
 import { optimizerCss } from "./views/optimizer-view.js";
+import { forecastCss } from "./views/forecast-view.js";
 import { planCss } from "./views/planning-view.js";
 import { debugCss } from "./views/debug-view.js";
 import { priorityCss } from "./views/priority-view.js";
@@ -53,7 +54,7 @@ const baseCss = `
 
 const CSS = [
   baseCss, loadpointCss, sliderCss, disabledCss, siteCss, flowCss, gridCss,
-  statsCss, batteryCss, optimizerCss, planCss, debugCss, priorityCss, vehicleCss,
+  statsCss, batteryCss, optimizerCss, forecastCss, planCss, debugCss, priorityCss, vehicleCss,
 ].join("\n");
 
 // _render() replaces the shadow root's innerHTML on every update, and a <style>
