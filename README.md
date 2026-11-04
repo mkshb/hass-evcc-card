@@ -63,7 +63,7 @@ All charge points and site entities are **automatically discovered** via the HA 
 <td align="center"><b>Priority</b></td>
 <td align="center"><b>Repeat plan</b></td>
 <td align="center"><b>Vehicle</b></td>
-<td></td>
+<td align="center"><b>Optimizer</b></td>
 </tr>
 <tr>
 <td>
@@ -78,7 +78,10 @@ All charge points and site entities are **automatically discovered** via the HA 
 <a href="#vehicle"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/vehicle-dark.png" width="200"></a>
 <a href="#vehicle"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/vehicle-light.png" width="200"></a>
 </td>
-<td></td>
+<td>
+<a href="#optimizer"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/optimizer-dark.png" width="200"></a>
+<a href="#optimizer"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/optimizer-light.png" width="200"></a>
+</td>
 </tr>
 </table>
 
@@ -429,6 +432,8 @@ evcc's own suggestions are not part of what ha-evcc passes on, so the card reads
 type: custom:evcc-card
 mode: optimizer
 ```
+
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/optimizer-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/optimizer-light.png" width="400">
 
 ---
 
