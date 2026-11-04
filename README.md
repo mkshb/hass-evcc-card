@@ -130,18 +130,18 @@ All charge points and site entities are **automatically discovered** via the HA 
 
 ## Installation
 
-### Via HACS (recommended)
+### Via the Marketplace or HACS (recommended)
 
-`hass-evcc-card` is part of the **default HACS repository** - no custom repository setup needed.
+`hass-evcc-card` is part of the **default catalog** - no custom repository setup needed. Since Home Assistant 2026.11, HACS is built into Home Assistant as the **Marketplace**; before that, the same steps work in HACS.
 
-1. Open **HACS** in Home Assistant
+1. Open **Settings → Marketplace** in Home Assistant (before 2026.11: **HACS**)
 2. Search for **EVCC Card**
 3. Click **Download**
 4. Reload your browser
 
-[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=mkshb&repository=hass-evcc-card&category=plugin)
+[![Open in the Marketplace](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=mkshb&repository=hass-evcc-card&category=plugin)
 
-> **Note for YAML mode users:** If your Lovelace is configured with `mode: yaml` in `configuration.yaml`, HACS cannot register the resource automatically. Add the resource entry manually - see [Manual resource registration](#manual-resource-registration) below.
+> **Note for YAML mode users:** If your Lovelace is configured with `mode: yaml` in `configuration.yaml`, the Marketplace (or HACS) cannot register the resource automatically. Add the resource entry manually - see [Manual resource registration](#manual-resource-registration) below.
 
 ### Manual installation
 
@@ -166,9 +166,9 @@ Depending on how your Lovelace is set up, register the resource in one of two wa
 **UI mode** (default): Go to **Settings → Dashboards → ⋮ → Resources** and add:
 
 ```yaml
-url: /hacsfiles/hass-evcc-card/evcc-card.js  # if installed via HACS
+url: /local/community/hass-evcc-card/evcc-card.js  # if installed via the Marketplace or HACS
 # or
-url: /local/hass-evcc-card/evcc-card.js       # if installed manually
+url: /local/hass-evcc-card/evcc-card.js            # if installed manually
 type: module
 ```
 
@@ -176,12 +176,14 @@ type: module
 
 ```yaml
 resources:
-  - url: /hacsfiles/hass-evcc-card/evcc-card.js   # if installed via HACS
+  - url: /local/community/hass-evcc-card/evcc-card.js  # if installed via the Marketplace or HACS
     type: module
   # or
-  - url: /local/hass-evcc-card/evcc-card.js       # if installed manually
+  - url: /local/hass-evcc-card/evcc-card.js            # if installed manually
     type: module
 ```
+
+The former HACS path `/hacsfiles/hass-evcc-card/evcc-card.js` keeps working; with resources in YAML, Home Assistant 2026.11 shows a repair that reminds you to change it to `/local/community/`.
 
 Then restart Home Assistant or reload the Lovelace resources.
 
