@@ -1,7 +1,7 @@
 import { stateVal, attr, unitStr } from "../utils/state.js";
 import { escHtml } from "../utils/html.js";
 
-// Grid mode (site2). Methods are mixed into EvccCard.prototype.
+// Grid mode. Methods are mixed into EvccCard.prototype.
 export const gridView = {
   _renderSiteBlock2(site, loadpoints = {}) {
     const kw = id => {

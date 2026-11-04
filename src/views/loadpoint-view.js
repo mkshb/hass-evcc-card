@@ -1,4 +1,5 @@
 import { SMART_MODE_ICON, CHARGE_MODES, loadpointOption } from "../core/constants.js";
+import { isLoadpointDisabled } from "../core/entity-discovery.js";
 import { stateVal, attr, unitStr, isOn } from "../utils/state.js";
 import { fmtNum, fmtPrice, priceCurrency, fmtClock, fmtDuration, fmtRemainingDuration, evccDate, fmtCountdownFromISO, fmtCountdownFromTimestamp, socFillGradient, socTrackBg } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
@@ -711,6 +712,19 @@ export const loadpointView = {
         </p>
       </div>
     `;
+  },
+
+  // A loadpoint, compact or plan card without `loadpoint` while evcc has
+  // several: one card shows one loadpoint, so it asks which, like the vehicle
+  // mode does for a vehicle.
+  _renderPickLoadpoint(allLoadpoints = {}) {
+    const available = Object.keys(allLoadpoints)
+      .filter(lp => !isLoadpointDisabled(this._hass, allLoadpoints[lp]));
+    return `
+      <div class="empty">
+        <p>${this._t("loadpointPickOne")}</p>
+        <p>${this._t("availableLoadpoints", { list: `<code>${available.map(escHtml).join(", ")}</code>` })}</p>
+      </div>`;
   },
 
   // Placeholder when every (matching) loadpoint is disabled in the evcc

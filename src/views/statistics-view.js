@@ -1,15 +1,15 @@
-import { stateVal, unitStr } from "../utils/state.js";
+import { unitStr } from "../utils/state.js";
 import { evccDate, fmtPrice, priceCurrency } from "../utils/format.js";
-import { normalizeStatsPeriod, legacyStatsPeriod } from "../core/constants.js";
+import { normalizeStatsPeriod, HA_EVCC_MIN_VERSION } from "../core/constants.js";
 import { escHtml } from "../utils/html.js";
 
-// Statistics from evcc_intg/sessions (EVCC-style header, stacked chart) plus the stats dispatchers. Methods are mixed into EvccCard.prototype.
+// Statistics from evcc_intg/sessions (EVCC-style header, stacked chart), the stats mode and the footer under site/grid/flow. Methods are mixed into EvccCard.prototype.
 export const statisticsView = {
   // ---- Sessions-based statistics (ha-evcc evcc_intg/sessions) -------------
   // The raw session list lets the card compute every period + KPI itself, so
-  // the stats mode no longer depends on user-configured stat_* template sensors
-  // or HA-Recorder delta reconstruction. Gated on _hasCmd("sessions"); older
-  // integrations keep the entity/Recorder path below.
+  // the stats mode needs neither stat_* template sensors nor the HA recorder.
+  // Gated on _hasCmd("sessions"); an ha-evcc older than HA_EVCC_MIN_VERSION
+  // gets a note with the version it needs instead.
 
   _sessionDate(s) {
     const raw = s?.created || s?.finished;
@@ -66,22 +66,22 @@ export const statisticsView = {
     return { kind: "total" };
   },
 
-  // The average price per kWh of a statistics sensor, as evcc shows it (in
-  // ct, the label says per kWh); a sensor without a currency unit as it is.
-  _fmtAvgPrice(priceId, price) {
-    const unit = unitStr(this._hass, priceId);
-    const cur  = priceCurrency(unit);
-    return cur === null ? `${price.toFixed(2)}${unit ? ` ${unit}` : ""}` : fmtPrice(price, cur, this._hass?.language, { unit: "short" });
-  },
-
-  // Currency symbol for session price values (the sessions response carries none).
+  // Currency symbol for session price values (the sessions response carries
+  // none): from the cached tariff forecast, else from the unit of the grid
+  // tariff sensor ("€/kWh"), else none.
   _statsCurrency() {
     const c = this._wsCache["forecast:grid"]?.result?.data?.currency
            ?? this._wsCache["forecast:planner"]?.result?.data?.currency;
     if (c) return c;
-    const { priceId } = this._getStatEntityIds("total");
-    const u = priceId ? unitStr(this._hass, priceId) : "";
-    return u ? u.replace(/\s*\/\s*kwh$/i, "") : "";
+    return priceCurrency(unitStr(this._hass, `sensor.${this._getPrefix()}tariff_grid`)) ?? "";
+  },
+
+  // The note the statistics show without data: the ha-evcc that is too old
+  // for the sessions API, or a sessions request that failed.
+  _statsNoteText() {
+    return this._haEvccTooOld()
+      ? this._t("statsTooOld", { ver: HA_EVCC_MIN_VERSION })
+      : this._t("statsUnavailable");
   },
 
   // --- chart metric and breakdown ------------------------------------------
@@ -267,8 +267,7 @@ export const statisticsView = {
   },
 
   // Scope tabs (Month / Year / Total) as one segmented control. Reuses the
-  // .stats-period-tab class but carries data-scope (handled separately from
-  // the legacy entity-path data-period tabs).
+  // .stats-period-tab class and carries data-scope.
   _renderStatsScopeTabs() {
     const cur = this._statsScope ?? "month";
     const defs = [
@@ -485,74 +484,50 @@ export const statisticsView = {
     return `<div class="stats-footer"><div class="sf-period">${periodLabel}</div><div class="sf-items">${items.join('<span class="sf-sep"></span>')}</div></div>`;
   },
 
+  // The compact footer under site/grid/flow. Nothing while the data is on
+  // its way; a note in its place on an ha-evcc without the sessions API.
   _renderStatsFooter() {
     if (normalizeStatsPeriod(this._config.stats_period, "total") === "none") return "";
-    if (this._hasCmd("sessions")) {
-      const res = this._wsSessions();
-      if (res && res.data && Array.isArray(res.data.sessions)) {
-        return this._renderStatsFooterSessions(this._statsSessions(res.data.sessions));
-      }
-      // pending/error → fall through to the entity path below
+    if (!this._hasCmd("sessions")) {
+      return this._haEvccTooOld()
+        ? `<div class="stats-footer"><div class="stats-note">${escHtml(this._statsNoteText())}</div></div>`
+        : "";
     }
-    // The legacy path has periods of its own, so the configured value is mapped
-    // onto them here. Not via this._statsPeriod: that one follows the period
-    // tabs of the stats mode, the footer stays on what the config asked for.
-    const period = legacyStatsPeriod(this._config.stats_period, "total");
-    const { kwhId, solarId, priceId } = this._getStatEntityIds(period);
-    if (!kwhId && !solarId && !priceId) return "";
-
-    const val = id => id ? (parseFloat(stateVal(this._hass, id)) || 0) : null;
-    const kwh   = val(kwhId);
-    const solar = val(solarId);
-    const price = val(priceId);
-
-    const periodTKey = { "30d": "statsPeriod30d", "365d": "statsPeriod365d", "thisYear": "statsPeriodThisYear", "total": "statsPeriodTotal" }[period] ?? "statsPeriodTotal";
-    const periodLabel = this._t(periodTKey);
-
-    const items = [
-      kwhId   ? `<span class="sf-item"><span class="sf-val">${Math.round(kwh)} kWh</span><span class="sf-lbl">${this._t("statsCharged")}</span></span>` : "",
-      solarId ? `<span class="sf-item"><span class="sf-val" style="color:var(--evcc-green)">${Math.round(solar)} %</span><span class="sf-lbl">${this._t("statsSolarShare")}</span></span>` : "",
-      priceId ? `<span class="sf-item"><span class="sf-val">${escHtml(this._fmtAvgPrice(priceId, price))}</span><span class="sf-lbl">${this._t("statsAvgPrice")}</span></span>` : "",
-    ].filter(Boolean);
-
-    if (items.length === 0) return "";
-    return `<div class="stats-footer"><div class="sf-period">${periodLabel}</div><div class="sf-items">${items.join('<span class="sf-sep"></span>')}</div></div>`;
+    const res = this._wsSessions();
+    if (!res?.data || !Array.isArray(res.data.sessions)) return "";
+    return this._renderStatsFooterSessions(this._statsSessions(res.data.sessions));
   },
 
+  // The stats mode, computed from the raw session list. While the capabilities
+  // or the first sessions request are on their way it shows the header and a
+  // placeholder, without the API or on an error the header and a note.
   _renderStatsBlock() {
-    // Sessions-first: when ha-evcc exposes the sessions command, compute the
-    // stats entirely from the raw session list (no stat_* sensors, no Recorder).
-    // Fall back to the entity/Recorder path for older integrations or while the
-    // first session fetch is still in flight.
-    if (this._hasCmd("sessions")) {
-      const res = this._wsSessions();
-      if (res && res.data && Array.isArray(res.data.sessions)) {
-        return this._renderStatsBlockSessions(this._statsSessions(res.data.sessions));
-      }
-      if (!res) {
-        return `
+    const res = this._hasCmd("sessions") ? this._wsSessions() : null;
+    if (res?.data && Array.isArray(res.data.sessions)) {
+      return this._renderStatsBlockSessions(this._statsSessions(res.data.sessions));
+    }
+    const head = `<div class="lp-header"><span class="lp-name">${escHtml(this._config.title || this._t("statistics"))}</span></div>`;
+    const pending = this._hasCmd("sessions") ? !res : !this._capsLoaded;
+    if (pending) {
+      return `
           <div>
-            <div class="lp-header"><span class="lp-name">${escHtml(this._config.title || this._t("statistics"))}</span></div>
+            ${head}
             ${this._renderStatsScopeTabs()}
             <div class="stats-chart-loading">…</div>
           </div>`;
-      }
-      // res.error → fall through to the entity path
     }
-    return this._renderStatsBlockEntities();
+    return `<div class="stats">${head}<div class="stats-note">${escHtml(this._statsNoteText())}</div></div>`;
   },
 
-  // Listeners of both statistics paths: the period, scope, metric and group
-  // tabs, the period stepper and the chart tooltip. Called by
+  // Listeners of the statistics: the scope, metric and group tabs, the period
+  // stepper and the chart tooltip. Called by
   // _attachListeners() after every render.
   _attachStatsListeners() {
     this._fresh("button.stats-period-tab").forEach(btn => {
       btn.addEventListener("click", () => {
-        // Sessions path: data-scope/-metric/-group. Legacy entity path: data-period.
         if      (btn.dataset.scope)  this._statsScope  = btn.dataset.scope;
         else if (btn.dataset.metric) this._statsMetric = btn.dataset.metric;
         else if (btn.dataset.group)  this._statsGroup  = btn.dataset.group;
-        else                         this._statsPeriod = btn.dataset.period;
         this._render();
       });
     });
@@ -579,7 +554,7 @@ export const statisticsView = {
     if (chartWrap) {
       const tooltip = chartWrap.querySelector(".evcc-chart-tooltip");
       const dot = (color) => `<span class="ectt-dot" style="background:${color}"></span>`;
-      const barKey = (bar) => bar.dataset.idx != null ? "i" + bar.dataset.idx : (bar.dataset.label || "") + (bar.dataset.total || "");
+      const barKey = (bar) => "i" + bar.dataset.idx;
       const positionTooltip = (bar) => {
         const barRect  = bar.getBoundingClientRect();
         const wrapRect = chartWrap.getBoundingClientRect();
@@ -590,34 +565,18 @@ export const statisticsView = {
         tooltip.style.left = `${left}px`;
       };
       const showTooltip = (bar) => {
-        // Sessions stacked chart: look the bucket up by index.
-        if (bar.dataset.idx != null && this._statsChartData) {
-          const { buckets, series, metric, currency } = this._statsChartData;
-          const b = buckets[+bar.dataset.idx];
-          if (!b || !(b.total > 0)) { tooltip.hidden = true; return; }
-          const mf = this._metricFmt(metric, currency);
-          const row = (s, v) => `<div class="ectt-row">${dot(s.color)}<span class="ectt-name">${escHtml(s.label)}</span><span class="ectt-val">${mf.fmt(v)} ${mf.unit}</span></div>`;
-          // A single series is the total already: one row, no summary line.
-          const body = series.length > 1
-            ? series.filter(s => (b.seg[s.key] || 0) > 0).map(s => row(s, b.seg[s.key])).join("") + `<div class="ectt-summary">${mf.fmt(b.total)} ${mf.unit} ${this._t("total")}</div>`
-            : row(series[0], b.total);
-          tooltip.innerHTML = `<div class="ectt-header">${escHtml(b.labelFull || b.labelStr)}</div>${body}`;
-          positionTooltip(bar);
-          tooltip.dataset.activeBar = barKey(bar);
-          return;
-        }
-        // Legacy entity chart (solar/grid).
-        const total = bar.dataset.total;
-        if (!total) { tooltip.hidden = true; return; }
-        const solar = bar.dataset.solar ? parseFloat(bar.dataset.solar) : null;
-        const grid  = solar != null ? (parseFloat(total) - solar).toFixed(1) : null;
-        const solarColor = getComputedStyle(chartWrap).getPropertyValue("--evcc-green").trim() || "#22c55e";
-        const gridColor  = getComputedStyle(chartWrap).getPropertyValue("--primary-color").trim() || "#3b82f6";
-        tooltip.innerHTML =
-          `<div class="ectt-header">${escHtml(bar.dataset.label)}</div>` +
-          (solar != null ? `<div class="ectt-row">${dot(solarColor)}<span class="ectt-name">${this._t("solar")}</span><span class="ectt-val">${bar.dataset.solar} kWh</span></div>` : "") +
-          (grid  != null ? `<div class="ectt-row">${dot(gridColor)}<span class="ectt-name">${this._t("grid")}</span><span class="ectt-val">${grid} kWh</span></div>` : "") +
-          `<div class="ectt-summary">${total} kWh ${this._t("total")}</div>`;
+        // The stacked chart: look the bucket up by index.
+        if (bar.dataset.idx == null || !this._statsChartData) { tooltip.hidden = true; return; }
+        const { buckets, series, metric, currency } = this._statsChartData;
+        const b = buckets[+bar.dataset.idx];
+        if (!b || !(b.total > 0)) { tooltip.hidden = true; return; }
+        const mf = this._metricFmt(metric, currency);
+        const row = (s, v) => `<div class="ectt-row">${dot(s.color)}<span class="ectt-name">${escHtml(s.label)}</span><span class="ectt-val">${mf.fmt(v)} ${mf.unit}</span></div>`;
+        // A single series is the total already: one row, no summary line.
+        const body = series.length > 1
+          ? series.filter(s => (b.seg[s.key] || 0) > 0).map(s => row(s, b.seg[s.key])).join("") + `<div class="ectt-summary">${mf.fmt(b.total)} ${mf.unit} ${this._t("total")}</div>`
+          : row(series[0], b.total);
+        tooltip.innerHTML = `<div class="ectt-header">${escHtml(b.labelFull || b.labelStr)}</div>${body}`;
         positionTooltip(bar);
         tooltip.dataset.activeBar = barKey(bar);
       };
@@ -645,7 +604,7 @@ export const statisticsView = {
   },
 };
 
-// Both statistics paths: tabs, footer, KPI row, chart and tooltip.
+// Statistics: tabs, footer, chart, tooltip and the note without data.
 // Part of the card stylesheet, see src/styles.js.
 export const statsCss = `
       .stats-period-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
@@ -678,27 +637,6 @@ export const statsCss = `
       .sf-lbl  { font-size: .58rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
       .sf-sep  { width: 1px; height: 28px; background: var(--divider-color, #333); flex-shrink: 0; }
 
-      .stats-no-data {
-        font-size: .76rem; color: var(--warning-color, #f4b942);
-        background: rgba(244,185,66,.08);
-        border: 1px solid var(--warning-color, #f4b942);
-        border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; line-height: 1.6;
-      }
-      .stats-no-data-link {
-        display: inline-block; margin-top: 4px; color: var(--primary-color);
-        text-decoration: none; font-weight: 600;
-      }
-      .stats-no-data-link:hover { text-decoration: underline; }
-
-      .stats-kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
-      .stats-kpi {
-        background: var(--secondary-background-color, rgba(255,255,255,.05));
-        border-radius: 8px; padding: 10px 8px; text-align: center;
-        display: flex; flex-direction: column; gap: 3px;
-      }
-      .stats-kpi-val { font-size: 1.1rem; font-weight: 800; line-height: 1; }
-      .stats-kpi-lbl { font-size: .58rem; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
-      .stats-chart-section { margin-top: 4px; }
       .stats-stepper { display: flex; align-items: center; justify-content: center; }
       .stats-step-btn {
         border: 1px solid var(--divider-color, rgba(127,127,127,0.3)); background: transparent;
@@ -713,7 +651,7 @@ export const statsCss = `
       .stats-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; margin-top: 8px; font-size: 0.74rem; color: var(--secondary-text-color); }
       .sl-item { display: inline-flex; align-items: center; gap: 5px; }
       .sl-dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
-      .evcc-chart-wrap { position: relative; margin-left: -16px; margin-right: 0; }
+      .evcc-chart-wrap { position: relative; }
       .evcc-chart-tooltip {
         position: absolute; top: 0; transform: translateX(-50%);
         background: var(--ha-card-background, var(--card-background-color, #1f2937));
@@ -728,9 +666,9 @@ export const statsCss = `
       .ectt-name { flex: 1; color: var(--primary-text-color); }
       .ectt-val { font-weight: 600; margin-left: 12px; }
       .ectt-summary { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--divider-color, #374151); font-weight: 700; }
-      .stats-chart-title {
-        font-size: .58rem; font-weight: 700; letter-spacing: .12em;
-        text-transform: uppercase; color: var(--secondary-text-color); opacity: .55; margin-bottom: 8px;
+      .stats-note {
+        padding: 8px 10px; border-radius: 6px; font-size: .78rem; line-height: 1.4;
+        background: var(--secondary-background-color, rgba(0,0,0,.08)); color: var(--secondary-text-color);
       }
       .stats-chart-loading {
         height: 75px; display: flex; align-items: center; justify-content: center;
@@ -763,7 +701,6 @@ export const statsCss = `
       .stats-section-title { font-size: .82rem; font-weight: 600; }
       .stats-section .stats-period-tabs { margin-bottom: 0; }
       .stats-chart-svg { width: 100%; display: block; }
-      .stats .evcc-chart-wrap { margin-left: 0; }
       .stats .stats-legend { justify-content: flex-start; margin-top: 0; font-size: .72rem; }
       .stats-groups { display: flex; flex-direction: column; gap: 10px; }
       .stats-group-top { display: flex; justify-content: space-between; gap: 8px; font-size: .82rem; }
@@ -774,11 +711,4 @@ export const statsCss = `
       .stats .session-block { margin-top: 0; }
       .stats-totals .session-grid { gap: 10px 16px; }
       .stats-totals .si-label { white-space: nowrap; }
-      .stats-solar-hint {
-        font-size: .72rem; color: var(--secondary-text-color);
-        margin-top: 10px; padding: 6px 10px;
-        background: color-mix(in srgb, var(--evcc-green) 8%, transparent);
-        border: 1px solid color-mix(in srgb, var(--evcc-green) 25%, transparent);
-        border-radius: 6px; line-height: 1.4;
-      }
 `;

@@ -63,7 +63,7 @@ All charge points and site entities are **automatically discovered** via the HA 
 <td align="center"><b>Priority</b></td>
 <td align="center"><b>Repeat plan</b></td>
 <td align="center"><b>Vehicle</b></td>
-<td></td>
+<td align="center"><b>Optimizer</b></td>
 </tr>
 <tr>
 <td>
@@ -78,7 +78,19 @@ All charge points and site entities are **automatically discovered** via the HA 
 <a href="#vehicle"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/vehicle-dark.png" width="200"></a>
 <a href="#vehicle"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/vehicle-light.png" width="200"></a>
 </td>
-<td></td>
+<td>
+<a href="#optimizer"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/optimizer-dark.png" width="200"></a>
+<a href="#optimizer"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/optimizer-light.png" width="200"></a>
+</td>
+</tr>
+<tr>
+<td align="center"><b>Forecast</b></td>
+</tr>
+<tr>
+<td>
+<a href="#forecast"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/forecast-dark.png" width="200"></a>
+<a href="#forecast"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/forecast-light.png" width="200"></a>
+</td>
 </tr>
 </table>
 
@@ -96,10 +108,10 @@ All charge points and site entities are **automatically discovered** via the HA 
 | **Slider controls** | Adjust Target SoC, Min SoC, Priority, smart charging limit, feed-in priority limit, battery boost, solar share, Max current and Min current inline |
 | **Phase switching** | Auto / 1-phase / 3-phase control built in |
 | **Plan strategies** | Continuous charging and battery preconditioning settings inline in the plan block |
-| **Repeating plans** | `repeatplan` mode lists evcc's weekly repeating charge plans per vehicle and toggles them on/off (ha-evcc 2026.6.1+) |
+| **Repeating plans** | `repeatplan` mode lists evcc's weekly repeating charge plans per vehicle and toggles them on/off |
 | **Vehicle view** | `vehicle` mode shows one vehicle, plugged in or not: charge level, range, odometer, plans and totals from evcc, plus lock, doors, location and commands from the vehicle's own integration |
-| **Live plan preview** | In `plan` mode, a live chart previews the planned charging window over the upcoming tariff/forecast, with duration, power and average price/CO₂ (ha-evcc 2026.6.x+) |
-| **Session statistics** | `stats` mode is powered directly by evcc's charging-session history: no helper sensors or recorder setup, with energy, cost, savings, solar share and a breakdown by vehicle or charge point (ha-evcc 2026.6.x+) |
+| **Live plan preview** | In `plan` mode, a live chart previews the planned charging window over the upcoming tariff/forecast, with duration, power and average price/CO₂ |
+| **Session statistics** | `stats` mode is powered directly by evcc's charging-session history: no helper sensors or recorder setup, with energy, cost, savings, solar share and a breakdown by vehicle or charge point |
 | **Heating loadpoints** | Heat-pump / heating loadpoints are detected automatically: no EV charge plan, and the target/limit is shown as a temperature |
 | **Action indicators** | Pending phase switches (1↔3 phase) and PV-charging start/stop shown as inline countdown chips |
 | **Diagnostics** | Built-in `debug` mode collects card / HA / integration state into a copy-paste-ready bug report |
@@ -110,26 +122,26 @@ All charge points and site entities are **automatically discovered** via the HA 
 ## Prerequisites
 
 - [Home Assistant](https://www.home-assistant.io/) (2023.x or newer)
-- [ha-evcc](https://github.com/marq24/ha-evcc) integration installed and configured, with a running [EVCC](https://evcc.io/) instance connected to it
-- For the **live plan preview** and the **session-based statistics**, ha-evcc **2026.6.x or newer** is required (it ships evcc's WebSocket data API). On older versions these features fall back automatically and the rest of the card keeps working.
-- For the SoC forecast of the optimizer, grid discharging and the clear button of the grid charge limit in the `battery` mode, ha-evcc **2026.10.1 or newer** is required, for the button that recomputes the forecast **2026.10.2 or newer**.
+- [ha-evcc](https://github.com/marq24/ha-evcc) **2026.6.4 or newer**, installed and configured, with a running [EVCC](https://evcc.io/) instance connected to it. This is the first release whose WebSocket data API delivers what the plan preview, plans in kWh and the statistics rely on. On an older ha-evcc the plan preview and the statistics show a note with the required version instead, and the debug view says so too.
+- [EVCC](https://evcc.io/) **0.316 or newer** is recommended. Older versions with the **PV** and **Min+PV** modes still work, but from 0.11.0 on the card will need evcc 0.316, see [Charge modes](#charge-modes).
+- For the SoC forecast of the optimizer, grid discharging and the clear button of the grid charge limit in the `battery` mode, ha-evcc **2026.10.1 or newer** is required, for the button that recomputes the forecast **2026.10.2 or newer**. The `optimizer` mode needs ha-evcc **2026.10.1 or newer** as well.
 
 ---
 
 ## Installation
 
-### Via HACS (recommended)
+### Via the Marketplace or HACS (recommended)
 
-`hass-evcc-card` is part of the **default HACS repository** - no custom repository setup needed.
+`hass-evcc-card` is part of the **default catalog** - no custom repository setup needed. Since Home Assistant 2026.11, HACS is built into Home Assistant as the **Marketplace**; before that, the same steps work in HACS.
 
-1. Open **HACS** in Home Assistant
+1. Open **Settings → Marketplace** in Home Assistant (before 2026.11: **HACS**)
 2. Search for **EVCC Card**
 3. Click **Download**
 4. Reload your browser
 
-[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=mkshb&repository=hass-evcc-card&category=plugin)
+[![Open in the Marketplace](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=mkshb&repository=hass-evcc-card&category=plugin)
 
-> **Note for YAML mode users:** If your Lovelace is configured with `mode: yaml` in `configuration.yaml`, HACS cannot register the resource automatically. Add the resource entry manually - see [Manual resource registration](#manual-resource-registration) below.
+> **Note for YAML mode users:** If your Lovelace is configured with `mode: yaml` in `configuration.yaml`, the Marketplace (or HACS) cannot register the resource automatically. Add the resource entry manually - see [Manual resource registration](#manual-resource-registration) below.
 
 ### Manual installation
 
@@ -154,9 +166,9 @@ Depending on how your Lovelace is set up, register the resource in one of two wa
 **UI mode** (default): Go to **Settings → Dashboards → ⋮ → Resources** and add:
 
 ```yaml
-url: /hacsfiles/hass-evcc-card/evcc-card.js  # if installed via HACS
+url: /local/community/hass-evcc-card/evcc-card.js  # if installed via the Marketplace or HACS
 # or
-url: /local/hass-evcc-card/evcc-card.js       # if installed manually
+url: /local/hass-evcc-card/evcc-card.js            # if installed manually
 type: module
 ```
 
@@ -164,12 +176,14 @@ type: module
 
 ```yaml
 resources:
-  - url: /hacsfiles/hass-evcc-card/evcc-card.js   # if installed via HACS
+  - url: /local/community/hass-evcc-card/evcc-card.js  # if installed via the Marketplace or HACS
     type: module
   # or
-  - url: /local/hass-evcc-card/evcc-card.js       # if installed manually
+  - url: /local/hass-evcc-card/evcc-card.js            # if installed manually
     type: module
 ```
+
+The former HACS path `/hacsfiles/hass-evcc-card/evcc-card.js` keeps working; with resources in YAML, Home Assistant 2026.11 shows a repair that reminds you to change it to `/local/community/`.
 
 Then restart Home Assistant or reload the Lovelace resources.
 
@@ -185,14 +199,13 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `site`, `flow`, `grid`, `stats`, `plan`, `repeatplan`, `priority`, `vehicle`, `debug` |
+| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `optimizer`, `forecast`, `site`, `flow`, `grid`, `stats`, `plan`, `repeatplan`, `priority`, `vehicle`, `debug` |
 | `title` | `string` | *(auto)* | Replaces the default card header |
-| `loadpoint` | `string` | *(all)* | `loadpoint`, `compact` and `plan` mode: the charge point of the card, by name. One card shows one charge point, add a card for each further one. Can be left out when evcc has just one charge point |
-| `loadpoints` | `list` | *(all)* | `priority` mode: filter charge points by name. In `loadpoint`, `compact` and `plan` mode a list from before still draws every charge point in it, as does leaving out `loadpoint` with several charge points; the visual editor offers to pick one. **Deprecated:** future versions will show one charge point per `loadpoint`, `compact` or `plan` card, so best set `loadpoint` now and add a card for each further one, see [One charge point per card](#one-charge-point-per-card) |
+| `loadpoint` | `string` | *(the only one)* | `loadpoint`, `compact` and `plan` mode: the charge point of the card, by name. One card shows one charge point, add a card for each further one. Can be left out when evcc has just one charge point, see [One charge point per card](#one-charge-point-per-card) |
+| `loadpoints` | `list` | *(all)* | `priority` mode: filter charge points by name |
 | `language` | `string` | *(auto)* | Override UI language |
 | `size` | `string` | *(auto)* | Fixed card scale: `small`, `medium` or `large`. When unset, the card auto-scales to its container width |
 | `no_plan` | `boolean` / `list` | *(none)* | Hide the charge plan block: `true` for the charge point(s) of the card, or a list of charge point names |
-| `repeating_plan_vehicles` | `list` | *(all)* | `repeatplan` mode: a list from before, still draws every vehicle in it, as does leaving out `vehicle` with several vehicles; the visual editor offers to pick one. **Deprecated:** future versions will show one vehicle per `repeatplan` card, so best set `vehicle` now and add a card for each further one |
 | `vehicle` | `string` | *(the only one)* | The vehicle of the `vehicle` and `repeatplan` mode, by the name ha-evcc uses in its entity ids (`ex30` for `sensor.evcc_ex30_configvehicle_soc`). Can be left out when evcc knows just one vehicle. See [`vehicle`](#vehicle) |
 | `vehicle_device` | `string` | *(auto)* | `vehicle` mode: the Home Assistant device of the vehicle's own integration, as a device id; `none` keeps the card without one |
 | `vehicle_image` | `string` | *(none)* | `vehicle` mode: a picture of the car, from the HA media (`media-source://...`), a path (`/local/ex30.png`) or an http(s) address |
@@ -200,28 +213,28 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 | `vehicle_image_charging` | `string` | *(none)* | `vehicle` mode: the picture while the car charges at an evcc charge point, same forms as `vehicle_image` |
 | `vehicle_actions` | `boolean` | `false` | `vehicle` mode: `true` lets the card send commands to the vehicle (lock, climate, the device's buttons) |
 | `vehicle_entities` | `map` | *(auto)* | `vehicle` mode: assigns entities to the roles of the vehicle by hand, see [Assigning entities](#assigning-entities) |
-| `plan_loadpoint_index` | `map` | *(auto)* | **YAML only** — Override the evcc loadpoint index (1-based) used for the plan preview, e.g. `{ openwb: 1, wp: 2 }`. Only needed if the auto-detected order does not match evcc |
 | `no_pv` | `boolean` / `list` | *(none)* | YAML only. `true` for the charge point(s) of the card, or a list of charge point names: treat them as having **no PV system**: the **Smart** mode is offered only when a dynamic tariff is configured (otherwise only **Off** / **Fast** remain), the solar share slider is hidden. evcc itself does this only when neither a PV meter nor a grid meter is configured, so most installations do not need it. See [Charge modes](#charge-modes) below |
 | `disabled_loadpoints` | `string` | `hide` | How to treat charge points disabled in the evcc configuration (ha-evcc 2026.8.8+): `hide` removes them from the card, `dim` shows them grayed out with a "Disabled" badge, `show` keeps the previous behavior |
 | `site_details` | `string` | `expanded` | `collapsed` to hide the IN/OUT detail table by default in `site` and `flow` mode |
 | `charge_current_settings` | `string` | `collapsed` | `expanded` to show charge settings expanded by default |
 | `hide_settings` | `list` | *(none)* | Remove individual settings from the `loadpoint` / `compact` card: `limit_soc`, `min_soc`, `phases`, `max_current`, `min_current`, `battery_boost`, `solar_share`, `priority`, `smart_cost_limit`, `smart_feed_in_priority_limit`. See [Slider settings](#slider-settings) |
 | `hide_soc_chart` | `boolean` | `false` | `battery` mode: `true` leaves out the state of charge chart, for a card that is only used for the settings. Highest and lowest SoC of the optimizer stay in the status |
+| `sections` | `list` | *(all)* | `forecast` mode: what the card shows, any of `solar`, `price` (with the price in the header and the feed-in rate) and `co2` (only while evcc optimizes for CO₂) |
 | `hide_disabled_hint` | `boolean` | `false` | `true` hides the warning triangle that the `loadpoint` / `compact` card shows administrators while an entity it needs is disabled in Home Assistant. See [Disabled entities](#disabled-entities) |
 | `slider_steps` | `map` | *(entity)* | Override the step of a number slider per setting (visual editor: **Advanced**), e.g. `{ smart_cost_limit: 0.01, limit_soc: 5 }`. Keys are ha-evcc feature names and are matched exactly. Also sets the increment of the − / + buttons in the direct-input panel. Number entities only. See [Slider settings](#slider-settings) |
-| `stats_period` | `string` | *(see note)* | Statistics period: `month`, `year`, `total`, `none`. Unconfigured, the `stats` mode opens on the most recent month and the footer under `site`/`grid`/`flow` summarises everything; `none` hides that footer. The older values `30d`, `365d` and `thisYear` still work |
-| `stats_exclude_loadpoints` | `list` | | Charge points the session statistics leave out, in the `stats` mode and in the summary row under `site`/`grid`/`flow`, for example a heat pump: `[wp]`. Takes the charge point names the card uses elsewhere, or their evcc titles. Not applied on ha-evcc before 2026.6.x |
+| `stats_period` | `string` | *(see note)* | Statistics period: `month`, `year`, `total`, `none`. Unconfigured, the `stats` mode opens on the most recent month and the footer under `site`/`grid`/`flow` summarises everything; `none` hides that footer. The older values `30d`, `365d` and `thisYear` are still accepted and show the month (`30d`) or the year (`365d`, `thisYear`) |
+| `stats_exclude_loadpoints` | `list` | | Charge points the session statistics leave out, in the `stats` mode and in the summary row under `site`/`grid`/`flow`, for example a heat pump: `[wp]`. Takes the charge point names the card uses elsewhere, or their evcc titles |
 | `prefix` | `string` | *(auto)* | Entity prefix, auto-detected from ha-evcc. With more than one ha-evcc entry the visual editor offers the instance to use; the first entry is the default and needs no `prefix` |
 
-> **Invalid values are rejected.** `mode`, `size`, `disabled_loadpoints` and `stats_period` only accept the values listed above, and `prefix`, `language`, `loadpoint` and `loadpoints` have to be non-empty; `loadpoint` and `loadpoints` cannot be combined. A dashboard carrying something else shows the Home Assistant error card naming the option, instead of quietly falling back to another view.
+> **Invalid values are rejected.** `mode`, `size`, `disabled_loadpoints` and `stats_period` only accept the values listed above, and `prefix`, `language`, `loadpoint` and `loadpoints` have to be non-empty; `loadpoint` and `loadpoints` cannot be combined, and a `loadpoint`, `compact`, `plan` or `repeatplan` card takes one charge point or vehicle. A dashboard carrying something else shows the Home Assistant error card naming the option, instead of quietly falling back to another view.
 
 ### One charge point per card
 
-A `loadpoint`, `compact` or `plan` card that still lists several charge points under `loadpoints`, or leaves out `loadpoint` while evcc has several, keeps working for now, but future versions will show one charge point per card. The visual editor marks such a card with a warning: pick the charge point of the card under **Charge point** and add a card for each further one.
+A `loadpoint`, `compact` or `plan` card shows one charge point, set with `loadpoint`. With a single charge point in evcc it can be left out. A card without `loadpoint` while evcc has several asks to pick one and lists the available ones; a list of several under `loadpoints` is rejected with the Home Assistant error card. **What to do:** pick the charge point of the card under **Charge point** in the visual editor (or set `loadpoint: <name>`) and add a card for each further one.
 
-The same goes for the vehicles of a `repeatplan` card: a list under `repeating_plan_vehicles`, or no `vehicle` while several vehicles have repeating plans, keeps working for now. Pick the vehicle of the card under **Vehicle** and add a card for each further one.
+The same goes for the vehicles of a `repeatplan` card: set the card's vehicle with `vehicle`. Without it, a card asks to pick one while several vehicles have repeating plans, and a list of several under `repeating_plan_vehicles` is rejected.
 
-<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/one-charge-point-per-card.gif" width="800" alt="Switching a card with two charge points to one charge point per card in the visual editor">
+The `priority` mode stays a list of all charge points, narrowed with `loadpoints` if wanted.
 
 ---
 
@@ -249,6 +262,8 @@ The card renders the modes the ha-evcc mode entity offers, so it follows whateve
 | before 0.316 | **Off** / **PV** / **Min+PV** / **Fast** |
 
 evcc 0.316 replaced the **PV** mode with **Smart** and turned **Min+PV** into the **Always charge** setting of the Smart mode: charge without interruption at least at the minimum current, either permanently (**On**) or for the running session only (**Once**). ha-evcc 2026.8.3 or newer detects this on startup, so after updating evcc, reload the ha-evcc integration once (or restart Home Assistant) for the new modes to appear. Switch devices (a heat pump with SG-Ready, a heating rod) get no Always charge row, as in evcc itself.
+
+> **Upcoming:** the card still shows the PV and Min+PV modes of evcc before 0.316. From 0.11.0 on it will only support the Smart mode, so please update evcc to 0.316 or newer.
 
 **Heating loadpoints** carry evcc's own labels: **Normal** / **Smart** / **Boost** instead of Off / Smart / Fast.
 
@@ -358,15 +373,13 @@ Compact site energy overview with a focus on the current grid status:
 - Three sections of chips: generation (PV), grid & battery (saying the direction: import or export, charging or discharging), consumption (home and every charge point with vehicle SoC/temperature)
 - Chips without power stay, dimmed, so the card keeps its height while the power moves (on a card of about 400 px or less the direction labels of grid and battery can still wrap their section)
 
-> **Deprecation notice:** `mode: site2` still works but is deprecated and will be removed in a future release. Please migrate to `mode: grid`.
-
 <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/grid-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/grid-light.png" width="400">
 
 ---
 
 ### `stats`
 
-Charging statistics, powered directly by evcc's **charging-session history** (ha-evcc 2026.6.x+). No helper sensors and no HA Recorder setup are required: the card reads the full session list once via the integration's WebSocket data API and computes everything in the browser.
+Charging statistics, powered directly by evcc's **charging-session history**. No helper sensors and no HA Recorder setup are required: the card reads the full session list once via the integration's WebSocket data API and computes everything in the browser.
 
 - **Period:** **Month**, **Year** or **Total**, with one stepper in the header to pick the month or year
 - **Overview:** charged energy, cost and the amount **saved** against the grid price evcc compares with, plus a bar splitting the energy into **solar** and **grid**
@@ -386,28 +399,6 @@ Charging statistics, powered directly by evcc's **charging-session history** (ha
 > **Heating loadpoints** (heat pumps) are included like any other loadpoint and show up in the breakdown by vehicle or charge point. To leave one out, list it in `stats_exclude_loadpoints`.
 
 > **Saved** is what the charged energy would have cost at the grid price evcc compares against (`referencePricePerKWh` of each session), minus what it actually cost. Sessions without that price are left out of it.
-
-<a name="enabling-stat-periods"></a>
-
-#### Older ha-evcc versions (fallback)
-
-On ha-evcc versions **before 2026.6.x** the WebSocket session API is not available. The card then falls back to the previous statistics implementation, which is built on dedicated `stat_*` sensor entities and the HA Recorder. In that mode the period tabs are **30 days / 365 days / This year / Total**, each bar is split into a **green** (solar) and **blue** (grid) portion via `sensor.evcc_stat_total_solar_k_wh_template`, and the data is fetched lazily per tab and cached for 5 minutes.
-
-> **Periods not showing data?** The **Total** period is enabled by default in ha-evcc. The sensor entities for **30 days**, **365 days** and **This year** are **disabled by default** in Home Assistant and must be enabled manually. If a period tab shows a warning instead of statistics, follow the steps below.
-
-The stat sensors exist in your ha-evcc integration but are disabled by default. To enable them:
-
-1. In Home Assistant, open **Settings** -> **Devices & Services**
-2. Click on the **ha-evcc** integration
-3. Open your evcc device (e.g. *"evcc Solar Charging [evcc]"*)
-4. Scroll down to the section that says **"X disabled entities"** and click on it
-5. Enable the statistics entities for the periods you want: **30 days** (`stat30_*`), **365 days** (`stat365_*`) and/or **This year** (`stat_this_year_*`)
-6. Each period has three entities: `_charged_kwh`, `_solar_percentage` and `_avg_price` - enable all three for full statistics. Since ha-evcc **2026.2** there is also `_solar_k_wh_template` which is needed for the solar/grid split in the bar chart
-7. Wait a moment or reload the ha-evcc integration - the stat periods should then appear in the card
-
-> **Note:** After enabling, it may take a few minutes until the first values appear, as Home Assistant needs to record the initial data points for these entities.
-
-> **Single-year fallback:** If the **Total** tab detects that only one calendar year of data is available in the HA Recorder, it automatically falls back to showing the monthly breakdown of the current year - identical to the **This year** chart.
 
 <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/stats-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/stats-light.png" width="400">
 
@@ -435,6 +426,44 @@ Home battery, built after evcc's battery view:
 The suggestion comes from ha-evcc's battery SoC sensors. Forecast, highest and lowest need the ha-evcc WebSocket command `evcc_intg/optimizer` (ha-evcc 2026.10.1+); with an older ha-evcc the chart ends at "now". The card picks up a new optimizer result within 30 seconds, and a few seconds after the grid charge limit or grid discharging is changed in the card, as soon as evcc has computed it again (evcc releases after 0.316.2 do so right after the change).
 
 <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/battery-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/battery-light.png" width="400">
+
+---
+
+### `optimizer`
+
+What evcc's optimizer (experimental in evcc) plans for the coming hours, to read along, without any control:
+
+- **Header**: the status of the last run, when it was computed, what the grid costs over the plan (import at the grid price less export at the feed-in rate) and, with a fixed tariff, the price itself. The button next to the status has evcc compute the plan again (`button.<prefix>optimize`, ha-evcc 2026.10.2+, disabled by default; administrators see the warning triangle to enable it)
+- **Summary**: per home battery what it does now, until when and what follows, with the highest and lowest SoC; per vehicle its next charge window, the power and the SoC it reaches, and its target when it has a plan
+- **Plan as a chart**: one chart per lane on a shared time axis, a day per page, drawn like the state of charge chart of the `battery` mode. The grid price when it changes over the plan; the power as bars like the tariff chart of the plan (consumption and the charging of vehicles and battery above zero, the battery's discharging below it), with the solar forecast and the grid (import above, export below zero) as lines; the SoC of each home battery and vehicle, dashed and hatched like the forecast in the `battery` mode, with what the battery does (solar charging, grid charging, discharging, holding) and when the vehicle charges as faint bands behind it. A click on an entry of the power legend hides that series and fits the scale to the rest. Hover, tap or the arrow keys pick a time slot, its values show below the chart
+- **Plan as a list**: the moments something changes, grouped by day. An entry opens the chart at its time. The view picked last comes back, per browser and ha-evcc instance
+
+evcc's own suggestions are not part of what ha-evcc passes on, so the card reads the battery's action off the plan: charging or discharging power, the state of charge against its limits and the grid. A battery that only pauses for one slot keeps its action in the summary and the list. The plan comes from the ha-evcc WebSocket command `evcc_intg/optimizer` (ha-evcc 2026.10.1+), the card asks for it again every minute. While the optimizer is off, the card says so.
+
+```yaml
+type: custom:evcc-card
+mode: optimizer
+```
+
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/optimizer-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/optimizer-light.png" width="400">
+
+---
+
+### `forecast`
+
+What the coming hours bring, to read off: when the grid is cheap and how much the sun delivers, for a dynamic tariff in particular.
+
+- **Header**: the grid price now, large, green in the cheapest third of the known prices and red in the dearest. Beside it the lowest and highest price ahead with their time, below it whether the price is cheap now and until when, or from when it turns cheap and how long until then. A tap on a time shows it in the chart
+- **Chart**: the solar forecast on top and the grid price below it on one time axis, a day per page, drawn like the chart of the `optimizer` mode. The price bars start at zero; the cheapest third is green. The smart cost limit of each charge point and the grid charge limit of the home battery are drawn as lines when they are set (a tap on one in the legend opens its entity). A rest of today shorter than twelve hours shares the page with tomorrow, so the prices published for tomorrow stand on the first page; a day the tariff has no prices for yet says so. When evcc optimizes for CO₂, a lane with its emission forecast follows under the price, the cleanest third green and the limits set in g/kWh as lines. Next to the solar forecast the energy of the days on the page. Hover, tap or the arrow keys pick a time slot; below the chart its solar power, grid price, CO₂ intensity and feed-in rate, and how long until then
+
+With a fixed price the card shows the price and the solar forecast only. The data comes from the ha-evcc WebSocket command `evcc_intg/forecast` (kinds `grid`, `feedin` and `solar`, the CO₂ forecast from `planner`, which ha-evcc passes on only while evcc optimizes for CO₂); the card renders again every minute and asks ha-evcc for the forecast every five minutes.
+
+```yaml
+type: custom:evcc-card
+mode: forecast
+```
+
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/forecast-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/forecast-light.png" width="400">
 
 ---
 
@@ -477,7 +506,7 @@ Minimalist charge plan view:
 - Vehicle selector, including evcc's **Guest vehicle** (no vehicle assigned while a car is plugged in; **No vehicle** when nothing is plugged in). The loadpoint header names the guest vehicle as well
 - Target time picker
 - Target SoC slider (tap the value to type it, see [Slider settings](#slider-settings))
-- **Live preview** - as soon as a target SoC and time are set, a chart previews the planned charging window over the upcoming tariff/forecast, with the expected duration, charging power and the average price or CO₂ of the plan (ha-evcc 2026.6.x+). It updates while you drag and is debounced and cached so it never floods evcc
+- **Live preview** - as soon as a target SoC and time are set, a chart previews the planned charging window over the upcoming tariff/forecast, with the expected duration, charging power and the average price or CO₂ of the plan. It updates while you drag and is debounced and cached so it never floods evcc
 - **Continuous charging** toggle - keeps the charge running without interruption once started
 - **Preconditioning** select - pre-heats/cools the battery before reaching the target SoC (off / minutes / hours / all)
 - Activate / delete plan
@@ -502,7 +531,7 @@ Repeating charge plans per vehicle - evcc's weekly departure schedules:
 - Active weekdays shown as badges, plus the departure time and target SoC
 - On/off toggle to activate or deactivate a plan directly from the dashboard
 
-> **Note:** Repeating plans can only be **created and edited in evcc itself** - the card only switches them on or off (an info icon in the header points this out). Requires the repeating plan entities from **ha-evcc 2026.6.1+** (`repeating_plan_*`); on older integration versions the entities do not exist yet and the mode shows an empty state.
+> **Note:** Repeating plans can only be **created and edited in evcc itself** - the card only switches them on or off (an info icon in the header points this out).
 
 <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/repeatplan-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/repeatplan-light.png" width="400">
 
@@ -669,7 +698,7 @@ Translations are stored as simple JSON files in the `dist/locales/` folder. Addi
 
 ### Why does the solar share show 0 % or nothing for older charging sessions?
 
-The solar share is taken from each charging session's recorded solar percentage. Sessions that evcc recorded before it started tracking that value are missing the underlying data, so a correct solar share cannot be calculated retroactively. Only sessions recorded after upgrading to a recent evcc/ha-evcc version will show solar share data. (On the older entity-based statistics fallback, the solar split additionally requires `sensor.evcc_stat_total_solar_k_wh_template`, introduced in ha-evcc **2026.3.3**.)
+The solar share is taken from each charging session's recorded solar percentage. Sessions that evcc recorded before it started tracking that value are missing the underlying data, so a correct solar share cannot be calculated retroactively. Only sessions recorded after upgrading to a recent evcc/ha-evcc version will show solar share data.
 
 ---
 

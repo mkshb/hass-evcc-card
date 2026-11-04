@@ -1,4 +1,4 @@
-import { EVCC_CARD_VERSION, FEATURES } from "../core/constants.js";
+import { EVCC_CARD_VERSION, FEATURES, HA_EVCC_MIN_VERSION } from "../core/constants.js";
 import { discoverEntities, disabledCardEntities } from "../core/entity-discovery.js";
 import { escHtml } from "../utils/html.js";
 
@@ -214,13 +214,13 @@ ${this._renderDisabledSection()}
             ${!this._capsLoaded
               ? `<li><em>Probing capabilities…</em></li>`
               : !this._caps || this._caps.commands.length === 0
-                ? `<li>${pill("warn", "not supported")} <em>(older ha-evcc / unknown command)</em></li>`
+                ? `<li>${pill("err", "not supported")} <em>(ha-evcc older than ${HA_EVCC_MIN_VERSION}, the card needs ${HA_EVCC_MIN_VERSION} or newer)</em></li>`
                 : (() => {
                     const items = [];
-                    items.push(`<li><strong>Integration version:</strong> <code>${escHtml(this._caps.version ?? "—")}</code></li>`);
+                    items.push(`<li><strong>Integration version:</strong> <code>${escHtml(this._caps.version ?? "—")}</code>${this._haEvccTooOld() ? ` ${pill("err", "too old")} <em>(the card needs ${HA_EVCC_MIN_VERSION} or newer)</em>` : ""}</li>`);
                     items.push(`<li><strong>Commands:</strong> ${this._caps.commands.map(c => `<code>${escHtml(c)}</code>`).join(", ")}</li>`);
                     const lpMap = Object.entries(this._lpIndexMap || {});
-                    items.push(`<li><strong>Loadpoint index map:</strong> ${lpMap.length ? lpMap.map(([id, i]) => `<code>${escHtml(id)}=${i}</code>`).join(", ") : `${pill("warn", "fallback")} <em>(heuristic/override; older ha-evcc)</em>`}</li>`);
+                    items.push(`<li><strong>Loadpoint index map:</strong> ${lpMap.length ? lpMap.map(([id, i]) => `<code>${escHtml(id)}=${i}</code>`).join(", ") : `${pill("err", "missing")} <em>(no plan preview and no plan in kWh without it)</em>`}</li>`);
                     // Show cached probe results (prefetched by _prefetchDebugProbes).
                     const fmtProbe = (label, cacheKey, fmt) => {
                       const c = this._wsCache[cacheKey];
@@ -329,10 +329,12 @@ ${this._renderDisabledSection()}
     if (!this._capsLoaded) {
       out.push(`- Capabilities: *(probing…)*`);
     } else if (!this._caps || this._caps.commands.length === 0) {
-      out.push(`- Capabilities: *not supported (older ha-evcc / unknown command)*`);
+      out.push(`- Capabilities: *not supported (ha-evcc older than ${HA_EVCC_MIN_VERSION}, the card needs ${HA_EVCC_MIN_VERSION} or newer)*`);
     } else {
-      out.push(`- Integration version: \`${this._caps.version ?? "—"}\``);
+      out.push(`- Integration version: \`${this._caps.version ?? "—"}\`${this._haEvccTooOld() ? ` **too old** (the card needs ${HA_EVCC_MIN_VERSION} or newer)` : ""}`);
       out.push(`- Commands: ${this._caps.commands.map(c => `\`${c}\``).join(", ")}`);
+      const lpMap = Object.entries(this._lpIndexMap || {});
+      out.push(`- Loadpoint index map: ${lpMap.length ? lpMap.map(([id, i]) => `\`${dispLp(id) ?? (maskNames ? "lp_?" : id)}=${i}\``).join(", ") : "**missing**"}`);
 
       // Live probes — read from cache (populated by visual debug block render).
       // Show prefetched probe results (cached by _prefetchDebugProbes).

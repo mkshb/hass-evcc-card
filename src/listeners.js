@@ -90,6 +90,8 @@ export const listeners = {
     this._attachPlanListeners();
     this._attachStatsListeners();
     this._attachBatteryListeners();
+    this._attachOptimizerListeners();
+    this._attachForecastListeners();
     this._attachDebugListeners();
     this._attachPriorityListeners();
     this._attachVehicleListeners();

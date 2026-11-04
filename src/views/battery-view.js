@@ -19,7 +19,6 @@ const SUGGESTION_ACTIONS = ["normal", "hold", "charge", "holdcharge", "discharge
 // next scheduled run; the card asks again a few seconds after its own write.
 // evcc's "optimize" button starts a run at once; its icon turns until a new
 // result is in, at most FORECAST_BUSY.
-const FORECAST_TTL     = 30 * 1000;
 const FORECAST_RECHECK = [3000, 10000];
 const FORECAST_BUSY    = 15 * 1000;
 
@@ -178,10 +177,11 @@ export const batteryView = {
   },
 
   // evcc's "optimize" button (ha-evcc 2026.10.2+); turns while evcc computes.
-  _renderBattRecompute(site) {
+  // The optimizer mode shows it too, under its own label.
+  _renderBattRecompute(site, labelKey = "battRecompute") {
     if (!isLive(this._hass, site.optimize)) return "";
     const busy  = this._battOptimizeBusy();
-    const label = escAttr(this._t("battRecompute"));
+    const label = escAttr(this._t(labelKey));
     return `<button type="button" class="batt-recompute${busy ? " busy" : ""}" data-entity="${escAttr(site.optimize)}"
         title="${label}" aria-label="${label}"${busy ? ` aria-busy="true" disabled` : ""}>${icon(MDI.refresh, 16)}</button>`;
   },
@@ -217,8 +217,7 @@ export const batteryView = {
   // own battery view does (assets/js/components/Battery/history.ts). Null while
   // the command is missing, pending, failed or there is nothing to show.
   _battForecast() {
-    if (!this._hasCmd("optimizer")) return null;
-    const data = this._wsFetch("evcc_intg/optimizer", {}, "optimizer", FORECAST_TTL)?.data;
+    const data = this._wsOptimizer()?.data;
     if (!data) return null;
     const series = this._battForecastSeries(data.evopt);
     const bf     = data.batteryForecast;

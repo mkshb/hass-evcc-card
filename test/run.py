@@ -19,10 +19,12 @@ from xml.sax.saxutils import escape as xml_escape
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT  = ROOT / "test" / "out"
-MODES = ["loadpoint", "compact", "battery", "vehicle", "site", "flow", "grid", "stats", "plan", "repeatplan", "priority", "debug"]
+MODES = ["loadpoint", "compact", "battery", "optimizer", "forecast", "vehicle", "site", "flow", "grid", "stats", "plan", "repeatplan", "priority", "debug"]
 # What a mode needs beyond its name to show anything: the vehicle mode shows one
-# vehicle per card and asks which one when it is not told.
-MODE_CONFIG = {"vehicle": {"vehicle": "ex30"}}
+# vehicle per card, the loadpoint, compact and plan modes one charge point, and
+# each asks which one when it is not told.
+MODE_CONFIG = {"vehicle": {"vehicle": "ex30"}, "loadpoint": {"loadpoint": "openwb"},
+               "compact": {"loadpoint": "openwb"}, "plan": {"loadpoint": "openwb"}}
 
 
 def mode_config(mode, **extra):
@@ -151,9 +153,11 @@ def done(page):
 
 def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="de", ws=True, set=None, disable=None,
               rename=None, attrs=None, tariff=None, second=None, wsname=None, admin=True, drop=None,
-              vehicle_device=True, optimizer=False, battery_ext=False, optimize=False):
+              vehicle_device=True, optimizer=False, battery_ext=False, optimize=False, caps_version=None, dynamic=False):
     q = {"w": width, "lang": lang}
-    if optimizer: q["optimizer"] = 1
+    if dynamic: q["dyn"] = 1
+    if caps_version: q["capsver"] = caps_version
+    if optimizer: q["optimizer"] = 1 if optimizer is True else optimizer
     if battery_ext: q["battext"] = 1
     if optimize: q["optimize"] = 1
     if not ws: q["ws"] = 0
@@ -167,8 +171,7 @@ def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="d
     if tariff:  q["tariff"] = tariff
     if second:  q["second"] = json.dumps(second)
     if wsname:  q["wsname"] = wsname
-    if config is not None: q["config"] = json.dumps(config)
-    else: q["mode"] = mode or "loadpoint"
+    q["config"] = json.dumps(config if config is not None else mode_config(mode or "loadpoint"))
     if dark: q["dark"] = 1
     errors = []
     listeners = [("pageerror", lambda e: errors.append(f"pageerror: {e}")),
@@ -204,12 +207,20 @@ def render_smoke(browser, port, t):
     for mode in MODES:
         for dark in (False, True):
             page = new_page(browser, 480, 900)
-            errors = open_card(page, port, config=mode_config(mode), dark=dark)
+            # The optimizer mode draws a plan only with a result to draw: the
+            # recorded one, at the time it was recorded (see optimizer_mode).
+            extra = {}
+            if mode == "optimizer":
+                page.clock.set_fixed_time(OPT_TIME)
+                extra = {"optimizer": "plan"}
+            errors = open_card(page, port, config=mode_config(mode), dark=dark, **extra)
             has_card = page.locator(in_card("ha-card")).count() > 0
             name = f"render {mode}{' dark' if dark else ''}"
             shot = OUT / f"{mode}{'-dark' if dark else ''}.png"
             page.locator("#host").screenshot(path=str(shot))
             t.check(has_card and not errors, name, "; ".join(errors)[:300])
+            if mode == "optimizer":
+                t.check(page.locator(in_card(".opt-chart")).count() == 1, f"optimizer{' dark' if dark else ''}: the plan, not a note")
             if mode == "stats" and not dark:
                 bars = page.locator(in_card(".evcc-chart-wrap svg rect")).count()
                 t.check(bars > 0, "stats: bar chart rendered from sessions", f"{bars} bars")
@@ -243,52 +254,100 @@ def render_smoke(browser, port, t):
 
 
 
-def stats_fallback(browser, port, t):
-    """Stats mode on an ha-evcc without evcc_intg/sessions.
+def min_version(browser, port, t):
+    """ha-evcc older than HA_EVCC_MIN_VERSION: the capabilities probe fails.
 
-    The card then reconstructs the chart from the stat_* template sensors and
-    the HA recorder, which the mock serves from `recorder/statistics_during_period`.
+    The plan preview says which ha-evcc it needs in its place, the debug view
+    names the minimum, and a current ha-evcc shows no such note.
     """
-    t.group("stats fallback - stat_* entities and the HA recorder")
+    t.group("min version - note on an ha-evcc without the WebSocket data API")
     page = new_page(browser, 480, 900)
-    errors = open_card(page, port, mode="stats", ws=False)
-    page.locator("#host").screenshot(path=str(OUT / "stats-fallback.png"))
-    t.check(page.locator(in_card("ha-card")).count() > 0 and not errors, "renders without the WebSocket data API", "; ".join(errors)[:300])
+    errors = open_card(page, port, config={"mode": "plan", "loadpoint": "openwb"}, lang="en", ws=False)
+    page.wait_for_timeout(300)
+    note = page.locator(in_card(".plan-preview .plan-preview-info"))
+    text = note.inner_text().strip() if note.count() else ""
+    t.check("2026.6.4" in text and not errors, "plan preview names the required ha-evcc in its place", text or "; ".join(errors)[:300])
+    t.check(page.locator(in_card(".plan-preview svg")).count() == 0, "no preview chart without the API")
+    done(page)
 
-    calls = page.evaluate("window.__hass.wsCalls")
-    rec = [c for c in calls if c["type"] == "recorder/statistics_during_period"]
-    t.check(len(rec) >= 1, "asks the recorder for statistics", f"{len(rec)} call(s)")
-    # Probing capabilities is how the card finds out the API is missing; asking for
-    # data after that reply would be the bug.
-    data_cmds = [c["type"] for c in calls if str(c["type"]).startswith("evcc_intg/") and c["type"] != "evcc_intg/capabilities"]
-    t.check(not data_cmds, "no evcc_intg data command is attempted after capabilities fails", str(data_cmds)[:200])
-    if rec:
-        q = rec[-1]
-        t.check(q.get("types") == ["sum"] and q.get("period") in ("day", "month") and "start_time" in q,
-                "recorder query asks for sum buckets over a period", json.dumps({k: q.get(k) for k in ("period", "types", "start_time")}))
-        t.check("sensor.evcc_stat_total_charged_kwh" in (q.get("statistic_ids") or []),
-                "recorder query names the cumulative kWh sensor", json.dumps(q.get("statistic_ids")))
+    page = new_page(browser, 480, 900)
+    errors = open_card(page, port, mode="debug", lang="en", ws=False)
+    page.wait_for_timeout(300)
+    body = page.locator(in_card("ha-card")).inner_text()
+    t.check("older than 2026.6.4" in body and not errors, "debug view names the minimum ha-evcc", "found" if "older than 2026.6.4" in body else body[:200])
+    report = page.evaluate("window.__card._buildDebugReport()") or ""
+    t.check("older than 2026.6.4" in report, "debug report names the minimum ha-evcc", "found" if "older than 2026.6.4" in report else report[:200])
+    done(page)
 
-    bars = page.locator(in_card("rect.evcc-bar")).count()
-    t.check(bars > 0, "chart is rebuilt from recorder deltas", f"{bars} bars")
-    totals = [float(v) for v in page.evaluate("[...window.__card.shadowRoot.querySelectorAll('rect.evcc-bar')].map(r => r.dataset.total)") if v]
-    solars = [float(v) for v in page.evaluate("[...window.__card.shadowRoot.querySelectorAll('rect.evcc-bar')].map(r => r.dataset.solar)") if v]
-    t.check(bool(totals) and all(v >= 0 for v in totals), "every bar carries a non-negative delta", f"{len(totals)} values, min {min(totals) if totals else '-'}")
-    t.check(bool(solars) and any(v > 0 for v in solars), "the solar split survives the fallback", f"{len(solars)} values, max {max(solars) if solars else '-'}")
-    t.check(all(sv <= tv + 0.05 for sv, tv in zip(solars, totals)), "no bar claims more solar than total energy",
-            str([(s, v) for s, v in zip(solars, totals) if s > v + 0.05][:3]))
+    page = new_page(browser, 480, 900)
+    errors = open_card(page, port, config={"mode": "stats"}, lang="en", ws=False)
+    page.wait_for_timeout(300)
+    page.locator("#host").screenshot(path=str(OUT / "stats-too-old.png"))
+    note = page.locator(in_card(".stats .stats-note"))
+    text = note.inner_text().strip() if note.count() else ""
+    t.check("2026.6.4" in text and not errors, "stats mode names the required ha-evcc in its place", text or "; ".join(errors)[:300])
+    # Probing capabilities is how the card finds out the API is missing; asking
+    # the recorder or a data command after that reply would be the bug.
+    calls = [c["type"] for c in page.evaluate("window.__hass.wsCalls")]
+    asked = [c for c in calls if c.startswith("recorder/") or (c.startswith("evcc_intg/") and c != "evcc_intg/capabilities")]
+    t.check(not asked, "nothing but the capabilities is asked without the API", str(asked)[:200])
+    done(page)
 
-    # The period tabs pick a different recorder resolution; "30d" is the only one
-    # that asks for day buckets, so without this the daily branch never runs.
-    tab = page.locator(in_card('.stats-period-tab[data-period="30d"]'))
-    t.check(tab.count() == 1, "legacy period tabs are offered", f"{tab.count()} tab(s) named 30d")
-    if tab.count() == 1:
-        tab.click()
-        page.wait_for_timeout(900)
-        daily = [c for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "recorder/statistics_during_period" and c.get("period") == "day"]
-        t.check(len(daily) >= 1, "30d tab queries day buckets", f"{len(daily)} call(s)")
-        n = page.locator(in_card("rect.evcc-bar")).count()
-        t.check(n == 30, "30d chart shows one bar per day", f"{n} bars")
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, config={"mode": "site"}, lang="en", ws=False)
+    page.wait_for_timeout(300)
+    page.locator("#host").screenshot(path=str(OUT / "site-footer-too-old.png"))
+    foot = page.locator(in_card(".stats-footer .stats-note"))
+    text = foot.inner_text().strip() if foot.count() else ""
+    t.check("2026.6.4" in text and page.locator(in_card(".stats-footer .sf-items")).count() == 0 and not errors,
+            "the footer under site names the required ha-evcc instead of figures", text or "; ".join(errors)[:300])
+    done(page)
+
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, config={"mode": "site", "stats_period": "none"}, lang="en", ws=False)
+    page.wait_for_timeout(300)
+    t.check(page.locator(in_card(".stats-footer")).count() == 0 and not errors, "stats_period: none hides the footer note too")
+    done(page)
+
+    # ha-evcc 2026.6.3 has the API but not the loadpoint list: the plan preview
+    # cannot name the loadpoint and says so, the statistics work as they are.
+    page = new_page(browser, 480, 900)
+    errors = open_card(page, port, config={"mode": "plan", "loadpoint": "openwb"}, lang="en", caps_version="2026.6.3")
+    page.wait_for_timeout(300)
+    note = page.locator(in_card(".plan-preview .plan-preview-info"))
+    text = note.inner_text().strip() if note.count() else ""
+    t.check("2026.6.4" in text and not errors, "2026.6.3: plan preview names the required ha-evcc", text or "; ".join(errors)[:300])
+    calls = [c["type"] for c in page.evaluate("window.__hass.wsCalls")]
+    t.check("evcc_intg/plan_preview" not in calls, "2026.6.3: no preview is asked for a guessed loadpoint", str(calls)[:200])
+    done(page)
+
+    # A guest vehicle plans in kWh on the loadpoint, which needs the evcc index.
+    page = new_page(browser, 480, 900)
+    errors = open_card(page, port, config={"mode": "plan", "loadpoint": "openwb"}, lang="en", caps_version="2026.6.3",
+                       set={"select.evcc_openwb_vehicle_name": "null"})
+    page.locator(in_card("button.plan-btn.save")).click(); page.wait_for_timeout(300)
+    svc = [c for c in page.evaluate("window.__hass.serviceCalls") if "plan" in c.get("service", "")]
+    err = page.locator(in_card(".plan-error"))
+    t.check(not svc and err.count() == 1 and not errors, "2026.6.3: a kWh plan writes nothing to a guessed loadpoint and says so",
+            json.dumps(svc)[:200] or (err.inner_text() if err.count() else ""))
+    done(page)
+
+    page = new_page(browser, 480, 900)
+    errors = open_card(page, port, config={"mode": "stats"}, lang="en", caps_version="2026.6.3")
+    page.wait_for_timeout(300)
+    t.check(page.locator(in_card(".stats-note")).count() == 0 and page.locator(in_card(".stats-hero-val")).count() == 1 and not errors,
+            "2026.6.3: the statistics work without a note", "; ".join(errors)[:200])
+    page.evaluate("window.__card._render()")
+    body = page.evaluate("window.__card._buildDebugReport()") or ""
+    t.check("too old" in body and "Loadpoint index map: **missing**" in body, "2026.6.3: debug report flags the version and the missing index map",
+            body[body.find("Integration version"):][:200])
+    done(page)
+
+    page = new_page(browser, 480, 900)
+    errors = open_card(page, port, config={"mode": "plan", "loadpoint": "openwb"}, lang="en")
+    page.wait_for_timeout(300)
+    t.check("2026.6.4" not in page.locator(in_card("ha-card")).inner_text() and not errors,
+            "a current ha-evcc shows no version note", "; ".join(errors)[:300])
     done(page)
 
 
@@ -909,82 +968,68 @@ def render_attrs():
 
 
 def stats_period(browser, port, t):
-    """`stats_period` has to steer both stats paths the same way.
+    """`stats_period` steers the stats mode and the compact footer.
 
-    The editor writes month/year/total/none, older dashboards carry
-    30d/365d/thisYear/total, and the card runs either the sessions path or the
-    entity/recorder fallback depending on the ha-evcc version. Every combination
-    has to land on the period the user asked for.
+    The editor writes month/year/total/none, older dashboards may still carry
+    30d/365d/thisYear, which land on the month or the year. Every value has to
+    land on the period the user asked for.
     """
-    # config value -> (tab with the sessions API, tab on the legacy path)
+    # config value -> active scope tab of the stats mode
     CASES = [
-        ("month",    "month", "30d"),
-        ("year",     "year",  "thisYear"),
-        ("total",    "total", "total"),
-        ("none",     "month", "total"),    # none only hides the footer
-        ("30d",      "month", "30d"),
-        ("365d",     "year",  "365d"),     # a rolling window, kept as configured
-        ("thisYear", "year",  "thisYear"),
-        (None,       "month", "total"),    # unconfigured: newest month / everything
+        ("month",    "month"),
+        ("year",     "year"),
+        ("total",    "total"),
+        ("none",     "month"),    # none only hides the footer
+        ("30d",      "month"),
+        ("365d",     "year"),
+        ("thisYear", "year"),
+        (None,       "month"),    # unconfigured: newest month
     ]
     active = """(() => { const el = window.__card.shadowRoot.querySelector('.stats-period-tab.active');
-                         return el ? (el.dataset.scope ?? el.dataset.period) : null; })()"""
+                         return el ? el.dataset.scope : null; })()"""
 
-    for ws, label in ((True, "sessions API"), (False, "legacy path")):
-        t.group(f"stats_period - {label}")
-        for value, want_ws, want_legacy in CASES:
-            want = want_ws if ws else want_legacy
-            config = {"mode": "stats"}
-            if value: config["stats_period"] = value
-            page = new_page(browser, 480, 1200)
-            errors = open_card(page, port, config=config, ws=ws)
-            got = page.evaluate(active)
-            t.check(got == want and not errors, f"stats_period: {value or '(unset)'} selects {want}",
-                    f"got {got}; {'; '.join(errors)[:120]}")
-            done(page)
+    t.group("stats_period - stats mode")
+    for value, want in CASES:
+        config = {"mode": "stats"}
+        if value: config["stats_period"] = value
+        page = new_page(browser, 480, 1200)
+        errors = open_card(page, port, config=config)
+        got = page.evaluate(active)
+        t.check(got == want and not errors, f"stats_period: {value or '(unset)'} selects {want}",
+                f"got {got}; {'; '.join(errors)[:120]}")
+        done(page)
 
     # The compact footer under site/grid/flow carries the same period. `none`
     # is about this footer only, it never hides the tabs of the stats mode.
     loc = json.loads((ROOT / f"dist/locales/{LOCALE.split('-')[0]}.json").read_text(encoding="utf-8"))
-    # Rounded kWh of the stat_*_charged_kwh entities in the fixtures. Distinct
-    # per period, so the number shows which entity the footer actually read.
-    LEGACY_KWH  = {"30d": "170", "365d": "2150", "thisYear": "1605", "total": "2527"}
-    LEGACY_TKEY = {"30d": "statsPeriod30d", "365d": "statsPeriod365d", "thisYear": "statsPeriodThisYear", "total": "statsPeriodTotal"}
-    # config value -> (label key with the sessions API, legacy period without it)
+    # config value -> label key of the footer, None where it is hidden
     FOOTER = [
-        ("month",    "statsPeriodMonth", "30d"),
-        ("year",     "statsPeriodYear",  "thisYear"),
-        ("total",    "statsPeriodTotal", "total"),
-        ("30d",      "statsPeriodMonth", "30d"),
-        ("365d",     "statsPeriodYear",  "365d"),     # a rolling window on the legacy path
-        ("thisYear", "statsPeriodYear",  "thisYear"),
-        (None,       "statsPeriodTotal", "total"),
-        ("none",     None,               None),       # hidden on both paths
+        ("month",    "statsPeriodMonth"),
+        ("year",     "statsPeriodYear"),
+        ("total",    "statsPeriodTotal"),
+        ("30d",      "statsPeriodMonth"),
+        ("365d",     "statsPeriodYear"),
+        ("thisYear", "statsPeriodYear"),
+        (None,       "statsPeriodTotal"),
+        ("none",     None),
     ]
 
-    for ws, label in ((True, "sessions API"), (False, "legacy path")):
-        t.group(f"stats_period - compact footer, {label}")
-        for value, want_ws_key, want_legacy in FOOTER:
-            config = {"mode": "site"}
-            if value: config["stats_period"] = value
-            page = new_page(browser, 480, 1600)
-            errors = open_card(page, port, config=config, ws=ws)
-            foot = page.locator(in_card(".stats-footer"))
-            name = f"footer with stats_period {value or '(unset)'}"
-            if want_legacy is None:
-                t.check(foot.count() == 0 and not errors, f"{name}: hidden", f"found {foot.count()}")
-            elif ws:
-                # the label is uppercased in CSS, so compare case-insensitively
-                got = page.locator(in_card(".stats-footer .sf-period")).inner_text().strip()
-                want = loc[want_ws_key]
-                t.check(got.casefold() == want.casefold() and not errors, f"{name}: sessions footer says {want}", f"got {got}")
-            else:
-                got_label = page.locator(in_card(".stats-footer .sf-period")).inner_text().strip()
-                got_kwh   = page.locator(in_card(".stats-footer .sf-val")).first.inner_text().strip()
-                want_label, want_kwh = loc[LEGACY_TKEY[want_legacy]], LEGACY_KWH[want_legacy]
-                t.check(got_label.casefold() == want_label.casefold() and got_kwh.startswith(want_kwh) and not errors,
-                        f"{name}: reads the {want_legacy} entities", f"got {got_label} / {got_kwh}")
-            done(page)
+    t.group("stats_period - compact footer")
+    for value, want_key in FOOTER:
+        config = {"mode": "site"}
+        if value: config["stats_period"] = value
+        page = new_page(browser, 480, 1600)
+        errors = open_card(page, port, config=config)
+        foot = page.locator(in_card(".stats-footer"))
+        name = f"footer with stats_period {value or '(unset)'}"
+        if want_key is None:
+            t.check(foot.count() == 0 and not errors, f"{name}: hidden", f"found {foot.count()}")
+        else:
+            # the label is uppercased in CSS, so compare case-insensitively
+            got = page.locator(in_card(".stats-footer .sf-period")).inner_text().strip()
+            want = loc[want_key]
+            t.check(got.casefold() == want.casefold() and not errors, f"{name}: says {want}", f"got {got}")
+        done(page)
 
     # stats_exclude_loadpoints leaves the sessions of a loadpoint out of the
     # stats mode and of the footer. The config names the loadpoint by its key
@@ -1863,7 +1908,7 @@ def editor(browser, port, t):
         && r.querySelector(".form-look").nextElementSibling === r.querySelector(".form-disabled"); }"""),
             "language and size come last, only the disabled entities follow", "")
     t.check(sec("look").locator('[data-name="language"]').count() == 1 and sec("look").locator('[data-name="size"]').count() == 1
-            and sec("content").locator('[data-name="hide_settings"]').count() > 0 and sec("content").locator('[data-name="no_plan"]').count() > 0,
+            and sec("content").locator('[data-name="hide_settings"]').count() > 0,
             "language and size, and the display options, sit in their panels", "")
     t.check(fld('ha-form > [data-field="mode"]').count() == 1 and fld('ha-form > [data-field="loadpoint"]').count() == 1,
             "mode and loadpoint stay on top", "")
@@ -1884,10 +1929,11 @@ def editor(browser, port, t):
         t.check(sel not in last(), f"{sel} back to its default drops the key", json.dumps(last()))
 
     # --- checkbox groups ---------------------------------------------------------
-    # A loadpoint card that draws all loadpoints still has the lists; the
-    # loadpoint list itself belongs to the modes for several.
+    # The loadpoint list belongs to the priority mode, no_plan is a switch once
+    # the card has its loadpoint (below).
     t.check(fld('ha-form [data-name="no_pv"]').count() == 0, "no_pv has no field, it stays a YAML option", "")
-    for field, a, b in (("no_plan", "openwb", "wp"), ("hide_settings", "min_soc", "phases")):
+    t.check(fld('ha-form [data-name="no_plan"]').count() == 0, "no no_plan field before the card has its loadpoint", "")
+    for field, a, b in (("hide_settings", "min_soc", "phases"),):
         cb(field, a).check()
         t.check(last().get(field, [])[-1:] == [a], f"{field}: checking {a} appends it", json.dumps(last().get(field)))
         cb(field, b).check()
@@ -1896,23 +1942,22 @@ def editor(browser, port, t):
         cb(field, a).uncheck()
         t.check(a not in last().get(field, []) and b in last().get(field, []),
                 f"{field}: unchecking removes only that entry", json.dumps(last().get(field)))
-    cb("no_plan", "wp").uncheck()
-    t.check("no_plan" not in last(), "emptying a checkbox group drops the key", json.dumps(last()))
+    cb("hide_settings", "phases").uncheck()
+    cb("hide_settings", "priority").uncheck()
+    t.check("hide_settings" not in last(), "emptying a checkbox group drops the key", json.dumps(last()))
 
     # --- one loadpoint per card ----------------------------------------------------
     # The loadpoint and plan modes pick one loadpoint, like the vehicle mode;
-    # no_plan / no_pv become switches that write true. A list of several from
-    # before is an option of its own and keeps working until something is picked.
+    # no_plan / no_pv become switches that write true.
     lp = fm("loadpoint")
     opts = lp.locator("option").evaluate_all("os => os.map(o => o.value)")
-    t.check(opts[0] == "__unset" and "openwb" in opts and "wp" in opts and fm("loadpoints").count() == 0,
-            "the loadpoint mode offers one loadpoint, the first option draws them all", json.dumps(opts))
-    t.check(lp.locator('option[value="__unset"]').inner_text() == "\u26a0 Alle Ladepunkte",
-            "drawing them all is marked with a warning sign", lp.locator('option[value="__unset"]').inner_text())
+    t.check(opts == ["__unset", "openwb", "wp"] and fm("loadpoints").count() == 0,
+            "the loadpoint mode offers one loadpoint", json.dumps(opts))
+    t.check(lp.locator('option[value="__unset"]').inner_text() == "Ladepunkt wählen",
+            "with several nothing is preselected, the first option asks to pick one", lp.locator('option[value="__unset"]').inner_text())
+    t.check(fld(".deprecated").count() == 0, "no note about several loadpoints any more", "")
     lp.select_option("openwb")
     t.check(last().get("loadpoint") == "openwb" and "loadpoints" not in last(), "a pick writes config.loadpoint", json.dumps(last()))
-    t.check(fm("loadpoint").locator('option[value="__unset"]').count() == 0,
-            "once one is picked, all of them is no longer offered", json.dumps(fm("loadpoint").locator("option").evaluate_all("os => os.map(o => o.value)")))
     t.check(fm("disabled_loadpoints").count() == 0 and fld('ha-form input[type=checkbox][data-name="no_plan"]').count() == 1,
             "for one loadpoint: no disabled_loadpoints, no_plan is a single switch", "")
     t.check(fld('ha-form [data-name="no_pv"]').count() == 0, "no no_pv switch either", "")
@@ -1920,18 +1965,10 @@ def editor(browser, port, t):
     t.check(last().get("no_plan") is True, "the switch writes no_plan: true", json.dumps(last()))
     fm("no_plan").uncheck()
     t.check("no_plan" not in last(), "and off drops it again", json.dumps(last()))
-    mount({"mode": "loadpoint", "loadpoints": ["openwb", "wp"], "no_plan": ["openwb"], "no_pv": ["wp"]})
-    t.check(fm("loadpoint").input_value() == "__many" and fm("loadpoint").locator("option:checked").inner_text() == "\u26a0 Mehrere: openwb, wp" and count() == 0,
-            "a list of several from before shows as such, unchanged", fm("loadpoint").locator("option:checked").inner_text())
-    warn = fld(".form-warn .deprecated")
-    t.check(warn.count() == 1 and "Künftige Versionen" in warn.inner_text() and fld(".form > div").first.locator(".deprecated").count() == 1,
-            "several loadpoints: a red note on top says they go away", warn.inner_text() if warn.count() else "")
+    mount({"mode": "loadpoint", "no_plan": ["openwb"], "no_pv": ["wp"]})
     fm("loadpoint").select_option("wp")
-    t.check(last().get("loadpoint") == "wp" and "loadpoints" not in last() and "no_plan" not in last() and last().get("no_pv") is True,
-            "picking one turns the lists into its switches", json.dumps(last()))
-    t.check(fld(".deprecated").count() == 0, "with one loadpoint the note is gone", "")
-    opts = fm("loadpoint").locator("option").evaluate_all("os => os.map(o => o.value)")
-    t.check("__many" not in opts and "__unset" not in opts, "and neither the list nor all of them can be picked again", json.dumps(opts))
+    t.check(last().get("loadpoint") == "wp" and "no_plan" not in last() and last().get("no_pv") is True,
+            "picking one turns the lists of names into its switches", json.dumps(last()))
     # The one loadpoint disabled in evcc: hide would empty the card, so the
     # choice how to treat it is offered again.
     wp_off = """(on) => { const h = window.__hass, id = "binary_sensor.evcc_wp_disabled_in_config";
@@ -1949,9 +1986,12 @@ def editor(browser, port, t):
     t.check(last().get("loadpoints") == ["openwb"] and "loadpoint" not in last(), "to the priority mode the loadpoint becomes a list of one", json.dumps(last()))
     fm("mode").select_option("plan")
     t.check(last().get("loadpoint") == "openwb" and "loadpoints" not in last(), "and back to one loadpoint per card", json.dumps(last()))
-    mount({"mode": "compact", "loadpoints": ["openwb", "wp"]})
-    t.check(fm("loadpoint").input_value() == "__many" and fm("loadpoints").count() == 0 and fld(".form-warn .deprecated").count() == 1,
-            "the compact mode picks one loadpoint too, a list of several is marked", fm("loadpoint").input_value())
+    mount({"mode": "priority", "loadpoints": ["openwb", "wp"]})
+    fm("mode").select_option("compact")
+    t.check("loadpoints" not in last() and "loadpoint" not in last(),
+            "a list of several from the priority mode does not follow into a mode for one", json.dumps(last()))
+    t.check(fm("loadpoint").input_value() == "__unset" and fm("loadpoints").count() == 0,
+            "the compact mode then asks for its loadpoint", fm("loadpoint").input_value())
     fm("loadpoint").select_option("wp")
     t.check(last().get("loadpoint") == "wp" and "loadpoints" not in last(), "and a pick writes config.loadpoint", json.dumps(last()))
     mount({"mode": "priority"})
@@ -2002,6 +2042,17 @@ def editor(browser, port, t):
     t.check(last().get("stats_exclude_loadpoints") == ["wp"], "stats_exclude_loadpoints: checking a loadpoint writes it", json.dumps(last()))
     cb("stats_exclude_loadpoints", "wp").uncheck()
     t.check("stats_exclude_loadpoints" not in last(), "stats_exclude_loadpoints: emptied, the key goes", json.dumps(last()))
+
+    # sections of the forecast: all checked while unset, everything checked writes nothing
+    mount({"mode": "forecast"})
+    sec("content").locator("summary").first.click()
+    checked = page.evaluate("""() => [...document.querySelector("evcc-card-editor").shadowRoot.querySelectorAll('ha-form input[data-name="sections"]')]
+      .map(x => [x.value, x.checked])""")
+    t.check(checked == [["solar", True], ["price", True], ["co2", True]], "sections: unset, all three checked in drawing order", json.dumps(checked))
+    cb("sections", "co2").uncheck()
+    t.check(last().get("sections") == ["solar", "price"] and last().get("mode") == "forecast", "sections: unchecking CO₂ writes the rest", json.dumps(last()))
+    cb("sections", "co2").check()
+    t.check("sections" not in last(), "sections: all checked again, the key goes", json.dumps(last()))
     done(page)
 
     # --- stats_period: what the editor shows must be what the card does ----------
@@ -2023,39 +2074,30 @@ def editor(browser, port, t):
         t.check(got["value"] == "__unset" and got["label"] == want,
                 f"{mode}: unconfigured shows \"{want}\", not a preselected period", json.dumps(got))
         t.check(count() == 0, f"{mode}: showing the default emits nothing", f"{count()} events")
-    for value in ("30d", "365d", "thisYear"):
+    for value, shown in (("30d", "month"), ("365d", "year"), ("thisYear", "year")):
         mount({"mode": "stats", "language": "en", "stats_period": value})
-        t.check(sel_val() == value and value in opts(), f"legacy value {value} stays selected in the editor",
-                f"value {sel_val()} in {opts()}")
-        t.check(count() == 0, f"legacy value {value} is not rewritten on open", json.dumps(page.evaluate("window.__cfg")))
-    mount({"mode": "stats", "language": "en", "stats_period": "month"})
-    t.check(opts() == ["__unset", "month", "year", "total", "none"],
-            "without a legacy value the list stays on the current vocabulary", json.dumps(opts()))
+        t.check(sel_val() == shown and opts() == ["__unset", "month", "year", "total", "none"],
+                f"older value {value} shows as {shown} in the editor", f"value {sel_val()} in {opts()}")
+        t.check(count() == 0, f"older value {value} is not rewritten on open", json.dumps(page.evaluate("window.__cfg")))
 
-    # One vehicle per repeatplan card, like the vehicle mode; a list of
-    # several from before keeps working and is marked as going away.
+    # One vehicle per repeatplan card, like the vehicle mode.
     fm("mode").select_option("repeatplan")
     page.wait_for_timeout(400)
     rv = lambda: fm("vehicle").locator("option").evaluate_all("os => os.map(o => o.value)")
     t.check(rv() == ["__unset", "ex30", "id7"] and fm("repeating_plan_vehicles").count() == 0,
-            "repeatplan offers one vehicle out of those discovered, the first option draws them all", json.dumps(rv()))
-    t.check(fld(".form-warn .deprecated").count() == 1, "drawing several vehicles is marked as going away", "")
+            "repeatplan offers one vehicle out of those discovered", json.dumps(rv()))
+    t.check(fm("vehicle").locator('option[value="__unset"]').inner_text() in ("Fahrzeug wählen", "Pick a vehicle"),
+            "with several nothing is preselected, the first option asks to pick one", fm("vehicle").locator('option[value="__unset"]').inner_text())
     fm("vehicle").select_option("ex30")
     t.check(last().get("vehicle") == "ex30" and "repeating_plan_vehicles" not in last(), "a pick writes config.vehicle", json.dumps(last()))
-    t.check(fld(".deprecated").count() == 0 and "__unset" not in rv(), "with one vehicle the note and the option for all are gone", json.dumps(rv()))
 
     mount({"mode": "repeatplan", "repeating_plan_vehicles": "EX30"})
     t.check(fm("vehicle").input_value() == "ex30" and count() == 0,
             "a single name from before shows as that vehicle, without case and without rewriting it", fm("vehicle").input_value())
-    mount({"mode": "repeatplan", "repeating_plan_vehicles": ["ex30", "id7"]})
-    t.check(fm("vehicle").input_value() == "__many" and fm("vehicle").locator("option:checked").inner_text() == "\u26a0 Mehrere: Ex30, Id7" and count() == 0,
-            "a list of several from before shows as such, unchanged", fm("vehicle").locator("option:checked").inner_text())
-    fm("vehicle").select_option("id7")
-    t.check(last().get("vehicle") == "id7" and "repeating_plan_vehicles" not in last(), "picking one replaces the list", json.dumps(last()))
     mount({"mode": "plan", "repeating_plan_vehicles": ["id7"]})
     fm("mode").select_option("repeatplan")
     t.check(last().get("vehicle") == "id7" and "repeating_plan_vehicles" not in last(), "to the repeatplan mode a list of one becomes its vehicle", json.dumps(last()))
-    mount({"mode": "repeatplan", "repeating_plan_vehicles": ["ex30", "id7"]})
+    mount({"mode": "repeatplan"})
 
     fm("mode").select_option("vehicle")
     page.wait_for_timeout(400)
@@ -2325,7 +2367,7 @@ def contracts(browser, port, t):
     done(page)
 
     # Deleting needs no kWh target, only the 1-based evcc loadpoint index, which the
-    # card resolves through the capabilities command (here: the sorted-name fallback).
+    # card resolves through the loadpoint list of the capabilities command.
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "plan", "loadpoints": ["openwb"]},
               set={"select.evcc_openwb_vehicle_name": "null", "binary_sensor.evcc_openwb_plan_active": "on"})
@@ -2628,17 +2670,25 @@ def discovery(browser, port, t):
 
     # A second installation whose prefix extends the first one: "evcc demo" next
     # to "evcc". Every demo entity id starts with evcc_ too, and the production
-    # card would read the demo loadpoints as "demo_openwb" and "demo_wp".
-    for cfg, want, label in (({"mode": "loadpoint"}, 2, "the production card shows only its own two loadpoints"),
-                             ({"mode": "loadpoint", "prefix": "evcc_demo_"}, 2, "the demo card shows the two demo loadpoints")):
+    # card would read the demo loadpoints as "demo_openwb" and "demo_wp". A card
+    # without `loadpoint` lists the loadpoints it found and asks to pick one.
+    listed = lambda page: page.locator(in_card(".empty code")).inner_text().strip() if page.locator(in_card(".empty code")).count() else ""
+    for cfg, label in (({"mode": "loadpoint"}, "the production card offers only its own two loadpoints"),
+                       ({"mode": "loadpoint", "prefix": "evcc_demo_"}, "the demo card offers the two demo loadpoints")):
         page = new_page(browser, 480, 1800)
         errors = open_card(page, port, config=cfg, second={"prefix": "evcc_demo_"})
-        rows = page.locator(in_card(".loadpoint")).count()
+        if "prefix" not in cfg: page.locator("#host").screenshot(path=str(OUT / "loadpoint-pick-one.png"))
+        got = listed(page)
+        t.check(got == "openwb, wp" and not errors, f"prefix evcc_ next to evcc_demo_: {label}", f"{got!r}; {'; '.join(errors)[:120]}")
+        done(page)
+    for cfg, label in (({"mode": "loadpoint", "loadpoint": "openwb"}, "the production card"),
+                       ({"mode": "loadpoint", "loadpoint": "openwb", "prefix": "evcc_demo_"}, "the demo card")):
+        page = new_page(browser, 480, 1800)
+        errors = open_card(page, port, config=cfg, second={"prefix": "evcc_demo_"})
         modes = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('button.mode-btn')].map(b => b.dataset.entity)")
         own = cfg.get("prefix", "evcc_")
-        clean = all(m.startswith(f"select.{own}") and (own != "evcc_" or not m.startswith("select.evcc_demo_")) for m in modes)
-        t.check(rows == want and clean and not errors, f"prefix evcc_ next to evcc_demo_: {label}",
-                f"rows={rows} modes={sorted(set(modes))[:4]}; {'; '.join(errors)[:120]}")
+        clean = bool(modes) and all(m.startswith(f"select.{own}") and (own != "evcc_" or not m.startswith("select.evcc_demo_")) for m in modes)
+        t.check(clean and not errors, f"prefix evcc_ next to evcc_demo_: {label} controls its own openwb", f"{sorted(set(modes))[:4]}; {'; '.join(errors)[:120]}")
         done(page)
 
     # An entity of someone else whose id only looks like ha-evcc's: a template
@@ -2653,15 +2703,23 @@ def discovery(browser, port, t):
             h.states = { ...h.states, [id]: { entity_id: id, state: '3000', attributes: { unit_of_measurement: 'W' } } };
             window.__card.hass = { ...h }; }""", platform)
         settle(page)
-        rows = page.locator(in_card(".loadpoint")).count()
-        t.check(rows == 2 and not errors, f"an evcc_-named entity {label} is no loadpoint", f"rows={rows}; {'; '.join(errors)[:120]}")
+        got = listed(page)
+        t.check(got == "openwb, wp" and not errors, f"an evcc_-named entity {label} is no loadpoint", f"{got!r}; {'; '.join(errors)[:120]}")
         done(page)
-    for opt, want_rows, want_badge in (("hide", 1, 0), ("dim", 2, 1), ("show", 2, 0)):
+    # The card's own loadpoint disabled in evcc: hidden, dimmed or shown.
+    for opt, want_rows, want_badge in (("hide", 0, 0), ("dim", 1, 1), ("show", 1, 0)):
         page = new_page(browser, 480, 1800)
-        open_card(page, port, config={"mode": "loadpoint", "disabled_loadpoints": opt}, set={"binary_sensor.evcc_wp_disabled_in_config": "on"})
+        open_card(page, port, config={"mode": "loadpoint", "loadpoint": "wp", "disabled_loadpoints": opt}, set={"binary_sensor.evcc_wp_disabled_in_config": "on"})
         rows, badge = page.locator(in_card(".loadpoint")).count(), page.locator(in_card(".lp-badge.disabled")).count()
         t.check(rows == want_rows and badge == want_badge, f"disabled_loadpoints: {opt} → {want_rows} loadpoint(s), {want_badge} disabled badge", f"rows={rows} badge={badge}")
         done(page)
+    # Without `loadpoint` the card takes the only loadpoint evcc has enabled.
+    page = new_page(browser, 480, 1800)
+    errors = open_card(page, port, config={"mode": "loadpoint", "disabled_loadpoints": "dim"}, set={"binary_sensor.evcc_wp_disabled_in_config": "on"})
+    lps = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('button.mode-btn')].map(b => b.dataset.entity.split('_')[1])")
+    t.check(set(lps) == {"openwb"} and page.locator(in_card(".lp-badge.disabled")).count() == 0 and not errors,
+            "without loadpoint the card takes the only enabled one", json.dumps(sorted(set(lps))))
+    done(page)
     page = new_page(browser, 480, 1400)
     open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["wp"]})
     labels = page.evaluate("[...window.__card.shadowRoot.querySelectorAll('.slider-row label')].map(l => l.textContent.trim())")
@@ -2902,8 +2960,8 @@ def card_api(browser, port, t):
     getCardSize() feeds the masonry layout (one unit is 50 px). Without it HA
     assumes a single row for everything from the compact line to a debug dump.
     The numbers live in CARD_SIZES; the checks pin the contract, not the values:
-    never 0, never undefined, larger for a taller mode, and scaling with the
-    number of loadpoints where the card repeats a block per loadpoint.
+    never 0, never undefined, larger for a taller mode, and dropping the blocks
+    a configuration switches off.
     """
     t.group("cardapi - getCardSize")
     page = new_page(browser, 480, 2400)
@@ -2959,7 +3017,7 @@ def card_api(browser, port, t):
         ["site collapsed", { mode: "site", site_details: "collapsed", stats_period: "none" }],
         ["flow",           { mode: "flow" }],
         ["loadpoint",      { mode: "loadpoint", loadpoints: ["openwb"] }],
-        ["two loadpoints", { mode: "loadpoint", loadpoints: ["openwb", "wp"] }],
+        ["compact",        { mode: "compact" }],
         ["debug",          { mode: "debug" }],
       ]) {
         const c = document.createElement("evcc-card");
@@ -2973,7 +3031,7 @@ def card_api(browser, port, t):
             f"unbrauchbar: {bad}" if bad else json.dumps(est))
     t.check(est["site collapsed"] < est["site"], "the estimate drops the table and the footer when they are off",
             json.dumps(est))
-    t.check(est["two loadpoints"] == 2 * est["loadpoint"], "the estimate scales with the loadpoint count",
+    t.check(est["compact"] < est["loadpoint"], "one loadpoint per card: the compact estimate stays below the loadpoint one",
             json.dumps(est))
     t.check(not errors, "no console errors while sizing", "; ".join(errors)[:200])
 
@@ -3075,7 +3133,7 @@ def card_api(browser, port, t):
     t.group("cardapi - getGridOptions")
     grid = page.evaluate("""(() => {
       const out = {};
-      for (const mode of ["loadpoint","compact","plan","repeatplan","priority","site","flow","grid","stats","battery","debug"]) {
+      for (const mode of ["loadpoint","compact","plan","repeatplan","priority","site","flow","grid","stats","battery","optimizer","forecast","debug"]) {
         window.__card.setConfig({ mode, loadpoints: ["openwb"] });
         out[mode] = window.__card.getGridOptions();
       }
@@ -3111,8 +3169,9 @@ def setconfig(browser, port, t):
     """
     VALID = [
         ({}, "an empty config"),
-        ({"mode": "loadpoint", "loadpoints": ["openwb"]}, "a normal config"),
-        ({"mode": "site2"}, "the legacy mode name site2"),
+        ({"mode": "loadpoint", "loadpoints": ["openwb"]}, "a list of one loadpoint from before"),
+        ({"mode": "priority", "loadpoints": ["openwb", "wp"]}, "a list of loadpoints in the priority mode"),
+        ({"mode": "repeatplan", "repeating_plan_vehicles": ["id7"]}, "a list of one vehicle from before"),
         ({"mode": "flow", "size": "large"}, "a known size"),
         ({"stats_period": "month"}, "a current stats_period"),
         ({"stats_period": "365d"}, "a legacy stats_period"),
@@ -3133,10 +3192,18 @@ def setconfig(browser, port, t):
         ({"slider_steps": {"smart_cost_limit": "0.005"}}, "a slider step written as a string"),
         ({"slider_steps": {"limit_soc": "5 %"}}, "a slider step with its unit, read like the slider reads it"),
         ({"slider_steps": {"min_soc": None}}, "an empty slider step"),
+        ({"mode": "forecast", "sections": ["price", "solar"]}, "forecast sections as a list"),
+        ({"mode": "forecast", "sections": "price"}, "a single forecast section"),
     ]
     INVALID = [
         ({"mode": "quatsch"}, "mode", "an unknown mode"),
+        ({"mode": "site2"}, "mode: grid", "the former mode name site2, pointing to grid"),
+        ({"loadpoints": ["openwb", "wp"]}, "loadpoint: openwb and a card per charge point", "several loadpoints on a card of the default mode"),
+        ({"mode": "compact", "loadpoints": ["openwb", "wp"]}, "mode compact shows one charge point", "several loadpoints on a compact card"),
+        ({"mode": "plan", "loadpoints": ["wp", "openwb"]}, "loadpoint: wp", "several loadpoints on a plan card, the first one suggested"),
+        ({"mode": "repeatplan", "repeating_plan_vehicles": ["ex30", "id7"]}, "vehicle: ex30 and a card per vehicle", "several vehicles on a repeatplan card"),
         ({"size": "huge"}, "size", "an unknown size"),
+        ({"mode": "forecast", "sections": ["price", "wind"]}, "sections \"wind\"", "an unknown forecast section"),
         ({"disabled_loadpoints": "maybe"}, "disabled_loadpoints", "an unknown disabled_loadpoints"),
         ({"stats_period": "weekly"}, "stats_period", "an unknown stats_period"),
         ({"stats_exclude_loadpoints": "wp"}, "stats_exclude_loadpoints", "stats_exclude_loadpoints as a string"),
@@ -3194,19 +3261,27 @@ def setconfig(browser, port, t):
     t.check(not errors, "no console errors", "; ".join(errors)[:200])
     done(page)
 
-    # repeatplan shows one vehicle with `vehicle`, compared without case; the
-    # list from before still draws every vehicle in it.
+    # repeatplan shows one vehicle with `vehicle`, compared without case.
     t.group("setconfig - repeatplan for one vehicle")
     blocks = {}
-    for key, cfg in (("all", {}), ("one", {"vehicle": "EX30"}), ("other", {"vehicle": "id7"}), ("list", {"repeating_plan_vehicles": ["ex30", "id7"]})):
+    # A plan for the id7 as well, so two vehicles have plans.
+    id7 = {"switch.evcc_id7_repeating_plan_2": "on"}
+    id7_attrs = {"switch.evcc_id7_repeating_plan_2": {"weekdays": [1, 2, 3], "time": "07:30", "soc": 80}}
+    for key, cfg, extra in (("all", {}, False), ("one", {"vehicle": "EX30"}, False), ("other", {"vehicle": "id7"}, False),
+                            ("two", {}, True), ("two, one", {"vehicle": "id7"}, True)):
         page = new_page(browser, 480, 900)
-        errors = open_card(page, port, config={"mode": "repeatplan", **cfg})
-        blocks[key] = page.locator(in_card(".loadpoint .lp-name")).all_inner_texts() or page.locator(in_card(".empty")).count() * ["(empty)"]
+        errors = open_card(page, port, config={"mode": "repeatplan", **cfg}, set=id7 if extra else None, attrs=id7_attrs if extra else None)
+        empty = page.locator(in_card(".empty"))
+        blocks[key] = page.locator(in_card(".loadpoint .lp-name")).all_inner_texts() or [empty.inner_text().strip() if empty.count() else "(nothing)"]
         t.check(not errors, f"{key}: no console errors", "; ".join(errors)[:200])
         done(page)
     # Only the EX30 of the mock has a scheduled plan, the id7's stay unavailable.
-    t.check(blocks["all"] == ["EX30"] and blocks["list"] == blocks["all"], "without a vehicle and with the list every vehicle with plans is drawn", json.dumps(blocks))
-    t.check(blocks["one"] == ["EX30"] and blocks["other"] == ["(empty)"], "vehicle: EX30 draws that one, vehicle: id7 nothing of the EX30", json.dumps(blocks))
+    t.check(blocks["all"] == ["EX30"], "without a vehicle the only vehicle with plans is drawn", json.dumps(blocks))
+    t.check(blocks["one"] == ["EX30"] and blocks["other"] != ["EX30"], "vehicle: EX30 draws that one, vehicle: id7 nothing of the EX30", json.dumps(blocks))
+    t.check("ex30, id7" in blocks["two"][0] and len(blocks["two"]) == 1,
+            "two vehicles with plans and none picked: the card asks for one and lists them", json.dumps(blocks))
+    t.check(len(blocks["two, one"]) == 1 and blocks["two, one"][0] != "EX30" and "ex30" not in blocks["two, one"][0],
+            "two vehicles with plans, vehicle: id7 draws only the id7", json.dumps(blocks))
 
 
 def widths(browser, port, t):
@@ -3989,6 +4064,41 @@ def disabled_entities(browser, port, t):
             "no clear button in ha-evcc at all: no limit and nothing to enable", str(got))
     done(page)
 
+    # #207: a plan in kWh (guest vehicle, no SoC) reads its saved target from
+    # plan_energy, which ha-evcc creates disabled. The triangle names it while
+    # the plan block plans in kWh, in the plan mode too, and the card keeps the
+    # target it sent instead of falling back to 10 kWh.
+    t.group("disabled entities - kWh plan target (#207)")
+    pe    = "sensor.evcc_openwb_plan_energy"
+    guest = {"select.evcc_openwb_vehicle_name": "null", "binary_sensor.evcc_openwb_plan_active": "on"}
+    warn  = lambda page: page.evaluate("window.__card.shadowRoot.querySelector('.lp-disabled-warn')?.getAttribute('title') ?? null")
+    for label, config, st, want in (
+            ("loadpoint mode, guest vehicle", {"mode": "loadpoint", "loadpoint": "openwb"}, guest, True),
+            ("plan mode, guest vehicle", {"mode": "plan", "loadpoint": "openwb"}, guest, True),
+            ("loadpoint mode, vehicle with SoC", {"mode": "loadpoint", "loadpoint": "openwb"}, {}, False),
+            ("loadpoint mode, guest vehicle, no_plan", {"mode": "loadpoint", "loadpoint": "openwb", "no_plan": True}, guest, False)):
+        page = new_page(browser, 480, 1800)
+        errors = open_card(page, port, config=config, set=st, disable=[pe], lang="en")
+        got = warn(page)
+        ok = ("Plan target for vehicles without SoC" in (got or "")) if want else ("Plan target" not in (got or ""))
+        t.check(ok and not errors, f"{label}: {'the triangle names' if want else 'no triangle for'} plan_energy", repr(got))
+        done(page)
+
+    page = new_page(browser, 480, 1800)
+    errors = open_card(page, port, config={"mode": "plan", "loadpoint": "openwb"}, set=guest, disable=[pe])
+    page.evaluate("() => { window.__card._planState.openwb.energy = 23; }")
+    page.locator(in_card("button.plan-btn.save")).click()
+    page.wait_for_timeout(1800); settle(page)
+    sent = [c for c in svc(page) if c.get("service") == "set_loadpoint_plan"]
+    shown = page.locator(in_card("button.plan-soc-val")).inner_text().strip()
+    t.check(sent and sent[-1]["data"].get("energy") == 23, "the kWh plan goes out with 23 kWh", json.dumps(sent[-1:] )[:200])
+    t.check(shown == "23 kWh" and not errors, "after saving the plan block keeps 23 kWh, not 10 kWh", shown)
+    page.locator(in_card("button.plan-btn.delete")).click()
+    page.wait_for_timeout(1800); settle(page)
+    shown = page.locator(in_card("button.plan-soc-val")).inner_text().strip()
+    t.check(shown == "10 kWh", "after deleting the plan it starts from 10 kWh again", shown)
+    done(page)
+
     t.group("disabled entities - triangle, debug view and enabling")
     page = new_page(browser, 480, 1800)
     errors += open_card(page, port, config=cfg, set=limit, disable=[btn])
@@ -4234,6 +4344,196 @@ def solar_share(browser, port, t):
     open_card(page, port, config={**lp, "hide_settings": ["limit_soc", "min_soc", "phases", "max_current", "min_current", "battery_boost", "priority", "smart_cost_limit", "smart_feed_in_priority_limit"]})
     n = page.evaluate("window.__card.shadowRoot.querySelectorAll('.current-block-body > *').length")
     t.check(n == 1 and page.locator(in_card(sel)).count() == 1, "the only setting left: the block stays, no divider", str(n))
+    done(page)
+
+
+# The optimizer mode runs on a recorded optimizer result (test/fixtures/ws/
+# optimizer.json), so the browser clock stands at the time it was recorded.
+OPT_TIME = "2026-11-03T20:47:00+01:00"
+
+
+def optimizer_mode(browser, port, t):
+    def opt_page(variant="plan", height=1600, time=OPT_TIME, **kw):
+        page = new_page(browser, 480, height)
+        page.clock.set_fixed_time(time)
+        errors = open_card(page, port, config=kw.pop("config", {"mode": "optimizer"}), optimizer=variant, **kw)
+        return page, errors
+    text = lambda page, sel: page.evaluate(f"() => [...window.__card.shadowRoot.querySelectorAll({json.dumps(sel)})].map(e => e.textContent.replace(/\\s+/g, ' ').trim())")
+    click = lambda page, sel: (page.evaluate(f"() => window.__card.shadowRoot.querySelector({json.dumps(sel)}).click()"), settle(page))
+
+    t.group("optimizer - header, summary and pages")
+    page, errors = opt_page(battery_ext=True, optimize=True)
+    t.check(not errors, "renders a recorded plan without errors", "; ".join(errors)[:300])
+    t.check(text(page, ".opt-status") == ["Optimal"], "the status of the run", str(text(page, ".opt-status")))
+    btn = page.locator(in_card(".optimizer-block button.batt-recompute"))
+    t.check(btn.count() == 1 and btn.get_attribute("aria-label") == "Plan neu berechnen", "the recompute button, labelled for the plan")
+    meta = text(page, ".opt-meta span")
+    t.check(meta[:2] == ["Plan von 20:45", "Netzkosten 2,68 €"], "plan time and grid costs of the plan", str(meta))
+    t.check(len(meta) == 3 and meta[2].startswith("Bezug 20,2") and "Einspeisung 8,1" in meta[2], "a fixed price stands in the header", str(meta))
+    rows = text(page, ".opt-row")
+    t.check(len(rows) == 2 and rows[0].startswith("SpeicherEntladen bis 21:15") and "danach Leer" in rows[0]
+            and "Höchststand (voll) morgen 14:30 · Tiefststand (leer) 21:15" in rows[0], "the battery: action now, until when, what then, highest and lowest", rows[0] if rows else "")
+    t.check(len(rows) == 2 and rows[1] == "openWB (EX30)Laden morgen 11:30 bis 12:00 bis 2,2 kW · 51 → 52 %", "the vehicle: its charge window, power and SoC", rows[1] if len(rows) > 1 else "")
+    lanes = text(page, ".opt-lane-name")
+    t.check("Strompreis" not in lanes and lanes[:3] == ["Leistung", "Speicher", "openWB (EX30)"], "no price lane for a fixed price; power, battery, vehicle", str(lanes))
+    t.check(text(page, ".opt-step-label") == ["Heute"] and page.locator(in_card("button.opt-step[data-opt-step='-1']")).is_disabled(), "the first page is today, no page before it")
+    t.check(text(page, ".opt-dt") == ["Di 20:45 bis 21:00"], "the running slot is selected", str(text(page, ".opt-dt")))
+    click(page, "button.opt-step[data-opt-step='1']")
+    t.check(text(page, ".opt-step-label") == ["Morgen"] and page.locator(in_card("button.opt-step[data-opt-step='1']")).is_disabled(), "the next page is tomorrow, the last one")
+    t.check(text(page, ".opt-dt") == ["Mi 00:00 bis 00:15"], "a new page selects its first slot", str(text(page, ".opt-dt")))
+    areas = page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('.opt-bars')].map(e => e.dataset.series)")
+    t.check(areas == ["demand:0", "demand:1", "vehicle:0", "battery:0", "battery:0"], "tomorrow: consumption, vehicle, battery charging above and discharging below zero", str(areas))
+    t.check(page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('.opt-line')].map(e => e.dataset.series)") == ["pv", "grid"], "solar and grid as lines")
+
+    # The pointer and the arrow keys move the selection; a render keeps it.
+    # The pointer aims at the middle of the slot: WebKit moves the mouse in
+    # whole pixels, and a quarter hour is only a few pixels wide here.
+    box = page.locator(in_card(".opt-chart")).bounding_box()
+    page.mouse.move(box["x"] + box["width"] * (26 + (12 * 3600 + 450) / 86400 * 370) / 400, box["y"] + 40)
+    t.check(text(page, ".opt-dt") == ["Mi 12:00 bis 12:15"], "the mouse over the chart picks its slot", str(text(page, ".opt-dt")))
+    vals = text(page, ".opt-detail .opt-dv")
+    t.check(vals == ["3,5 kW", "1,4 kW", "0 kW", "Laden mit PV · +2,1 kW · 67 %", "lädt nicht · 52 %"], "the values of that slot", str(vals))
+    page.locator(in_card(".opt-chart")).focus()
+    page.keyboard.press("ArrowRight")
+    t.check(text(page, ".opt-dt") == ["Mi 12:15 bis 12:30"], "the arrow key moves on by a slot", str(text(page, ".opt-dt")))
+    page.keyboard.press("End")
+    t.check(text(page, ".opt-dt") == ["Mi 23:45 bis 00:00"], "End jumps to the last slot of the page", str(text(page, ".opt-dt")))
+    page.evaluate("() => { const c = window.__card; c._lastRenderKey = null; c._render(); }")
+    settle(page)
+    t.check(text(page, ".opt-dt") == ["Mi 23:45 bis 00:00"] and text(page, ".opt-step-label") == ["Morgen"], "a render keeps page and slot")
+
+    t.group("optimizer - legend")
+    legend = text(page, "button.opt-leg")
+    t.check(legend == ["Haus", "WP", "openWB (EX30)", "Speicher", "PV-Prognose", "Netz"], "the power lane's entries are buttons", str(legend))
+    t.check(text(page, ".opt-legend > span") == ["Laden mit PV", "Entladen"], "the colours of the battery band are no buttons", str(text(page, ".opt-legend > span")))
+    scale = lambda: page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('.opt-chart-svg text')].map(e => e.textContent).find(x => x.endsWith(' kW'))")
+    kw = scale()
+    for name in ("Haus", "WP", "PV-Prognose"):
+        page.evaluate(f"() => [...window.__card.shadowRoot.querySelectorAll('button.opt-leg')].find(b => b.textContent.trim() === {json.dumps(name)}).click()")
+        settle(page)
+    pressed = page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('button.opt-leg')].map(b => b.getAttribute('aria-pressed'))")
+    t.check(pressed == ["false", "false", "true", "true", "false", "true"], "a click hides the series, the button says so", str(pressed))
+    t.check(page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('.opt-bars, .opt-line')].map(e => e.dataset.series)") == ["vehicle:0", "battery:0", "battery:0", "grid"],
+            "their areas and lines are gone", str(page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('.opt-bars, .opt-line')].map(e => e.dataset.series)")))
+    t.check(kw == "4 kW" and scale() == "3 kW", "the scale follows what is left", f"{kw} -> {scale()}")
+    t.check("Verbrauch" in text(page, ".opt-detail .opt-dk"), "the values under the chart keep every series")
+    page.evaluate("() => { const c = window.__card; c._lastRenderKey = null; c._render(); }")
+    settle(page)
+    t.check(page.locator(in_card("button.opt-leg[aria-pressed='false']")).count() == 3, "a render keeps them hidden")
+    page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('button.opt-leg')][0].click()")
+    settle(page)
+    t.check(page.locator(in_card("button.opt-leg[aria-pressed='false']")).count() == 2, "a second click shows it again")
+
+    t.group("optimizer - list")
+    click(page, "button.opt-seg-btn[data-opt-view='list']")
+    evs = text(page, ".opt-ev")
+    t.check(len(evs) == 7 and evs[0] == "jetzt Speicher entlädt bis 21:15 · 15 → 10 %", "seven changes, the first one now", str(evs[:2]))
+    t.check(evs[3] == "11:30 openWB (EX30) lädt bis 12:00 · bis 2,2 kW · 51 → 52 %", "the vehicle's charge window among them", evs[3] if len(evs) > 3 else "")
+    t.check(text(page, ".opt-ev-day") == ["Heute", "Morgen"], "grouped by day", str(text(page, ".opt-ev-day")))
+    t.check(page.locator(in_card(".opt-stepper")).count() == 0 and page.locator(in_card(".opt-chart")).count() == 0, "the list shows all days, no pages, no chart")
+    t.check(page.evaluate("localStorage.getItem('evcc-card-optimizer-view')") == '{"evcc_":"list"}', "the view is remembered per instance")
+    page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('button.opt-ev')][3].click()")
+    settle(page)
+    t.check(text(page, ".opt-step-label") == ["Morgen"] and text(page, ".opt-dt") == ["Mi 11:30 bis 11:45"], "an entry opens the chart on its day and slot",
+            f"{text(page, '.opt-step-label')} {text(page, '.opt-dt')}")
+    done(page)
+
+    t.group("optimizer - recompute and triangle")
+    page, _ = opt_page(battery_ext=True, optimize=True)
+    page.locator(in_card("button.batt-recompute")).click(); page.wait_for_timeout(200)
+    presses = [c for c in svc(page) if c["domain"] == "button"]
+    t.check(presses == [{"domain": "button", "service": "press", "data": {"entity_id": "button.evcc_optimize"}}], "a click presses button.evcc_optimize", json.dumps(presses))
+    done(page)
+    page, _ = opt_page()
+    t.check(page.locator(in_card("button.batt-recompute")).count() == 0, "without the button entity, no recompute button")
+    done(page)
+    page, _ = opt_page(battery_ext=True, optimize=True, disable=["button.evcc_optimize"])
+    t.check(page.locator(in_card(".optimizer-block .lp-disabled-warn")).count() == 1, "a disabled optimize button: the triangle in the header")
+    done(page)
+
+    t.group("optimizer - price and goal")
+    page, errors = opt_page("plan,price,goal")
+    lanes = text(page, ".opt-lane-name")
+    t.check(lanes[:2] == ["Strompreis", "Leistung"] and not errors, "a changing price gets a lane on top", str(lanes))
+    t.check(len(text(page, ".opt-meta span")) == 2, "and no fixed price in the header", str(text(page, ".opt-meta span")))
+    t.check("Ziel 80 % bis morgen 07:00" in text(page, ".opt-row")[1], "the vehicle's target in the summary", text(page, ".opt-row")[1])
+    click(page, "button.opt-step[data-opt-step='1']")
+    t.check(page.locator(in_card(".opt-chart-svg circle")).count() == 1, "the target as a dot on its day")
+    t.check(text(page, ".opt-detail .opt-dk")[0] == "Strompreis", "the price of the slot under the chart", str(text(page, ".opt-detail .opt-dk")[:1]))
+    done(page)
+
+    t.group("optimizer - negative prices")
+    page, errors = opt_page("plan,price,negative")
+    price = lambda: page.evaluate("""() => {
+      const svg = window.__card.shadowRoot.querySelector('.opt-chart-svg');
+      const zero = [...svg.querySelectorAll('text')].find(e => e.textContent === '0');
+      const zy = parseFloat(zero.getAttribute('y')) - 3;
+      const bars = [...svg.querySelectorAll('rect.opt-price-bar')];
+      return { labels: [...svg.querySelectorAll('text')].map(e => e.textContent),
+               below: bars.filter(r => Math.abs(parseFloat(r.getAttribute('y')) - zy) < 0.1).length,
+               above: bars.filter(r => Math.abs(parseFloat(r.getAttribute('y')) + parseFloat(r.getAttribute('height')) - zy) < 0.1).length };
+    }""")
+    got = price()
+    t.check(got["labels"] == ["34,0", "0", "-5,0"] and not errors, "the price axis reaches below zero, over the whole plan", json.dumps(got))
+    t.check(got["below"] == 0 and got["above"] > 0, "today: every bar above the zero line", json.dumps(got))
+    click(page, "button.opt-step[data-opt-step='1']")
+    got = price()
+    t.check(got["below"] == 8, "tomorrow 12 to 14 h: eight bars below the zero line", json.dumps(got))
+    done(page)
+
+    t.group("optimizer - a plan computed a while ago")
+    # The plan starts at 20:45; at 21:20 its first two slots are over.
+    page, errors = opt_page(time="2026-11-03T21:20:00+01:00")
+    rows = text(page, ".opt-row")
+    t.check(not errors and rows[:1] == ["SpeicherLeer bis morgen 08:15 danach Laden mit PV · Höchststand (voll) morgen 14:30"],
+            "the summary starts at the running slot, the lowest SoC at 21:15 is over", rows[0] if rows else "")
+    t.check(text(page, ".opt-dt") == ["Di 21:15 bis 21:30"], "the running slot is selected", str(text(page, ".opt-dt")))
+    page.locator(in_card(".opt-chart")).focus()
+    page.keyboard.press("ArrowRight")
+    t.check(text(page, ".opt-dt") == ["Di 21:30 bis 21:45"], "the arrow key moves on from the running slot", str(text(page, ".opt-dt")))
+    click(page, "button.opt-seg-btn[data-opt-view='list']")
+    evs = text(page, ".opt-ev")
+    t.check(evs[:2] == ["jetzt Speicher ist leer (10 %) bis 08:15", "08:15 Speicher lädt mit PV bis 14:30 · 10 → 100 %"] and len(evs) == 6,
+            "the list starts now, the discharging until 21:15 is gone", str(evs[:2]))
+    done(page)
+
+    t.group("optimizer - without a plan")
+    for variant, kw, want, name in (
+        ("plan,off", {}, "Der Optimizer in evcc ist aus oder hat noch keinen Plan berechnet.", "optimizer off: says so"),
+        (False, {}, "Die Optimizer-Ansicht braucht ha-evcc 2026.10.1 oder neuer.", "ha-evcc without the optimizer command: names the version"),
+        ("plan", {"caps_version": "2026.6.3"}, "Die Optimizer-Ansicht braucht ha-evcc 2026.10.1 oder neuer.", "ha-evcc below the minimum: names the version"),
+    ):
+        page, errors = opt_page(variant, **kw)
+        t.check(text(page, ".opt-note") == [want] and not errors, name, f"{text(page, '.opt-note')} {errors}")
+        done(page)
+
+    # Partial results: no request part, no home battery, no vehicle, a vehicle
+    # without capacity. Nothing may crash or print NaN or undefined.
+    page, _ = opt_page()
+    got = page.evaluate("""() => {
+      const c = window.__card, base = JSON.parse(c._wsCache.optimizer.json).data, out = {};
+      const cases = {
+        noReq:     d => { delete d.evopt.req; },
+        noHome:    d => { d.evopt.res.batteries.pop(); d.evopt.details.batteryDetails.pop(); d.evopt.req.batteries.pop(); },
+        noVehicle: d => { d.evopt.res.batteries.shift(); d.evopt.details.batteryDetails.shift(); d.evopt.req.batteries.shift(); },
+        noCap:     d => { d.evopt.details.batteryDetails[0].capacity = 0; },
+        noDemand:  d => { delete d.evopt.details.demandDetails; },
+        empty:     d => { d.evopt.details.timestamp = []; },
+      };
+      for (const [name, fn] of Object.entries(cases)) {
+        const d = JSON.parse(JSON.stringify(base)); fn(d);
+        c._wsCache.optimizer = { ts: Date.now(), result: { data: d }, json: name };
+        c._lastRenderKey = null; c._render();
+        const txt = c.shadowRoot.querySelector('.optimizer-block')?.textContent || '';
+        const svg = c.shadowRoot.querySelector('.opt-chart-svg')?.outerHTML || '';
+        out[name] = { bad: /NaN|undefined|null/.test(txt + svg), note: c.shadowRoot.querySelector('.opt-note')?.textContent || null,
+                      rows: c.shadowRoot.querySelectorAll('.opt-row').length };
+      }
+      return out;
+    }""")
+    t.check(not any(v["bad"] for v in got.values()), "partial results print no NaN, undefined or null", json.dumps(got))
+    t.check(got["noHome"]["rows"] == 1 and got["noVehicle"]["rows"] == 1 and got["noReq"]["rows"] == 2, "a missing battery or vehicle leaves its row out", json.dumps(got))
+    t.check(got["empty"]["note"] == "Der Optimizer in evcc ist aus oder hat noch keinen Plan berechnet.", "a result without slots counts as no plan", json.dumps(got["empty"]))
     done(page)
 
 
@@ -4722,10 +5022,140 @@ def battery_mode(browser, port, t):
     t.check(page.locator(in_card(".lp-disabled-warn")).count() == 0, "no triangle at a loadpoint for the battery's clear button")
     done(page)
 
+# The forecast mode on a dynamic tariff (test/mock-hass.js `dynamic`): prices
+# by time of day, known until the end of tomorrow. The clock stands on a
+# Friday evening, so the rest of today joins tomorrow's page.
+FC_TIME   = "2026-09-18T20:15:00+02:00"
+FC_LIMITS = {"number.evcc_openwb_smart_cost_limit": 0.22, "number.evcc_battery_grid_charge_limit": 0.18}
 
-GROUPS = {"unit": unit, "render": render_smoke, "stats_fallback": stats_fallback, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "prices": price_display, "editor": editor, "editor_vehicle_map": editor_vehicle_map, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
+
+def forecast_mode(browser, port, t):
+    def fc_page(time=FC_TIME, **kw):
+        page = new_page(browser, 480, 1200)
+        page.clock.set_fixed_time(time)
+        errors = open_card(page, port, config=kw.pop("config", {"mode": "forecast"}), **kw)
+        return page, errors
+    text = lambda page, sel: page.evaluate(f"() => [...window.__card.shadowRoot.querySelectorAll({json.dumps(sel)})].map(e => e.textContent.replace(/\\s+/g, ' ').trim())")
+    click = lambda page, sel: (page.evaluate(f"() => window.__card.shadowRoot.querySelector({json.dumps(sel)}).click()"), settle(page))
+    count = lambda page, sel: page.locator(in_card(sel)).count()
+
+    t.group("forecast - header")
+    page, errors = fc_page(dynamic=True, set=FC_LIMITS)
+    t.check(not errors, "renders without errors", "; ".join(errors)[:300])
+    t.check(text(page, ".fc-now") == ["36,4ct"], "the price now, large", str(text(page, ".fc-now")))
+    stats = text(page, "button.fc-jump.batt-stat")
+    t.check(stats == ["Tiefstwert17,0 ct · morgen 11:00", "Höchstwert37,2 ct · 20:45"], "lowest and highest price ahead with their time", str(stats))
+    t.check(text(page, ".fc-chip") == ["Jetzt teuer"], "the chip says how the price now ranks", str(text(page, ".fc-chip")))
+    t.check(text(page, "button.fc-hint") == ["günstig ab morgen 00:00 · in 3 h 45 min"], "when it turns cheap, and how long until then", str(text(page, "button.fc-hint")))
+
+    t.group("forecast - chart and pages")
+    t.check(text(page, ".opt-step-label") == ["Heute und morgen"], "a short rest of today joins tomorrow", str(text(page, ".opt-step-label")))
+    t.check(page.locator(in_card('button.fc-step[data-fc-step="-1"]')).is_disabled(), "no page before the first")
+    t.check([n.split("heute")[0] for n in text(page, ".opt-lane-name")] == ["PV-Prognose", "Strompreis"], "the solar forecast on top, the price below", str(text(page, ".opt-lane-name")))
+    bars, cheap = count(page, ".fc-bar"), count(page, ".fc-bar.fc-cheap")
+    t.check(bars == 111, "a bar per quarter hour from now to the end of tomorrow", str(bars))
+    t.check(30 <= cheap <= 45, "about a third of them green", f"{cheap} of {bars}")
+    t.check(count(page, "line.fc-limit-smart") == 1 and count(page, "line.fc-limit-batt") == 1, "the smart cost limit and the grid charge limit as lines")
+    leg = page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('.fc-leg-limit')].map(e => [e.dataset.moreInfo, e.textContent.trim()])")
+    t.check(leg == [["number.evcc_openwb_smart_cost_limit", "Smart-Laden 22,0 ct"], ["number.evcc_battery_grid_charge_limit", "Speicher-Netzladen 18,0 ct"]],
+            "the limits in the legend with their value, opening their entity", str(leg))
+    pv = text(page, ".fc-lane-sub")
+    t.check(len(pv) == 1 and pv[0].startswith("heute noch ") and " · morgen " in pv[0], "the solar energy of the days on the page", str(pv))
+    det = text(page, ".fc-detail .opt-dt")
+    t.check(det == ["Fr 20:15 bis 20:30jetzt"], "the values of now under the chart", str(det))
+
+    # The lowest price opens its slot; the arrow keys walk on from there.
+    click(page, "button.fc-jump.batt-stat")
+    t.check(text(page, ".fc-detail .opt-dt") == ["Sa 11:00 bis 11:15in 14 h 45 min"], "the lowest price shows its slot", str(text(page, ".fc-detail .opt-dt")))
+    page.locator(in_card(".fc-chart")).focus()
+    page.keyboard.press("ArrowRight")
+    t.check(text(page, ".fc-detail .opt-dt") == ["Sa 11:15 bis 11:30in 15 h"], "the arrow keys move the cursor", str(text(page, ".fc-detail .opt-dt")))
+    vals = text(page, ".fc-detail .opt-dv")
+    t.check(len(vals) == 3 and vals[1] == "17,4 ct/kWh" and vals[2].endswith("ct/kWh"), "solar, grid price and feed-in of the slot", str(vals))
+
+    click(page, 'button.fc-step[data-fc-step="1"]')
+    t.check(text(page, ".opt-step-label") == ["Sonntag"], "the next page is the next day", str(text(page, ".opt-step-label")))
+    t.check(count(page, ".fc-bar") == 0 and "noch keine Preise" in page.locator(in_card(".fc-chart")).inner_text(), "a day without prices says so in the price lane")
+    t.check(text(page, ".fc-detail .opt-dv")[1] == "noch kein Preis", "and in the values", str(text(page, ".fc-detail .opt-dv")))
+    done(page)
+
+    t.group("forecast - limits and tariffs")
+    page, _ = fc_page(dynamic=True, set=FC_LIMITS, attrs={"number.evcc_openwb_smart_cost_limit": {"unit_of_measurement": "g/kWh"}})
+    t.check(count(page, "line.fc-limit-smart") == 0 and count(page, "line.fc-limit-batt") == 1, "a CO₂ limit is no line on the price, and without a CO₂ lane none at all")
+    done(page)
+    page, _ = fc_page(dynamic=True)
+    t.check(count(page, ".fc-limit") == 0 and count(page, ".fc-leg-limit") == 0, "limits that are not set draw nothing")
+    done(page)
+    page, errors = fc_page(time="2026-09-18T12:00:00+02:00", dynamic=True)
+    t.check(text(page, ".fc-chip") == ["Jetzt günstig"] and text(page, ".batt-optimizer span:last-child") == ["günstig bis 17:00 · noch 5 h"],
+            "cheap now: until when", f"{text(page, '.fc-chip')} {text(page, '.batt-optimizer span:last-child')}")
+    t.check(text(page, ".opt-step-label") == ["Heute"], "a long rest of today keeps its own page", str(text(page, ".opt-step-label")))
+    done(page)
+    page, errors = fc_page()
+    t.check(not errors and count(page, ".fc-bar") == 0 and count(page, "button.fc-jump") == 0 and count(page, ".fc-chip") == 0,
+            "a fixed price: no price lane, no lowest and highest", "; ".join(errors)[:300])
+    t.check(text(page, ".fc-now") == ["20,2ct"] and len(text(page, ".opt-lane-name")) == 1 and text(page, ".opt-lane-name")[0].startswith("PV-Prognose"), "the price now, then the solar forecast alone",
+            f"{text(page, '.fc-now')} {text(page, '.opt-lane-name')}")
+    done(page)
+
+    t.group("forecast - CO₂")
+    co2 = {"number.evcc_openwb_smart_cost_limit": {"unit_of_measurement": "g/kWh"}}
+    page, errors = fc_page(dynamic=True, tariff="co2", set={**FC_LIMITS, "number.evcc_openwb_smart_cost_limit": 250}, attrs=co2)
+    lanes = [n.split("heute")[0] for n in text(page, ".opt-lane-name")]
+    t.check(not errors and lanes == ["PV-Prognose", "Strompreis", "CO₂-Intensität"], "evcc optimizes for CO₂: a lane for it under the price", f"{lanes} {errors}")
+    where = page.evaluate("""() => [...window.__card.shadowRoot.querySelectorAll('.opt-lane')].map(l => [l.querySelectorAll('line.fc-limit-smart').length, l.querySelectorAll('line.fc-limit-batt').length])""")
+    t.check(where == [[0, 0], [0, 1], [1, 0]], "the limit in g/kWh on the CO₂ lane, the grid charge limit in a price on the price lane", str(where))
+    t.check(count(page, ".opt-lane:nth-child(3) .fc-bar.fc-cheap") > 0, "the cleanest third green")
+    leg = text(page, ".fc-leg-limit")
+    t.check("Smart-Laden 250 g" in leg and "Speicher-Netzladen 18,0 ct" in leg, "each limit in the legend in its unit", str(leg))
+    rows = text(page, ".fc-detail .opt-dk")
+    t.check(rows[:3] == ["PV-Prognose", "Strompreis", "CO₂-Intensität"] and text(page, ".fc-detail .opt-dv")[2].endswith(" g/kWh"), "the CO₂ value of the slot under the chart", f"{rows} {text(page, '.fc-detail .opt-dv')}")
+    done(page)
+    page, _ = fc_page(dynamic=True)
+    t.check("CO₂-Intensität" not in text(page, ".opt-lane-name"), "evcc optimizes for the price: no CO₂ lane", str(text(page, ".opt-lane-name")))
+    done(page)
+
+    t.group("forecast - sections")
+    page, errors = fc_page(dynamic=True, set=FC_LIMITS, config={"mode": "forecast", "sections": ["solar"]})
+    t.check(not errors and count(page, ".fc-now") == 0 and count(page, ".fc-bar") == 0 and [n.split("heute")[0] for n in text(page, ".opt-lane-name")] == ["PV-Prognose"],
+            "solar only: no price header, no price lane", f"{text(page, '.opt-lane-name')} {errors}")
+    t.check(text(page, ".fc-detail .opt-dk") == ["PV-Prognose"], "and only solar under the chart", str(text(page, ".fc-detail .opt-dk")))
+    done(page)
+    page, _ = fc_page(dynamic=True, tariff="co2", config={"mode": "forecast", "sections": ["price", "co2"]})
+    t.check(text(page, ".opt-lane-name") == ["Strompreis", "CO₂-Intensität"] and text(page, ".fc-now") == ["36,4ct"],
+            "price and CO₂: the header and both lanes, no solar", str(text(page, ".opt-lane-name")))
+    done(page)
+    page, _ = fc_page(config={"mode": "forecast", "sections": []})
+    t.check(text(page, ".opt-note") == ["Für die Vorhersage ist kein Bereich ausgewählt."], "an empty list says so", str(text(page, ".opt-note")))
+    done(page)
+
+    t.group("forecast - without a forecast")
+    for kw, want, name in (
+        ({"caps_version": "2026.6.3"}, "Die Vorhersage braucht ha-evcc 2026.6.4 oder neuer.", "ha-evcc below the minimum: names the version"),
+        ({"ws": False}, "Die Vorhersage braucht ha-evcc 2026.6.4 oder neuer.", "ha-evcc without the data API: names the version"),
+    ):
+        page, errors = fc_page(**kw)
+        t.check(text(page, ".opt-note") == [want], name, f"{text(page, '.opt-note')} {errors}")
+        done(page)
+    # Rates that lie behind or carry nothing usable draw a note, no NaN.
+    page, _ = fc_page()
+    got = page.evaluate("""() => {
+      const c = window.__card;
+      for (const k of ["grid", "solar", "feedin"]) {
+        const e = c._wsCache["forecast:" + k];
+        e.result = { data: { ...e.result.data, rates: [{ start: "2020-01-01T00:00:00Z", end: "2020-01-01T00:15:00Z", value: 1 }, { start: "x", end: null, value: "y" }] } };
+        e.ts = Date.now();
+      }
+      c._render();
+      return c.shadowRoot.querySelector(".fc-block").textContent.replace(/\\s+/g, " ").trim();
+    }""")
+    t.check(got.endswith("evcc hat keine Vorhersage für die nächsten Stunden.") and "NaN" not in got and "undefined" not in got, "old or broken rates: a note", got)
+    done(page)
+
+
+GROUPS = {"unit": unit, "render": render_smoke, "min_version": min_version, "stats_period": stats_period, "renderkey": renderkey, "lifecycle": lifecycle, "interaction": interactions, "prices": price_display, "editor": editor, "editor_vehicle_map": editor_vehicle_map, "editor_instances": editor_instances, "keyboard": keyboard, "morph": morph, "escaping": escaping, "contracts": contracts,
           "tariff": tariff_modes, "traffic": traffic, "priority": priority_dnd, "locales": locales, "discovery": discovery,
-          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities, "solar_share": solar_share, "vehicle": vehicle_mode, "battery": battery_mode, "stable_height": stable_height}
+          "flow": flow_labels, "cardapi": card_api, "setconfig": setconfig, "widths": widths, "hints": hints, "disabled": disabled_entities, "solar_share": solar_share, "vehicle": vehicle_mode, "battery": battery_mode, "optimizer": optimizer_mode, "forecast": forecast_mode, "stable_height": stable_height}
 
 
 # The groups that take longest go to the workers first, so the run is not left

@@ -1,4 +1,4 @@
-import { DISABLED_NEEDED } from "../core/constants.js";
+import { DISABLED_NEEDED, loadpointOption } from "../core/constants.js";
 import { disabledCardEntities } from "../core/entity-discovery.js";
 import { escHtml, escAttr } from "../utils/html.js";
 
@@ -89,8 +89,9 @@ export const disabledEntities = {
   },
 
   // The DISABLED_NEEDED entities of a loadpoint whose control the card would
-  // show right now if they were on, see the fields there.
-  _neededDisabled(ents, lpName) {
+  // show right now if they were on, see the fields there. `planOnly` is the
+  // plan mode, which shows nothing of the loadpoint but its plan.
+  _neededDisabled(ents, lpName, { planOnly = false } = {}) {
     const prefix = this._getPrefix();
     const id = (domain, suffix) => `${domain}.${prefix}${lpName}_${suffix}`;
     // An entity enabled from the card waits for HA's reload of ha-evcc,
@@ -98,10 +99,13 @@ export const disabledEntities = {
     const pending = eid => this._enabling[eid] && this._enabling[eid].status !== "failed";
     return DISABLED_NEEDED.filter(n => {
       if (n.vehicle || n.site) return false;
+      if (planOnly && !n.plan) return false;
       const eid = id(n.domain, n.suffix);
       if (!this._isEntityDisabled(eid) || pending(eid)) return false;
       if (n.hide && this._isSettingHidden(n.hide)) return false;
       if (n.energy && this._socBasedCharging(ents)) return false;
+      if (n.plan && (loadpointOption(this._config, "no_plan", lpName) || !this._hasPlanBlock(ents, planOnly)
+                     || this._planKind(ents) !== "energy")) return false;
       if (n.needs) {
         const [domain, suffix] = n.needs.split(".");
         if (!ents[suffix] && !this._isEntityDisabled(id(domain, suffix))) return false;
@@ -143,8 +147,8 @@ export const disabledEntities = {
   // The triangle in a loadpoint header, only for administrators (nobody else
   // can enable an entity) and switched off by `hide_disabled_hint`. A click
   // opens the list in the debug view.
-  _renderDisabledWarn(ents, lpName) {
-    return this._disabledWarnButton(() => this._neededDisabled(ents, lpName));
+  _renderDisabledWarn(ents, lpName, opts) {
+    return this._disabledWarnButton(() => this._neededDisabled(ents, lpName, opts));
   },
 
   // The same triangle in the header of a vehicle block.

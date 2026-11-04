@@ -1,5 +1,5 @@
 import { discoverEntities } from "../core/entity-discovery.js";
-import { repeatPlanFilter } from "../core/constants.js";
+import { repeatPlanFilter, HA_EVCC_MIN_VERSION } from "../core/constants.js";
 import { stateVal, isOn, unitStr } from "../utils/state.js";
 import { evccDate, fmtDuration, fmtNum, fmtPrice, priceScale } from "../utils/format.js";
 import { escHtml, escAttr } from "../utils/html.js";
@@ -52,8 +52,10 @@ export const planningView = {
     const planState = this._planState[lpName];
     if (planState.kind !== kind) { planState.kind = kind; planState.energy = null; }
     if (kind === "energy" && planState.energy == null) {
+      // The saved target from ha-evcc; while its sensor is off (ha-evcc creates
+      // it disabled) the value this card sent last, rather than 10 kWh (#207).
       const planned = ents.plan_energy ? parseFloat(stateVal(this._hass, ents.plan_energy)) : NaN;
-      planState.energy = Math.min(maxEnergy, planned > 0 ? Math.round(planned) : 10);
+      planState.energy = Math.min(maxEnergy, planned > 0 ? Math.round(planned) : (this._planEnergySent[lpName] ?? 10));
     }
 
     if (this._planState[lpName].soc == null) {
@@ -272,6 +274,9 @@ export const planningView = {
 
   // Plan preview: shows charging slot chart + summary when SOC and time are set.
   _renderPlanPreview(lpName) {
+    if (this._haEvccTooOld()) {
+      return `<div class="plan-preview"><div class="plan-preview-info">${escHtml(this._t("planPreviewTooOld", { ver: HA_EVCC_MIN_VERSION }))}</div></div>`;
+    }
     if (!this._hasCmd("plan_preview")) return "";
     const state = this._planState[lpName];
     const target = this._planTarget(state);
@@ -476,6 +481,7 @@ export const planningView = {
         <div class="loadpoint">
           <div class="lp-header">
             <span class="lp-name">${escHtml(this._config.title || lpName)}</span>
+            ${this._renderDisabledWarn(ents, lpName, { planOnly: true })}
           </div>
           ${planHtml}
           ${sessionHtml}
@@ -597,21 +603,30 @@ export const planningView = {
           </span>`;
   },
 
+  // One vehicle per card: the card's `vehicle`, else the only vehicle with
+  // repeating plans. With several and none picked it asks which, like the
+  // vehicle mode.
   _renderRepeatPlansMode() {
     const groups = this._discoverRepeatingPlans();
     if (groups.length === 0) {
       return `<div class="empty"><p>${this._t("noRepeatingPlans")}</p></div>`;
     }
-    return groups.map(g => {
-      const name = (groups.length === 1 && this._config.title) ? this._config.title : g.vehicleName;
+    if (groups.length > 1) {
+      const list = `<code>${groups.map(g => escHtml(g.slug)).join(", ")}</code>`;
       return `
+        <div class="empty">
+          <p>${this._t("vehiclePickOne")}</p>
+          <p>${this._t("availableVehicles", { list })}</p>
+        </div>`;
+    }
+    const g = groups[0];
+    return `
         <div class="loadpoint">
           <div class="lp-header">
-            <span class="lp-name">${escHtml(name)}</span>
+            <span class="lp-name">${escHtml(this._config.title || g.vehicleName)}</span>
           </div>
           ${this._renderRepeatPlansBlock(g)}
         </div>`;
-    }).join("");
   },
 
   // Listeners of the charge plan block: precondition, target slider with its
@@ -749,7 +764,8 @@ export const planningView = {
           try {
             if (target.kind === "soc") await this._setVehiclePlan(vehicleDbId, target.value, startdate);
             else                       await this._setLoadpointPlan(lpIdx, target.value, startdate);
-            window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } }));
+            window.dispatchEvent(new CustomEvent("evcc-plan-reset",
+              { detail: { lpName, energy: target.kind === "energy" ? target.value : null } }));
             showSuccess();
           } catch(e) {
             showError(`❌ ${e?.message || JSON.stringify(e) || "Unknown error"}`);
@@ -772,14 +788,14 @@ export const planningView = {
         };
         if (vehicleDbId) {
           this._deleteVehiclePlan(vehicleDbId)
-            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } })); })
+            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName, energy: null } })); })
             .catch(e => console.warn("[evcc-card] delete plan:", e));
         } else {
           // Deleting works without a kWh target, it only needs the evcc index.
           const lpIdx = this._lpIndex(lpName);
           if (lpIdx == null) { console.warn("[evcc-card] delete plan: no loadpoint index for", lpName); return; }
           this._deleteLoadpointPlan(lpIdx)
-            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName } })); })
+            .then(() => { resetBadge(); window.dispatchEvent(new CustomEvent("evcc-plan-reset", { detail: { lpName, energy: null } })); })
             .catch(e => console.warn("[evcc-card] delete plan:", e));
         }
       });

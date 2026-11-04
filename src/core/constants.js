@@ -1,4 +1,13 @@
-export const EVCC_CARD_VERSION = "0.9.8";
+export const EVCC_CARD_VERSION = "0.10.0";
+
+// The oldest ha-evcc the card supports: the first release whose WebSocket data
+// API (evcc_intg/capabilities, sessions, plan_preview) also names the evcc index
+// of each loadpoint, which the plan preview and plans in kWh need. 2026.6.3
+// brought the API without that list. On an older ha-evcc each feature that
+// misses something says so in its place.
+export const HA_EVCC_MIN_VERSION = "2026.6.4";
+// The optimizer mode reads evcc's optimizer result through evcc_intg/optimizer.
+export const HA_EVCC_OPTIMIZER_VERSION = "2026.10.1";
 
 export const FEATURES = [
   { suffix: "mode",                domain: "select",        type: "mode",          lp: true,  core: true },
@@ -163,15 +172,12 @@ export const VEHICLE_SESSION_FEATURES = [
 // versions need when PV is hidden but a dynamic tariff exists (Mode.vue).
 export const SMART_MODE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12,6A6,6 0 0,1 18,12C18,14.22 16.79,16.16 15,17.2V19A1,1 0 0,1 14,20H10A1,1 0 0,1 9,19V17.2C7.21,16.16 6,14.22 6,12A6,6 0 0,1 12,6M14,21V22A1,1 0 0,1 13,23H11A1,1 0 0,1 10,22V21H14M20,11H23V13H20V11M1,11H4V13H1V11M13,1V4H11V1H13M4.92,3.5L7.05,5.64L5.63,7.05L3.5,4.93L4.92,3.5M16.95,5.63L19.07,3.5L20.5,4.93L18.37,7.05L16.95,5.63Z"/></svg>`;
 
-// `stats_period` exists in two vocabularies. The current one, which the editor
-// writes and the README documents: month | year | total | none. And the legacy
-// one from before the sessions stats path, still valid in existing YAML:
-// 30d | 365d | thisYear | total.
-//
-// Everything is normalised to the current vocabulary here, in one place, so the
-// two stats paths cannot drift apart again. The fallback is the caller's,
-// because the defaults differ: the stats mode opens on the most recent month,
-// the compact footer under site/grid/flow summarises everything.
+// `stats_period`: month | year | total | none, as the editor writes it and the
+// README documents it. Dashboards from before the sessions statistics may
+// still carry 30d | 365d | thisYear; they are accepted and land on the month
+// or the year, so an existing card keeps working. The fallback is the
+// caller's, because the defaults differ: the stats mode opens on the most
+// recent month, the compact footer under site/grid/flow summarises everything.
 const STATS_PERIOD_ALIASES = {
   month: "month", "30d": "month",
   year:  "year",  "365d": "year", thisYear: "year",
@@ -181,21 +187,6 @@ const STATS_PERIOD_ALIASES = {
 
 export function normalizeStatsPeriod(value, fallback = "total") {
   return STATS_PERIOD_ALIASES[value] ?? fallback;
-}
-
-// How a normalised period falls back onto the legacy entity/recorder path,
-// which has periods of its own. A configured legacy value is passed through
-// untouched instead (365d is "the last 365 days", not the calendar year), so
-// existing dashboards keep exactly the view they had.
-export const STATS_PERIOD_LEGACY_VALUES = ["30d", "365d", "thisYear", "total"];
-export const STATS_PERIOD_TO_LEGACY = { month: "30d", year: "thisYear", total: "total", none: "total" };
-
-// The legacy period a configured value ends up on. Used by the stats mode and
-// by the compact footer, so both reach the same stat_* entities.
-export function legacyStatsPeriod(value, fallback = "total") {
-  return STATS_PERIOD_LEGACY_VALUES.includes(value)
-    ? value
-    : STATS_PERIOD_TO_LEGACY[normalizeStatsPeriod(value, fallback)];
 }
 
 // Fallback height per mode in Home Assistant's units (one unit is 50 px), used
@@ -212,9 +203,10 @@ export const CARD_SIZES = {
   site:        3,
   flow:        6,
   grid:        7,
-  site2:       7,   // legacy alias of grid
   stats:      10,
   battery:     8,
+  optimizer:  12,
+  forecast:    8,
   vehicle:     8,
   debug:      20,
 };
@@ -222,18 +214,19 @@ export const CARD_SIZES = {
 // The expandable detail table under the flow bar (`site_details`), and the
 // statistics footer (`stats_period: none` removes it). Both measured at 420 px.
 export const CARD_SIZE_DETAILS = { site: 8, flow: 6 };
-export const CARD_SIZE_FOOTER  = { site: 1, flow: 1, grid: 1, site2: 1 };
+export const CARD_SIZE_FOOTER  = { site: 1, flow: 1, grid: 1 };
 
 // Every mode the card renders, and the values the other enumerated options take.
 // setConfig() rejects anything outside these lists. The modes are spelled out
 // rather than read off CARD_SIZES: a mode is a view and a _render branch, the
-// height table is an estimate that may or may not know it. `site2` is the
-// former name of `grid` and stays valid so dashboards carrying it keep working.
+// height table is an estimate that may or may not know it.
 export const CARD_MODES = [
   "loadpoint", "compact", "plan", "repeatplan", "priority",
-  "site", "flow", "grid", "site2", "stats", "battery", "vehicle", "debug",
+  "site", "flow", "grid", "stats", "battery", "optimizer", "forecast", "vehicle", "debug",
 ];
 export const CARD_SIZE_OPTIONS        = ["small", "medium", "large"];
+// What the forecast mode shows (`sections`), in the order it draws them.
+export const FORECAST_SECTIONS        = ["solar", "price", "co2"];
 export const DISABLED_LOADPOINT_MODES = ["hide", "dim", "show"];
 export const STATS_PERIOD_OPTIONS     = Object.keys(STATS_PERIOD_ALIASES);
 
@@ -247,8 +240,8 @@ export function loadpointOption(config, key, lpName) {
 }
 
 // The modes that show one loadpoint per card. Like the vehicle mode, a card
-// names its loadpoint with `loadpoint`; a list in `loadpoints` from before
-// still draws every loadpoint in it.
+// names its loadpoint with `loadpoint`; `loadpoints` with a single name from
+// before still works, a list of several is rejected in validateCardConfig().
 export const SINGLE_LOADPOINT_MODES = ["loadpoint", "compact", "plan"];
 
 // The loadpoints a card is limited to, as a list, or null when it is not set:
@@ -263,10 +256,10 @@ export function loadpointFilter(config) {
   return Array.isArray(raw) ? raw : [raw];
 }
 
-// The vehicles a `repeatplan` card is limited to, as a list, or null when it
-// is not set: `vehicle` (one, like the vehicle mode) or the list
-// `repeating_plan_vehicles` from before (a single name is shorthand for a list
-// of one). Compared without case by the readers.
+// The vehicle a `repeatplan` card is limited to, as a list of one, or null
+// when it is not set: `vehicle` (like the vehicle mode) or
+// `repeating_plan_vehicles` from before with a single name; a list of several
+// is rejected in validateCardConfig(). Compared without case by the readers.
 export function repeatPlanFilter(config) {
   const one = config?.vehicle;
   if (typeof one === "string" && one.trim()) return [one.trim()];
@@ -318,6 +311,9 @@ export function validateCardConfig(config) {
       throw new Error(`evcc-card: ${key} "${c[key]}" is not valid. Use one of: ${valid.join(", ")}`);
     }
   };
+  // `site2`, the former name of `grid`, went away in 0.10.0; the message says
+  // what to write instead of listing every mode.
+  if (c.mode === "site2") throw new Error("evcc-card: mode site2 is gone. Use mode: grid, the card looks the same");
   oneOf("mode",                CARD_MODES);
   oneOf("size",                CARD_SIZE_OPTIONS);
   oneOf("disabled_loadpoints", DISABLED_LOADPOINT_MODES);
@@ -331,6 +327,12 @@ export function validateCardConfig(config) {
     }
   }
 
+  if (c.sections !== undefined && c.sections !== null) {
+    const list = Array.isArray(c.sections) ? c.sections : [c.sections];
+    const bad  = list.filter(s => !FORECAST_SECTIONS.includes(s));
+    if (bad.length) throw new Error(`evcc-card: sections "${bad.join(", ")}" is not valid. Use any of: ${FORECAST_SECTIONS.join(", ")}`);
+  }
+
   if (c.loadpoint !== undefined && c.loadpoint !== null) {
     if (typeof c.loadpoint !== "string" || !c.loadpoint.trim()) throw new Error("evcc-card: loadpoint has to be the name of one loadpoint");
     if (c.loadpoints !== undefined && c.loadpoints !== null) throw new Error("evcc-card: use loadpoint for one loadpoint or loadpoints for a list, not both");
@@ -338,6 +340,12 @@ export function validateCardConfig(config) {
   const list = loadpointFilter(c);
   if (list && (!list.length || list.some(lp => typeof lp !== "string" || !lp.trim()))) {
     throw new Error("evcc-card: loadpoints has to be a loadpoint name or a list of names");
+  }
+  // One loadpoint per loadpoint, compact or plan card since 0.10.0 (`mode`
+  // defaults to loadpoint). Said like the vehicle mode says it.
+  const mode = c.mode || "loadpoint";
+  if (SINGLE_LOADPOINT_MODES.includes(mode) && list && list.length > 1) {
+    throw new Error(`evcc-card: mode ${mode} shows one charge point. Use loadpoint: ${list[0]} and a card per charge point instead of loadpoints: [${list.join(", ")}]`);
   }
   for (const key of ["no_plan", "no_pv"]) {
     const v = c[key];
@@ -358,6 +366,10 @@ export function validateCardConfig(config) {
   }
   if (c.vehicle !== undefined && c.vehicle !== null && c.repeating_plan_vehicles !== undefined && c.repeating_plan_vehicles !== null) {
     throw new Error("evcc-card: use vehicle for one vehicle or repeating_plan_vehicles for a list, not both");
+  }
+  const rplan = repeatPlanFilter(c);
+  if (mode === "repeatplan" && rplan && rplan.length > 1) {
+    throw new Error(`evcc-card: mode repeatplan shows one vehicle. Use vehicle: ${rplan[0]} and a card per vehicle instead of repeating_plan_vehicles: [${rplan.join(", ")}]`);
   }
   // The mode showed a block per vehicle at first. It shows one, so a list of
   // several says something the card no longer does, and saying so is better
@@ -475,6 +487,8 @@ export const SLIDER_STEP_KEYS = [
 //   hide:   the hide_settings key that drops the control, and the triangle with it
 //   needs:  the control only exists next to this entity, enabled or disabled
 //   energy: only while the vehicle charges by energy instead of SoC
+//   plan:   the target of a charge plan in kWh: only while the plan block plans
+//           in kWh, also in the plan mode, never with `no_plan`
 //   what:   translation key naming what the card is missing
 //   vehicle: a sensor of a vehicle, not of a loadpoint; its triangle sits in the
 //            header of the vehicle mode, and only for a vehicle without the
@@ -493,6 +507,8 @@ export const DISABLED_NEEDED = [
   // Site level, only while evcc's optimizer delivers a forecast: the battery mode recomputes it through it.
   { domain: "button", suffix: "optimize",                     site: true, optimizer: true,                          what: "disabledWhatOptimize" },
   { domain: "number", suffix: "limit_energy",                 hide: "limit_soc",                    energy: true,                                   what: "disabledWhatLimitEnergy" },
+  // The plan block reads the kWh target of a saved plan from it (#207).
+  { domain: "sensor", suffix: "plan_energy",                  plan: true,                                                                           what: "disabledWhatPlanEnergy" },
   { domain: "sensor", suffix: "phase_action",                 needs: "select.phases_configured",                                              what: "disabledWhatPhaseAction" },
   { domain: "sensor", suffix: "charge_currents_0",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
   { domain: "sensor", suffix: "charge_currents_1",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },

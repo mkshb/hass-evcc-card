@@ -1,5 +1,5 @@
 import { detectIntegration, discoverEntities, installedPrefixes, selectLoadpoints, partitionDisabledLoadpoints, isLoadpointDisabled } from "./core/entity-discovery.js";
-import { CARD_SIZES, CARD_SIZE_DETAILS, CARD_SIZE_FOOTER, RENDER_ATTRS, normalizeStatsPeriod, legacyStatsPeriod, validateCardConfig, loadpointFilter } from "./core/constants.js";
+import { CARD_SIZES, CARD_SIZE_DETAILS, CARD_SIZE_FOOTER, RENDER_ATTRS, SINGLE_LOADPOINT_MODES, normalizeStatsPeriod, validateCardConfig, loadpointFilter } from "./core/constants.js";
 import { stateVal, unitStr } from "./utils/state.js";
 import { escHtml } from "./utils/html.js";
 import { morphInto } from "./utils/morph.js";
@@ -16,9 +16,10 @@ import { priorityView } from "./views/priority-view.js";
 import { siteView } from "./views/site-view.js";
 import { flowView } from "./views/flow-view.js";
 import { gridView } from "./views/grid-view.js";
-import { statisticsLegacy } from "./views/statistics-legacy.js";
 import { statisticsView } from "./views/statistics-view.js";
 import { batteryView } from "./views/battery-view.js";
+import { optimizerView } from "./views/optimizer-view.js";
+import { forecastView } from "./views/forecast-view.js";
 import { vehicleView } from "./views/vehicle-view.js";
 import { debugView } from "./views/debug-view.js";
 import { listeners } from "./listeners.js";
@@ -47,9 +48,6 @@ export class EvccCard extends HTMLElement {
     this._planState     = {};
     this._planPreviewDebounce = {};
     this._tabState      = {};
-    this._statsPeriod   = "total";
-    this._chartCache     = {};
-    this._chartCacheTime = {};
     this._translations  = sharedTranslations();
     this._translationsReady = false;
 
@@ -81,8 +79,15 @@ export class EvccCard extends HTMLElement {
     this._wsCache     = {};     // cacheKey -> { ts, data }
     this._wsInflight  = {};     // cacheKey -> Promise (de-dup concurrent fetches)
 
+    // The kWh target each loadpoint's plan was last saved with from a card on
+    // this page, kept while ha-evcc's plan_energy sensor is off (#207).
+    this._planEnergySent = {};
     this._onPlanReset = (e) => {
       const lpName = e.detail?.lpName;
+      if (lpName && e.detail && "energy" in e.detail) {
+        if (e.detail.energy > 0) this._planEnergySent[lpName] = e.detail.energy;
+        else delete this._planEnergySent[lpName];
+      }
       setTimeout(() => {
         if (lpName) {
           delete this._planState[lpName];
@@ -343,26 +348,12 @@ export class EvccCard extends HTMLElement {
   _estimatedCardSize() {
     const mode = this._config?.mode || "loadpoint";
     let rows = CARD_SIZES[mode] ?? CARD_SIZES.loadpoint;
-    if (mode === "loadpoint" || mode === "compact") rows *= this._sizedLoadpointCount();
     if (mode === "battery" && this._config?.hide_soc_chart === true) rows -= 3;
     if (this._config?.site_details !== "collapsed") rows += CARD_SIZE_DETAILS[mode] ?? 0;
     if (normalizeStatsPeriod(this._config?.stats_period, "total") !== "none") {
       rows += CARD_SIZE_FOOTER[mode] ?? 0;
     }
     return Math.max(1, rows);
-  }
-
-  // How many loadpoints the card would draw: the discovered ones narrowed by the
-  // `loadpoints` filter. Nothing is discovered before the first render, so a
-  // configured filter still yields a count there and everything else falls back
-  // to one loadpoint rather than to zero.
-  _sizedLoadpointCount() {
-    const filter = loadpointFilter(this._config);
-    const found  = this._cachedEntities?.loadpoints || {};
-    const n = Object.keys(found).length
-      ? Object.keys(selectLoadpoints(found, this._config)).length
-      : (filter ? filter.length : 0);
-    return Math.max(1, n);
   }
 
   // Width only, on purpose. A cell of the sections grid is 56 px high with an
@@ -405,17 +396,11 @@ export class EvccCard extends HTMLElement {
     this._config = config || {};
     this._debugReturn = null;
     this._syncIntegrationInstance();
-    // Both stats paths are fed from the same normalised value, so the current
-    // vocabulary (month/year/total/none) and the legacy one (30d/365d/thisYear)
-    // steer them the same way. The stats mode opens on the most recent month
-    // when nothing is configured; `none` only hides the footer, so the full view
-    // shows that default too.
-    const rawPeriod  = config?.stats_period;
-    const scope      = normalizeStatsPeriod(rawPeriod, "month");
+    // The stats mode opens on the most recent month when nothing is
+    // configured; `none` only hides the footer, so the full view shows that
+    // default too. 30d/365d/thisYear from before land on month or year.
+    const scope      = normalizeStatsPeriod(config?.stats_period, "month");
     this._statsScope = scope === "none" ? "month" : scope;
-    // The legacy path keeps a configured legacy value exactly as it is, and
-    // defaults to "total" rather than to the stats mode's most recent month.
-    this._statsPeriod = legacyStatsPeriod(rawPeriod, "total");
     if (this._statsMetric == null) this._statsMetric = "energy"; // energy | cost | co2
     if (this._statsGroup  == null) this._statsGroup  = "vehicle"; // vehicle | loadpoint
 
@@ -507,9 +492,9 @@ export class EvccCard extends HTMLElement {
     // compared against: a loadpoint card is not redrawn because the PV power
     // moved. Every read goes through hass.states[id], so a recording proxy on
     // the states table catches them all, including the ones views make past
-    // the discovery (tariff sensors, clear buttons, stat_* entities) and the
-    // ones that find nothing. A render that bailed out early (translations
-    // still loading) leaves the previous set in place.
+    // the discovery (tariff sensors, clear buttons) and the ones that find
+    // nothing. A render that bailed out early (translations still loading)
+    // leaves the previous set in place.
     const real  = this._hass;
     const reads = new Set();
     // The same proxy hands out the value the card just wrote for an entity HA
@@ -560,7 +545,16 @@ export class EvccCard extends HTMLElement {
     }
     const { loadpoints, site, meters } = this._cachedEntities;
 
-    const visible = selectLoadpoints(loadpoints, this._config);
+    let visible = selectLoadpoints(loadpoints, this._config);
+    // The loadpoint, compact and plan modes show one loadpoint. Without
+    // `loadpoint` the card takes the only one evcc has enabled; with several
+    // it asks to pick one, like the vehicle mode.
+    let pickOne = false;
+    if (SINGLE_LOADPOINT_MODES.includes(this._config.mode || "loadpoint") && !loadpointFilter(this._config)) {
+      const enabled = Object.keys(visible).filter(lp => !isLoadpointDisabled(this._hass, visible[lp]));
+      if (enabled.length > 1) pickOne = true;
+      else if (enabled.length === 1) visible = { [enabled[0]]: visible[enabled[0]] };
+    }
 
     // disabled_loadpoints: hide (default) | dim | show - how to treat
     // loadpoints that are disabled in the evcc config (ha-evcc 2026.8.8+).
@@ -586,16 +580,22 @@ export class EvccCard extends HTMLElement {
             ? this._renderDebugBlock(loadpoints, site, meters)
             : this._config.mode === "battery"
             ? this._renderBatteryBlock(site)
+            : this._config.mode === "optimizer"
+            ? this._renderOptimizerBlock(site)
+            : this._config.mode === "forecast"
+            ? this._renderForecastBlock(site, loadpoints)
             : this._config.mode === "vehicle"
             ? this._renderVehicleMode(lpEnabled)
             : this._config.mode === "site"
               ? this._renderSiteBlock(site, loadpoints)
               : this._config.mode === "flow"
               ? this._renderFlowBlock(site, loadpoints)
-              : (this._config.mode === "grid" || this._config.mode === "site2")
+              : this._config.mode === "grid"
               ? this._renderSiteBlock2(site, loadpoints)
               : this._config.mode === "stats"
               ? this._renderStatsBlock()
+              : pickOne
+              ? this._renderPickLoadpoint(loadpoints)
               : this._config.mode === "plan"
                 ? this._renderPlanMode(lpEnabled)
                 : this._config.mode === "repeatplan"
@@ -686,7 +686,7 @@ export class EvccCard extends HTMLElement {
 
 // Mode views, components and shared behaviour are plain objects of methods
 // (no framework): mix them into the prototype, refusing silent overrides.
-const mixins = [actions, evccApi, loadpointView, socControl, disabledEntities, planningView, priorityView, siteView, flowView, gridView, statisticsLegacy, statisticsView, batteryView, vehicleView, debugView, listeners, styles];
+const mixins = [actions, evccApi, loadpointView, socControl, disabledEntities, planningView, priorityView, siteView, flowView, gridView, statisticsView, batteryView, optimizerView, forecastView, vehicleView, debugView, listeners, styles];
 for (const m of mixins) {
   for (const key of Object.keys(m)) {
     if (key in EvccCard.prototype) throw new Error(`evcc-card: duplicate method ${key}`);

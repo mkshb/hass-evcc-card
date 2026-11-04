@@ -27,6 +27,19 @@
 //            (button.evcc_optimize)
 //   optimizer: true  ha-evcc offers evcc_intg/optimizer and evcc's optimizer reports a
 //            battery forecast (generated from now on, like the recorder history)
+//   optimizer: "plan"  instead, the full result of a real optimizer run
+//            (test/fixtures/ws/optimizer.json, recorded 2026-11-03 20:45 Europe/Berlin,
+//            fixed price, a home battery and a vehicle that charges twice);
+//            the test sets the clock to that time. Added after a comma:
+//            "price" makes the grid price vary over the day ("negative" with it:
+//            below zero from 12 to 14 h), "goal" gives the vehicle a target of
+//            80 % at 07:00. "off": the optimizer is off
+//            (evopt and batteryForecast null).
+//   dynamic: true  the grid price varies over the day as on a dynamic tariff
+//            (cheap at noon and at night, dear in the evening) and is known until
+//            the end of tomorrow, as such a tariff publishes it
+//   capsVersion: "2026.6.3"  the version evcc_intg/capabilities reports; 2026.6.3
+//            also leaves out the loadpoint list, as that release did
 // A battery SoC by time of day: charges from 9 to 14 h, discharges overnight.
 function mockSoc(t) {
   const h = new Date(t).getHours() + new Date(t).getMinutes() / 60;
@@ -34,7 +47,7 @@ function mockSoc(t) {
   return Math.max(5, Math.min(100, Math.round(v)));
 }
 
-export async function createMockHass({ batteryExt = false, optimizer = false, language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, admin = true, drop = [], vehicleDevice = true, optimize = false } = {}) {
+export async function createMockHass({ batteryExt = false, optimizer = false, language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, admin = true, drop = [], vehicleDevice = true, optimize = false, capsVersion = null, dynamic = false } = {}) {
   const base = new URL("./fixtures/", import.meta.url);
   const json = (p) => fetch(new URL(p, base)).then(r => r.ok ? r.json() : Promise.reject(new Error(`fixture ${p}: ${r.status}`)));
 
@@ -130,8 +143,11 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
     return out;
   };
 
+  const optVariants = typeof optimizer === "string" ? optimizer.split(",") : [];
   const fx = ws ? {
-    capabilities: await json("ws/capabilities.json").then(c => optimizer ? { ...c, commands: [...c.commands, "optimizer"] } : c),
+    capabilities: await json("ws/capabilities.json").then(c => optimizer ? { ...c, commands: [...c.commands, "optimizer"] } : c)
+      // An older ha-evcc by its version; 2026.6.3 also lacks the loadpoint list.
+      .then(c => { if (!capsVersion) return c; const o = { ...c, version: capsVersion }; if (capsVersion === "2026.6.3") delete o.loadpoints; return o; }),
     sessions:     await json("ws/sessions.json"),
     forecast: {
       grid:    await json("ws/forecast_grid.json"),
@@ -139,7 +155,23 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
       planner: await json("ws/forecast_planner.json"),
     },
     plan_preview: await json("ws/plan_preview.json"),
+    optimizer:    optVariants.includes("plan") ? await json("ws/optimizer.json") : null,
   } : null;
+  if (fx?.optimizer) {
+    const ev = fx.optimizer.evopt, ts = ev.details.timestamp;
+    if (optVariants.includes("price")) {
+      // Cheap at noon, dear in the evening; per Wh, as evcc sends it.
+      ev.req.time_series.p_N = ts.map(t => {
+        const h = new Date(t).getHours();
+        if (optVariants.includes("negative") && h >= 12 && h < 14) return -0.05 / 1000;
+        return (h >= 11 && h < 15 ? 0.14 : h >= 17 && h < 21 ? 0.34 : 0.24) / 1000;
+      });
+    }
+    if (optVariants.includes("goal")) {
+      const k = ts.findIndex(t => t.startsWith("2026-11-04T06:45"));
+      ev.req.batteries[0].s_goal = ts.map((_, j) => j === k ? 55200 : 0);
+    }
+  }
 
   // A feed-in tariff for the grid discharge view, varying over the day (the
   // grid fixture is a flat price): highest in the evening, lowest at noon.
@@ -147,6 +179,18 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
     const h = new Date(r.start).getHours();
     return { ...r, value: Math.round((0.08 + 0.05 * Math.cos(((h - 19) / 24) * 2 * Math.PI)) * 1000) / 1000 };
   }) };
+
+  // A dynamic tariff: a price per quarter hour by time of day, published until
+  // the end of tomorrow.
+  const dynamicPrice = (obj) => {
+    const end = new Date(); end.setHours(0, 0, 0, 0); end.setDate(end.getDate() + 2);
+    const at = (iso) => {
+      const d = new Date(iso), h = d.getHours();
+      const base = h < 5 ? 0.24 : h < 8 ? 0.29 : h < 11 ? 0.26 : h < 15 ? 0.17 : h < 17 ? 0.23 : h < 21 ? 0.36 : 0.27;
+      return Math.round((base + 0.004 * (d.getMinutes() / 15)) * 10000) / 10000;
+    };
+    return { ...obj, rates: obj.rates.filter(r => new Date(r.start) < end).map(r => ({ ...r, value: at(r.start) })) };
+  };
 
   // Every name the integration passes through from evcc, replaced in one go.
   if (fx && wsName) {
@@ -200,8 +244,10 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
           return fx ? Promise.resolve(fx.capabilities) : Promise.reject(new Error("mock: WebSocket data API not available"));
         case "evcc_intg/forecast": {
           const f = fx?.forecast[msg.kind];
-          // The feed-in tariff is a price in every setup, never CO2.
-          return f ? Promise.resolve(msg.kind === "feedin" ? rebase(f) : asCo2(rebase(f))) : Promise.reject(new Error(`mock: no forecast fixture for kind ${msg.kind}`));
+          if (f && dynamic && msg.kind === "grid") return Promise.resolve(dynamicPrice(rebase(f)));
+          // Only the planner follows smartCostType, as in ha-evcc: grid and
+          // feed-in stay the price tariffs, solar the solar forecast.
+          return f ? Promise.resolve(msg.kind === "planner" ? asCo2(rebase(f)) : rebase(f)) : Promise.reject(new Error(`mock: no forecast fixture for kind ${msg.kind}`));
         }
         case "evcc_intg/sessions": {
           if (!fx) return Promise.reject(new Error("mock: no sessions"));
@@ -260,6 +306,8 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
         // slots over 48 h; plus the highest/lowest evcc derives from it.
         case "evcc_intg/optimizer": {
           if (!fx || !optimizer) return Promise.reject(new Error("mock: no optimizer"));
+          if (optVariants.includes("off")) return Promise.resolve({ evopt: null, batteryForecast: null });
+          if (fx.optimizer) return Promise.resolve(JSON.parse(JSON.stringify(fx.optimizer)));
           const now = Date.now();
           const ts = [now];
           for (let t = Math.ceil((now + 1) / 900000) * 900000; t < now + 48 * 3600000; t += 900000) ts.push(t);
@@ -285,34 +333,6 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
             },
             batteryForecast: { highest: point(hi, home[hi] >= capWh), lowest: point(lo, home[lo] <= capWh * 0.05) },
           });
-        }
-
-        case "recorder/statistics_during_period": {
-          const monthly = msg.period !== "day";
-          const now = new Date();
-          const cursor = new Date(msg.start_time);
-          if (monthly) cursor.setDate(1);
-          cursor.setHours(0, 0, 0, 0);
-          const starts = [];
-          while (cursor <= now && starts.length < 400) {
-            starts.push(new Date(cursor));
-            if (monthly) cursor.setMonth(cursor.getMonth() + 1);
-            else cursor.setDate(cursor.getDate() + 1);
-          }
-          const out = {};
-          for (const id of msg.statistic_ids ?? []) {
-            // The solar template sensor tracks a share of the same energy, so it
-            // rises more slowly and stays below the total.
-            const solar = id.includes("solar");
-            const step  = monthly ? 90 : 8;
-            let sum = solar ? 400 : 650;   // meter reading before the window opens
-            out[id] = starts.map((start, i) => {
-              sum += (step + (i % 4) * (monthly ? 15 : 2)) * (solar ? 0.6 : 1);
-              const next = starts[i + 1] ?? now;
-              return { start: start.toISOString(), end: next.toISOString(), sum: Math.round(sum * 10) / 10 };
-            });
-          }
-          return Promise.resolve(out);
         }
 
         // Enabling an entity: HA answers with the entry and, for an integration

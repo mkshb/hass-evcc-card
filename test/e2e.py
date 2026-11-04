@@ -146,13 +146,17 @@ def ha_state(page, entity_id):
 
 
 def dashboard_config():
-    """One view per mode. The vehicle mode shows one vehicle per card, so its view
-    carries a card per demo vehicle instead of one card for all of them. The stats
-    view has a second card that leaves the heat pump out of the statistics."""
+    """One view per mode. The vehicle mode shows one vehicle per card, and the
+    loadpoint, compact and plan modes one loadpoint per card, so their views
+    carry a card per demo vehicle or loadpoint. The stats view has a second card
+    that leaves the heat pump out of the statistics."""
     slugs = sorted(slug for _, slug in demo_vehicles().values())
+    lps   = [slug for _, _, slug in demo_loadpoints()]
     def cards(mode):
         if mode == "vehicle" and slugs:
             return [{"type": "custom:evcc-card", "mode": "vehicle", "prefix": PREFIX, "vehicle": slug} for slug in slugs]
+        if mode in ("loadpoint", "compact", "plan"):
+            return [{"type": "custom:evcc-card", "mode": mode, "prefix": PREFIX, "loadpoint": slug} for slug in lps]
         if mode == "stats":
             return [{"type": "custom:evcc-card", "mode": "stats", "prefix": PREFIX},
                     {"type": "custom:evcc-card", "mode": "stats", "prefix": PREFIX, "stats_exclude_loadpoints": [heat_pump_slug()]}]
@@ -184,7 +188,8 @@ def open_view(page, mode):
 
 
 def card_shadow_text(page):
-    return page.locator("evcc-card").first.evaluate("el => el.shadowRoot?.textContent || ''")
+    """The text of every card of the view: the loadpoint modes carry one card per loadpoint."""
+    return page.locator("evcc-card").evaluate_all("els => els.map(el => el.shadowRoot?.textContent || '').join('\\n')")
 
 
 ERRORS = []   # page errors and card-related console errors, cleared by every check
@@ -227,8 +232,10 @@ def smoke(page, t):
             detail += f", rows={rows}, named={names}"
         elif mode in ("plan", "priority"):
             names = named(text)
-            ok = ok and len(names) >= 1
-            detail += f", named={names}"
+            # A card that asks to pick a loadpoint lists them all and would pass.
+            asks  = page.locator("evcc-card .empty").count()
+            ok = ok and len(names) >= 1 and (mode != "plan" or asks == 0)
+            detail += f", named={names}" + (f", asks to pick={asks}" if mode == "plan" else "")
         if mode == "debug":
             ok = ok and PREFIX in text
             detail += f", prefix shown={PREFIX in text}"
@@ -248,8 +255,8 @@ def roundtrip(page, t):
     open_view(page, "loadpoint")
     btn = lambda value: page.locator(f'evcc-card button.mode-btn[data-entity="{entity}"][data-value="{value}"]')
     # document.querySelector stops at HA's shadow roots; the locator pierces them
-    active = lambda: page.locator("evcc-card").first.evaluate(
-        "(el, e) => { const b = el.shadowRoot?.querySelector(`button.mode-btn.active[data-entity=\"${e}\"]`); return b ? b.dataset.value : null; }", entity)
+    active = lambda: page.locator("evcc-card").evaluate_all(
+        "(els, e) => { for (const el of els) { const b = el.shadowRoot?.querySelector(`button.mode-btn.active[data-entity=\"${e}\"]`); if (b) return b.dataset.value; } return null; }", entity)
 
     t.check(btn("now").count() == 1, "the Garage mode buttons are rendered", f"{btn('now').count()} button(s) for {entity}")
     start = wait_for(lambda: active() == "off" and "off", timeout=30)
@@ -285,10 +292,9 @@ def solar_share(page, t):
         return
     reset_demo()
     open_view(page, "loadpoint")
-    card  = page.locator("evcc-card").first
     input = page.locator(f'evcc-card input[type="range"][data-entity="{entity}"]')
-    label = lambda: card.evaluate(
-        "(el, e) => el.shadowRoot?.querySelector(`input[data-entity=\"${e}\"]`)?.nextElementSibling?.textContent.trim() ?? null", entity)
+    label = lambda: page.locator("evcc-card").evaluate_all(
+        "(els, e) => { for (const el of els) { const i = el.shadowRoot?.querySelector(`input[data-entity=\"${e}\"]`); if (i) return i.nextElementSibling?.textContent.trim() ?? null; } return null; }", entity)
 
     page.locator(f'evcc-card [data-lp-current-toggle="{slug}"]').click()
     t.check(input.count() == 1, "the Garage has the solar share slider", f"{input.count()} slider(s) for {entity}")
@@ -531,9 +537,10 @@ def vehicle_limit(page, t):
     from datetime import datetime, timedelta, timezone
     reset_demo()
     open_view(page, "loadpoint")
-    probe = lambda: page.locator("evcc-card").first.evaluate("""(el, prefix) => {
+    # One card per loadpoint: every card of the view is read.
+    probe = lambda: page.locator("evcc-card").evaluate_all("""(els, prefix) => {
         const out = {};
-        for (const lp of el.shadowRoot?.querySelectorAll('.loadpoint') || []) {
+        for (const lp of els.flatMap(el => [...(el.shadowRoot?.querySelectorAll('.loadpoint') || [])])) {
           const mode = lp.querySelector('button.mode-btn')?.dataset.entity || '';
           const slug = mode.startsWith('select.' + prefix) ? mode.slice(7 + prefix.length, -5) : null;
           if (!slug) continue;
@@ -805,10 +812,49 @@ def form_pick(page, name, value):
         sel.dispatchEvent(new CustomEvent('value-changed', {{ detail: {{ value }}, bubbles: true, composed: true }}));
         return true; }}""", [name, value])
 
+def forecast(page, t):
+    """The forecast against evcc's own tariff: the price now, the lowest and the
+    highest price ahead with their time, read the way the card reads the rates
+    (quarter hours from the running one, up to the first gap), and limit lines
+    only for the limits evcc has set."""
+    t.group("e2e forecast - the card's prices against evcc's tariff")
+    import datetime, zoneinfo
+    tz = zoneinfo.ZoneInfo("Europe/Berlin")
+    res = evcc("tariff/grid")
+    rates = (res.get("result", res) or {}).get("rates") or []
+    rates = [(datetime.datetime.fromisoformat(r["start"]), datetime.datetime.fromisoformat(r["end"]), r["value"]) for r in rates]
+    open_view(page, "forecast")
+    now = datetime.datetime.now(tz)
+    t0 = now.replace(minute=now.minute - now.minute % 15, second=0, microsecond=0)
+    slots = []
+    t_ = t0
+    while len(slots) < 4 * 96:
+        v = next((val for s0, e0, val in rates if s0 <= t_ < e0), None)
+        if v is None: break
+        slots.append((t_, v)); t_ += datetime.timedelta(minutes=15)
+    if not slots or max(v for _, v in slots) - min(v for _, v in slots) < 1e-6:
+        t.fail("evcc has a dynamic tariff ahead", f"{len(slots)} slots"); return
+    ct = lambda v: f"{v * 100:.1f}".replace(".", ",")
+    vals = [v for _, v in slots]
+    lo, hi = vals.index(min(vals)), vals.index(max(vals))
+    shadow = lambda sel: page.locator("evcc-card").evaluate(f"el => [...el.shadowRoot.querySelectorAll({json.dumps(sel)})].map(e => e.textContent.replace(/\\s+/g, ' ').trim())")
+    got_now = shadow(".fc-now")
+    t.check(got_now == [f"{ct(slots[0][1])}ct"], "the price now is evcc's current rate", f"card {got_now}, evcc {ct(slots[0][1])}")
+    stats = shadow(".fc-jump.batt-stat .batt-stat-val")
+    want = [f"{ct(slots[lo][1])} ct", slots[lo][0].strftime("%H:%M")], [f"{ct(slots[hi][1])} ct", slots[hi][0].strftime("%H:%M")]
+    ok = len(stats) == 2 and all(w[0] in g and g.endswith(w[1]) for g, w in zip(stats, want))
+    t.check(ok, "lowest and highest price ahead with their time", f"card {stats}, evcc {want}")
+    st = evcc_state()
+    smart = {lp.get("smartCostLimit") for lp in st["loadpoints"]} - {None}
+    lines = page.locator("evcc-card").evaluate("el => el.shadowRoot.querySelectorAll('line.fc-limit').length")
+    expected = len(smart) + (st.get("batteryGridChargeLimit") is not None)
+    t.check(lines == expected, "a limit line for each limit evcc has set", f"{lines} lines, evcc: smart {sorted(smart)}, battery {st.get('batteryGridChargeLimit')}")
+    t.check(not ERRORS, "no card errors", "; ".join(ERRORS)[:300])
+
 
 GROUPS = {"smoke": smoke, "roundtrip": roundtrip, "solar_share": solar_share,
           "vehicle": vehicle_view, "vehicle_switch": vehicle_switch, "charge_plan": charge_plan,
-          "vehicle_limit": vehicle_limit, "vehicle_pictures": vehicle_pictures, "editor": editor, "stats": stats}
+          "vehicle_limit": vehicle_limit, "vehicle_pictures": vehicle_pictures, "editor": editor, "stats": stats, "forecast": forecast}
 
 
 def main():

@@ -13,7 +13,7 @@ element itself (470 px wide) for each mode, plus the slider-input crop.
 import argparse, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from run import serve, open_card, settle, in_card, new_page, done, OUT, T, launch
+from run import serve, open_card, settle, in_card, new_page, done, OUT, OPT_TIME, FC_TIME, FC_LIMITS, T, launch
 
 WIDTH = 470
 LP = "openwb"     # the EV loadpoint; "wp" is a heating loadpoint and would double the height
@@ -28,6 +28,8 @@ SHOTS = {
     "grid":       {"mode": "grid"},
     "stats":      {"mode": "stats"},
     "battery":    {"mode": "battery"},
+    "optimizer":  {"mode": "optimizer"},
+    "forecast":   {"mode": "forecast"},
     "priority":   {"mode": "priority"},
     "repeatplan": {"mode": "repeatplan"},
     # The vehicle mode shows one vehicle per card, so the image has to name it;
@@ -49,10 +51,28 @@ PLAN = {"sensor.evcc_openwb_plan_projected_start": "2026-09-19T02:00:00+02:00",
 # highest and lowest), with a SoC that continues the mock's recorder curve.
 BATTERY = {"sensor.evcc_battery_soc": "83", "sensor.evcc_battery_0_soc": "83",
            "sensor.evcc_battery_power": "-2882", "sensor.evcc_battery_0_power": "-2882"}
-STATES = {"loadpoint": PLAN, "compact": PLAN, "vehicle": PLAN, "battery": BATTERY}
+STATES = {"loadpoint": PLAN, "compact": PLAN, "vehicle": PLAN, "battery": BATTERY, "forecast": FC_LIMITS}
 # name -> further open_card arguments.
+# The optimizer image shows the recorded plan (test/fixtures/ws/optimizer.json)
+# with the button that has evcc compute it again.
 EXTRA = {"battery": {"optimizer": True,
-                     "attrs": {"sensor.evcc_battery_0_soc": {"suggestion": {"action": "hold", "charge": 0, "discharge": 0, "actionable": True}}}}}
+                     "attrs": {"sensor.evcc_battery_0_soc": {"suggestion": {"action": "hold", "charge": 0, "discharge": 0, "actionable": True}}}},
+         "optimizer": {"optimizer": "plan", "battery_ext": True, "optimize": True},
+         # The forecast image: a dynamic tariff with the smart cost limit and
+         # the grid charge limit set.
+         "forecast": {"dynamic": True}}
+# name -> browser clock instead of the fixtures' one: the optimizer plan stands
+# at the time it was recorded.
+CLOCK = {"optimizer": OPT_TIME, "forecast": FC_TIME}
+# name -> script run on the card before the image. The optimizer image shows
+# tomorrow, a full day with solar charging, the vehicle's charge window and the
+# evening discharge, at 11:45 while the vehicle charges.
+SETUP = {"optimizer": """() => {
+  const c = window.__card;
+  c.shadowRoot.querySelector("button.opt-step[data-opt-step='1']").click();
+  c._optSel = c._optLast.m.ts.find(t => { const d = new Date(t); return d.getDate() === 4 && d.getHours() === 11 && d.getMinutes() === 45; });
+  c._lastRenderKey = null; c._render();
+}"""}
 
 
 def open_steady(page, port, **kw):
@@ -73,7 +93,11 @@ def union(*boxes):
 
 def shot_mode(browser, port, name, config, dark, out):
     page = new_page(browser, WIDTH + 50, 1600)
+    if name in CLOCK: page.clock.set_fixed_time(CLOCK[name])
     errors = open_steady(page, port, dark=dark, width=WIDTH, config=config, set=STATES.get(name), **EXTRA.get(name, {}))
+    if name in SETUP:
+        page.evaluate(SETUP[name])
+        settle(page)
     path = out / f"{name}-{'dark' if dark else 'light'}.png"
     page.locator(in_card("ha-card")).screenshot(path=str(path), animations="disabled")
     done(page)

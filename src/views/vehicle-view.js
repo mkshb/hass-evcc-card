@@ -542,7 +542,9 @@ export const vehicleView = {
     const active = ents.plan_active ? isOn(this._hass, ents.plan_active) : false;
     const energy = this._planKind(ents) === "energy";
     const goalId = energy ? ents.plan_energy : ents.effective_plan_soc;
-    const goal   = goalId ? parseFloat(stateVal(this._hass, goalId)) : NaN;
+    const read   = goalId ? parseFloat(stateVal(this._hass, goalId)) : NaN;
+    // The kWh target this card sent last while the plan_energy sensor is off (#207).
+    const goal   = read > 0 ? read : energy ? (this._planEnergySent[lp.lpName] ?? NaN) : NaN;
     const badge  = active ? `<span class="plan-badge active">${this._t("chargingByPlan")}</span>`
                  : when   ? `<span class="plan-badge planned">${this._t("planned")}</span>`
                  : `<span class="plan-badge">${this._t("noPlan")}</span>`;
