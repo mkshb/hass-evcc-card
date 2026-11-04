@@ -83,6 +83,15 @@ All charge points and site entities are **automatically discovered** via the HA 
 <a href="#optimizer"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/optimizer-light.png" width="200"></a>
 </td>
 </tr>
+<tr>
+<td align="center"><b>Forecast</b></td>
+</tr>
+<tr>
+<td>
+<a href="#forecast"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/forecast-dark.png" width="200"></a>
+<a href="#forecast"><img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/forecast-light.png" width="200"></a>
+</td>
+</tr>
 </table>
 
 ---
@@ -188,7 +197,7 @@ Adding an evcc entity to a dashboard offers the card straight away: the picker s
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `optimizer`, `site`, `flow`, `grid`, `stats`, `plan`, `repeatplan`, `priority`, `vehicle`, `debug` |
+| `mode` | `string` | `loadpoint` | Card mode: `loadpoint`, `compact`, `battery`, `optimizer`, `forecast`, `site`, `flow`, `grid`, `stats`, `plan`, `repeatplan`, `priority`, `vehicle`, `debug` |
 | `title` | `string` | *(auto)* | Replaces the default card header |
 | `loadpoint` | `string` | *(the only one)* | `loadpoint`, `compact` and `plan` mode: the charge point of the card, by name. One card shows one charge point, add a card for each further one. Can be left out when evcc has just one charge point, see [One charge point per card](#one-charge-point-per-card) |
 | `loadpoints` | `list` | *(all)* | `priority` mode: filter charge points by name |
@@ -434,6 +443,24 @@ mode: optimizer
 ```
 
 <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/optimizer-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/optimizer-light.png" width="400">
+
+---
+
+### `forecast`
+
+What the coming hours bring, to read off: when the grid is cheap and how much the sun delivers, for a dynamic tariff in particular.
+
+- **Header**: the grid price now, large, green in the cheapest third of the known prices and red in the dearest. Beside it the lowest and highest price ahead with their time, below it whether the price is cheap now and until when, or from when it turns cheap and how long until then. A tap on a time shows it in the chart
+- **Chart**: the solar forecast on top and the grid price below it on one time axis, a day per page, drawn like the chart of the `optimizer` mode. The price bars start at zero; the cheapest third is green. The smart cost limit of each charge point and the grid charge limit of the home battery are drawn as lines when they are set (a tap on one in the legend opens its entity). A rest of today shorter than twelve hours shares the page with tomorrow, so the prices published for tomorrow stand on the first page; a day the tariff has no prices for yet says so. When evcc optimizes for CO₂, a lane with its emission forecast follows under the price, the cleanest third green and the limits set in g/kWh as lines. Next to the solar forecast the energy of the days on the page. Hover, tap or the arrow keys pick a time slot; below the chart its solar power, grid price, CO₂ intensity and feed-in rate, and how long until then
+
+With a fixed price the card shows the price and the solar forecast only. The data comes from the ha-evcc WebSocket command `evcc_intg/forecast` (kinds `grid`, `feedin` and `solar`, the CO₂ forecast from `planner`, which ha-evcc passes on only while evcc optimizes for CO₂); the card renders again every minute and asks ha-evcc for the forecast every five minutes.
+
+```yaml
+type: custom:evcc-card
+mode: forecast
+```
+
+<img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/forecast-dark.png" width="400"> <img src="https://raw.githubusercontent.com/mkshb/hass-evcc-card/main/images/forecast-light.png" width="400">
 
 ---
 
