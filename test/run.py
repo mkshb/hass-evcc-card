@@ -4386,8 +4386,10 @@ def optimizer_mode(browser, port, t):
     t.check(page.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('.opt-line')].map(e => e.dataset.series)") == ["pv", "grid"], "solar and grid as lines")
 
     # The pointer and the arrow keys move the selection; a render keeps it.
+    # The pointer aims at the middle of the slot: WebKit moves the mouse in
+    # whole pixels, and a quarter hour is only a few pixels wide here.
     box = page.locator(in_card(".opt-chart")).bounding_box()
-    page.mouse.move(box["x"] + box["width"] * (26 + (12 * 3600 + 60) / 86400 * 370) / 400, box["y"] + 40)
+    page.mouse.move(box["x"] + box["width"] * (26 + (12 * 3600 + 450) / 86400 * 370) / 400, box["y"] + 40)
     t.check(text(page, ".opt-dt") == ["Mi 12:00 bis 12:15"], "the mouse over the chart picks its slot", str(text(page, ".opt-dt")))
     vals = text(page, ".opt-detail .opt-dv")
     t.check(vals == ["3,5 kW", "1,4 kW", "0 kW", "Laden mit PV · +2,1 kW · 67 %", "lädt nicht · 52 %"], "the values of that slot", str(vals))
