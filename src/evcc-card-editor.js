@@ -1,5 +1,5 @@
 import { HIDEABLE_SETTINGS, SLIDER_STEP_KEYS, SINGLE_LOADPOINT_MODES, vehicleSlug, isVehicleImage, isMediaSourceId,
-         loadpointFilter, loadpointOption, repeatPlanFilter, normalizeStatsPeriod } from "./core/constants.js";
+         loadpointFilter, loadpointOption, repeatPlanFilter, normalizeStatsPeriod, FORECAST_SECTIONS } from "./core/constants.js";
 import { detectIntegration, discoverEntities, discoverVehicles, selectVehicle, cardDisabledEntities, isLoadpointDisabled } from "./core/entity-discovery.js";
 import { enableEntity } from "./core/actions.js";
 import { disabledEntitiesHtml, disabledListCss, enableEntities } from "./components/disabled-entities.js";
@@ -703,6 +703,18 @@ export class EvccCardEditor extends HTMLElement {
                     label: this._t("editorNoPlan"), section: "content", write: v => v ? true : undefined });
     }
     if (mode === "battery") fields.push(flag("hide_soc_chart", { label: this._t("editorHideSocChart"), section: "content" }));
+    // What the forecast shows; all of it unless the list names less. A list
+    // with everything on it writes nothing, the default.
+    if (mode === "forecast") {
+      const raw   = c.sections;
+      const value = raw === undefined || raw === null ? [...FORECAST_SECTIONS]
+        : FORECAST_SECTIONS.filter(s => (Array.isArray(raw) ? raw : [raw]).includes(s));
+      const names = { solar: "optPv", price: "optLanePrice", co2: "fcLaneCo2" };
+      fields.push(many("sections", FORECAST_SECTIONS.map(s => ({ value: s, label: this._t(names[s]) })), value, {
+        label: this._t("editorForecastSectionsTitle"), helper: this._t("editorForecastSectionsHint"), section: "content",
+        write: v => (Array.isArray(v) && !FORECAST_SECTIONS.every(s => v.includes(s)) ? FORECAST_SECTIONS.filter(s => v.includes(s)) : undefined),
+      }));
+    }
     if (showChargeCurrent) {
       fields.push(pick("charge_current_settings", [
         tOpt("collapsed", "editorCollapsed"),

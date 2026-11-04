@@ -2042,6 +2042,17 @@ def editor(browser, port, t):
     t.check(last().get("stats_exclude_loadpoints") == ["wp"], "stats_exclude_loadpoints: checking a loadpoint writes it", json.dumps(last()))
     cb("stats_exclude_loadpoints", "wp").uncheck()
     t.check("stats_exclude_loadpoints" not in last(), "stats_exclude_loadpoints: emptied, the key goes", json.dumps(last()))
+
+    # sections of the forecast: all checked while unset, everything checked writes nothing
+    mount({"mode": "forecast"})
+    sec("content").locator("summary").first.click()
+    checked = page.evaluate("""() => [...document.querySelector("evcc-card-editor").shadowRoot.querySelectorAll('ha-form input[data-name="sections"]')]
+      .map(x => [x.value, x.checked])""")
+    t.check(checked == [["solar", True], ["price", True], ["co2", True]], "sections: unset, all three checked in drawing order", json.dumps(checked))
+    cb("sections", "co2").uncheck()
+    t.check(last().get("sections") == ["solar", "price"] and last().get("mode") == "forecast", "sections: unchecking CO₂ writes the rest", json.dumps(last()))
+    cb("sections", "co2").check()
+    t.check("sections" not in last(), "sections: all checked again, the key goes", json.dumps(last()))
     done(page)
 
     # --- stats_period: what the editor shows must be what the card does ----------
@@ -3181,6 +3192,8 @@ def setconfig(browser, port, t):
         ({"slider_steps": {"smart_cost_limit": "0.005"}}, "a slider step written as a string"),
         ({"slider_steps": {"limit_soc": "5 %"}}, "a slider step with its unit, read like the slider reads it"),
         ({"slider_steps": {"min_soc": None}}, "an empty slider step"),
+        ({"mode": "forecast", "sections": ["price", "solar"]}, "forecast sections as a list"),
+        ({"mode": "forecast", "sections": "price"}, "a single forecast section"),
     ]
     INVALID = [
         ({"mode": "quatsch"}, "mode", "an unknown mode"),
@@ -3190,6 +3203,7 @@ def setconfig(browser, port, t):
         ({"mode": "plan", "loadpoints": ["wp", "openwb"]}, "loadpoint: wp", "several loadpoints on a plan card, the first one suggested"),
         ({"mode": "repeatplan", "repeating_plan_vehicles": ["ex30", "id7"]}, "vehicle: ex30 and a card per vehicle", "several vehicles on a repeatplan card"),
         ({"size": "huge"}, "size", "an unknown size"),
+        ({"mode": "forecast", "sections": ["price", "wind"]}, "sections \"wind\"", "an unknown forecast section"),
         ({"disabled_loadpoints": "maybe"}, "disabled_loadpoints", "an unknown disabled_loadpoints"),
         ({"stats_period": "weekly"}, "stats_period", "an unknown stats_period"),
         ({"stats_exclude_loadpoints": "wp"}, "stats_exclude_loadpoints", "stats_exclude_loadpoints as a string"),
@@ -5097,6 +5111,20 @@ def forecast_mode(browser, port, t):
     done(page)
     page, _ = fc_page(dynamic=True)
     t.check("CO₂-Intensität" not in text(page, ".opt-lane-name"), "evcc optimizes for the price: no CO₂ lane", str(text(page, ".opt-lane-name")))
+    done(page)
+
+    t.group("forecast - sections")
+    page, errors = fc_page(dynamic=True, set=FC_LIMITS, config={"mode": "forecast", "sections": ["solar"]})
+    t.check(not errors and count(page, ".fc-now") == 0 and count(page, ".fc-bar") == 0 and [n.split("heute")[0] for n in text(page, ".opt-lane-name")] == ["PV-Prognose"],
+            "solar only: no price header, no price lane", f"{text(page, '.opt-lane-name')} {errors}")
+    t.check(text(page, ".fc-detail .opt-dk") == ["PV-Prognose"], "and only solar under the chart", str(text(page, ".fc-detail .opt-dk")))
+    done(page)
+    page, _ = fc_page(dynamic=True, tariff="co2", config={"mode": "forecast", "sections": ["price", "co2"]})
+    t.check(text(page, ".opt-lane-name") == ["Strompreis", "CO₂-Intensität"] and text(page, ".fc-now") == ["36,4ct"],
+            "price and CO₂: the header and both lanes, no solar", str(text(page, ".opt-lane-name")))
+    done(page)
+    page, _ = fc_page(config={"mode": "forecast", "sections": []})
+    t.check(text(page, ".opt-note") == ["Für die Vorhersage ist kein Bereich ausgewählt."], "an empty list says so", str(text(page, ".opt-note")))
     done(page)
 
     t.group("forecast - without a forecast")

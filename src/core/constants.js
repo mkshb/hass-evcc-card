@@ -225,6 +225,8 @@ export const CARD_MODES = [
   "site", "flow", "grid", "stats", "battery", "optimizer", "forecast", "vehicle", "debug",
 ];
 export const CARD_SIZE_OPTIONS        = ["small", "medium", "large"];
+// What the forecast mode shows (`sections`), in the order it draws them.
+export const FORECAST_SECTIONS        = ["solar", "price", "co2"];
 export const DISABLED_LOADPOINT_MODES = ["hide", "dim", "show"];
 export const STATS_PERIOD_OPTIONS     = Object.keys(STATS_PERIOD_ALIASES);
 
@@ -323,6 +325,12 @@ export function validateCardConfig(config) {
     if (typeof v !== "string" || !v.trim()) {
       throw new Error(`evcc-card: ${key} has to be a non-empty string`);
     }
+  }
+
+  if (c.sections !== undefined && c.sections !== null) {
+    const list = Array.isArray(c.sections) ? c.sections : [c.sections];
+    const bad  = list.filter(s => !FORECAST_SECTIONS.includes(s));
+    if (bad.length) throw new Error(`evcc-card: sections "${bad.join(", ")}" is not valid. Use any of: ${FORECAST_SECTIONS.join(", ")}`);
   }
 
   if (c.loadpoint !== undefined && c.loadpoint !== null) {

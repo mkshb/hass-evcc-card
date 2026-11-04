@@ -812,10 +812,49 @@ def form_pick(page, name, value):
         sel.dispatchEvent(new CustomEvent('value-changed', {{ detail: {{ value }}, bubbles: true, composed: true }}));
         return true; }}""", [name, value])
 
+def forecast(page, t):
+    """The forecast against evcc's own tariff: the price now, the lowest and the
+    highest price ahead with their time, read the way the card reads the rates
+    (quarter hours from the running one, up to the first gap), and limit lines
+    only for the limits evcc has set."""
+    t.group("e2e forecast - the card's prices against evcc's tariff")
+    import datetime, zoneinfo
+    tz = zoneinfo.ZoneInfo("Europe/Berlin")
+    res = evcc("tariff/grid")
+    rates = (res.get("result", res) or {}).get("rates") or []
+    rates = [(datetime.datetime.fromisoformat(r["start"]), datetime.datetime.fromisoformat(r["end"]), r["value"]) for r in rates]
+    open_view(page, "forecast")
+    now = datetime.datetime.now(tz)
+    t0 = now.replace(minute=now.minute - now.minute % 15, second=0, microsecond=0)
+    slots = []
+    t_ = t0
+    while len(slots) < 4 * 96:
+        v = next((val for s0, e0, val in rates if s0 <= t_ < e0), None)
+        if v is None: break
+        slots.append((t_, v)); t_ += datetime.timedelta(minutes=15)
+    if not slots or max(v for _, v in slots) - min(v for _, v in slots) < 1e-6:
+        t.fail("evcc has a dynamic tariff ahead", f"{len(slots)} slots"); return
+    ct = lambda v: f"{v * 100:.1f}".replace(".", ",")
+    vals = [v for _, v in slots]
+    lo, hi = vals.index(min(vals)), vals.index(max(vals))
+    shadow = lambda sel: page.locator("evcc-card").evaluate(f"el => [...el.shadowRoot.querySelectorAll({json.dumps(sel)})].map(e => e.textContent.replace(/\\s+/g, ' ').trim())")
+    got_now = shadow(".fc-now")
+    t.check(got_now == [f"{ct(slots[0][1])}ct"], "the price now is evcc's current rate", f"card {got_now}, evcc {ct(slots[0][1])}")
+    stats = shadow(".fc-jump.batt-stat .batt-stat-val")
+    want = [f"{ct(slots[lo][1])} ct", slots[lo][0].strftime("%H:%M")], [f"{ct(slots[hi][1])} ct", slots[hi][0].strftime("%H:%M")]
+    ok = len(stats) == 2 and all(w[0] in g and g.endswith(w[1]) for g, w in zip(stats, want))
+    t.check(ok, "lowest and highest price ahead with their time", f"card {stats}, evcc {want}")
+    st = evcc_state()
+    smart = {lp.get("smartCostLimit") for lp in st["loadpoints"]} - {None}
+    lines = page.locator("evcc-card").evaluate("el => el.shadowRoot.querySelectorAll('line.fc-limit').length")
+    expected = len(smart) + (st.get("batteryGridChargeLimit") is not None)
+    t.check(lines == expected, "a limit line for each limit evcc has set", f"{lines} lines, evcc: smart {sorted(smart)}, battery {st.get('batteryGridChargeLimit')}")
+    t.check(not ERRORS, "no card errors", "; ".join(ERRORS)[:300])
+
 
 GROUPS = {"smoke": smoke, "roundtrip": roundtrip, "solar_share": solar_share,
           "vehicle": vehicle_view, "vehicle_switch": vehicle_switch, "charge_plan": charge_plan,
-          "vehicle_limit": vehicle_limit, "vehicle_pictures": vehicle_pictures, "editor": editor, "stats": stats}
+          "vehicle_limit": vehicle_limit, "vehicle_pictures": vehicle_pictures, "editor": editor, "stats": stats, "forecast": forecast}
 
 
 def main():

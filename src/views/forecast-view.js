@@ -1,7 +1,7 @@
 import { stateVal, attr, isLive } from "../utils/state.js";
 import { escHtml, escAttr } from "../utils/html.js";
 import { evccDate, fmtPrice, priceScale } from "../utils/format.js";
-import { HA_EVCC_MIN_VERSION } from "../core/constants.js";
+import { HA_EVCC_MIN_VERSION, FORECAST_SECTIONS } from "../core/constants.js";
 
 const HOUR = 3600 * 1000;
 // The forecast is drawn in quarter hours from the one running now, at most
@@ -75,7 +75,14 @@ export const forecastView = {
     // The planner's curve is the CO₂ forecast while evcc optimizes for CO₂.
     const planner = this._wsForecast("planner");
     if (grid === null && solar === null) return note(this._t("fcLoading"));
-    const m = this._fcModelOf(grid, feedin, solar, planner);
+    const sec = this._fcSections();
+    if (!sec.size) return note(this._t("fcNoSections"));
+    const full = this._fcModelOf(grid, feedin, solar, planner);
+    // `sections` leaves out what is not wanted: the price with its header and
+    // the feed-in rate, the CO₂ lane, the solar lane. The model stays cached.
+    const m = full && { ...full,
+      hasPrice: full.hasPrice && sec.has("price"), hasFeed: full.hasFeed && sec.has("price"),
+      hasCo2: full.hasCo2 && sec.has("co2"), hasSolar: full.hasSolar && sec.has("solar") };
     if (!m || (!m.hasPrice && !m.hasSolar && !m.hasCo2)) {
       // Still waiting for one of the two: not yet "nothing".
       return note(this._t(grid === null || solar === null ? "fcLoading" : "fcEmpty"));
@@ -102,6 +109,13 @@ export const forecastView = {
           <div class="opt-detail fc-detail" aria-live="polite">${this._renderFcDetail(m, sel)}</div>
         </div>
       </div>`;
+  },
+
+  // The sections the card shows: all unless `sections` names some.
+  _fcSections() {
+    const raw = this._config.sections;
+    if (raw === undefined || raw === null) return new Set(FORECAST_SECTIONS);
+    return new Set((Array.isArray(raw) ? raw : [raw]).filter(s => FORECAST_SECTIONS.includes(s)));
   },
 
   _fcScheduleRefresh() {
