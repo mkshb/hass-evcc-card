@@ -1,4 +1,4 @@
-export const EVCC_CARD_VERSION = "0.10.0";
+export const EVCC_CARD_VERSION = "0.10.1";
 
 // The oldest ha-evcc the card supports: the first release whose WebSocket data
 // API (evcc_intg/capabilities, sessions, plan_preview) also names the evcc index
