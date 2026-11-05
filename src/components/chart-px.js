@@ -25,7 +25,11 @@ export const chartPx = {
   },
 
   // Measures `el` as chart `key`, in place of the element measured before; a
-  // chart taken out of the page reports no width and is left alone.
+  // chart taken out of the page reports no width and is left alone. The card
+  // renders in the next frame, not inside the callback: the new drawing
+  // changes the chart's height, and a size that changes while the observer
+  // delivers is a "ResizeObserver loop" error in WebKit. Charts measured in
+  // the same frame share one render.
   _observeChart(el, key) {
     if (typeof ResizeObserver !== "function") return;
     this._chartObservers ??= {};
@@ -34,7 +38,11 @@ export const chartPx = {
       this._chartWidths ??= {};
       if (w < 100 || w === this._chartWidths[key]) return;
       this._chartWidths[key] = w;
-      if (this.isConnected) this._render();
+      if (this._chartFrame) return;
+      this._chartFrame = requestAnimationFrame(() => {
+        this._chartFrame = null;
+        if (this.isConnected) this._render();
+      });
     });
     ro.disconnect();
     ro.observe(el);
