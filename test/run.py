@@ -5140,7 +5140,7 @@ def forecast_mode(browser, port, t):
     t.check(axis(page, 1) == ["10", "20", "30", "40 ct"], "the limits count for the range: 17 to 37 ct with limits at 18 and 22 ct", str(axis(page, 1)))
     done(page)
     page, _ = fc_page(dynamic=True, set={**FC_LIMITS, "number.evcc_openwb_smart_cost_limit": 0.05})
-    t.check(axis(page, 1) == ["0", "20", "40 ct"], "a limit far below the prices widens the lane down to it", str(axis(page, 1)))
+    t.check(axis(page, 1) == ["0", "10", "20", "30", "40 ct"], "a limit far below the prices widens the lane down to it", str(axis(page, 1)))
     done(page)
     page, errors = fc_page(dynamic="negative")
     t.check(not errors and axis(page, 1) == ["-20", "0", "20", "40 ct"], "prices below zero keep the zero line", f"{axis(page, 1)} {errors}")
