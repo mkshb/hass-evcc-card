@@ -1,6 +1,7 @@
 import { stateVal, attr, isOn, isLive } from "../utils/state.js";
 import { escHtml, escAttr } from "../utils/html.js";
 import { evccDate, fmtPrice } from "../utils/format.js";
+import { AXIS_FONT } from "../components/chart-px.js";
 
 const HOUR = 3600 * 1000;
 const DAY  = 24 * HOUR;
@@ -445,7 +446,8 @@ export const batteryView = {
     const fut = fSeries.filter(p => p.t > win.now && p.t <= win.end);
     if (fut.length && points.length) fut.unshift(points[points.length - 1]);
 
-    const W = 400, H = 120, ML = 26, MR = 4, MT = 6, MB = 18;
+    // In pixels, in the width the chart has on screen (src/components/chart-px.js).
+    const W = this._chartW("battery"), H = 130, ML = this._chartMargin(3), MR = 4, MT = 8, MB = 24;
     const CW = W - ML - MR, CH = H - MT - MB;
     const x = t => ML + (t - win.start) / (win.end - win.start) * CW;
     const y = v => MT + (1 - Math.max(0, Math.min(100, v)) / 100) * CH;
@@ -454,7 +456,7 @@ export const batteryView = {
 
     const grid = [0, 25, 50, 75, 100].map(v =>
       `<line x1="${ML}" x2="${W - MR}" y1="${y(v)}" y2="${y(v)}" stroke="var(--divider-color,#444)" stroke-width="0.5"/>` +
-      `<text x="${ML - 4}" y="${y(v) + 3}" text-anchor="end" font-size="7" fill="var(--secondary-text-color,#888)">${v}</text>`).join("");
+      `<text x="${ML - 5}" y="${(y(v) + AXIS_FONT * 0.35).toFixed(1)}" text-anchor="end" font-size="${AXIS_FONT}" fill="var(--secondary-text-color,#888)">${v}</text>`).join("");
 
     // Hour ticks every six hours; midnight carries the weekday, bold and in the
     // text colour, as the days are what the eye finds its way by.
@@ -468,7 +470,7 @@ export const batteryView = {
       const lbl  = midnight ? d.toLocaleDateString(lang, { weekday: "short" }) : `${d.getHours()}`;
       const font = midnight ? `font-weight="600" fill="var(--primary-text-color,#fff)"` : `fill="var(--secondary-text-color,#888)"`;
       ticks += `<line x1="${x(t)}" x2="${x(t)}" y1="${MT}" y2="${MT + CH}" stroke="var(--divider-color,#444)" stroke-width="${midnight ? 0.8 : 0.3}"/>` +
-        `<text x="${x(t)}" y="${H - 6}" text-anchor="middle" font-size="7" ${font}>${lbl}</text>`;
+        `<text x="${x(t)}" y="${H - 7}" text-anchor="middle" font-size="${AXIS_FONT}" ${font}>${lbl}</text>`;
     }
 
     // Priority and buffer SoC as reference lines, in the colours their values
@@ -498,11 +500,11 @@ export const batteryView = {
       `<span><span class="batt-band-swatch ${k}"></span>${this._t(k === "charge" ? "battTabGridCharge" : "battTabGridDischarge")}</span>`).join("")}</div>`;
 
     const nowLine = win.now > win.start && win.now < win.end
-      ? `<line x1="${x(win.now)}" x2="${x(win.now)}" y1="${MT}" y2="${MT + CH}" stroke="var(--primary-text-color,#fff)" stroke-width="0.6" opacity="0.6"/>` : "";
+      ? `<line x1="${x(win.now)}" x2="${x(win.now)}" y1="${MT}" y2="${MT + CH}" stroke="var(--primary-text-color,#fff)" stroke-width="1" opacity="0.6"/>` : "";
 
     const loading = hist === null;
     const svg = `
-      <svg viewBox="0 0 ${W} ${H}" class="batt-chart-svg" role="img" aria-label="${this._t("battHistory")}">
+      <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" class="batt-chart-svg" role="img" aria-label="${this._t("battHistory")}">
         <defs>
           <pattern id="batt-stripes" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <line x1="0" y1="0" x2="0" y2="4" stroke="var(--evcc-blue)" stroke-width="1.5" opacity="0.35"/>
@@ -722,8 +724,9 @@ export const batteryView = {
     const lo    = Math.min(min, 0);
     const span  = (max - lo) || 1;
 
-    // Tall enough that the limit line is a thin mark next to the columns.
-    const W = 400, H = 64, MB = 12;
+    // Tall enough that the limit line is a thin mark next to the columns. In
+    // pixels, in the width the chart has on screen (src/components/chart-px.js).
+    const W = this._chartW("batterySlots"), H = 72, MB = 16;
     const bw = W / slots.length;
     let activeMs = 0;
     // Charging green, discharging amber, as evcc tells the two apart.
@@ -734,7 +737,7 @@ export const batteryView = {
       const h = Math.max(2, (r.v - lo) / span * (H - MB - 2));
       const d = new Date(r.s);
       const tick = d.getMinutes() === 0 && d.getHours() % 6 === 0
-        ? `<text x="${i * bw + bw / 2}" y="${H - 2}" text-anchor="middle" font-size="7" fill="var(--secondary-text-color,#888)">${d.getHours()}</text>` : "";
+        ? `<text x="${(i * bw + bw / 2).toFixed(1)}" y="${H - 3}" text-anchor="middle" font-size="${AXIS_FONT}" fill="var(--secondary-text-color,#888)">${d.getHours()}</text>` : "";
       const x = (i * bw + 0.3).toFixed(1), w = Math.max(0.5, bw - 0.6).toFixed(1);
       const label = `${d.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })} · ${fmt(r.v)}`;
       const bar = `<rect class="batt-slot-bar" x="${x}" y="${(H - MB - h).toFixed(1)}" width="${w}" height="${h.toFixed(1)}" rx="0.5"
@@ -763,7 +766,7 @@ export const batteryView = {
       hours: activeMs / HOUR,
       html: `
       <div class="batt-slots${pick ? " pick" : ""}"${pick ? ` data-pick-id="${pick.id}" data-pick-dir="${pick.dir}" tabindex="0" aria-label="${escAttr(title)}"` : ""}>
-        <svg viewBox="0 0 ${W} ${H}" class="batt-slots-svg">${line}${bars}</svg>
+        <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" class="batt-slots-svg">${line}${bars}</svg>
         <div class="batt-slots-legend"><span>${escHtml(title)}</span>${pick ? `<span class="batt-slots-pick" data-morph-keep></span>` : ""}<span>${escHtml(range)}</span></div>
       </div>`,
     };
@@ -834,6 +837,8 @@ export const batteryView = {
   // Listeners of the battery view: the discharge toggle, the inline selects
   // and the history stepper. Called by _attachListeners() after every render.
   _attachBatteryListeners() {
+    this._fresh(".batt-chart").forEach(el => this._observeChart(el, "battery"));
+    this._fresh(".batt-slots").forEach(el => this._observeChart(el, "batterySlots"));
     // One listener for every switch of the view, deciding by the element's
     // attributes at the time of the click: a render morphs one tab into the
     // next, and a button that was the discharge lock a moment ago may be the
@@ -998,7 +1003,7 @@ export const batteryCss = `
       .batt-step { background: none; border: none; color: var(--primary-text-color); font-size: 1rem; line-height: 1; padding: 2px 6px; cursor: pointer; border-radius: 4px; }
       .batt-step:disabled { opacity: .3; cursor: default; }
       .batt-step-label { min-width: 64px; text-align: center; }
-      .batt-chart-svg, .batt-slots-svg { width: 100%; display: block; }
+      .batt-chart-svg, .batt-slots-svg { width: 100%; height: auto; display: block; }
       .batt-chart.loading { opacity: .5; }
       .batt-band-legend { display: flex; gap: 12px; flex-wrap: wrap; min-height: 1.25em; font-size: .72rem; color: var(--secondary-text-color); }
       .batt-band-legend > span { display: inline-flex; align-items: center; gap: 5px; }

@@ -2,6 +2,7 @@ import { stateVal, attr, isLive } from "../utils/state.js";
 import { escHtml, escAttr } from "../utils/html.js";
 import { evccDate, fmtPrice, priceScale } from "../utils/format.js";
 import { HA_EVCC_MIN_VERSION, FORECAST_SECTIONS } from "../core/constants.js";
+import { AXIS_FONT, CHAR } from "../components/chart-px.js";
 
 const HOUR = 3600 * 1000;
 // The forecast is drawn in quarter hours from the one running now, at most
@@ -19,17 +20,13 @@ const REFRESH = 60 * 1000;
 // Below this power (W) a solar slot counts as dark.
 const DARK_W = 50;
 
-// Chart geometry in pixels: the SVG is drawn in the width the chart has on
-// screen (measured by a ResizeObserver, see _attachForecastListeners), so
-// that its text keeps one size on a narrow and on a wide card. The left
-// margin follows the longest axis label.
-const MR = 4, FALLBACK_W = 400;
+// Chart geometry in pixels, the SVG in the width the chart has on screen
+// (src/components/chart-px.js). The left margin follows the longest axis label.
+const MR = 4;
 const LANE_PRICE = 84, LANE_SOLAR = 56, MT = 8, MB = 24;
-// The text of the axes, and the tags naming the lowest and highest value of a
-// bar lane with the room above such a lane that the tag over its highest bar
-// needs. CHAR is the width of a character as a share of the font size, to
-// size what is drawn around a text without measuring it.
-const AXIS_FONT = 11, TAG_FONT = 11, CHAR = 0.6;
+// The tags naming the lowest and highest value of a bar lane, and the room
+// above such a lane that the tag over its highest bar needs.
+const TAG_FONT = 11;
 const TAG_H = TAG_FONT + 6, TAG_ROOM = TAG_H + 2;
 
 const f1 = v => v.toFixed(1);
@@ -384,15 +381,6 @@ export const forecastView = {
     return tag(kMin, "fc-tag-min") + tag(kMax, "fc-tag-max");
   },
 
-  // The width the chart is drawn in, in pixels: as measured, or until the
-  // first measurement the card's own width less its padding. `chars` is the
-  // longest axis label, which sets the left margin.
-  _fcGeometry(chars) {
-    const W = this._fcW || (this.offsetWidth > 100 ? this.offsetWidth - 32 : FALLBACK_W);
-    const ML = Math.ceil(chars * AXIS_FONT * CHAR) + 8;
-    return { W, ML, CW: W - ML - MR };
-  },
-
   // The lanes as the optimizer draws them: name above, grid lines with their
   // values on the left, hour lines every few hours with the weekday at
   // midnight, the hours labelled under the last lane. A pointer or the arrow
@@ -426,9 +414,10 @@ export const forecastView = {
         l.axis = [[l.top * 1000, `${this._battNum(l.top)} kW`], [0, "0"]];
       }
     }
-    const g = this._fcGeometry(Math.max(1, ...lanes.flatMap(l => l.axis.map(([, t]) => t.length))));
+    const W = this._chartW("forecast"), ML = this._chartMargin(Math.max(...lanes.flatMap(l => l.axis.map(([, t]) => t.length))));
+    const g = { W, ML, CW: W - ML - MR };
     this._fcLast.g = g;
-    const { W, ML, CW } = g;
+    const { CW } = g;
 
     const t0 = m.ts[page.a], t1 = m.end(page.b);
     const x  = t => ML + (t - t0) / (t1 - t0) * CW;
@@ -617,18 +606,7 @@ export const forecastView = {
 
   _attachForecastListeners() {
     this._fresh(".fc-chart").forEach(el => {
-      // The chart is drawn in its width on screen: a new width draws it again.
-      // A chart taken out of the page reports no width and is left alone.
-      if (typeof ResizeObserver === "function") {
-        this._fcResize ??= new ResizeObserver(entries => {
-          const w = Math.round(entries[entries.length - 1].contentRect.width);
-          if (w < 100 || w === this._fcW) return;
-          this._fcW = w;
-          if (this.isConnected && this._config?.mode === "forecast") this._render();
-        });
-        this._fcResize.disconnect();
-        this._fcResize.observe(el);
-      }
+      this._observeChart(el, "forecast");
       const pick = ev => this._fcSelect(this._fcSlotAt(el, ev.clientX));
       el.addEventListener("pointermove", ev => { if (ev.pointerType === "mouse") pick(ev); });
       el.addEventListener("pointerdown", pick);
