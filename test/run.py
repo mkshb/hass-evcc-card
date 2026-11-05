@@ -155,7 +155,7 @@ def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="d
               rename=None, attrs=None, tariff=None, second=None, wsname=None, admin=True, drop=None,
               vehicle_device=True, optimizer=False, battery_ext=False, optimize=False, caps_version=None, dynamic=False):
     q = {"w": width, "lang": lang}
-    if dynamic: q["dyn"] = 1
+    if dynamic: q["dyn"] = 1 if dynamic is True else dynamic
     if caps_version: q["capsver"] = caps_version
     if optimizer: q["optimizer"] = 1 if optimizer is True else optimizer
     if battery_ext: q["battext"] = 1
@@ -4388,8 +4388,11 @@ def optimizer_mode(browser, port, t):
     # The pointer and the arrow keys move the selection; a render keeps it.
     # The pointer aims at the middle of the slot: WebKit moves the mouse in
     # whole pixels, and a quarter hour is only a few pixels wide here.
+    # The chart is drawn in pixels: its plot starts at the grid lines' left end
+    # and runs to 4 px before the right edge.
     box = page.locator(in_card(".opt-chart")).bounding_box()
-    page.mouse.move(box["x"] + box["width"] * (26 + (12 * 3600 + 450) / 86400 * 370) / 400, box["y"] + 40)
+    ml, vw = page.evaluate("() => { const s = window.__card.shadowRoot.querySelector('.opt-chart-svg'); return [+s.querySelector('line[stroke-width=\"0.5\"]').getAttribute('x1'), s.viewBox.baseVal.width]; }")
+    page.mouse.move(box["x"] + box["width"] * (ml + (12 * 3600 + 450) / 86400 * (vw - ml - 4)) / vw, box["y"] + 40)
     t.check(text(page, ".opt-dt") == ["Mi 12:00 bis 12:15"], "the mouse over the chart picks its slot", str(text(page, ".opt-dt")))
     vals = text(page, ".opt-detail .opt-dv")
     t.check(vals == ["3,5 kW", "1,4 kW", "0 kW", "Laden mit PV · +2,1 kW · 67 %", "lädt nicht · 52 %"], "the values of that slot", str(vals))
@@ -4467,7 +4470,7 @@ def optimizer_mode(browser, port, t):
     price = lambda: page.evaluate("""() => {
       const svg = window.__card.shadowRoot.querySelector('.opt-chart-svg');
       const zero = [...svg.querySelectorAll('text')].find(e => e.textContent === '0');
-      const zy = parseFloat(zero.getAttribute('y')) - 3;
+      const zy = parseFloat(zero.previousElementSibling.getAttribute('y1'));
       const bars = [...svg.querySelectorAll('rect.opt-price-bar')];
       return { labels: [...svg.querySelectorAll('text')].map(e => e.textContent),
                below: bars.filter(r => Math.abs(parseFloat(r.getAttribute('y')) - zy) < 0.1).length,
@@ -5113,6 +5116,63 @@ def forecast_mode(browser, port, t):
     done(page)
     page, _ = fc_page(dynamic=True)
     t.check("CO₂-Intensität" not in text(page, ".opt-lane-name"), "evcc optimizes for the price: no CO₂ lane", str(text(page, ".opt-lane-name")))
+    done(page)
+
+    # The bar lanes span the range of their values (#206): above zero they start
+    # a round step below the lowest, as evcc's price chart with zoom, and name
+    # the lowest and highest value of the page in a tag above its bar.
+    t.group("forecast - scale and tags")
+    # The grid line labels of lane i, bottom up, and its tags as [class, text, x, y, w].
+    axis = lambda page, i: page.evaluate(f"""() => [...window.__card.shadowRoot.querySelectorAll('.opt-lane')[{i}]
+        .querySelectorAll('svg > text[text-anchor=end]')].map(e => e.textContent)""")
+    tags = lambda page, i: page.evaluate(f"""() => [...window.__card.shadowRoot.querySelectorAll('.opt-lane')[{i}].querySelectorAll('.fc-tag')]
+        .map(g => {{ const r = g.querySelector('rect'), w = g.ownerSVGElement.viewBox.baseVal.width;
+          return [g.classList[1], g.textContent, +r.getAttribute('x'), +r.getAttribute('y'), +r.getAttribute('width'), w]; }})""")
+    page, errors = fc_page(dynamic="high")
+    t.check(not errors and axis(page, 1) == ["30", "40", "50", "60 ct"], "prices from 39 to 59 ct: the lane runs from 30 to 60 ct, not from 0", f"{axis(page, 1)} {errors}")
+    tg = tags(page, 1)
+    t.check([g[:2] for g in tg] == [["fc-tag-min", "39,0 ct"], ["fc-tag-max", "59,2 ct"]], "the lowest and the highest price of the page in a tag", str(tg))
+    t.check(all(20 <= x and x + w <= W and y >= 0 for _, _, x, y, w, W in tg), "the tags stay inside the chart, also the one at its left edge", str(tg))
+    rect = page.evaluate("""() => { const l = window.__card.shadowRoot.querySelectorAll('.opt-lane')[1];
+        const bars = [...l.querySelectorAll('.fc-bar')].map(b => +b.getAttribute('y') + +b.getAttribute('height'));
+        return [Math.min(...bars), Math.max(...bars)]; }""")
+    t.check(abs(rect[0] - rect[1]) < 0.2, "every bar grows from the bottom of the lane", str(rect))
+    click(page, 'button.fc-step[data-fc-step="1"]')
+    t.check(tags(page, 1) == [], "a page without prices has no tags", str(tags(page, 1)))
+    done(page)
+    page, _ = fc_page(dynamic=True, set=FC_LIMITS)
+    t.check(axis(page, 1) == ["10", "20", "30", "40 ct"], "the limits count for the range: 17 to 37 ct with limits at 18 and 22 ct", str(axis(page, 1)))
+    done(page)
+    page, _ = fc_page(dynamic=True, set={**FC_LIMITS, "number.evcc_openwb_smart_cost_limit": 0.05})
+    t.check(axis(page, 1) == ["0", "10", "20", "30", "40 ct"], "a limit far below the prices widens the lane down to it", str(axis(page, 1)))
+    done(page)
+    page, errors = fc_page(dynamic="negative")
+    t.check(not errors and axis(page, 1) == ["-20", "0", "20", "40 ct"], "prices below zero keep the zero line", f"{axis(page, 1)} {errors}")
+    t.check([g[:2] for g in tags(page, 1)] == [["fc-tag-min", "-3,0 ct"], ["fc-tag-max", "37,2 ct"]], "and name the lowest one below zero", str(tags(page, 1)))
+    done(page)
+    # The chart is drawn in its width on screen, so its text keeps one size:
+    # 11 px on a narrow card as on a wide one, and again after a resize.
+    px = lambda page: page.evaluate("""() => { const svg = window.__card.shadowRoot.querySelector('.fc-chart-svg');
+        const label = svg.querySelector('text'), r = svg.getBoundingClientRect();
+        return [svg.viewBox.baseVal.width, Math.round(r.width), +label.getAttribute('font-size') * r.width / svg.viewBox.baseVal.width]; }""")
+    for width in (334, 600):
+        page, errors = fc_page(dynamic=True, width=width)
+        vw, rw, font = px(page)
+        t.check(not errors and abs(vw - rw) <= 1 and abs(font - 11) < 0.2, f"card {width} px: the chart drawn 1:1, its text 11 px", f"viewBox {vw}, on screen {rw}, text {font:.1f} px {errors}")
+        if width == 600:
+            page.evaluate("document.getElementById('host').style.setProperty('--w', '420px')")
+            page.wait_for_function("() => { const s = window.__card.shadowRoot.querySelector('.fc-chart-svg'); return Math.abs(s.viewBox.baseVal.width - s.getBoundingClientRect().width) <= 1; }", timeout=3000)
+            settle(page)
+            vw2, rw2, font2 = px(page)
+            t.check(vw2 < vw and abs(vw2 - rw2) <= 1 and abs(font2 - 11) < 0.2, "a narrower card draws the chart again in its new width", f"viewBox {vw} -> {vw2}, on screen {rw2}, text {font2:.1f} px")
+            page.mouse.move(*page.evaluate("""() => { const r = window.__card.shadowRoot.querySelector('.fc-chart-svg:last-of-type').getBoundingClientRect(); return [r.right - 3, r.top + r.height / 2]; }"""))
+            settle(page)
+            t.check(text(page, ".fc-detail .opt-dt")[0].startswith("Sa 23:45"), "and the pointer finds the slot under it in the new geometry", str(text(page, ".fc-detail .opt-dt")))
+        done(page)
+
+    page, _ = fc_page(dynamic=True, tariff="co2", attrs=co2)
+    tg = tags(page, 2)
+    t.check([g[0] for g in tg] == ["fc-tag-min", "fc-tag-max"] and all(g[1].endswith(" g") for g in tg), "the CO₂ lane names its lowest and highest value in g", str(tg))
     done(page)
 
     t.group("forecast - sections")

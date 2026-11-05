@@ -11,6 +11,7 @@ import { evccApi } from "./core/evcc-api.js";
 import { loadpointView } from "./views/loadpoint-view.js";
 import { socControl } from "./components/soc-control.js";
 import { disabledEntities } from "./components/disabled-entities.js";
+import { chartPx } from "./components/chart-px.js";
 import { planningView } from "./views/planning-view.js";
 import { priorityView } from "./views/priority-view.js";
 import { siteView } from "./views/site-view.js";
@@ -686,7 +687,7 @@ export class EvccCard extends HTMLElement {
 
 // Mode views, components and shared behaviour are plain objects of methods
 // (no framework): mix them into the prototype, refusing silent overrides.
-const mixins = [actions, evccApi, loadpointView, socControl, disabledEntities, planningView, priorityView, siteView, flowView, gridView, statisticsView, batteryView, optimizerView, forecastView, vehicleView, debugView, listeners, styles];
+const mixins = [actions, evccApi, loadpointView, socControl, disabledEntities, chartPx, planningView, priorityView, siteView, flowView, gridView, statisticsView, batteryView, optimizerView, forecastView, vehicleView, debugView, listeners, styles];
 for (const m of mixins) {
   for (const key of Object.keys(m)) {
     if (key in EvccCard.prototype) throw new Error(`evcc-card: duplicate method ${key}`);

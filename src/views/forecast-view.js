@@ -2,6 +2,7 @@ import { stateVal, attr, isLive } from "../utils/state.js";
 import { escHtml, escAttr } from "../utils/html.js";
 import { evccDate, fmtPrice, priceScale } from "../utils/format.js";
 import { HA_EVCC_MIN_VERSION, FORECAST_SECTIONS } from "../core/constants.js";
+import { AXIS_FONT, CHAR } from "../components/chart-px.js";
 
 const HOUR = 3600 * 1000;
 // The forecast is drawn in quarter hours from the one running now, at most
@@ -19,11 +20,14 @@ const REFRESH = 60 * 1000;
 // Below this power (W) a solar slot counts as dark.
 const DARK_W = 50;
 
-// Chart geometry in viewBox units, as in the optimizer; the SVG scales to the
-// card width.
-const W = 400, ML = 26, MR = 4;
-const CW = W - ML - MR;
-const LANE_PRICE = 64, LANE_SOLAR = 44, MT = 6, MB = 18;
+// Chart geometry in pixels, the SVG in the width the chart has on screen
+// (src/components/chart-px.js). The left margin follows the longest axis label.
+const MR = 4;
+const LANE_PRICE = 84, LANE_SOLAR = 56, MT = 8, MB = 24;
+// The tags naming the lowest and highest value of a bar lane, and the room
+// above such a lane that the tag over its highest bar needs.
+const TAG_FONT = 11;
+const TAG_H = TAG_FONT + 6, TAG_ROOM = TAG_H + 2;
 
 const f1 = v => v.toFixed(1);
 
@@ -331,19 +335,50 @@ export const forecastView = {
 
   // ── Chart ──────────────────────────────────────────────────────────────
 
-  // A bar lane from zero, as in the optimizer, up to the highest value or
-  // limit; the step is a round number of the unit shown (ct for a price in
-  // €, `factor` 100). Returns the values of the grid lines in the series' own
-  // unit.
+  // A bar lane over the range of the values and limits, as evcc's price chart
+  // with zoom: when all of them are above zero the lane starts a round step
+  // below the lowest, so that prices between 41 and 59 ct do not look flat;
+  // with a value at or below zero it keeps the zero line. The step is a round
+  // number of the unit shown (ct for a price in €, `factor` 100), at most four
+  // of them over the lane. Returns the values of the grid lines in the series'
+  // own unit and the base the bars grow from.
   _fcScale(vals, factor) {
     const s = { factor };
-    const hi = Math.max(0, ...vals) * s.factor, lo = Math.min(0, ...vals) * s.factor;
+    const vmin = Math.min(...vals) * s.factor, vmax = Math.max(...vals) * s.factor;
+    const zoom = vmin > 0;
+    const hi = Math.max(0, vmax), lo = Math.min(0, vmin);
     const steps = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
-    const step = steps.find(st => (Math.ceil(hi / st) - Math.floor(lo / st)) <= 3) ?? 1000;
-    const top = Math.max(step, Math.ceil(hi / step - 1e-9) * step), bot = Math.floor(lo / step + 1e-9) * step;
+    // Zoomed, the lowest bar keeps a height: the base lies below it, never on it.
+    const below = st => zoom ? (Math.ceil(vmin / st - 1e-9) - 1) * st : Math.floor(lo / st + 1e-9) * st;
+    const step = steps.find(st => (Math.ceil(hi / st - 1e-9) * st - below(st)) / st <= 4) ?? 1000;
+    const bot = below(step), top = Math.max(bot + step, Math.ceil(hi / step - 1e-9) * step);
     const lines = [];
     for (let v = bot; v <= top + step / 2; v += step) lines.push(v / s.factor);
-    return { top: top / s.factor, bot: bot / s.factor, lines, factor: s.factor };
+    return { top: top / s.factor, bot: bot / s.factor, base: zoom ? bot / s.factor : 0, lines, factor: s.factor };
+  },
+
+  // The lowest and highest value of a lane on the page, named in a tag above
+  // its bar as on evcc's price chart; the first slot where several share it.
+  // `yp` maps a value to the lane, `cx` a slot to the middle of its bar, `g`
+  // is the geometry of the chart.
+  _fcExtremeTags(l, a, b, yp, cx, g) {
+    let kMin = -1, kMax = -1;
+    for (let k = a; k <= b; k++) {
+      const v = l.vals[k];
+      if (v == null) continue;
+      if (kMin < 0 || v < l.vals[kMin]) kMin = k;
+      if (kMax < 0 || v > l.vals[kMax]) kMax = k;
+    }
+    if (kMin < 0 || l.vals[kMax] - l.vals[kMin] < 1e-9) return "";
+    const tag = (k, cls) => {
+      const text = l.tag(l.vals[k]);
+      const w = text.length * TAG_FONT * CHAR + 10, h = TAG_H;
+      const x = Math.max(g.ML, Math.min(g.W - MR - w, cx(k) - w / 2));
+      const y = Math.max(1, yp(Math.max(0, l.vals[k])) - h - 2);
+      return `<g class="fc-tag ${cls}"><rect x="${f1(x)}" y="${f1(y)}" width="${f1(w)}" height="${h}" rx="4"/>` +
+        `<text x="${f1(x + w / 2)}" y="${f1(y + h - 4.5)}" text-anchor="middle" font-size="${TAG_FONT}" font-weight="600">${escHtml(text)}</text></g>`;
+    };
+    return tag(kMin, "fc-tag-min") + tag(kMax, "fc-tag-max");
   },
 
   // The lanes as the optimizer draws them: name above, grid lines with their
@@ -352,6 +387,38 @@ export const forecastView = {
   // keys pick a slot in all lanes.
   _renderFcChart(m, page, sel, limits) {
     const lang = this._hass?.language || "en";
+    const lanes = [];
+    const ps = priceScale(m.currency, lang);
+    if (m.hasSolar) lanes.push({ kind: "solar", h: LANE_SOLAR, title: this._t("optPv"), sub: this._fcSolarSums(m, page) });
+    if (m.hasPrice && !m.fixed) lanes.push({ kind: "bars", h: LANE_PRICE, title: this._t("optLanePrice"),
+      vals: m.price, known: m.pn, green: k => m.level(k) === "cheap", factor: ps.factor, unit: ps.unit.replace(/\/kWh$/, ""),
+      limits: limits.filter(l => l.on === "price"), none: this._t("fcNoPrices"), id: "price",
+      tag: v => this._fcPrice(v, m, { unit: "short" }) });
+    if (m.hasCo2 && !m.co2Fixed) lanes.push({ kind: "bars", h: LANE_PRICE, title: this._t("fcLaneCo2"),
+      vals: m.co2, known: m.cn, green: k => m.co2Level(k) === "low", factor: 1, unit: "g",
+      limits: limits.filter(l => l.on === "co2"), none: this._t("fcNoCo2"), id: "co2",
+      tag: v => `${this._battNum(v, 0)} g` });
+
+    // The axis of each lane first: its longest label sets the left margin.
+    for (const l of lanes) {
+      if (l.kind === "bars") {
+        l.sc = this._fcScale([...l.vals.filter(v => v != null), ...l.limits.map(o => o.v)], l.factor);
+        l.axis = l.sc.lines.map(v => {
+          const num = (v * l.sc.factor).toLocaleString(lang, { maximumFractionDigits: 2 });
+          return [v, Math.abs(v - l.sc.top) < 1e-9 && l.unit ? `${num} ${l.unit}` : num];
+        });
+      } else {
+        const peak = Math.max(...m.pv.filter(v => v != null)) / 1000;
+        const unitKw = peak <= 2 ? 0.5 : peak <= 6 ? 1 : peak <= 12 ? 2 : peak <= 30 ? 5 : 10;
+        l.top = Math.max(unitKw, Math.ceil(peak / unitKw) * unitKw);
+        l.axis = [[l.top * 1000, `${this._battNum(l.top)} kW`], [0, "0"]];
+      }
+    }
+    const W = this._chartW("forecast"), ML = this._chartMargin(Math.max(...lanes.flatMap(l => l.axis.map(([, t]) => t.length))));
+    const g = { W, ML, CW: W - ML - MR };
+    this._fcLast.g = g;
+    const { CW } = g;
+
     const t0 = m.ts[page.a], t1 = m.end(page.b);
     const x  = t => ML + (t - t0) / (t1 - t0) * CW;
     const sx = k => x(m.ts[k]), sw = CW / (page.b - page.a + 1);
@@ -367,22 +434,13 @@ export const forecastView = {
     }
     const grid = (y, label) =>
       `<line x1="${ML}" x2="${W - MR}" y1="${f1(y)}" y2="${f1(y)}" stroke="var(--divider-color,#444)" stroke-width="0.5"/>` +
-      `<text x="${ML - 4}" y="${f1(y + 3)}" text-anchor="end" font-size="7" fill="var(--secondary-text-color,#888)">${escHtml(label)}</text>`;
-
-    const lanes = [];
-    const ps = priceScale(m.currency, lang);
-    if (m.hasSolar) lanes.push({ kind: "solar", h: LANE_SOLAR, title: this._t("optPv"), sub: this._fcSolarSums(m, page) });
-    if (m.hasPrice && !m.fixed) lanes.push({ kind: "bars", h: LANE_PRICE, title: this._t("optLanePrice"),
-      vals: m.price, known: m.pn, green: k => m.level(k) === "cheap", factor: ps.factor, unit: ps.unit.replace(/\/kWh$/, ""),
-      limits: limits.filter(l => l.on === "price"), none: this._t("fcNoPrices"), id: "price" });
-    if (m.hasCo2 && !m.co2Fixed) lanes.push({ kind: "bars", h: LANE_PRICE, title: this._t("fcLaneCo2"),
-      vals: m.co2, known: m.cn, green: k => m.co2Level(k) === "low", factor: 1, unit: "g",
-      limits: limits.filter(l => l.on === "co2"), none: this._t("fcNoCo2"), id: "co2" });
+      `<text x="${ML - 5}" y="${f1(y + AXIS_FONT * 0.35)}" text-anchor="end" font-size="${AXIS_FONT}" fill="var(--secondary-text-color,#888)">${escHtml(label)}</text>`;
 
     const blocks = lanes.map((l, li) => {
       const last = li === lanes.length - 1;
-      const H = MT + l.h + (last ? MB : 4);
-      const y0 = MT, y1 = MT + l.h;
+      // Above a bar lane the room for the tag is margin enough.
+      const y0 = l.kind === "bars" ? TAG_ROOM + 2 : MT, y1 = y0 + l.h;
+      const H = y1 + (last ? MB : 4);
       let s = "";
       for (const t of ticks) {
         const midnight = new Date(t).getHours() === 0;
@@ -391,22 +449,19 @@ export const forecastView = {
         const d = new Date(t);
         const lbl  = midnight ? d.toLocaleDateString(lang, { weekday: "short" }) : `${d.getHours()}`;
         const font = midnight ? `font-weight="600" fill="var(--primary-text-color,#fff)"` : `fill="var(--secondary-text-color,#888)"`;
-        s += `<text x="${f1(x(t))}" y="${H - 6}" text-anchor="middle" font-size="7" ${font}>${escHtml(lbl)}</text>`;
+        s += `<text x="${f1(x(t))}" y="${H - 7}" text-anchor="middle" font-size="${AXIS_FONT}" ${font}>${escHtml(lbl)}</text>`;
       }
 
       // The grid price and the CO₂ intensity: a bar per slot, the lowest
       // third green, the limits of the lane as lines, hatched where the
       // series has no values yet.
       if (l.kind === "bars") {
-        const sc = this._fcScale([...l.vals.filter(v => v != null), ...l.limits.map(o => o.v)], l.factor);
+        const sc = l.sc;
         const yp = v => y0 + (sc.top - v) / ((sc.top - sc.bot) || 1) * l.h;
-        sc.lines.forEach(v => {
-          const num = (v * sc.factor).toLocaleString(lang, { maximumFractionDigits: 2 });
-          s += grid(yp(v), Math.abs(v - sc.top) < 1e-9 && l.unit ? `${num} ${l.unit}` : num);
-        });
+        for (const [v, label] of l.axis) s += grid(yp(v), label);
         const pe = Math.min(page.b, l.known - 1);
         for (let k = page.a; k <= pe; k++) {
-          const ya = yp(Math.max(0, l.vals[k])), yb = yp(Math.min(0, l.vals[k]));
+          const ya = yp(Math.max(sc.base, l.vals[k])), yb = yp(Math.min(sc.base, l.vals[k]));
           if (yb - ya < 0.05) continue;
           s += `<rect class="fc-bar${l.green(k) ? " fc-cheap" : ""}" x="${f1(bx(k))}" y="${f1(ya)}" width="${f1(bw)}" height="${f1(yb - ya)}"/>`;
         }
@@ -423,16 +478,14 @@ export const forecastView = {
           s += `<defs><pattern id="${pid}" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
             `<line x1="0" y1="0" x2="0" y2="4" stroke="var(--secondary-text-color,#888)" stroke-width="1" opacity="0.25"/></pattern></defs>` +
             `<rect x="${f1(xa)}" y="${y0}" width="${f1(xb - xa)}" height="${l.h}" fill="url(#${pid})"/>`;
-          if (xb - xa > 60) s += `<text x="${f1((xa + xb) / 2)}" y="${f1(y0 + l.h / 2 + 3)}" text-anchor="middle" font-size="7.5" fill="var(--secondary-text-color,#888)">${escHtml(l.none)}</text>`;
+          if (xb - xa > l.none.length * AXIS_FONT * CHAR + 16) s += `<text x="${f1((xa + xb) / 2)}" y="${f1(y0 + l.h / 2 + AXIS_FONT * 0.35)}" text-anchor="middle" font-size="${AXIS_FONT}" fill="var(--secondary-text-color,#888)">${escHtml(l.none)}</text>`;
         }
+        if (pe >= page.a) s += this._fcExtremeTags(l, page.a, pe, yp, k => bx(k) + bw / 2, g);
       }
 
       if (l.kind === "solar") {
-        const peak = Math.max(...m.pv.filter(v => v != null)) / 1000;
-        const unitKw = peak <= 2 ? 0.5 : peak <= 6 ? 1 : peak <= 12 ? 2 : peak <= 30 ? 5 : 10;
-        const top = Math.max(unitKw, Math.ceil(peak / unitKw) * unitKw);
-        const ys = w => y0 + (1 - w / 1000 / top) * l.h;
-        s += grid(ys(top * 1000), `${this._battNum(top)} kW`) + grid(ys(0), "0");
+        const ys = w => y0 + (1 - w / 1000 / l.top) * l.h;
+        for (const [v, label] of l.axis) s += grid(ys(v), label);
         const pts = [];
         for (let k = page.a; k <= page.b; k++) if (m.pv[k] != null) pts.push([sx(k) + sw / 2, ys(m.pv[k])]);
         if (pts.length > 1) {
@@ -442,10 +495,10 @@ export const forecastView = {
         }
       }
 
-      s += `<line class="fc-cursor" x1="${f1(cx)}" x2="${f1(cx)}" y1="${y0}" y2="${y1}" stroke="var(--primary-text-color,#fff)" stroke-width="0.6" opacity="0.6"/>`;
+      s += `<line class="fc-cursor" x1="${f1(cx)}" x2="${f1(cx)}" y1="${y0}" y2="${y1}" stroke="var(--primary-text-color,#fff)" stroke-width="1" opacity="0.6"/>`;
       return `<div class="opt-lane">
           <div class="opt-lane-name">${escHtml(l.title)}${l.sub ? `<span class="fc-lane-sub">${escHtml(l.sub)}</span>` : ""}</div>
-          <svg viewBox="0 0 ${W} ${H}" class="opt-chart-svg" aria-hidden="true">${s}</svg>
+          <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" class="opt-chart-svg fc-chart-svg" aria-hidden="true">${s}</svg>
         </div>`;
     });
 
@@ -532,7 +585,7 @@ export const forecastView = {
     k = Math.max(page.a, Math.min(page.b, k));
     this._fcSel = m.ts[k];
     last.sel = k;
-    const t0 = m.ts[page.a], t1 = m.end(page.b);
+    const t0 = m.ts[page.a], t1 = m.end(page.b), { ML, CW } = last.g;
     const cx = f1(ML + ((m.ts[k] + SLOT / 2) - t0) / (t1 - t0) * CW);
     const root = this.shadowRoot;
     for (const cur of root.querySelectorAll(".fc-cursor")) { cur.setAttribute("x1", cx); cur.setAttribute("x2", cx); }
@@ -543,7 +596,7 @@ export const forecastView = {
   _fcSlotAt(el, clientX) {
     const last = this._fcLast;
     if (!last) return null;
-    const { m, page } = last;
+    const { m, page, g: { W, ML, CW } } = last;
     const r = el.getBoundingClientRect();
     if (!r.width) return null;
     const vx = (clientX - r.left) / r.width * W;
@@ -553,6 +606,7 @@ export const forecastView = {
 
   _attachForecastListeners() {
     this._fresh(".fc-chart").forEach(el => {
+      this._observeChart(el, "forecast");
       const pick = ev => this._fcSelect(this._fcSlotAt(el, ev.clientX));
       el.addEventListener("pointermove", ev => { if (ev.pointerType === "mouse") pick(ev); });
       el.addEventListener("pointerdown", pick);
@@ -613,12 +667,17 @@ export const forecastCss = `
       .fc-step { background: none; border: none; color: var(--primary-text-color); font-size: 1rem; line-height: 1; padding: 2px 6px; cursor: pointer; border-radius: 4px; font-family: inherit; }
       .fc-step:disabled { opacity: .3; cursor: default; }
       .fc-step:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+      .fc-chart-svg { width: 100%; height: auto; }
       .fc-chart { display: flex; flex-direction: column; gap: 8px; touch-action: pan-y; cursor: crosshair; border-radius: 4px; }
       .fc-chart:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
       .fc-lane-sub { font-weight: 400; font-size: .74rem; color: var(--secondary-text-color); margin-left: 6px; }
       .fc-bar { fill: var(--fc-bar); }
       .fc-bar.fc-cheap { fill: var(--evcc-green); opacity: .9; }
       .fc-limit { stroke-width: .8; fill: none; }
+      .fc-tag rect { fill: var(--fc-tag); }
+      .fc-tag text { fill: var(--fc-tag-text, #fff); }
+      .fc-tag-min { --fc-tag: var(--evcc-green); }
+      .fc-tag-max { --fc-tag: var(--secondary-text-color); --fc-tag-text: var(--card-background-color, #fff); }
       .fc-limit-smart { stroke: var(--primary-text-color); stroke-dasharray: 4 3; opacity: .7; }
       .fc-limit-batt  { stroke: var(--fc-batt); stroke-width: 1; stroke-dasharray: 2 2; }
       .fc-leg-limit { cursor: pointer; }
