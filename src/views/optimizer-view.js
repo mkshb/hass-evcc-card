@@ -1,6 +1,7 @@
 import { escHtml, escAttr } from "../utils/html.js";
 import { evccDate, fmtPrice } from "../utils/format.js";
 import { HA_EVCC_OPTIMIZER_VERSION } from "../core/constants.js";
+import { AXIS_FONT } from "../components/chart-px.js";
 
 const HOUR = 3600 * 1000;
 // Below this mean power (W) a slot counts as idle: the solver leaves small
@@ -13,9 +14,9 @@ const MIN_PAGE = 2 * HOUR;
 // holds evcc's result in memory, an unchanged answer draws nothing.
 const REFRESH = 60 * 1000;
 
-// Chart geometry in viewBox units; the SVG scales to the card width.
-const W = 400, ML = 26, MR = 4;
-const CW = W - ML - MR;
+// Chart geometry in pixels, the SVG in the width the chart has on screen
+// (src/components/chart-px.js). The left margin follows the longest axis label.
+const MR = 4, MT = 8, MB = 24;
 
 // The view last picked (chart or list), per ha-evcc instance (prefix), as the
 // battery mode keeps its tab. Storage that fails only means the chart shows.
@@ -426,10 +427,10 @@ export const optimizerView = {
   // `h` is the plot height in viewBox units.
   _optLanes(m) {
     const lanes = [];
-    if (!m.priceFixed) lanes.push({ kind: "price", h: 40, title: this._t("optLanePrice") });
-    lanes.push({ kind: "energy", h: 96, title: this._t("optLanePower") });
-    for (const h of m.homes) lanes.push({ kind: "home", h: 80, title: h.title, ref: h });
-    for (const v of m.vehicles) lanes.push({ kind: "vehicle", h: 56, title: v.title, ref: v });
+    if (!m.priceFixed) lanes.push({ kind: "price", h: 48, title: this._t("optLanePrice") });
+    lanes.push({ kind: "energy", h: 110, title: this._t("optLanePower") });
+    for (const h of m.homes) lanes.push({ kind: "home", h: 88, title: h.title, ref: h });
+    for (const v of m.vehicles) lanes.push({ kind: "vehicle", h: 60, title: v.title, ref: v });
     return lanes;
   },
 
@@ -441,11 +442,48 @@ export const optimizerView = {
   // in the tariff chart of the plan. The hours are labelled under the last
   // lane; a pointer or the arrow keys pick a slot across all lanes.
   _renderOptChart(m, page, sel) {
-    const MT = 6, MB = 18;
-    const t0 = m.ts[page.a], t1 = m.end(page.b);
-    const x  = t => ML + (t - t0) / (t1 - t0) * CW;
     const lanes = this._optLanes(m);
     const lang = this._hass?.language || "en";
+
+    // The scale and the axis labels of each lane first: the longest label
+    // sets the left margin. Price and power span the whole plan, so a series
+    // is read on one scale on every page.
+    for (const l of lanes) {
+      if (l.kind === "price") {
+        l.hi = Math.max(0, ...m.pN); l.lo = Math.min(0, ...m.pN);
+        const cur = this._optCurrency();
+        l.axis = [...(l.hi > 0 ? [[l.hi, fmtPrice(l.hi, cur, lang, { unit: false })]] : []), [0, "0"],
+                  ...(l.lo < 0 ? [[l.lo, fmtPrice(l.lo, cur, lang, { unit: false })]] : [])];
+      } else if (l.kind === "energy") {
+        // As in evcc's own chart: consumption and charging stacked above the
+        // zero line, the home battery's discharging below it; solar and grid
+        // as lines, the grid importing above and exporting below zero. The
+        // scale follows what is shown, so a series left alone is read on its
+        // own scale.
+        const shown = this._optSeries(m).filter(sr => !this._optHidden?.has(sr.key));
+        l.areas = shown.filter(sr => sr.kind === "box");
+        l.lines = shown.filter(sr => sr.kind !== "box");
+        const all   = Array.from({ length: m.n }, (_, k) => k);
+        const upW   = Math.max(0, ...all.map(k => Math.max(l.areas.reduce((a, sr) => a + sr.w[k], 0), ...l.lines.map(sr => sr.w[k]))));
+        const downW = Math.max(0, ...all.map(k => Math.max(l.areas.reduce((a, sr) => a + (sr.neg?.[k] ?? 0), 0), ...l.lines.map(sr => -sr.w[k]))));
+        const range = (upW + downW) / 1000;
+        l.unit  = range <= 2 ? 0.5 : range <= 6 ? 1 : range <= 12 ? 2 : range <= 30 ? 5 : 10;
+        l.topKw = Math.max(l.unit, Math.ceil(upW / 1000 / l.unit) * l.unit);
+        l.botKw = downW > 50 ? Math.ceil(downW / 1000 / l.unit) * l.unit : 0;
+        l.axis = [];
+        for (let v = -l.botKw; v <= l.topKw + 1e-9; v += l.unit) {
+          l.axis.push([v * 1000, Math.abs(v - l.topKw) < 1e-9 ? `${this._battNum(v)} kW` : this._battNum(v)]);
+        }
+      } else {
+        l.axis = (l.h >= 70 ? [0, 25, 50, 75, 100] : [0, 50, 100]).map(v => [v, String(v)]);
+      }
+    }
+    const W = this._chartW("optimizer"), ML = this._chartMargin(Math.max(...lanes.flatMap(l => l.axis.map(([, t]) => t.length))));
+    const CW = W - ML - MR;
+    this._optLast.g = { W, ML, CW };
+
+    const t0 = m.ts[page.a], t1 = m.end(page.b);
+    const x  = t => ML + (t - t0) / (t1 - t0) * CW;
     const slots = [];
     for (let k = page.a; k <= page.b; k++) slots.push(k);
     const sx = k => x(m.ts[k]), sw = k => Math.max(0.3, x(m.end(k)) - x(m.ts[k]));
@@ -465,7 +503,7 @@ export const optimizerView = {
 
     const grid = (y, label) =>
       `<line x1="${ML}" x2="${W - MR}" y1="${f1(y)}" y2="${f1(y)}" stroke="var(--divider-color,#444)" stroke-width="0.5"/>` +
-      `<text x="${ML - 4}" y="${f1(y + 3)}" text-anchor="end" font-size="7" fill="var(--secondary-text-color,#888)">${escHtml(label)}</text>`;
+      `<text x="${ML - 5}" y="${f1(y + AXIS_FONT * 0.35)}" text-anchor="end" font-size="${AXIS_FONT}" fill="var(--secondary-text-color,#888)">${escHtml(label)}</text>`;
     const stripes = (id, color) =>
       `<pattern id="${id}" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
       `<line x1="0" y1="0" x2="0" y2="4" stroke="var(${color})" stroke-width="1.5" opacity="0.35"/></pattern>`;
@@ -483,18 +521,14 @@ export const optimizerView = {
         const d = new Date(t);
         const lbl  = midnight ? d.toLocaleDateString(lang, { weekday: "short" }) : `${d.getHours()}`;
         const font = midnight ? `font-weight="600" fill="var(--primary-text-color,#fff)"` : `fill="var(--secondary-text-color,#888)"`;
-        s += `<text x="${f1(x(t))}" y="${H - 6}" text-anchor="middle" font-size="7" ${font}>${escHtml(lbl)}</text>`;
+        s += `<text x="${f1(x(t))}" y="${H - 7}" text-anchor="middle" font-size="${AXIS_FONT}" ${font}>${escHtml(lbl)}</text>`;
       }
 
       if (l.kind === "price") {
-        // From the zero line up, and down for negative prices; the scale
-        // spans the whole plan, as the power lane's does.
-        const hi = Math.max(0, ...m.pN), lo = Math.min(0, ...m.pN);
+        // From the zero line up, and down for negative prices.
+        const { hi, lo } = l;
         const yp = p => y0 + (hi - p) / ((hi - lo) || 1) * l.h;
-        const cur = this._optCurrency();
-        if (hi > 0) s += grid(y0, fmtPrice(hi, cur, lang, { unit: false }));
-        s += grid(yp(0), "0");
-        if (lo < 0) s += grid(y1, fmtPrice(lo, cur, lang, { unit: false }));
+        for (const [v, label] of l.axis) s += grid(yp(v), label);
         for (const k of slots) {
           const ya = yp(Math.max(0, m.pN[k])), yb = yp(Math.min(0, m.pN[k]));
           if (yb - ya < 0.05) continue;
@@ -503,25 +537,9 @@ export const optimizerView = {
       }
 
       if (l.kind === "energy") {
-        // As in evcc's own chart: consumption and charging stacked above the
-        // zero line, the home battery's discharging below it; solar and grid
-        // as lines, the grid importing above and exporting below zero.
-        const shown = this._optSeries(m).filter(sr => !this._optHidden?.has(sr.key));
-        const areas = shown.filter(sr => sr.kind === "box");
-        const lines = shown.filter(sr => sr.kind !== "box");
-        const all   = Array.from({ length: m.n }, (_, k) => k);
-        // The scale follows what is shown, over the whole plan, so a series
-        // left alone is read on its own scale and the pages stay comparable.
-        const upW   = Math.max(0, ...all.map(k => Math.max(areas.reduce((a, sr) => a + sr.w[k], 0), ...lines.map(sr => sr.w[k]))));
-        const downW = Math.max(0, ...all.map(k => Math.max(areas.reduce((a, sr) => a + (sr.neg?.[k] ?? 0), 0), ...lines.map(sr => -sr.w[k]))));
-        const range = (upW + downW) / 1000;
-        const unit  = range <= 2 ? 0.5 : range <= 6 ? 1 : range <= 12 ? 2 : range <= 30 ? 5 : 10;
-        const topKw = Math.max(unit, Math.ceil(upW / 1000 / unit) * unit);
-        const botKw = downW > 50 ? Math.ceil(downW / 1000 / unit) * unit : 0;
+        const { areas, lines, topKw, botKw } = l;
         const y = w => y0 + (topKw - w / 1000) / (topKw + botKw) * l.h;
-        for (let v = -botKw; v <= topKw + 1e-9; v += unit) {
-          s += grid(y(v * 1000), Math.abs(v - topKw) < 1e-9 ? `${this._battNum(v)} kW` : this._battNum(v));
-        }
+        for (const [v, label] of l.axis) s += grid(y(v), label);
         // One bar per slot, as the tariff chart of the plan draws them: a gap
         // between the bars, the series of a slot stacked inside its bar.
         const clean = w => (w > 5 ? w : 0);
@@ -574,7 +592,7 @@ export const optimizerView = {
             if (e >= page.a && a <= page.b) s += band(Math.max(a, page.a), Math.min(e, page.b), "--opt-veh");
           }
         }
-        for (const v of l.h >= 70 ? [0, 25, 50, 75, 100] : [0, 50, 100]) s += grid(ys(v), String(v));
+        for (const [v, label] of l.axis) s += grid(ys(v), label);
         if (l.kind === "home") {
           const min = b.pct(b.sMin);
           if (min != null && min > 0) s += `<line x1="${ML}" x2="${W - MR}" y1="${f1(ys(min))}" y2="${f1(ys(min))}" stroke="var(--secondary-text-color)" stroke-width="0.8" stroke-dasharray="1.5 3" stroke-linecap="round"/>`;
@@ -592,10 +610,10 @@ export const optimizerView = {
         }
       }
 
-      s += `<line class="opt-cursor" x1="${f1(cx)}" x2="${f1(cx)}" y1="${y0}" y2="${y1}" stroke="var(--primary-text-color,#fff)" stroke-width="0.6" opacity="0.6"/>`;
+      s += `<line class="opt-cursor" x1="${f1(cx)}" x2="${f1(cx)}" y1="${y0}" y2="${y1}" stroke="var(--primary-text-color,#fff)" stroke-width="1" opacity="0.6"/>`;
       return `<div class="opt-lane">
           <div class="opt-lane-name">${escHtml(l.title)}</div>
-          <svg viewBox="0 0 ${W} ${H}" class="opt-chart-svg" aria-hidden="true">${s}</svg>
+          <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" class="opt-chart-svg" aria-hidden="true">${s}</svg>
         </div>`;
     });
 
@@ -724,7 +742,7 @@ export const optimizerView = {
     this._optSel = m.ts[k];
     last.sel = k;
     const root = this.shadowRoot;
-    const t0 = m.ts[page.a], t1 = m.end(page.b);
+    const t0 = m.ts[page.a], t1 = m.end(page.b), { ML, CW } = last.g;
     const x = t => ML + (t - t0) / (t1 - t0) * CW;
     const cx = f1((x(m.ts[k]) + x(m.end(k))) / 2);
     for (const cur of root.querySelectorAll(".opt-cursor")) { cur.setAttribute("x1", cx); cur.setAttribute("x2", cx); }
@@ -736,7 +754,7 @@ export const optimizerView = {
   _optSlotAt(el, clientX) {
     const last = this._optLast;
     if (!last) return null;
-    const { m, page } = last;
+    const { m, page, g: { W, ML, CW } } = last;
     const r = el.getBoundingClientRect();
     if (!r.width) return null;
     const vx = (clientX - r.left) / r.width * W;
@@ -749,6 +767,7 @@ export const optimizerView = {
 
   _attachOptimizerListeners() {
     this._fresh(".opt-chart").forEach(el => {
+      this._observeChart(el, "optimizer");
       const pick = ev => this._optSelect(this._optSlotAt(el, ev.clientX));
       el.addEventListener("pointermove", ev => { if (ev.pointerType === "mouse") pick(ev); });
       el.addEventListener("pointerdown", pick);
@@ -857,7 +876,7 @@ export const optimizerCss = `
       .opt-seg-btn:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
       .opt-chart { display: flex; flex-direction: column; gap: 8px; touch-action: pan-y; cursor: crosshair; border-radius: 4px; }
       .opt-chart:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
-      .opt-chart-svg { width: 100%; display: block; }
+      .opt-chart-svg { width: 100%; height: auto; display: block; }
       .opt-lane { display: flex; flex-direction: column; gap: 2px; }
       .opt-lane-name { font-size: .78rem; font-weight: 600; }
       .opt-legend { display: flex; flex-wrap: wrap; gap: 3px 12px; font-size: .7rem; color: var(--secondary-text-color); }

@@ -4388,8 +4388,11 @@ def optimizer_mode(browser, port, t):
     # The pointer and the arrow keys move the selection; a render keeps it.
     # The pointer aims at the middle of the slot: WebKit moves the mouse in
     # whole pixels, and a quarter hour is only a few pixels wide here.
+    # The chart is drawn in pixels: its plot starts at the grid lines' left end
+    # and runs to 4 px before the right edge.
     box = page.locator(in_card(".opt-chart")).bounding_box()
-    page.mouse.move(box["x"] + box["width"] * (26 + (12 * 3600 + 450) / 86400 * 370) / 400, box["y"] + 40)
+    ml, vw = page.evaluate("() => { const s = window.__card.shadowRoot.querySelector('.opt-chart-svg'); return [+s.querySelector('line[stroke-width=\"0.5\"]').getAttribute('x1'), s.viewBox.baseVal.width]; }")
+    page.mouse.move(box["x"] + box["width"] * (ml + (12 * 3600 + 450) / 86400 * (vw - ml - 4)) / vw, box["y"] + 40)
     t.check(text(page, ".opt-dt") == ["Mi 12:00 bis 12:15"], "the mouse over the chart picks its slot", str(text(page, ".opt-dt")))
     vals = text(page, ".opt-detail .opt-dv")
     t.check(vals == ["3,5 kW", "1,4 kW", "0 kW", "Laden mit PV · +2,1 kW · 67 %", "lädt nicht · 52 %"], "the values of that slot", str(vals))
@@ -4467,7 +4470,7 @@ def optimizer_mode(browser, port, t):
     price = lambda: page.evaluate("""() => {
       const svg = window.__card.shadowRoot.querySelector('.opt-chart-svg');
       const zero = [...svg.querySelectorAll('text')].find(e => e.textContent === '0');
-      const zy = parseFloat(zero.getAttribute('y')) - 3;
+      const zy = parseFloat(zero.previousElementSibling.getAttribute('y1'));
       const bars = [...svg.querySelectorAll('rect.opt-price-bar')];
       return { labels: [...svg.querySelectorAll('text')].map(e => e.textContent),
                below: bars.filter(r => Math.abs(parseFloat(r.getAttribute('y')) - zy) < 0.1).length,
