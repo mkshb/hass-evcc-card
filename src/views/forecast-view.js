@@ -338,9 +338,9 @@ export const forecastView = {
   // with zoom: when all of them are above zero the lane starts a round step
   // below the lowest, so that prices between 41 and 59 ct do not look flat;
   // with a value at or below zero it keeps the zero line. The step is a round
-  // number of the unit shown (ct for a price in €, `factor` 100). Returns the
-  // values of the grid lines in the series' own unit and the base the bars
-  // grow from.
+  // number of the unit shown (ct for a price in €, `factor` 100), at most four
+  // of them over the lane. Returns the values of the grid lines in the series'
+  // own unit and the base the bars grow from.
   _fcScale(vals, factor) {
     const s = { factor };
     const vmin = Math.min(...vals) * s.factor, vmax = Math.max(...vals) * s.factor;
@@ -349,7 +349,7 @@ export const forecastView = {
     const steps = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
     // Zoomed, the lowest bar keeps a height: the base lies below it, never on it.
     const below = st => zoom ? (Math.ceil(vmin / st - 1e-9) - 1) * st : Math.floor(lo / st + 1e-9) * st;
-    const step = steps.find(st => (Math.ceil(hi / st - 1e-9) * st - below(st)) / st <= 3) ?? 1000;
+    const step = steps.find(st => (Math.ceil(hi / st - 1e-9) * st - below(st)) / st <= 4) ?? 1000;
     const bot = below(step), top = Math.max(bot + step, Math.ceil(hi / step - 1e-9) * step);
     const lines = [];
     for (let v = bot; v <= top + step / 2; v += step) lines.push(v / s.factor);
