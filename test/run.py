@@ -5123,12 +5123,13 @@ def forecast_mode(browser, port, t):
     axis = lambda page, i: page.evaluate(f"""() => [...window.__card.shadowRoot.querySelectorAll('.opt-lane')[{i}]
         .querySelectorAll('svg > text[text-anchor=end]')].map(e => e.textContent)""")
     tags = lambda page, i: page.evaluate(f"""() => [...window.__card.shadowRoot.querySelectorAll('.opt-lane')[{i}].querySelectorAll('.fc-tag')]
-        .map(g => {{ const r = g.querySelector('rect'); return [g.classList[1], g.textContent, +r.getAttribute('x'), +r.getAttribute('y'), +r.getAttribute('width')]; }})""")
+        .map(g => {{ const r = g.querySelector('rect'), w = g.ownerSVGElement.viewBox.baseVal.width;
+          return [g.classList[1], g.textContent, +r.getAttribute('x'), +r.getAttribute('y'), +r.getAttribute('width'), w]; }})""")
     page, errors = fc_page(dynamic="high")
     t.check(not errors and axis(page, 1) == ["30", "40", "50", "60 ct"], "prices from 39 to 59 ct: the lane runs from 30 to 60 ct, not from 0", f"{axis(page, 1)} {errors}")
     tg = tags(page, 1)
     t.check([g[:2] for g in tg] == [["fc-tag-min", "39,0 ct"], ["fc-tag-max", "59,2 ct"]], "the lowest and the highest price of the page in a tag", str(tg))
-    t.check(all(26 <= x and x + w <= 396 and y >= 0 for _, _, x, y, w in tg), "the tags stay inside the chart, also the one at its left edge", str(tg))
+    t.check(all(20 <= x and x + w <= W and y >= 0 for _, _, x, y, w, W in tg), "the tags stay inside the chart, also the one at its left edge", str(tg))
     rect = page.evaluate("""() => { const l = window.__card.shadowRoot.querySelectorAll('.opt-lane')[1];
         const bars = [...l.querySelectorAll('.fc-bar')].map(b => +b.getAttribute('y') + +b.getAttribute('height'));
         return [Math.min(...bars), Math.max(...bars)]; }""")
@@ -5146,6 +5147,26 @@ def forecast_mode(browser, port, t):
     t.check(not errors and axis(page, 1) == ["-20", "0", "20", "40 ct"], "prices below zero keep the zero line", f"{axis(page, 1)} {errors}")
     t.check([g[:2] for g in tags(page, 1)] == [["fc-tag-min", "-3,0 ct"], ["fc-tag-max", "37,2 ct"]], "and name the lowest one below zero", str(tags(page, 1)))
     done(page)
+    # The chart is drawn in its width on screen, so its text keeps one size:
+    # 11 px on a narrow card as on a wide one, and again after a resize.
+    px = lambda page: page.evaluate("""() => { const svg = window.__card.shadowRoot.querySelector('.fc-chart-svg');
+        const label = svg.querySelector('text'), r = svg.getBoundingClientRect();
+        return [svg.viewBox.baseVal.width, Math.round(r.width), +label.getAttribute('font-size') * r.width / svg.viewBox.baseVal.width]; }""")
+    for width in (334, 600):
+        page, errors = fc_page(dynamic=True, width=width)
+        vw, rw, font = px(page)
+        t.check(not errors and abs(vw - rw) <= 1 and abs(font - 11) < 0.2, f"card {width} px: the chart drawn 1:1, its text 11 px", f"viewBox {vw}, on screen {rw}, text {font:.1f} px {errors}")
+        if width == 600:
+            page.evaluate("document.getElementById('host').style.setProperty('--w', '420px')")
+            page.wait_for_function("() => { const s = window.__card.shadowRoot.querySelector('.fc-chart-svg'); return Math.abs(s.viewBox.baseVal.width - s.getBoundingClientRect().width) <= 1; }", timeout=3000)
+            settle(page)
+            vw2, rw2, font2 = px(page)
+            t.check(vw2 < vw and abs(vw2 - rw2) <= 1 and abs(font2 - 11) < 0.2, "a narrower card draws the chart again in its new width", f"viewBox {vw} -> {vw2}, on screen {rw2}, text {font2:.1f} px")
+            page.mouse.move(*page.evaluate("""() => { const r = window.__card.shadowRoot.querySelector('.fc-chart-svg:last-of-type').getBoundingClientRect(); return [r.right - 3, r.top + r.height / 2]; }"""))
+            settle(page)
+            t.check(text(page, ".fc-detail .opt-dt")[0].startswith("Sa 23:45"), "and the pointer finds the slot under it in the new geometry", str(text(page, ".fc-detail .opt-dt")))
+        done(page)
+
     page, _ = fc_page(dynamic=True, tariff="co2", attrs=co2)
     tg = tags(page, 2)
     t.check([g[0] for g in tg] == ["fc-tag-min", "fc-tag-max"] and all(g[1].endswith(" g") for g in tg), "the CO₂ lane names its lowest and highest value in g", str(tg))
