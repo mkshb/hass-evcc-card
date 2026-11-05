@@ -24,6 +24,9 @@ const DARK_W = 50;
 const W = 400, ML = 26, MR = 4;
 const CW = W - ML - MR;
 const LANE_PRICE = 64, LANE_SOLAR = 44, MT = 6, MB = 18;
+// The tags naming the lowest and highest value of a bar lane, and the room
+// above such a lane that the tag over its highest bar needs.
+const TAG_FONT = 7, TAG_ROOM = 13;
 
 const f1 = v => v.toFixed(1);
 
@@ -331,19 +334,49 @@ export const forecastView = {
 
   // ── Chart ──────────────────────────────────────────────────────────────
 
-  // A bar lane from zero, as in the optimizer, up to the highest value or
-  // limit; the step is a round number of the unit shown (ct for a price in
-  // €, `factor` 100). Returns the values of the grid lines in the series' own
-  // unit.
+  // A bar lane over the range of the values and limits, as evcc's price chart
+  // with zoom: when all of them are above zero the lane starts a round step
+  // below the lowest, so that prices between 41 and 59 ct do not look flat;
+  // with a value at or below zero it keeps the zero line. The step is a round
+  // number of the unit shown (ct for a price in €, `factor` 100). Returns the
+  // values of the grid lines in the series' own unit and the base the bars
+  // grow from.
   _fcScale(vals, factor) {
     const s = { factor };
-    const hi = Math.max(0, ...vals) * s.factor, lo = Math.min(0, ...vals) * s.factor;
+    const vmin = Math.min(...vals) * s.factor, vmax = Math.max(...vals) * s.factor;
+    const zoom = vmin > 0;
+    const hi = Math.max(0, vmax), lo = Math.min(0, vmin);
     const steps = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
-    const step = steps.find(st => (Math.ceil(hi / st) - Math.floor(lo / st)) <= 3) ?? 1000;
-    const top = Math.max(step, Math.ceil(hi / step - 1e-9) * step), bot = Math.floor(lo / step + 1e-9) * step;
+    // Zoomed, the lowest bar keeps a height: the base lies below it, never on it.
+    const below = st => zoom ? (Math.ceil(vmin / st - 1e-9) - 1) * st : Math.floor(lo / st + 1e-9) * st;
+    const step = steps.find(st => (Math.ceil(hi / st - 1e-9) * st - below(st)) / st <= 3) ?? 1000;
+    const bot = below(step), top = Math.max(bot + step, Math.ceil(hi / step - 1e-9) * step);
     const lines = [];
     for (let v = bot; v <= top + step / 2; v += step) lines.push(v / s.factor);
-    return { top: top / s.factor, bot: bot / s.factor, lines, factor: s.factor };
+    return { top: top / s.factor, bot: bot / s.factor, base: zoom ? bot / s.factor : 0, lines, factor: s.factor };
+  },
+
+  // The lowest and highest value of a lane on the page, named in a tag above
+  // its bar as on evcc's price chart; the first slot where several share it.
+  // `yp` maps a value to the lane, `cx` a slot to the middle of its bar.
+  _fcExtremeTags(l, a, b, yp, cx) {
+    let kMin = -1, kMax = -1;
+    for (let k = a; k <= b; k++) {
+      const v = l.vals[k];
+      if (v == null) continue;
+      if (kMin < 0 || v < l.vals[kMin]) kMin = k;
+      if (kMax < 0 || v > l.vals[kMax]) kMax = k;
+    }
+    if (kMin < 0 || l.vals[kMax] - l.vals[kMin] < 1e-9) return "";
+    const tag = (k, cls) => {
+      const text = l.tag(l.vals[k]);
+      const w = text.length * TAG_FONT * 0.58 + 6, h = TAG_FONT + 4;
+      const x = Math.max(ML, Math.min(W - MR - w, cx(k) - w / 2));
+      const y = Math.max(MT, yp(Math.max(0, l.vals[k])) - h - 2);
+      return `<g class="fc-tag ${cls}"><rect x="${f1(x)}" y="${f1(y)}" width="${f1(w)}" height="${h}" rx="2.5"/>` +
+        `<text x="${f1(x + w / 2)}" y="${f1(y + h - 3)}" text-anchor="middle" font-size="${TAG_FONT}" font-weight="600">${escHtml(text)}</text></g>`;
+    };
+    return tag(kMin, "fc-tag-min") + tag(kMax, "fc-tag-max");
   },
 
   // The lanes as the optimizer draws them: name above, grid lines with their
@@ -374,15 +407,17 @@ export const forecastView = {
     if (m.hasSolar) lanes.push({ kind: "solar", h: LANE_SOLAR, title: this._t("optPv"), sub: this._fcSolarSums(m, page) });
     if (m.hasPrice && !m.fixed) lanes.push({ kind: "bars", h: LANE_PRICE, title: this._t("optLanePrice"),
       vals: m.price, known: m.pn, green: k => m.level(k) === "cheap", factor: ps.factor, unit: ps.unit.replace(/\/kWh$/, ""),
-      limits: limits.filter(l => l.on === "price"), none: this._t("fcNoPrices"), id: "price" });
+      limits: limits.filter(l => l.on === "price"), none: this._t("fcNoPrices"), id: "price",
+      tag: v => this._fcPrice(v, m, { unit: "short" }) });
     if (m.hasCo2 && !m.co2Fixed) lanes.push({ kind: "bars", h: LANE_PRICE, title: this._t("fcLaneCo2"),
       vals: m.co2, known: m.cn, green: k => m.co2Level(k) === "low", factor: 1, unit: "g",
-      limits: limits.filter(l => l.on === "co2"), none: this._t("fcNoCo2"), id: "co2" });
+      limits: limits.filter(l => l.on === "co2"), none: this._t("fcNoCo2"), id: "co2",
+      tag: v => `${this._battNum(v, 0)} g` });
 
     const blocks = lanes.map((l, li) => {
       const last = li === lanes.length - 1;
-      const H = MT + l.h + (last ? MB : 4);
-      const y0 = MT, y1 = MT + l.h;
+      const y0 = MT + (l.kind === "bars" ? TAG_ROOM : 0), y1 = y0 + l.h;
+      const H = y1 + (last ? MB : 4);
       let s = "";
       for (const t of ticks) {
         const midnight = new Date(t).getHours() === 0;
@@ -406,7 +441,7 @@ export const forecastView = {
         });
         const pe = Math.min(page.b, l.known - 1);
         for (let k = page.a; k <= pe; k++) {
-          const ya = yp(Math.max(0, l.vals[k])), yb = yp(Math.min(0, l.vals[k]));
+          const ya = yp(Math.max(sc.base, l.vals[k])), yb = yp(Math.min(sc.base, l.vals[k]));
           if (yb - ya < 0.05) continue;
           s += `<rect class="fc-bar${l.green(k) ? " fc-cheap" : ""}" x="${f1(bx(k))}" y="${f1(ya)}" width="${f1(bw)}" height="${f1(yb - ya)}"/>`;
         }
@@ -425,6 +460,7 @@ export const forecastView = {
             `<rect x="${f1(xa)}" y="${y0}" width="${f1(xb - xa)}" height="${l.h}" fill="url(#${pid})"/>`;
           if (xb - xa > 60) s += `<text x="${f1((xa + xb) / 2)}" y="${f1(y0 + l.h / 2 + 3)}" text-anchor="middle" font-size="7.5" fill="var(--secondary-text-color,#888)">${escHtml(l.none)}</text>`;
         }
+        if (pe >= page.a) s += this._fcExtremeTags(l, page.a, pe, yp, k => bx(k) + bw / 2);
       }
 
       if (l.kind === "solar") {
@@ -619,6 +655,10 @@ export const forecastCss = `
       .fc-bar { fill: var(--fc-bar); }
       .fc-bar.fc-cheap { fill: var(--evcc-green); opacity: .9; }
       .fc-limit { stroke-width: .8; fill: none; }
+      .fc-tag rect { fill: var(--fc-tag); }
+      .fc-tag text { fill: var(--fc-tag-text, #fff); }
+      .fc-tag-min { --fc-tag: var(--evcc-green); }
+      .fc-tag-max { --fc-tag: var(--secondary-text-color); --fc-tag-text: var(--card-background-color, #fff); }
       .fc-limit-smart { stroke: var(--primary-text-color); stroke-dasharray: 4 3; opacity: .7; }
       .fc-limit-batt  { stroke: var(--fc-batt); stroke-width: 1; stroke-dasharray: 2 2; }
       .fc-leg-limit { cursor: pointer; }

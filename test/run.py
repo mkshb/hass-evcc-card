@@ -155,7 +155,7 @@ def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="d
               rename=None, attrs=None, tariff=None, second=None, wsname=None, admin=True, drop=None,
               vehicle_device=True, optimizer=False, battery_ext=False, optimize=False, caps_version=None, dynamic=False):
     q = {"w": width, "lang": lang}
-    if dynamic: q["dyn"] = 1
+    if dynamic: q["dyn"] = 1 if dynamic is True else dynamic
     if caps_version: q["capsver"] = caps_version
     if optimizer: q["optimizer"] = 1 if optimizer is True else optimizer
     if battery_ext: q["battext"] = 1
@@ -5113,6 +5113,42 @@ def forecast_mode(browser, port, t):
     done(page)
     page, _ = fc_page(dynamic=True)
     t.check("CO₂-Intensität" not in text(page, ".opt-lane-name"), "evcc optimizes for the price: no CO₂ lane", str(text(page, ".opt-lane-name")))
+    done(page)
+
+    # The bar lanes span the range of their values (#206): above zero they start
+    # a round step below the lowest, as evcc's price chart with zoom, and name
+    # the lowest and highest value of the page in a tag above its bar.
+    t.group("forecast - scale and tags")
+    # The grid line labels of lane i, bottom up, and its tags as [class, text, x, y, w].
+    axis = lambda page, i: page.evaluate(f"""() => [...window.__card.shadowRoot.querySelectorAll('.opt-lane')[{i}]
+        .querySelectorAll('svg > text[text-anchor=end]')].map(e => e.textContent)""")
+    tags = lambda page, i: page.evaluate(f"""() => [...window.__card.shadowRoot.querySelectorAll('.opt-lane')[{i}].querySelectorAll('.fc-tag')]
+        .map(g => {{ const r = g.querySelector('rect'); return [g.classList[1], g.textContent, +r.getAttribute('x'), +r.getAttribute('y'), +r.getAttribute('width')]; }})""")
+    page, errors = fc_page(dynamic="high")
+    t.check(not errors and axis(page, 1) == ["30", "40", "50", "60 ct"], "prices from 39 to 59 ct: the lane runs from 30 to 60 ct, not from 0", f"{axis(page, 1)} {errors}")
+    tg = tags(page, 1)
+    t.check([g[:2] for g in tg] == [["fc-tag-min", "39,0 ct"], ["fc-tag-max", "59,2 ct"]], "the lowest and the highest price of the page in a tag", str(tg))
+    t.check(all(26 <= x and x + w <= 396 and y >= 0 for _, _, x, y, w in tg), "the tags stay inside the chart, also the one at its left edge", str(tg))
+    rect = page.evaluate("""() => { const l = window.__card.shadowRoot.querySelectorAll('.opt-lane')[1];
+        const bars = [...l.querySelectorAll('.fc-bar')].map(b => +b.getAttribute('y') + +b.getAttribute('height'));
+        return [Math.min(...bars), Math.max(...bars)]; }""")
+    t.check(abs(rect[0] - rect[1]) < 0.2, "every bar grows from the bottom of the lane", str(rect))
+    click(page, 'button.fc-step[data-fc-step="1"]')
+    t.check(tags(page, 1) == [], "a page without prices has no tags", str(tags(page, 1)))
+    done(page)
+    page, _ = fc_page(dynamic=True, set=FC_LIMITS)
+    t.check(axis(page, 1) == ["10", "20", "30", "40 ct"], "the limits count for the range: 17 to 37 ct with limits at 18 and 22 ct", str(axis(page, 1)))
+    done(page)
+    page, _ = fc_page(dynamic=True, set={**FC_LIMITS, "number.evcc_openwb_smart_cost_limit": 0.05})
+    t.check(axis(page, 1) == ["0", "20", "40 ct"], "a limit far below the prices widens the lane down to it", str(axis(page, 1)))
+    done(page)
+    page, errors = fc_page(dynamic="negative")
+    t.check(not errors and axis(page, 1) == ["-20", "0", "20", "40 ct"], "prices below zero keep the zero line", f"{axis(page, 1)} {errors}")
+    t.check([g[:2] for g in tags(page, 1)] == [["fc-tag-min", "-3,0 ct"], ["fc-tag-max", "37,2 ct"]], "and name the lowest one below zero", str(tags(page, 1)))
+    done(page)
+    page, _ = fc_page(dynamic=True, tariff="co2", attrs=co2)
+    tg = tags(page, 2)
+    t.check([g[0] for g in tg] == ["fc-tag-min", "fc-tag-max"] and all(g[1].endswith(" g") for g in tg), "the CO₂ lane names its lowest and highest value in g", str(tg))
     done(page)
 
     t.group("forecast - sections")
