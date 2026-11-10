@@ -4,19 +4,22 @@
 // size on a narrow and on a wide card, and its lanes keep their height. The
 // width is measured per chart by a ResizeObserver; a new width renders the
 // card again. Until the first measurement the card's own width less its
-// padding stands in.
+// padding and ha-card's border stands in: right from the start, so the
+// measurement finds nothing to draw again.
 
 // The text of the axes, and the width of a character as a share of the font
 // size, to size what is drawn around a text without measuring it.
 export const AXIS_FONT = 11;
 export const CHAR = 0.6;
 
-const FALLBACK_W = 400, CARD_PADDING = 32;
+// 16 px padding of .card-content and the 1 px border of ha-card (HA's
+// --ha-card-border-width) on each side.
+const FALLBACK_W = 400, CARD_INSET = 2 * 16 + 2 * 1;
 
 export const chartPx = {
   // The width chart `key` is drawn in.
   _chartW(key) {
-    return this._chartWidths?.[key] || (this.offsetWidth > 100 ? this.offsetWidth - CARD_PADDING : FALLBACK_W);
+    return this._chartWidths?.[key] || (this.offsetWidth > 100 ? this.offsetWidth - CARD_INSET : FALLBACK_W);
   },
 
   // The left margin for axis labels of up to `chars` characters.

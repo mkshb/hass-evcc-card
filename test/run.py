@@ -5223,6 +5223,19 @@ def forecast_mode(browser, port, t):
     px = lambda page: page.evaluate("""() => { const svg = window.__card.shadowRoot.querySelector('.fc-chart-svg');
         const label = svg.querySelector('text'), r = svg.getBoundingClientRect();
         return [svg.viewBox.baseVal.width, Math.round(r.width), +label.getAttribute('font-size') * r.width / svg.viewBox.baseVal.width]; }""")
+    # Before the first measurement the card's width less its padding and the
+    # border of ha-card stands in. Without a ResizeObserver that is all there
+    # is: it must already be the width on screen, or every chart is drawn
+    # twice, and a check right after loading can catch the first drawing.
+    # A context of its own: the init script would stay with a pooled page.
+    ctx = browser.new_context(viewport={"width": 480, "height": 1200}, timezone_id=TIMEZONE, locale=LOCALE)
+    page = ctx.new_page()
+    page.clock.set_fixed_time(FC_TIME)
+    page.add_init_script("delete window.ResizeObserver")
+    open_card(page, port, config={"mode": "forecast"}, dynamic=True, width=334)
+    vw, rw, _ = px(page)
+    t.check(vw == rw, "unmeasured: the first drawing already has the width on screen", f"viewBox {vw}, on screen {rw}")
+    ctx.close()
     for width in (334, 600):
         page, errors = fc_page(dynamic=True, width=width)
         vw, rw, font = px(page)
