@@ -58,17 +58,17 @@ export const evccApi = {
         if (stale()) return;
         this._capsLoaded  = true;
         this._capsLoading = null;
-        // Pre-fetch debug probes so data is cached before the debug block renders.
-        this._prefetchDebugProbes();
         this._render();
       });
     return this._capsLoading;
   },
 
-  // Kick off WS probes in the background so they are cached for the debug block.
-  // Results arrive asynchronously; _wsFetch.finally() triggers a re-render.
+  // The probes the debug block and report show, asked for by the debug block
+  // itself: every card asking for them would put forecast kinds into ha-evcc's
+  // refresh that no shown block needs. Results arrive asynchronously;
+  // _wsFetch.finally() triggers a re-render, the TTL keeps it at one request.
   _prefetchDebugProbes() {
-    if (this._hasCmd("forecast"))     { this._wsForecast("grid"); this._wsForecast("planner"); }
+    if (this._hasCmd("forecast"))     this._wsForecast("grid");
     if (this._hasCmd("sessions"))     this._wsSessions();
     // plan_preview needs a loadpoint — skip here, probe only in debug report.
   },

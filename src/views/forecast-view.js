@@ -17,6 +17,8 @@ const MIN_PAGE = 2 * HOUR;
 // While shown the card renders again this often: the header says how long
 // until the next cheap hours, and _wsFetch asks ha-evcc again after its TTL.
 const REFRESH = 60 * 1000;
+// The forecast kind of ha-evcc each section draws on (the price also takes feedin).
+const FC_KINDS = { price: "grid", solar: "solar", co2: "planner" };
 // Below this power (W) a solar slot counts as dark.
 const DARK_W = 50;
 
@@ -74,13 +76,19 @@ export const forecastView = {
     if (!this._capsLoaded) return note(this._t("fcLoading"));
     if (!this._hasCmd("forecast")) return note(this._t("fcTooOld", { ver: HA_EVCC_MIN_VERSION }));
 
-    this._fcScheduleRefresh();
-    const grid = this._wsForecast("grid"), solar = this._wsForecast("solar"), feedin = this._wsForecast("feedin");
-    // The planner's curve is the CO₂ forecast while evcc optimizes for CO₂.
-    const planner = this._wsForecast("planner");
-    if (grid === null && solar === null) return note(this._t("fcLoading"));
     const sec = this._fcSections();
     if (!sec.size) return note(this._t("fcNoSections"));
+    this._fcScheduleRefresh();
+    // Only the tariffs of the shown sections are asked for: ha-evcc keeps
+    // every kind it was asked for in its own refresh, an unwanted one would
+    // be fetched from evcc again and again. The planner's curve is the CO₂
+    // forecast while evcc optimizes for CO₂.
+    const want = kind => (sec.has(kind) ? this._wsForecast(FC_KINDS[kind]) : undefined);
+    const grid = want("price"), solar = want("solar"), planner = want("co2");
+    const feedin = sec.has("price") ? this._wsForecast("feedin") : undefined;
+    // null: asked for and not answered yet, undefined: not asked for.
+    const pending = grid === null || solar === null || planner === null;
+    if (pending && grid == null && solar == null && planner == null) return note(this._t("fcLoading"));
     const full = this._fcModelOf(grid, feedin, solar, planner);
     // `sections` leaves out what is not wanted: the price with its header and
     // the feed-in rate, the CO₂ lane, the solar lane. The model stays cached.
@@ -88,8 +96,8 @@ export const forecastView = {
       hasPrice: full.hasPrice && sec.has("price"), hasFeed: full.hasFeed && sec.has("price"),
       hasCo2: full.hasCo2 && sec.has("co2"), hasSolar: full.hasSolar && sec.has("solar") };
     if (!m || (!m.hasPrice && !m.hasSolar && !m.hasCo2)) {
-      // Still waiting for one of the two: not yet "nothing".
-      return note(this._t(grid === null || solar === null ? "fcLoading" : "fcEmpty"));
+      // Still waiting for one of them: not yet "nothing".
+      return note(this._t(pending ? "fcLoading" : "fcEmpty"));
     }
 
     const pages = this._fcPages(m);

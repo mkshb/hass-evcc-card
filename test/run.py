@@ -5041,6 +5041,7 @@ def forecast_mode(browser, port, t):
     text = lambda page, sel: page.evaluate(f"() => [...window.__card.shadowRoot.querySelectorAll({json.dumps(sel)})].map(e => e.textContent.replace(/\\s+/g, ' ').trim())")
     click = lambda page, sel: (page.evaluate(f"() => window.__card.shadowRoot.querySelector({json.dumps(sel)}).click()"), settle(page))
     count = lambda page, sel: page.locator(in_card(sel)).count()
+    kinds = lambda page: sorted({c.get("kind") for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/forecast"})
 
     t.group("forecast - header")
     page, errors = fc_page(dynamic=True, set=FC_LIMITS)
@@ -5180,10 +5181,22 @@ def forecast_mode(browser, port, t):
     t.check(not errors and count(page, ".fc-now") == 0 and count(page, ".fc-bar") == 0 and [n.split("heute")[0] for n in text(page, ".opt-lane-name")] == ["PV-Prognose"],
             "solar only: no price header, no price lane", f"{text(page, '.opt-lane-name')} {errors}")
     t.check(text(page, ".fc-detail .opt-dk") == ["PV-Prognose"], "and only solar under the chart", str(text(page, ".fc-detail .opt-dk")))
+    t.check(kinds(page) == ["solar"], "solar only: asks ha-evcc for the solar forecast alone", str(kinds(page)))
     done(page)
     page, _ = fc_page(dynamic=True, tariff="co2", config={"mode": "forecast", "sections": ["price", "co2"]})
     t.check(text(page, ".opt-lane-name") == ["Strompreis", "CO₂-Intensität"] and text(page, ".fc-now") == ["36,4ct"],
             "price and CO₂: the header and both lanes, no solar", str(text(page, ".opt-lane-name")))
+    t.check(kinds(page) == ["feedin", "grid", "planner"], "price and CO₂: no solar forecast asked for", str(kinds(page)))
+    done(page)
+    # #214: a card with the price alone must not ask for the solar forecast,
+    # ha-evcc would keep fetching it from evcc in the background.
+    page, errors = fc_page(dynamic=True, config={"mode": "forecast", "sections": ["price"]})
+    t.check(not errors and text(page, ".fc-now") == ["36,4ct"] and text(page, ".opt-lane-name") == ["Strompreis"],
+            "price only: the header and the price lane", f"{text(page, '.opt-lane-name')} {errors}")
+    t.check(kinds(page) == ["feedin", "grid"], "price only: asks for grid and feed-in, not solar or planner", str(kinds(page)))
+    done(page)
+    page, _ = fc_page(config={"mode": "loadpoint"})
+    t.check(kinds(page) == [], "a mode without a forecast asks for none", str(kinds(page)))
     done(page)
     page, _ = fc_page(config={"mode": "forecast", "sections": []})
     t.check(text(page, ".opt-note") == ["Für die Vorhersage ist kein Bereich ausgewählt."], "an empty list says so", str(text(page, ".opt-note")))
