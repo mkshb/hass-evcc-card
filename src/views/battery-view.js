@@ -9,6 +9,9 @@ const DAY  = 24 * HOUR;
 const HIST_MIN_OFFSET = -30;
 // The history is drawn from means over this step (see _battDownsample).
 const HIST_STEP = 5 * 60 * 1000;
+// The reading line of the chart snaps to quarter hours, as evcc's slots do.
+const SLOT = 15 * 60 * 1000;
+const BAND_COLOR = { charge: "var(--evcc-green)", discharge: "var(--evcc-amber)" };
 
 // The optimizer's actions for the current slot, as evcc names them
 // (core/site_optimizer.go, currentSlotSuggestion).
@@ -67,7 +70,7 @@ const icon = (path, size = 18, color = "currentColor") =>
 // highest/lowest and the recompute button stay in the status.
 export const batteryView = {
   _renderBatteryBlock(site) {
-    if (!site.battery_soc) return "";
+    if (!site.battery_soc) return this._renderBattMissing(site);
     const forecast = this._battForecast();
     return `
       <div class="battery-block">
@@ -78,6 +81,29 @@ export const batteryView = {
         ${this._renderBattStatus(site, forecast)}
         ${this._config.hide_soc_chart === true ? "" : this._renderBattHistory(site, forecast)}
         ${this._renderBattSettings(site)}
+      </div>`;
+  },
+
+  // Without the state of charge there is no battery to show: instead of an
+  // empty frame the header, with the triangle when the SoC sensor is disabled
+  // (one of the entities it points at), a note on why, and the way into the
+  // debug view.
+  _renderBattMissing(site) {
+    const socId = `sensor.${this._getPrefix()}battery_soc`;
+    const off   = this._isEntityDisabled(socId);
+    return `
+      <div class="battery-block">
+        <div class="lp-header">
+          ${this._renderSiteDisabledWarn(site)}
+          <span class="lp-name">${escHtml(this._config.title || this._t("homeBattery"))}</span>
+        </div>
+        <div class="empty">
+          <p>${this._t(off ? "battSocDisabled" : "noBattery", { id: `<code>${escHtml(socId)}</code>` })}</p>
+          <p class="empty-debug-hint">
+            ${this._t("emptyTryDebug")}
+            <button class="debug-link" data-action="open-debug">${this._t("openDebugMode")}</button>
+          </p>
+        </div>
       </div>`;
   },
 
@@ -486,12 +512,11 @@ export const batteryView = {
 
     // Bands behind everything else, the future ones fainter, as the forecast
     // is drawn fainter than the history.
-    const bandColor = { charge: "var(--evcc-green)", discharge: "var(--evcc-amber)" };
     const gridBands = this._battGridBands(site, win);
     const bands = gridBands.map(b => {
       const x0 = x(Math.max(b.s, win.start)), x1 = x(Math.min(b.e, win.end));
       return `<rect class="batt-band ${b.kind}${b.future ? " future" : ""}" x="${x0.toFixed(1)}" y="${MT}" width="${Math.max(0.5, x1 - x0).toFixed(1)}" height="${CH}"
-          fill="${bandColor[b.kind]}" opacity="${b.future ? 0.12 : 0.22}"/>`;
+          fill="${BAND_COLOR[b.kind]}" opacity="${b.future ? 0.12 : 0.22}"/>`;
     }).join("");
     // Always there, empty while there are no bands: the line it reserves in
     // CSS keeps the card the same height when the first band shows up.
@@ -501,6 +526,13 @@ export const batteryView = {
 
     const nowLine = win.now > win.start && win.now < win.end
       ? `<line x1="${x(win.now)}" x2="${x(win.now)}" y1="${MT}" y2="${MT + CH}" stroke="var(--primary-text-color,#fff)" stroke-width="1" opacity="0.6"/>` : "";
+
+    // The reading line: the mouse moves it, a tap or the arrow keys set it,
+    // the box under the chart shows the values at its time (_battSelect).
+    this._battLast = { win, points, fut, bands: gridBands, kinds, x, y, W, ML, CW };
+    const cur = this._battCursor(this._battSelected(win));
+    const cursor = `<line class="batt-cursor" x1="${cur.cx}" x2="${cur.cx}" y1="${MT}" y2="${MT + CH}" stroke="var(--primary-text-color,#fff)" stroke-width="1" opacity="0.9"/>` +
+      `<circle class="batt-cursor-dot" cx="${cur.cx}" cy="${cur.cy ?? MT}" r="3" fill="var(--evcc-blue)" stroke="var(--card-background-color,#fff)" stroke-width="1" visibility="${cur.cy == null ? "hidden" : "visible"}"/>`;
 
     const loading = hist === null;
     const svg = `
@@ -514,7 +546,7 @@ export const batteryView = {
         ${ref(site.priority_soc, "priority")}${ref(site.buffer_soc, "buffer")}
         ${points.length > 1 ? `<path d="${area(points)}" fill="var(--evcc-blue)" opacity="0.15"/><path d="${path(points)}" fill="none" stroke="var(--evcc-blue)" stroke-width="1.5" stroke-linejoin="round"/>` : ""}
         ${fut.length > 1 ? `<path d="${area(fut)}" fill="url(#batt-stripes)"/><path d="${path(fut)}" fill="none" stroke="var(--evcc-blue)" stroke-width="1.5" stroke-dasharray="4 3"/>` : ""}
-        ${nowLine}
+        ${nowLine}${cursor}
       </svg>`;
 
     const canPrev = win.offset > HIST_MIN_OFFSET;
@@ -529,8 +561,111 @@ export const batteryView = {
             <button class="batt-step" data-batt-step="1" ${canNext ? "" : "disabled"} aria-label="${this._t("battNextDay")}">›</button>
           </span>
         </div>
-        <div class="batt-chart${loading ? " loading" : ""}"${moreInfo(site.battery_soc)}>${svg}</div>${legend}
+        <div class="batt-chart${loading ? " loading" : ""}" tabindex="0" role="group" aria-label="${escAttr(this._t("battChartLabel"))}">${svg}</div>${legend}
+        <div class="opt-detail batt-detail" aria-live="polite">${this._renderBattDetail(this._battSelected(win))}</div>
       </div>`;
+  },
+
+  // The time the reading line stands at: the one picked while it lies in the
+  // window, else now (or the end of a day in the past). Unpicked it follows now.
+  _battSelected(win) {
+    const t = this._battSel;
+    return t != null && t >= win.start && t <= win.end ? t : Math.min(win.now, win.end);
+  },
+
+  // The value of a curve at time t, along its straight pieces as drawn; null
+  // outside of it.
+  _battValueAt(pts, t) {
+    if (!pts.length || t < pts[0].t || t > pts[pts.length - 1].t) return null;
+    let i = 0;
+    while (pts[i].t < t) i++;
+    if (i === 0 || pts[i].t === t) return pts[i].v;
+    const a = pts[i - 1], b = pts[i];
+    return a.v + (b.v - a.v) * (t - a.t) / (b.t - a.t);
+  },
+
+  // The state of charge at t: the history up to now, the forecast after it.
+  _battSocAt(t) {
+    const { win, points, fut } = this._battLast;
+    return this._battValueAt(t > win.now ? fut : points, t);
+  },
+
+  // Where the line and its dot stand for time t, in the chart's pixels.
+  _battCursor(t) {
+    const { x, y } = this._battLast;
+    const soc = this._battSocAt(t);
+    return { cx: x(t).toFixed(1), cy: soc == null ? null : y(soc).toFixed(1) };
+  },
+
+  // The values at time t, under the chart: when, how far from now, the state
+  // of charge (the forecast after now) and whether grid charging or
+  // discharging was on or is planned, for the kinds the legend names.
+  _renderBattDetail(t) {
+    const last = this._battLast;
+    if (!last) return "";
+    const lang   = this._hass?.language || "en";
+    const future = t > last.win.now;
+    const now    = Date.now();
+    const rel    = Math.floor(t / SLOT) === Math.floor(now / SLOT) ? this._t("battActiveNow")
+      : this._t(t > now ? "fcIn" : "battAgo", { dur: this._fcDuration(Math.abs(t - now)) });
+    const when   = `${new Date(t).toLocaleDateString(lang, { weekday: "short" })} ${this._optClock(t)}`;
+    const row = (label, val, swatch) =>
+      `<span class="opt-dk">${swatch}${escHtml(label)}</span><span class="opt-dv">${escHtml(val)}</span>`;
+    const soc = this._battSocAt(t);
+    let h = `<span class="opt-dt fc-dt"><span>${escHtml(when)}</span><span class="fc-rel">${escHtml(rel)}</span></span>`;
+    h += row(this._t(future ? "battSocForecast" : "battHistory"), soc == null ? "–" : `${this._battNum(soc, 0)} %`,
+      `<i class="opt-swatch line${future ? " batt-dash" : ""}" style="--sw:var(--evcc-blue)"></i>`);
+    for (const kind of last.kinds) {
+      const band = last.bands.find(b => b.kind === kind && b.s <= t && t < b.e);
+      h += row(this._t(kind === "charge" ? "battTabGridCharge" : "battTabGridDischarge"),
+        band ? this._t(band.future ? "battPlanned" : "battActive") : "–",
+        `<i class="opt-swatch band" style="--sw:${BAND_COLOR[kind]}"></i>`);
+    }
+    return h;
+  },
+
+  // Sets the reading line to time t: the line and the values right away,
+  // without a render, as a pointer crossing the chart would otherwise render
+  // the card at every step. The next render draws it from _battSel.
+  _battSelect(t) {
+    const last = this._battLast;
+    if (!last || t == null) return;
+    const { win } = last;
+    t = Math.max(win.start, Math.min(win.end, t));
+    this._battSel = t;
+    const cur  = this._battCursor(t);
+    const root = this.shadowRoot;
+    const line = root.querySelector(".batt-cursor");
+    if (line) { line.setAttribute("x1", cur.cx); line.setAttribute("x2", cur.cx); }
+    const dot = root.querySelector(".batt-cursor-dot");
+    if (dot) {
+      dot.setAttribute("cx", cur.cx);
+      if (cur.cy != null) dot.setAttribute("cy", cur.cy);
+      dot.setAttribute("visibility", cur.cy == null ? "hidden" : "visible");
+    }
+    const det = root.querySelector(".batt-detail");
+    if (det) det.innerHTML = this._renderBattDetail(t);
+  },
+
+  // The time under the pointer, on a quarter hour; close to now it is now,
+  // where the history ends and the live value stands.
+  _battTimeAt(el, clientX) {
+    const last = this._battLast;
+    if (!last) return null;
+    const { win, W, ML, CW } = last;
+    const r = el.getBoundingClientRect();
+    if (!r.width) return null;
+    const vx = (clientX - r.left) / r.width * W;
+    const t  = win.start + (vx - ML) / CW * (win.end - win.start);
+    if (win.now >= win.start && win.now <= win.end && Math.abs(t - win.now) < SLOT / 2) return win.now;
+    return Math.round(t / SLOT) * SLOT;
+  },
+
+  // One step of the arrow keys: a quarter hour, with Shift an hour, landing
+  // on the grid of quarter hours.
+  _battStep(t, dir, big) {
+    const step = big ? HOUR : SLOT;
+    return dir < 0 ? Math.ceil(t / step) * step - step : Math.floor(t / step) * step + step;
   },
 
   // ── Settings ───────────────────────────────────────────────────────────
@@ -837,7 +972,28 @@ export const batteryView = {
   // Listeners of the battery view: the discharge toggle, the inline selects
   // and the history stepper. Called by _attachListeners() after every render.
   _attachBatteryListeners() {
-    this._fresh(".batt-chart").forEach(el => this._observeChart(el, "battery"));
+    this._fresh(".batt-chart").forEach(el => {
+      this._observeChart(el, "battery");
+      const pick = ev => this._battSelect(this._battTimeAt(el, ev.clientX));
+      el.addEventListener("pointermove", ev => { if (ev.pointerType === "mouse") pick(ev); });
+      el.addEventListener("pointerdown", pick);
+      el.addEventListener("keydown", ev => {
+        const last = this._battLast;
+        if (!last) return;
+        const { win } = last;
+        const t   = this._battSelected(win);
+        const dir = { ArrowLeft: -1, ArrowRight: 1 }[ev.key];
+        let to = { Home: win.start, End: win.end }[ev.key];
+        if (dir) {
+          to = this._battStep(t, dir, ev.shiftKey);
+          // An arrow crossing now lands on it, where the live value stands.
+          if ((t - win.now) * (to - win.now) < 0) to = win.now;
+        }
+        if (to === undefined) return;
+        ev.preventDefault();
+        this._battSelect(to);
+      });
+    });
     this._fresh(".batt-slots").forEach(el => this._observeChart(el, "batterySlots"));
     // One listener for every switch of the view, deciding by the element's
     // attributes at the time of the click: a render morphs one tab into the
@@ -955,6 +1111,7 @@ export const batteryView = {
       btn.addEventListener("click", () => {
         const next = (this._battHistOffset ?? 0) + Number(btn.dataset.battStep);
         this._battHistOffset = Math.max(HIST_MIN_OFFSET, Math.min(0, next));
+        this._battSel = null;
         this._render();
       });
     });
@@ -1005,6 +1162,9 @@ export const batteryCss = `
       .batt-step-label { min-width: 64px; text-align: center; }
       .batt-chart-svg, .batt-slots-svg { width: 100%; height: auto; display: block; }
       .batt-chart.loading { opacity: .5; }
+      .batt-chart { touch-action: pan-y; cursor: crosshair; border-radius: 4px; }
+      .batt-chart:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+      .opt-swatch.line.batt-dash { background: repeating-linear-gradient(90deg, var(--sw) 0 4px, transparent 4px 6px); }
       .batt-band-legend { display: flex; gap: 12px; flex-wrap: wrap; min-height: 1.25em; font-size: .72rem; color: var(--secondary-text-color); }
       .batt-band-legend > span { display: inline-flex; align-items: center; gap: 5px; }
       .batt-band-swatch { width: 10px; height: 10px; border-radius: 2px; opacity: .45; }

@@ -4618,6 +4618,46 @@ def battery_mode(browser, port, t):
     t.check(round(first) == 83, "forecast from the home battery only, the vehicle left out (83 %, not the car's 60 %)", str(first))
     ext = page.locator(in_card(".batt-extreme")).all_inner_texts()
     t.check(len(ext) == 2 and "voll" in ext[0] and "Tiefststand" in ext[1], "highest and lowest from batteryForecast", str(ext))
+
+    # The reading line, as in the forecast and optimizer modes: it stands at
+    # now with the live value, follows the mouse on quarter hours, reads the
+    # history before now and the forecast after it, and takes the arrow keys.
+    t.group("battery - reading line")
+    detail = lambda: " | ".join(page.locator(in_card(".batt-detail > span")).all_inner_texts())
+    cur_x = lambda: float(page.locator(in_card(".batt-cursor")).get_attribute("x1"))
+    t.check(detail().startswith("Fr 13:00") and "jetzt" in detail() and "Ladestand | 83 %" in detail(),
+            "unpicked: now, with the live state of charge", detail())
+    x_now = cur_x()
+    box = page.locator(in_card(".batt-chart")).bounding_box()
+    page.mouse.move(box["x"] + box["width"] * 0.2, box["y"] + box["height"] / 2); page.wait_for_timeout(100)
+    d = detail()
+    t.check(cur_x() < x_now and "vor " in d and "Ladestand | " in d and d.split("\n")[0].endswith((":00", ":15", ":30", ":45")),
+            "the mouse before now: a quarter hour of the history", d)
+    page.mouse.move(box["x"] + box["width"] * 0.8, box["y"] + box["height"] / 2); page.wait_for_timeout(100)
+    d = detail()
+    t.check(cur_x() > x_now and "in " in d and "Prognose | " in d and d.split(" | ")[2].endswith(" %"),
+            "the mouse after now: the forecast", d)
+    t.check(page.locator(in_card(".batt-cursor-dot")).get_attribute("visibility") == "visible", "a dot marks the value on the curve")
+    page.evaluate("() => { window.__moreInfo = []; window.__card.addEventListener('hass-more-info', e => window.__moreInfo.push(e.detail.entityId)); }")
+    page.mouse.click(box["x"] + box["width"] * 0.3, box["y"] + box["height"] / 2); page.wait_for_timeout(100)
+    picked = detail()
+    t.check(page.evaluate("window.__moreInfo") == [], "a click on the chart sets the line, no more-info", str(page.evaluate("window.__moreInfo")))
+    page.mouse.move(0, 0)
+    page.evaluate("window.__card.hass = { ...window.__hass, states: { ...window.__hass.states } }"); settle(page)
+    t.check(detail() == picked, "the picked time stays through a render", f"{picked} -> {detail()}")
+    page.evaluate("() => { const c = window.__card; c._battSel = null; c._render(); }"); settle(page)
+    page.locator(in_card(".batt-chart")).focus()
+    page.keyboard.press("ArrowLeft"); page.wait_for_timeout(50)
+    t.check(detail().startswith("Fr 12:45") and "vor 15 min" in detail(), "arrow left: a quarter hour back", detail())
+    page.keyboard.press("Shift+ArrowLeft"); page.wait_for_timeout(50)
+    t.check(detail().startswith("Fr 12:00"), "Shift: an hour", detail())
+    page.keyboard.press("End"); page.wait_for_timeout(50)
+    t.check(detail().startswith("Sa 13:00") and "in 24 h" in detail() and "Prognose" in detail(), "End: the end of the window, in the forecast", detail())
+    page.keyboard.press("Home"); page.wait_for_timeout(50)
+    t.check(detail().startswith("Do 13:00") and "vor 24 h" in detail(), "Home: the start of the window", detail())
+    # with a forecast the window a day back ends at now, two days back a day before it
+    for _ in range(2): page.locator(in_card('button.batt-step[data-batt-step="-1"]')).click(); settle(page)
+    t.check(detail().startswith("Do 13:00") and "Ladestand" in detail(), "paging: the line at the end of that window", detail())
     done(page)
 
     # the forecast is asked for again after 30 s; an unchanged answer draws
@@ -4730,7 +4770,7 @@ def battery_mode(browser, port, t):
     page.evaluate("() => { window.__moreInfo = []; window.__card.addEventListener('hass-more-info', e => window.__moreInfo.push(e.detail.entityId)); }")
     tab = lambda key: (page.locator(in_card(f'button.batt-tab[data-batt-tab="{key}"]')).click(), settle(page))
     targets = [(None, ".batt-status-soc", "sensor.evcc_battery_soc"), (None, ".batt-stat >> nth=0", "sensor.evcc_battery_capacity"),
-               (None, ".batt-stat >> nth=1", "sensor.evcc_battery_power"), (None, ".batt-chart", "sensor.evcc_battery_soc"),
+               (None, ".batt-stat >> nth=1", "sensor.evcc_battery_power"), (None, ".batt-section-title", "sensor.evcc_battery_soc"),
                (None, ".batt-dev-soc >> nth=1", "sensor.evcc_battery_1_soc"), (None, ".batt-dev-power >> nth=1", "sensor.evcc_battery_1_power"),
                (None, ".batt-suggestion", "sensor.evcc_battery_1_soc"),
                (None, ".batt-text-title >> nth=0", "select.evcc_priority_soc"), (None, ".batt-text-title >> nth=1", "select.evcc_buffer_soc"),
@@ -5025,6 +5065,33 @@ def battery_mode(browser, port, t):
     t.check(page.locator(in_card(".lp-disabled-warn")).count() == 0, "no triangle at a loadpoint for the battery's clear button")
     done(page)
 
+    # #211: without its SoC the battery mode is no empty frame but says why,
+    # with the way into the debug view; a disabled SoC sensor gets the triangle.
+    note = lambda page: " ".join(page.locator(in_card(".battery-block .empty p")).first.inner_text().split())
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, mode="battery", drop=["sensor.evcc_battery_soc"])
+    t.check(not errors and note(page) == "Keine Hausbatterie gefunden." and page.locator(in_card(".battery-block .lp-name")).inner_text().strip() == "HAUSBATTERIE",
+            "no SoC sensor: the title and a note instead of an empty card", f"{note(page)} {errors}")
+    t.check(page.locator(in_card(".battery-block .lp-disabled-warn")).count() == 0, "no SoC sensor at all: no triangle")
+    page.locator(in_card('.battery-block button[data-action="open-debug"]')).click(); settle(page)
+    t.check(page.locator(in_card(".debug-section")).count() > 0, "the note opens the debug view")
+    done(page)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", disable=["sensor.evcc_battery_soc"])
+    t.check(note(page) == "Der Ladestand der Hausbatterie ist in Home Assistant deaktiviert: sensor.evcc_battery_soc",
+            "a disabled SoC sensor: the note names it", note(page))
+    warn = page.locator(in_card(".battery-block .lp-disabled-warn"))
+    t.check(warn.count() == 1 and "Ladestand der Hausbatterie" in (warn.get_attribute("title") or ""), "and the triangle points at it", warn.get_attribute("title") if warn.count() else "")
+    warn.click(); page.wait_for_timeout(300)
+    t.check(page.locator(in_card('#debug-disabled button.disabled-enable[data-enable-entity="sensor.evcc_battery_soc"]')).count() == 1,
+            "the triangle opens the list with a switch for it")
+    done(page)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", disable=["sensor.evcc_battery_soc"], admin=False)
+    t.check(page.locator(in_card(".lp-disabled-warn")).count() == 0 and "deaktiviert" in note(page),
+            "not an administrator: the note, no triangle", note(page))
+    done(page)
+
 # The forecast mode on a dynamic tariff (test/mock-hass.js `dynamic`): prices
 # by time of day, known until the end of tomorrow. The clock stands on a
 # Friday evening, so the rest of today joins tomorrow's page.
@@ -5041,6 +5108,7 @@ def forecast_mode(browser, port, t):
     text = lambda page, sel: page.evaluate(f"() => [...window.__card.shadowRoot.querySelectorAll({json.dumps(sel)})].map(e => e.textContent.replace(/\\s+/g, ' ').trim())")
     click = lambda page, sel: (page.evaluate(f"() => window.__card.shadowRoot.querySelector({json.dumps(sel)}).click()"), settle(page))
     count = lambda page, sel: page.locator(in_card(sel)).count()
+    kinds = lambda page: sorted({c.get("kind") for c in page.evaluate("window.__hass.wsCalls") if c["type"] == "evcc_intg/forecast"})
 
     t.group("forecast - header")
     page, errors = fc_page(dynamic=True, set=FC_LIMITS)
@@ -5180,10 +5248,22 @@ def forecast_mode(browser, port, t):
     t.check(not errors and count(page, ".fc-now") == 0 and count(page, ".fc-bar") == 0 and [n.split("heute")[0] for n in text(page, ".opt-lane-name")] == ["PV-Prognose"],
             "solar only: no price header, no price lane", f"{text(page, '.opt-lane-name')} {errors}")
     t.check(text(page, ".fc-detail .opt-dk") == ["PV-Prognose"], "and only solar under the chart", str(text(page, ".fc-detail .opt-dk")))
+    t.check(kinds(page) == ["solar"], "solar only: asks ha-evcc for the solar forecast alone", str(kinds(page)))
     done(page)
     page, _ = fc_page(dynamic=True, tariff="co2", config={"mode": "forecast", "sections": ["price", "co2"]})
     t.check(text(page, ".opt-lane-name") == ["Strompreis", "CO₂-Intensität"] and text(page, ".fc-now") == ["36,4ct"],
             "price and CO₂: the header and both lanes, no solar", str(text(page, ".opt-lane-name")))
+    t.check(kinds(page) == ["feedin", "grid", "planner"], "price and CO₂: no solar forecast asked for", str(kinds(page)))
+    done(page)
+    # #214: a card with the price alone must not ask for the solar forecast,
+    # ha-evcc would keep fetching it from evcc in the background.
+    page, errors = fc_page(dynamic=True, config={"mode": "forecast", "sections": ["price"]})
+    t.check(not errors and text(page, ".fc-now") == ["36,4ct"] and text(page, ".opt-lane-name") == ["Strompreis"],
+            "price only: the header and the price lane", f"{text(page, '.opt-lane-name')} {errors}")
+    t.check(kinds(page) == ["feedin", "grid"], "price only: asks for grid and feed-in, not solar or planner", str(kinds(page)))
+    done(page)
+    page, _ = fc_page(config={"mode": "loadpoint"})
+    t.check(kinds(page) == [], "a mode without a forecast asks for none", str(kinds(page)))
     done(page)
     page, _ = fc_page(config={"mode": "forecast", "sections": []})
     t.check(text(page, ".opt-note") == ["Für die Vorhersage ist kein Bereich ausgewählt."], "an empty list says so", str(text(page, ".opt-note")))

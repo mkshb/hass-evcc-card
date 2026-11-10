@@ -104,6 +104,7 @@ export const debugView = {
   },
 
   _renderDebugBlock(loadpoints, site, meters) {
+    this._prefetchDebugProbes();
     const prefix    = this._getPrefix();
     const haVer     = this._hass?.config?.version || "?";
     const lang      = (this._config.language

@@ -67,10 +67,10 @@ export const statisticsView = {
   },
 
   // Currency symbol for session price values (the sessions response carries
-  // none): from the cached tariff forecast, else from the unit of the grid
+  // none): from the grid tariff forecast, else from the unit of the grid
   // tariff sensor ("€/kWh"), else none.
   _statsCurrency() {
-    const c = this._wsCache["forecast:grid"]?.result?.data?.currency
+    const c = this._wsForecast("grid")?.data?.currency
            ?? this._wsCache["forecast:planner"]?.result?.data?.currency;
     if (c) return c;
     return priceCurrency(unitStr(this._hass, `sensor.${this._getPrefix()}tariff_grid`)) ?? "";

@@ -1,4 +1,4 @@
-export const EVCC_CARD_VERSION = "0.10.1";
+export const EVCC_CARD_VERSION = "0.10.2";
 
 // The oldest ha-evcc the card supports: the first release whose WebSocket data
 // API (evcc_intg/capabilities, sessions, plan_preview) also names the evcc index
@@ -502,6 +502,8 @@ export const DISABLED_NEEDED = [
   { domain: "button", suffix: "smart_cost_limit",             hide: "smart_cost_limit",             needs: "number.smart_cost_limit",             what: "disabledWhatSmartCostClear" },
   { domain: "number", suffix: "smart_feed_in_priority_limit", hide: "smart_feed_in_priority_limit",                                               what: "disabledWhatFeedIn" },
   { domain: "button", suffix: "smart_feed_in_priority_limit", hide: "smart_feed_in_priority_limit", needs: "number.smart_feed_in_priority_limit", what: "disabledWhatFeedInClear" },
+  // Site level: the battery mode shows nothing without the state of charge (#211).
+  { domain: "sensor", suffix: "battery_soc",                  site: true,                                           what: "disabledWhatBattSoc" },
   // Site level: the switch "grid charging" of the battery mode clears the limit through it.
   { domain: "button", suffix: "battery_grid_charge_limit",    site: true, needs: "number.battery_grid_charge_limit", what: "disabledWhatBattGridChargeClear" },
   // Site level, only while evcc's optimizer delivers a forecast: the battery mode recomputes it through it.
