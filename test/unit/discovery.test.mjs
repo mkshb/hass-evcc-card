@@ -3,7 +3,7 @@
 // one, so this exercises the grouping directly, with a hand-built registry.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { detectIntegration, detectPrefix, featureKeyOf, locateEntity, installedPrefixes, selectLoadpoints, discoverEntities, disabledCardEntities } from "../../src/core/entity-discovery.js";
+import { detectIntegration, detectPrefix, featureKeyOf, locateEntity, installedPrefixes, selectLoadpoints, discoverEntities, disabledCardEntities, cardDisabledEntities } from "../../src/core/entity-discovery.js";
 import { loadpointFilter, loadpointOption } from "../../src/core/constants.js";
 
 // A site entity carries the prefix (pv_power is a site feature, no loadpoint).
@@ -266,6 +266,16 @@ test("disabled entities: needed ones first, with their loadpoint", () => {
     ["number.evcc_openwb_smart_feed_in_priority_limit", "openwb", true],
     ["sensor.evcc_grid_energy", "", false],
   ]);
+});
+
+test("disabled entities: the battery SoC is needed at the site, not under a named meter", () => {
+  const got = disabledCardEntities({ states: {}, entities: {} }, ["sensor.evcc_battery_soc", "sensor.evcc_garage_battery_soc"]);
+  assert.deepEqual(got.map(e => [e.id, e.owner, !!e.need]), [
+    ["sensor.evcc_battery_soc", "", true],
+    ["sensor.evcc_garage_battery_soc", "garage", false],
+  ]);
+  assert.deepEqual(cardDisabledEntities({ states: {}, entities: {} }, ["sensor.evcc_battery_soc", "sensor.evcc_garage_battery_soc"], "evcc_", { mode: "battery" }).map(e => e.id),
+    ["sensor.evcc_battery_soc"]);
 });
 
 test("disabled entities: enabled since, or under another installation, are left out", () => {

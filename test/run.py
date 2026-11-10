@@ -5065,6 +5065,33 @@ def battery_mode(browser, port, t):
     t.check(page.locator(in_card(".lp-disabled-warn")).count() == 0, "no triangle at a loadpoint for the battery's clear button")
     done(page)
 
+    # #211: without its SoC the battery mode is no empty frame but says why,
+    # with the way into the debug view; a disabled SoC sensor gets the triangle.
+    note = lambda page: " ".join(page.locator(in_card(".battery-block .empty p")).first.inner_text().split())
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, mode="battery", drop=["sensor.evcc_battery_soc"])
+    t.check(not errors and note(page) == "Keine Hausbatterie gefunden." and page.locator(in_card(".battery-block .lp-name")).inner_text().strip() == "HAUSBATTERIE",
+            "no SoC sensor: the title and a note instead of an empty card", f"{note(page)} {errors}")
+    t.check(page.locator(in_card(".battery-block .lp-disabled-warn")).count() == 0, "no SoC sensor at all: no triangle")
+    page.locator(in_card('.battery-block button[data-action="open-debug"]')).click(); settle(page)
+    t.check(page.locator(in_card(".debug-section")).count() > 0, "the note opens the debug view")
+    done(page)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", disable=["sensor.evcc_battery_soc"])
+    t.check(note(page) == "Der Ladestand der Hausbatterie ist in Home Assistant deaktiviert: sensor.evcc_battery_soc",
+            "a disabled SoC sensor: the note names it", note(page))
+    warn = page.locator(in_card(".battery-block .lp-disabled-warn"))
+    t.check(warn.count() == 1 and "Ladestand der Hausbatterie" in (warn.get_attribute("title") or ""), "and the triangle points at it", warn.get_attribute("title") if warn.count() else "")
+    warn.click(); page.wait_for_timeout(300)
+    t.check(page.locator(in_card('#debug-disabled button.disabled-enable[data-enable-entity="sensor.evcc_battery_soc"]')).count() == 1,
+            "the triangle opens the list with a switch for it")
+    done(page)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", disable=["sensor.evcc_battery_soc"], admin=False)
+    t.check(page.locator(in_card(".lp-disabled-warn")).count() == 0 and "deaktiviert" in note(page),
+            "not an administrator: the note, no triangle", note(page))
+    done(page)
+
 # The forecast mode on a dynamic tariff (test/mock-hass.js `dynamic`): prices
 # by time of day, known until the end of tomorrow. The clock stands on a
 # Friday evening, so the rest of today joins tomorrow's page.

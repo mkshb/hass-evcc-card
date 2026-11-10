@@ -70,7 +70,7 @@ const icon = (path, size = 18, color = "currentColor") =>
 // highest/lowest and the recompute button stay in the status.
 export const batteryView = {
   _renderBatteryBlock(site) {
-    if (!site.battery_soc) return "";
+    if (!site.battery_soc) return this._renderBattMissing(site);
     const forecast = this._battForecast();
     return `
       <div class="battery-block">
@@ -81,6 +81,29 @@ export const batteryView = {
         ${this._renderBattStatus(site, forecast)}
         ${this._config.hide_soc_chart === true ? "" : this._renderBattHistory(site, forecast)}
         ${this._renderBattSettings(site)}
+      </div>`;
+  },
+
+  // Without the state of charge there is no battery to show: instead of an
+  // empty frame the header, with the triangle when the SoC sensor is disabled
+  // (one of the entities it points at), a note on why, and the way into the
+  // debug view.
+  _renderBattMissing(site) {
+    const socId = `sensor.${this._getPrefix()}battery_soc`;
+    const off   = this._isEntityDisabled(socId);
+    return `
+      <div class="battery-block">
+        <div class="lp-header">
+          ${this._renderSiteDisabledWarn(site)}
+          <span class="lp-name">${escHtml(this._config.title || this._t("homeBattery"))}</span>
+        </div>
+        <div class="empty">
+          <p>${this._t(off ? "battSocDisabled" : "noBattery", { id: `<code>${escHtml(socId)}</code>` })}</p>
+          <p class="empty-debug-hint">
+            ${this._t("emptyTryDebug")}
+            <button class="debug-link" data-action="open-debug">${this._t("openDebugMode")}</button>
+          </p>
+        </div>
       </div>`;
   },
 
