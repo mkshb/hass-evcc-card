@@ -2633,7 +2633,7 @@ def priority_dnd(browser, port, t):
     done(page)
 
 
-LANGS = ["de", "en", "es", "fr", "hr", "nl", "pl", "pt"]
+LANGS = ["de", "en", "es", "fr", "hr", "it", "nl", "pl", "pt"]
 
 def locales(browser, port, t):
     """Locale files are complete and no raw translation key reaches the DOM."""
