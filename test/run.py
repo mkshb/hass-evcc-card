@@ -5373,6 +5373,18 @@ def forecast_mode(browser, port, t):
     # The bar lanes span the range of their values (#206): above zero they start
     # a round step below the lowest, as evcc's price chart with zoom, and name
     # the lowest and highest value of the page in a tag above its bar.
+    t.group("forecast - a fixed tariff with cheaper nights")
+    # 28.1 ct from 05:00 to midnight, the dearest price and more than two
+    # thirds of the slots: it is the middle, the nights are the cheap ones (#213).
+    page, errors = fc_page(dynamic="fixed")
+    t.check(not errors and text(page, ".fc-chip") != ["Jetzt günstig"], "28.1 ct now is not cheap", f"{text(page, '.fc-chip')} {errors}")
+    t.check(text(page, "button.fc-hint") == ["günstig ab morgen 00:00 · in 3 h 45 min"], "cheap from midnight", str(text(page, "button.fc-hint")))
+    # The page runs from 20:15 to the end of tomorrow: slot 15 is midnight.
+    green = page.evaluate("""() => [...window.__card.shadowRoot.querySelectorAll('.opt-lane')[1].querySelectorAll('.fc-bar')]
+        .map((b, k) => b.classList.contains('fc-cheap') ? k : -1).filter(k => k >= 0)""")
+    t.check(green == list(range(15, 35)), "green from 00:00 to 05:00 and nowhere else, 28.1 ct included", str(green))
+    done(page)
+
     t.group("forecast - scale and tags")
     # The grid line labels of lane i, bottom up, and its tags as [class, text, x, y, w].
     axis = lambda page, i: page.evaluate(f"""() => [...window.__card.shadowRoot.querySelectorAll('.opt-lane')[{i}]
@@ -5398,6 +5410,31 @@ def forecast_mode(browser, port, t):
     page, _ = fc_page(dynamic=True, set={**FC_LIMITS, "number.evcc_openwb_smart_cost_limit": 0.05})
     t.check(axis(page, 1) == ["0", "10", "20", "30", "40 ct"], "a limit far below the prices widens the lane down to it", str(axis(page, 1)))
     done(page)
+    # A tag covers no bar and not the other tag, on every page (#213): the
+    # rectangles of the bars it spans end below it.
+    clash = lambda page, i: page.evaluate(f"""() => {{
+        const l = window.__card.shadowRoot.querySelectorAll('.opt-lane')[{i}];
+        const box = e => ({{ x: +e.getAttribute('x'), y: +e.getAttribute('y'), w: +e.getAttribute('width'), h: +e.getAttribute('height') }});
+        const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+        const tags = [...l.querySelectorAll('.fc-tag rect')].map(box), bars = [...l.querySelectorAll('.fc-bar')].map(box);
+        return [tags.length, tags.flatMap(t => bars.filter(b => hit(t, b))).length, tags.length == 2 && hit(tags[0], tags[1])]; }}""")
+    for variant in ("fixed", "high", "negative", True):
+        page, errors = fc_page(dynamic=variant)
+        seen = []
+        for _ in range(3):
+            seen.append(clash(page, 1))
+            click(page, 'button.fc-step[data-fc-step="1"]')
+        t.check(not errors and any(n == 2 for n, _, _ in seen) and all(c == 0 and not o for _, c, o in seen),
+                f"tariff {variant}: the tags cover no bar and not each other", str(seen))
+        done(page)
+    # At 23:45 the dearest price is the first slot and the cheapest the next
+    # one: the tags would meet at the left edge, the lowest moves aside.
+    page, errors = fc_page(time="2026-09-18T23:45:00+02:00", dynamic="fixed")
+    tg, seen = tags(page, 1), clash(page, 1)
+    t.check(not errors and [g[:2] for g in tg] == [["fc-tag-min", "10,0 ct"], ["fc-tag-max", "28,1 ct"]] and seen[1:] == [0, False],
+            "the dearest slot right before the cheapest: both tags, apart, over no bar", f"{tg} {seen}")
+    done(page)
+
     page, errors = fc_page(dynamic="negative")
     t.check(not errors and axis(page, 1) == ["-20", "0", "20", "40 ct"], "prices below zero keep the zero line", f"{axis(page, 1)} {errors}")
     t.check([g[:2] for g in tags(page, 1)] == [["fc-tag-min", "-3,0 ct"], ["fc-tag-max", "37,2 ct"]], "and name the lowest one below zero", str(tags(page, 1)))

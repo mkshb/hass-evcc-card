@@ -44,10 +44,14 @@ function ranked(vals) {
   const fixed = !n || max - min < 1e-6;
   const sorted = [...known].sort((a, b) => a - b);
   const t1 = sorted[Math.floor(n / 3)], t2 = sorted[Math.floor(n * 2 / 3)];
+  // When one price fills more than a third, both bounds can fall on it: a
+  // fixed tariff with 28.1 ct all day and cheaper nights would else be green
+  // all over, the dearest price included (#213). Then that price is the
+  // middle, and only what lies below or above it is cheap or dear.
   const level = k => {
     const v = vals[k];
     if (v == null || fixed) return null;
-    return v <= t1 ? "low" : v >= t2 ? "high" : "mid";
+    return v <= t1 && v < t2 ? "low" : v >= t2 && v > t1 ? "high" : "mid";
   };
   return { n, min, max, fixed, level, kMin: known.indexOf(min), kMax: known.indexOf(max) };
 }
@@ -367,6 +371,9 @@ export const forecastView = {
 
   // The lowest and highest value of a lane on the page, named in a tag above
   // its bar as on evcc's price chart; the first slot where several share it.
+  // A tag is wider than a bar: it sits above the highest bar it spans, so it
+  // covers none (#213), at worst in the room kept above the lane. Where the
+  // two tags would meet, the lowest moves aside, away from the highest.
   // `yp` maps a value to the lane, `cx` a slot to the middle of its bar, `g`
   // is the geometry of the chart.
   _fcExtremeTags(l, a, b, yp, cx, g) {
@@ -378,15 +385,36 @@ export const forecastView = {
       if (kMax < 0 || v > l.vals[kMax]) kMax = k;
     }
     if (kMin < 0 || l.vals[kMax] - l.vals[kMin] < 1e-9) return "";
-    const tag = (k, cls) => {
-      const text = l.tag(l.vals[k]);
-      const w = text.length * TAG_FONT * CHAR + 10, h = TAG_H;
-      const x = Math.max(g.ML, Math.min(g.W - MR - w, cx(k) - w / 2));
-      const y = Math.max(1, yp(Math.max(0, l.vals[k])) - h - 2);
-      return `<g class="fc-tag ${cls}"><rect x="${f1(x)}" y="${f1(y)}" width="${f1(w)}" height="${h}" rx="4"/>` +
-        `<text x="${f1(x + w / 2)}" y="${f1(y + h - 4.5)}" text-anchor="middle" font-size="${TAG_FONT}" font-weight="600">${escHtml(text)}</text></g>`;
+    const h = TAG_H;
+    const half = (cx(a + 1) - cx(a)) / 2 || 0;
+    const clampX = (x, w) => Math.max(g.ML, Math.min(g.W - MR - w, x));
+    // The top of the highest bar under x .. x+w.
+    const clearY = (x, w) => {
+      let top = Infinity;
+      for (let k = a; k <= b; k++) {
+        const v = l.vals[k];
+        if (v == null || cx(k) + half < x || cx(k) - half > x + w) continue;
+        top = Math.min(top, yp(Math.max(0, v)));
+      }
+      return Math.max(1, top - h - 2);
     };
-    return tag(kMin, "fc-tag-min") + tag(kMax, "fc-tag-max");
+    const box = k => {
+      const text = l.tag(l.vals[k]);
+      const w = text.length * TAG_FONT * CHAR + 10;
+      const x = clampX(cx(k) - w / 2, w);
+      return { text, w, x, y: clearY(x, w) };
+    };
+    const hi = box(kMax), lo = box(kMin);
+    const meet = (p, q) => p.x < q.x + q.w + 4 && q.x < p.x + p.w + 4 && p.y < q.y + h + 2 && q.y < p.y + h + 2;
+    if (meet(lo, hi)) {
+      const right = clampX(hi.x + hi.w + 4, lo.w), left = clampX(hi.x - lo.w - 4, lo.w);
+      const fits = x => !meet({ ...lo, x }, hi);
+      const x = cx(kMin) >= cx(kMax) ? (fits(right) ? right : left) : (fits(left) ? left : right);
+      Object.assign(lo, { x, y: clearY(x, lo.w) });
+    }
+    const tag = (t, cls) => `<g class="fc-tag ${cls}"><rect x="${f1(t.x)}" y="${f1(t.y)}" width="${f1(t.w)}" height="${h}" rx="4"/>` +
+      `<text x="${f1(t.x + t.w / 2)}" y="${f1(t.y + h - 4.5)}" text-anchor="middle" font-size="${TAG_FONT}" font-weight="600">${escHtml(t.text)}</text></g>`;
+    return tag(lo, "fc-tag-min") + tag(hi, "fc-tag-max");
   },
 
   // The lanes as the optimizer draws them: name above, grid lines with their

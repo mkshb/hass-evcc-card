@@ -42,7 +42,8 @@
 //            the end of tomorrow, as such a tariff publishes it; a list of
 //            variants instead: "high" lifts every price by 22 ct (39 to 59 ct
 //            as on a German dynamic tariff), "negative" puts it below zero
-//            from 12 to 14 h
+//            from 12 to 14 h, "fixed" is a fixed tariff of 28.1 ct with cheaper
+//            nights, 10 ct at midnight rising to 19 ct until 05:00 (#213)
 //   automatic: "off" | "battery" | "full"  ha-evcc 2026.11.2's optimizer switch (on) and
 //            automatic control select at that level, enabled; "disabled": the
 //            optimizer switched off, the level with it at "off" as evcc sets it
@@ -220,6 +221,7 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
       let base = h < 5 ? 0.24 : h < 8 ? 0.29 : h < 11 ? 0.26 : h < 15 ? 0.17 : h < 17 ? 0.23 : h < 21 ? 0.36 : 0.27;
       if (dynVariants.includes("negative") && h >= 12 && h < 14) base = -0.03;
       if (dynVariants.includes("high")) base += 0.22;
+      if (dynVariants.includes("fixed")) return h < 5 ? Math.round((0.10 + 0.018 * (h + d.getMinutes() / 60)) * 10000) / 10000 : 0.281;
       return Math.round((base + 0.004 * (d.getMinutes() / 15)) * 10000) / 10000;
     };
     return { ...obj, rates: obj.rates.filter(r => new Date(r.start) < end).map(r => ({ ...r, value: at(r.start) })) };
