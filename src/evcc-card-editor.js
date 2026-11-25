@@ -69,6 +69,7 @@ const LANGUAGES = [
   ["es", "editorLanguageNameEs"],
   ["fr", "editorLanguageNameFr"],
   ["hr", "editorLanguageNameHr"],
+  ["it", "editorLanguageNameIt"],
   ["nl", "editorLanguageNameNl"],
   ["pl", "editorLanguageNamePl"],
   ["pt", "editorLanguageNamePt"],
