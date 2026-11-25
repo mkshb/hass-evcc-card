@@ -41,6 +41,8 @@ export class EvccCard extends HTMLElement {
     this._readIds       = null;   // entity ids the last render read, see _render()
     this._expected      = {};     // entity id -> value written, not yet reported back (actions.js)
     this._disabledEntities = new Set();   // ha-evcc entities disabled in the registry (detectIntegration)
+    this._renamedEntities  = {};          // id ha-evcc created -> id it carries now (detectIntegration)
+    this._registryRead     = false;       // whether the registry could be read (needs an administrator)
     this._enabling      = {};     // entity id -> outcome of enabling it from the card (disabled-entities.js)
     this._debugReturn   = null;   // the config the warning triangle left for the debug view
     this._renderTimer   = null;
@@ -166,10 +168,12 @@ export class EvccCard extends HTMLElement {
     if (!this._integrationDetected && !this._detectingIntegration) {
       this._detectingIntegration = true;
       const probePrefix = this._config.prefix || null;
-      detectIntegration(hass, probePrefix).then(({ prefix, entryId, instances, disabled }) => {
+      detectIntegration(hass, probePrefix).then(({ prefix, entryId, instances, disabled, renamed, registry }) => {
         this._detectingIntegration = false;
         this._integrationDetected = true;
         this._disabledEntities = new Set(disabled);
+        this._renamedEntities  = renamed ?? {};
+        this._registryRead     = !!registry;
         this._evccInstances = instances;
         this._instancePrefix = probePrefix;
         this._entryId = entryId;
@@ -180,7 +184,7 @@ export class EvccCard extends HTMLElement {
         // Honour an explicitly configured prefix, but still keep the detected one.
         // A disabled entity can change what a view offers (a limit without its
         // clear button, the warning triangle), so those renders start over too.
-        const changed = (!this._config.prefix && prefix !== this._detectedPrefix) || disabled.length > 0;
+        const changed = (!this._config.prefix && prefix !== this._detectedPrefix) || disabled.length > 0 || Object.keys(renamed ?? {}).length > 0;
         this._detectedPrefix = prefix;
         if (changed) {
           this._lastRenderKey = null;

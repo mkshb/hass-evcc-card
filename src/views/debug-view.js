@@ -1,4 +1,4 @@
-import { EVCC_CARD_VERSION, FEATURES, HA_EVCC_MIN_VERSION } from "../core/constants.js";
+import { EVCC_CARD_VERSION, FEATURES, HA_EVCC_MIN_VERSION, MODE_REQUIRED } from "../core/constants.js";
 import { discoverEntities, disabledCardEntities } from "../core/entity-discovery.js";
 import { escHtml } from "../utils/html.js";
 
@@ -73,6 +73,29 @@ export const debugView = {
       core: core.length, foundCore: foundCore.length, missingCore,
       opt:  opt.length,  foundOpt:  foundOpt.length,  missingOpt,
     };
+  },
+
+  // The status of the entity each mode cannot do without (MODE_REQUIRED):
+  // ok (with its state), unavailable, disabled, renamed (to `now`, found by
+  // ha-evcc's unique_id) or missing. Disabled and renamed come from the
+  // registry, which only an administrator can read: without it a missing one
+  // may be either (`unsure`). The mode of the card the debug view was opened
+  // from comes first.
+  _requiredStatus() {
+    const prefix = this._getPrefix();
+    const from   = (this._debugReturn || this._config)?.mode;
+    const modes  = Object.keys(MODE_REQUIRED).sort((a, b) => (b === from) - (a === from));
+    return modes.flatMap(mode => MODE_REQUIRED[mode].map(req => {
+      const [domain, suffix] = req.split(".");
+      const id  = `${domain}.${prefix}${suffix}`;
+      const st  = this._hass?.states?.[id];
+      const now = this._renamedEntities?.[id];
+      const status = st ? (st.state === "unavailable" ? "unavailable" : "ok")
+        : this._disabledEntities.has(id) ? "disabled"
+        : now ? "renamed" : "missing";
+      return { mode, id, status, state: st?.state ?? null, now: now ?? null,
+               unsure: status === "missing" && !this._registryRead };
+    }));
   },
 
   _formatConfigYaml(cfg, maskNames = false) {
@@ -208,6 +231,21 @@ ${this._renderDisabledSection()}
           ${evccCount === 0 ? `<div class="debug-warn-box">${this._t("debugNoIntg")}</div>` : ""}
         </div>
 
+        <div class="debug-section" id="debug-required">
+          <div class="debug-section-title">${this._t("debugRequired")}</div>
+          <ul class="debug-kv">
+            ${this._requiredStatus().map(r => {
+              const tone = r.status === "ok" ? "ok" : r.status === "unavailable" ? "warn" : "err";
+              const hint = r.status === "renamed" ? this._t("debugReqRenamedHint", { now: `<code>${escHtml(r.now)}</code>`, id: `<code>${escHtml(r.id)}</code>` })
+                : r.status === "disabled" ? this._t("debugReqDisabledHint")
+                : r.status === "missing" ? this._t(r.unsure ? "debugReqMissingNoAdmin" : "debugReqMissingHint") : "";
+              return `<li data-mode="${escHtml(r.mode)}" data-status="${r.status}"><strong>${escHtml(r.mode)}:</strong> <code>${escHtml(r.id)}</code>
+                ${pill(tone, this._t(`debugReq_${r.status}`))}${r.status === "ok" ? ` <code>${escHtml(r.state)}</code>` : ""}
+                ${hint ? `<div class="debug-missing">${hint}</div>` : ""}</li>`;
+            }).join("")}
+          </ul>
+        </div>
+
         <div class="debug-section">
           <div class="debug-section-title">WebSocket API</div>
           <ul class="debug-kv">
@@ -322,6 +360,16 @@ ${this._renderDisabledSection()}
     out.push(`- evcc entity IDs (\`${prefix}*\`): ${evccCount}`);
     out.push(`- Prefix detected: ${this._detectedPrefix ? `\`${this._detectedPrefix}\`` : "*(none)*"}`);
     out.push(`- Prefix configured: ${this._config.prefix ? `\`${this._config.prefix}\`` : "*(none)*"}`);
+    out.push(``);
+    out.push(`**Required entities per mode**`);
+    for (const r of this._requiredStatus()) {
+      const what = r.status === "ok" ? `found (\`${r.state}\`)`
+        : r.status === "unavailable" ? "**unavailable**"
+        : r.status === "disabled" ? "**disabled** in the entity registry"
+        : r.status === "renamed" ? `**renamed** to \`${maskNames ? `${r.now.slice(0, r.now.indexOf("."))}.…` : r.now}\` (the card looks for the id ha-evcc created)`
+        : `**missing**${r.unsure ? " *(registry not readable without an administrator: may also be disabled or renamed)*" : " (not in the entity registry)"}`;
+      out.push(`- \`${r.mode}\`: \`${r.id}\` ${what}`);
+    }
     out.push(``);
 
     // ── WebSocket data API (evcc_intg/forecast|sessions|plan_preview) ──

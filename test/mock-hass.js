@@ -12,6 +12,8 @@
 //   attrs:   { "number.evcc_openwb_smart_cost_limit": { unit_of_measurement: "g/kWh" } }  override attributes
 //   disable: ["number.evcc_openwb_smart_cost_limit", ...]  mark registry entries disabled and drop their state
 //   rename:  { from: "evcc_", to: "myevcc_" }  rename the entity prefix everywhere (multi-instance setups)
+//   move:    { "sensor.evcc_battery_soc": "sensor.home_battery" }  entity ids changed by
+//            hand in HA: the registry keeps ha-evcc's unique_id with the id it created
 //   tariff:  "price" (default) or "co2" - what the WS data API reports as smartCostType
 //   second:  { prefix, entryId, first } - clone the fixture as a second ha-evcc config entry
 //   wsName:  "…"  put this string into every name the WS data API reports (session
@@ -53,7 +55,7 @@ function mockSoc(t) {
   return Math.max(5, Math.min(100, Math.round(v)));
 }
 
-export async function createMockHass({ batteryExt = false, optimizer = false, language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, admin = true, drop = [], vehicleDevice = true, optimize = false, capsVersion = null, dynamic = false, automatic = null } = {}) {
+export async function createMockHass({ batteryExt = false, optimizer = false, language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, admin = true, drop = [], vehicleDevice = true, optimize = false, capsVersion = null, dynamic = false, automatic = null, move = {} } = {}) {
   const base = new URL("./fixtures/", import.meta.url);
   const json = (p) => fetch(new URL(p, base)).then(r => r.ok ? r.json() : Promise.reject(new Error(`fixture ${p}: ${r.status}`)));
 
@@ -122,6 +124,10 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
   for (const id of disable) {
     delete states[id];
     const e = registry.find(r => r.entity_id === id); if (e) e.disabled_by = "user";
+  }
+  for (const [from, to] of Object.entries(move)) {
+    if (states[from]) { states[to] = { ...states[from], entity_id: to }; delete states[from]; }
+    const e = registry.find(r => r.entity_id === from); if (e) e.entity_id = to;
   }
   if (rename?.from && rename?.to) {
     const ren = (id) => id.replace(new RegExp(`^([a-z_]+\\.)${rename.from}`), `$1${rename.to}`);

@@ -511,6 +511,13 @@ export const SLIDER_STEP_KEYS = [
 //            the vehicle block says so.
 //   site:      a site entity; its triangle sits in the header of the battery mode
 //   optimizer: only while evcc's optimizer delivers a forecast
+// The entity a mode cannot do without, as <domain>.<suffix> under the site
+// prefix: without it the mode shows only a note. The debug view reports its
+// status for each mode here (found, disabled, renamed, missing).
+export const MODE_REQUIRED = {
+  battery: ["sensor.battery_soc"],
+};
+
 export const DISABLED_NEEDED = [
   { domain: "button", suffix: "smart_cost_limit",             hide: "smart_cost_limit",             needs: "number.smart_cost_limit",             what: "disabledWhatSmartCostClear" },
   { domain: "number", suffix: "smart_feed_in_priority_limit", hide: "smart_feed_in_priority_limit",                                               what: "disabledWhatFeedIn" },

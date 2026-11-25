@@ -154,7 +154,7 @@ def done(page):
 def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="de", ws=True, set=None, disable=None,
               rename=None, attrs=None, tariff=None, second=None, wsname=None, admin=True, drop=None,
               vehicle_device=True, optimizer=False, battery_ext=False, optimize=False, caps_version=None, dynamic=False,
-              automatic=None):
+              automatic=None, move=None):
     q = {"w": width, "lang": lang}
     if dynamic: q["dyn"] = 1 if dynamic is True else dynamic
     if caps_version: q["capsver"] = caps_version
@@ -162,6 +162,7 @@ def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="d
     if battery_ext: q["battext"] = 1
     if optimize: q["optimize"] = 1
     if automatic: q["automatic"] = automatic
+    if move: q["move"] = json.dumps(move)
     if not ws: q["ws"] = 0
     if not admin: q["admin"] = 0
     if drop: q["drop"] = ",".join(drop)
@@ -5225,6 +5226,54 @@ def battery_mode(browser, port, t):
     open_card(page, port, mode="battery", disable=["sensor.evcc_battery_soc"], admin=False)
     t.check(page.locator(in_card(".lp-disabled-warn")).count() == 0 and "deaktiviert" in note(page),
             "not an administrator: the note, no triangle", note(page))
+    done(page)
+    # renamed by hand in HA: the note says to what, the card looks for ha-evcc's id
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, mode="battery", move={"sensor.evcc_battery_soc": "sensor.hausbatterie_soc"})
+    t.check(not errors and note(page) == "Der Ladestand der Hausbatterie wurde in Home Assistant in sensor.hausbatterie_soc umbenannt. Die Karte sucht sensor.evcc_battery_soc.",
+            "a renamed SoC sensor: the note names the new id and the one the card looks for", note(page))
+    done(page)
+
+    # The debug view and report: the status of each mode's required entity
+    # (#211), the mode of the card it was opened from first.
+    t.group("debug - required entity per mode")
+    req = lambda page: page.evaluate("[...window.__card.shadowRoot.querySelectorAll('#debug-required li')].map(li => [li.dataset.mode, li.dataset.status, li.textContent.replace(/\\s+/g, ' ').trim()])")
+    report = lambda page, mask=False: page.evaluate(f"window.__card._buildDebugReport({'true' if mask else 'false'})") or ""
+    line = lambda rep: next((l for l in rep.split("\n") if l.startswith("- `battery`:")), "")
+    cases = [
+        ({}, "ok", "gefunden", "found (`30`)"),
+        ({"disable": ["sensor.evcc_battery_soc"]}, "disabled", "In Home Assistant deaktiviert", "**disabled** in the entity registry"),
+        ({"move": {"sensor.evcc_battery_soc": "sensor.hausbatterie_soc"}}, "renamed", "Heißt jetzt sensor.hausbatterie_soc", "**renamed** to `sensor.hausbatterie_soc`"),
+        ({"drop": ["sensor.evcc_battery_soc"]}, "missing", "ha-evcc hat sie nicht angelegt", "**missing** (not in the entity registry)"),
+        ({"set": {"sensor.evcc_battery_soc": "unavailable"}}, "unavailable", "nicht verfügbar", "**unavailable**"),
+    ]
+    for kw, status, view_text, report_text in cases:
+        page = new_page(browser, 480, 1600)
+        errors = open_card(page, port, mode="debug", **kw)
+        got = req(page)
+        t.check(not errors and got and got[0][:2] == ["battery", status] and view_text in got[0][2],
+                f"{status}: the view says so", json.dumps(got)[:300])
+        t.check(report_text in line(report(page)), f"{status}: the report says so", line(report(page)))
+        done(page)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="debug", move={"sensor.evcc_battery_soc": "sensor.hausbatterie_soc"})
+    t.check("hausbatterie" not in line(report(page, mask=True)) and "renamed** to `sensor.…`" in line(report(page, mask=True)),
+            "masked report: the new id is left out", line(report(page, mask=True)))
+    done(page)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="debug", drop=["sensor.evcc_battery_soc"])
+    page.evaluate("window.__card._registryRead = false; window.__card._lastRenderKey = null; window.__card._render()")
+    settle(page)
+    got = req(page)
+    t.check(got and "nur ein Administrator" in got[0][2] and "may also be disabled or renamed" in line(report(page)),
+            "registry not readable: missing, maybe disabled or renamed", json.dumps(got)[:200])
+    done(page)
+    # opened from a battery card through its note: the battery mode leads
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", drop=["sensor.evcc_battery_soc"])
+    page.locator(in_card('.battery-block button[data-action="open-debug"]')).click(); settle(page)
+    got = req(page)
+    t.check(got and got[0][:2] == ["battery", "missing"], "the debug view opened from the battery note shows its status", json.dumps(got)[:200])
     done(page)
 
 # The forecast mode on a dynamic tariff (test/mock-hass.js `dynamic`): prices

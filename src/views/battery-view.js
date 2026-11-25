@@ -94,6 +94,8 @@ export const batteryView = {
   _renderBattMissing(site) {
     const socId = `sensor.${this._getPrefix()}battery_soc`;
     const off   = this._isEntityDisabled(socId);
+    // Renamed in HA: ha-evcc's unique_id still names the id it created.
+    const now   = !off && !this._hass.states[socId] ? this._renamedEntities?.[socId] : null;
     return `
       <div class="battery-block">
         <div class="lp-header">
@@ -101,7 +103,7 @@ export const batteryView = {
           <span class="lp-name">${escHtml(this._config.title || this._t("homeBattery"))}</span>
         </div>
         <div class="empty">
-          <p>${this._t(off ? "battSocDisabled" : "noBattery", { id: `<code>${escHtml(socId)}</code>` })}</p>
+          <p>${this._t(off ? "battSocDisabled" : now ? "battSocRenamed" : "noBattery", { id: `<code>${escHtml(socId)}</code>`, now: `<code>${escHtml(now ?? "")}</code>` })}</p>
           <p class="empty-debug-hint">
             ${this._t("emptyTryDebug")}
             <button class="debug-link" data-action="open-debug">${this._t("openDebugMode")}</button>

@@ -41,8 +41,16 @@ export async function detectIntegration(hass, preferredPrefix = null) {
   try {
     const entities = await hass.callWS({ type: "config/entity_registry/list" });
     const evccEnts = entities.filter(e => e.platform === "evcc_intg");
-    if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null, instances: [], disabled: [] };
+    if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null, instances: [], disabled: [], renamed: {}, registry: true };
     const disabled = evccEnts.filter(e => e.disabled_by).map(e => e.entity_id);
+    // ha-evcc's unique_id is `evcc_intg.<object id it created>` and stays when
+    // the entity id is changed in HA: original id -> the id it carries now.
+    const renamed = {};
+    for (const e of evccEnts) {
+      const created = typeof e.unique_id === "string" && e.unique_id.startsWith("evcc_intg.")
+        ? `${e.entity_id.slice(0, e.entity_id.indexOf("."))}.${e.unique_id.slice("evcc_intg.".length)}` : null;
+      if (created && created !== e.entity_id) renamed[created] = e.entity_id;
+    }
 
     // One group per config entry, in registry order; the prefix of a group comes
     // from its own first site entity.
@@ -56,10 +64,10 @@ export async function detectIntegration(hass, preferredPrefix = null) {
 
     const instances = [...byEntry.values()].map(g => ({ prefix: g.prefix ?? "evcc_", entryId: g.entryId }));
     const chosen = (preferredPrefix && instances.find(i => i.prefix === preferredPrefix)) || instances[0];
-    return { prefix: chosen.prefix, entryId: chosen.entryId, instances, disabled };
+    return { prefix: chosen.prefix, entryId: chosen.entryId, instances, disabled, renamed, registry: true };
   } catch (e) {
     console.warn("[evcc-card] Could not detect integration from entity registry:", e);
-    return { prefix: "evcc_", entryId: null, instances: [], disabled: [] };
+    return { prefix: "evcc_", entryId: null, instances: [], disabled: [], renamed: {}, registry: false };
   }
 }
 
