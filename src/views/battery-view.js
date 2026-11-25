@@ -14,8 +14,9 @@ const SLOT = 15 * 60 * 1000;
 const BAND_COLOR = { charge: "var(--evcc-green)", discharge: "var(--evcc-amber)" };
 
 // The optimizer's actions for the current slot, as evcc names them
-// (core/site_optimizer.go, currentSlotSuggestion).
-const SUGGESTION_ACTIONS = ["normal", "hold", "charge", "holdcharge", "discharge"];
+// (core/site_optimizer.go, currentSlotSuggestion). evcc 0.320 renames `hold`
+// to `holddischarge` (evcc #36103); both read the same.
+const SUGGESTION_ACTIONS = ["normal", "hold", "holddischarge", "charge", "holdcharge", "discharge"];
 
 // ha-evcc keeps evcc's optimizer result in memory, as evcc pushes it, so
 // asking again costs evcc nothing. Since 0.317 evcc runs the optimizer at once

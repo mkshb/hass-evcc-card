@@ -96,6 +96,7 @@
   "battSuggestion": "Suggestie van de optimizer",
   "battAction_normal": "Normale werking",
   "battAction_hold": "Blokkeer ontladen",
+  "battAction_holddischarge": "Blokkeer ontladen",
   "battAction_charge": "Laden met netstroom",
   "battAction_holdcharge": "Blokkeer laden",
   "battAction_discharge": "Ontladen naar het net",

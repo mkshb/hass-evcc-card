@@ -96,6 +96,7 @@
   "battSuggestion": "Suggestion de l'optimiseur",
   "battAction_normal": "Opération normale",
   "battAction_hold": "Eviter la décharge",
+  "battAction_holddischarge": "Eviter la décharge",
   "battAction_charge": "Charge depuis le réseau",
   "battAction_holdcharge": "Eviter la charge",
   "battAction_discharge": "Décharge vers le réseau",

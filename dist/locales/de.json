@@ -96,6 +96,7 @@
   "battSuggestion": "Vorschlag des Optimizers",
   "battAction_normal": "Normaler Betrieb",
   "battAction_hold": "Entladen verhindern",
+  "battAction_holddischarge": "Entladen verhindern",
   "battAction_charge": "Aus dem Netz laden",
   "battAction_holdcharge": "Laden verhindern",
   "battAction_discharge": "Einspeisung ins Netz",

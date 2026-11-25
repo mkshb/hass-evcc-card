@@ -96,6 +96,7 @@
   "battSuggestion": "Sugestia optymalizatora",
   "battAction_normal": "Normalna praca",
   "battAction_hold": "Zapobiegaj rozładowywaniu",
+  "battAction_holddischarge": "Zapobiegaj rozładowywaniu",
   "battAction_charge": "Ładowanie z sieci",
   "battAction_holdcharge": "Zapobiegaj ładowaniu",
   "battAction_discharge": "Rozładowywanie do sieci",

@@ -96,6 +96,7 @@
   "battSuggestion": "Sugerencia del optimizador",
   "battAction_normal": "Funcionamiento normal",
   "battAction_hold": "Evitar la descarga",
+  "battAction_holddischarge": "Evitar la descarga",
   "battAction_charge": "Cargar desde la red",
   "battAction_holdcharge": "Evitar la carga",
   "battAction_discharge": "Descargar a la red",

@@ -96,6 +96,7 @@
   "battSuggestion": "Optimizer suggestion",
   "battAction_normal": "Normal operation",
   "battAction_hold": "Prevent discharging",
+  "battAction_holddischarge": "Prevent discharging",
   "battAction_charge": "Charge from grid",
   "battAction_holdcharge": "Prevent charging",
   "battAction_discharge": "Discharge to grid",

@@ -4753,6 +4753,12 @@ def battery_mode(browser, port, t):
         t.check((chip.count() == 1 and "Entladen verhindern" in chip.inner_text()) if actionable else chip.count() == 0,
                 f"suggestion {'shown' if actionable else 'hidden'} with actionable={actionable}")
         done(page)
+    # evcc 0.320 calls it holddischarge (evcc #36103): the same chip
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", attrs={"sensor.evcc_battery_0_soc": {"suggestion": {"action": "holddischarge", "actionable": True}}})
+    chip = page.locator(in_card(".batt-suggestion"))
+    t.check(chip.count() == 1 and "Entladen verhindern" in chip.inner_text(), "holddischarge reads as hold")
+    done(page)
 
     # two batteries: one row each, each with its own suggestion
     page = new_page(browser, 480, 1600)

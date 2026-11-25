@@ -96,6 +96,7 @@
   "battSuggestion": "Prijedlog optimizatora",
   "battAction_normal": "Normalan rad",
   "battAction_hold": "Spriječi pražnjenje",
+  "battAction_holddischarge": "Spriječi pražnjenje",
   "battAction_charge": "Punjenje iz mreže",
   "battAction_holdcharge": "Spriječi punjenje",
   "battAction_discharge": "Pražnjenje u mrežu",
