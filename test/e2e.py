@@ -266,7 +266,8 @@ def roundtrip(page, t):
     at_evcc = wait_for(lambda: evcc_state()["loadpoints"][idx - 1]["mode"] == "now" and "now", timeout=20)
     t.check(at_evcc == "now", "click on 'now' arrives at evcc (card -> HA -> ha-evcc -> evcc)",
             f"evcc mode={evcc_state()['loadpoints'][idx - 1]['mode']}")
-    in_card = wait_for(lambda: active() == "now" and "now", timeout=40)
+    # The card marks the pressed button at once; coming back means HA reports it.
+    in_card = wait_for(lambda: active() == "now" and ha_state(page, entity) == "now" and "now", timeout=40)
     t.check(in_card == "now", "and comes back into the card (evcc -> ha-evcc -> HA -> card)",
             f"active={active()} ha={ha_state(page, entity)}")
 

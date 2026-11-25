@@ -1749,6 +1749,20 @@ def interactions(browser, port, t):
             "a state HA reports overrides the optimistic mark")
     done(page)
 
+    # HA never answers: evcc changed back before ha-evcc read the value, or did
+    # not take it. No state moves, so the expiry has to bring the render itself.
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+    before = active()
+    page.evaluate("""() => { const c = window.__card; c._hass.callService = () => Promise.resolve();
+      c.shadowRoot.querySelector('button.mode-btn[data-value="now"]').click(); }""")
+    page.wait_for_timeout(600)
+    marked = active()
+    page.wait_for_timeout(6000)
+    t.check(before != "now" and marked == "now" and active() == before,
+            "without an answer from HA the pressed mode falls back once the mark expires", f"{before} -> {marked} -> {active()}")
+    done(page)
+
     # --- a focused input holds every render back ------------------------------------
     t.group("interaction - inputs hold the render")
     page = new_page(browser, 480, 1600)
