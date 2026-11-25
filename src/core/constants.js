@@ -154,12 +154,21 @@ export const FEATURES = [
 // configvehicle_* sensors need evcc's configuration, which ha-evcc only reads
 // with the evcc admin password: with it they exist enabled while the extended
 // vehicle data is switched on and not at all otherwise; without it ha-evcc
-// creates them disabled, and they stay empty when enabled.
+// creates them disabled, and they stay empty when enabled. `configvehicle_limitsoc`
+// is the limit the vehicle itself reports (the loadpoint's vehicle_limit_soc).
+// `config: true` marks these: only they carry the readings of the vehicle.
+// The others (ha-evcc 2026.11.2+, enabled by default) are evcc's own settings of
+// the vehicle, from its status: the limit evcc charges to (the loadpoint's
+// limit_soc), the minimum charge and the capacity. evcc leaves an unset limit
+// out, ha-evcc reports it unknown then.
 export const VEHICLE_FEATURES = [
-  { key: "soc",       suffix: "configvehicle_soc",      domain: "sensor" },
-  { key: "range",     suffix: "configvehicle_range",    domain: "sensor" },
-  { key: "odometer",  suffix: "configvehicle_odometer", domain: "sensor" },
-  { key: "limit_soc", suffix: "configvehicle_limitsoc", domain: "sensor" },
+  { key: "soc",               suffix: "configvehicle_soc",      domain: "sensor", config: true },
+  { key: "range",             suffix: "configvehicle_range",    domain: "sensor", config: true },
+  { key: "odometer",          suffix: "configvehicle_odometer", domain: "sensor", config: true },
+  { key: "vehicle_limit_soc", suffix: "configvehicle_limitsoc", domain: "sensor", config: true },
+  { key: "limit_soc",         suffix: "limit_soc",              domain: "sensor" },
+  { key: "min_soc",           suffix: "min_soc",                domain: "sensor" },
+  { key: "capacity",          suffix: "vehicle_capacity",       domain: "sensor" },
 ];
 
 // Session totals per vehicle sit under their own infix:
@@ -521,7 +530,7 @@ export const DISABLED_NEEDED = [
   { domain: "sensor", suffix: "charge_currents_0",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
   { domain: "sensor", suffix: "charge_currents_1",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
   { domain: "sensor", suffix: "charge_currents_2",            needs: "sensor.charge_current",                                                 what: "disabledWhatPhaseCurrents" },
-  ...VEHICLE_FEATURES.map(f => ({ domain: f.domain, suffix: f.suffix, vehicle: true, what: "disabledWhatVehicleData" })),
+  ...VEHICLE_FEATURES.filter(f => f.config).map(f => ({ domain: f.domain, suffix: f.suffix, vehicle: true, what: "disabledWhatVehicleData" })),
 ];
 
 export const CHARGE_MODES = {

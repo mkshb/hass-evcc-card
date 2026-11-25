@@ -241,12 +241,19 @@ function ownEntityCheck(hass) {
 
 // The vehicles ha-evcc knows, keyed by the slug it puts into their entity ids
 // (slugify of the vehicle title in evcc). A vehicle shows up here as soon as one
-// of its own entities exists: the configvehicle_* sensors, a repeating plan
-// switch or the session totals. None of them depends on a loadpoint, so an
+// of its own entities exists: the configvehicle_* sensors, evcc's settings of
+// the vehicle (limit, minimum charge, capacity), a repeating plan switch or the
+// session totals. None of them depends on a loadpoint, so an
 // unplugged vehicle stays in the list. Per vehicle: the VEHICLE_FEATURES and
 // VEHICLE_SESSION_FEATURES keys with their entity ids, plus `repeating_plans`,
 // the plan switches in plan order.
 const REPEATING_PLAN_RE = /^(.+)_repeating_plan_(\d+)$/;
+// A vehicle's `limit_soc` sensor ends like the loadpoint's effective_limit_soc
+// and vehicle_limit_soc: sensor.evcc_openwb_effective_limit_soc is no vehicle
+// "openwb_effective". Per vehicle feature, the loadpoint suffixes that end in it.
+const VEHICLE_SHADOWS = new Map(VEHICLE_FEATURES.map(v => [v, FEATURES
+  .filter(f => f.lp && f.domain === v.domain && f.suffix.endsWith("_" + v.suffix))
+  .map(f => "_" + f.suffix)]));
 export function discoverVehicles(hass, prefix = "evcc_") {
   const vehicles = {};
   const foreign  = installedPrefixes(hass).filter(p => p.length > prefix.length && p.startsWith(prefix));
@@ -274,6 +281,7 @@ export function discoverVehicles(hass, prefix = "evcc_") {
     const name    = session ? rest.slice(VEHICLE_SESSION_INFIX.length) : rest;
     for (const feat of feats) {
       if (feat.domain !== domain || !name.endsWith("_" + feat.suffix)) continue;
+      if (!session && VEHICLE_SHADOWS.get(feat).some(sh => name.endsWith(sh))) break;
       entry(name.slice(0, name.length - feat.suffix.length - 1))[feat.key] = entityId;
       break;
     }

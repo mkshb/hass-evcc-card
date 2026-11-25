@@ -398,9 +398,11 @@ def vehicle_mode(browser, port, t):
     t.check(id7.locator(".lp-badge.ready").count() == 1 and id7.locator(".vehicle-lp").count() == 0
             and id7.locator(".soc-track").count() == 0 and "Keine aktuellen Daten" in id7.inner_text(),
             "a vehicle evcc cannot reach shows no 0 % bar but a hint", id7.inner_text()[:120])
+    details = id7.locator(".vehicle-detail")
     t.check(id7.locator(".rplan-row").count() == 0 and id7.locator(".vehicle-totals").count() == 0
-            and id7.locator(".vehicle-chips, [data-vehicle-details]").count() == 0,
-            "no plans, no totals, and without a device of its own no chips either", "")
+            and id7.locator(".vehicle-chips").count() == 0
+            and details.count() == 1 and details.get_attribute("data-more-info") == "sensor.evcc_id7_vehicle_capacity",
+            "no plans, no totals, no chips without a device; the details only with evcc's capacity", f"{details.count()} details")
     done(page)
 
     # ha-evcc suggests days for the total charge duration; 60.81 d are the same 1459 h.
@@ -417,8 +419,49 @@ def vehicle_mode(browser, port, t):
             "unplugged: the values come from the vehicle's own sensors", json.dumps(info))
     t.check(ex30.locator(".lp-badge.ready").inner_text().strip() == "Nicht verbunden" and ex30.locator(".vehicle-lp").count() == 0 and not errors,
             "unplugged: badge says so, no loadpoint is named", ex30.locator(".lp-header").inner_text())
-    marker = ex30.locator(".soc-limit-marker").get_attribute("style") or ""
-    t.check("left:90%" in marker.replace(" ", ""), "the limit marker follows the vehicle's own limit", marker)
+    cap = ex30.locator('.vehicle-detail[data-more-info="sensor.evcc_ex30_vehicle_capacity"]')
+    t.check(cap.count() == 1 and "69" in cap.inner_text(), "without a device the details carry evcc's capacity",
+            ex30.locator(".vehicle-details").last.inner_text() if ex30.locator(".vehicle-details").count() else "no details")
+    done(page)
+    # Unplugged but still assigned to its loadpoint: a limit set there is the
+    # session limit of the next charge, as the loadpoint card shows it.
+    page, errors = card(set={**UNPLUGGED, "sensor.evcc_openwb_effective_limit_soc": "70", "select.evcc_openwb_min_soc": "30"}, vehicle_device=False)
+    ex30 = page.locator(block("ex30"))
+    marker = (ex30.locator(".soc-limit-marker").get_attribute("style") or "").replace(" ", "")
+    grey = page.evaluate("window.__card.shadowRoot.querySelector('.vehicle-block[data-vehicle=ex30] .soc-vehicle-limit-marker')?.style.left ?? null")
+    track = ex30.locator(".soc-track").get_attribute("style") or ""
+    t.check("left:70%" in marker and not errors, "unplugged at its loadpoint: the limit set at the loadpoint is the blue marker", marker)
+    t.check(grey == "90%", "unplugged: the limit the vehicle reports is the grey marker, as at the loadpoint", str(grey))
+    t.check("30%" in track and "70%" in track and "20%" not in track, "unplugged at its loadpoint: the loadpoint's minimum charge and limit tint the bar", track)
+    done(page)
+    # At no loadpoint: evcc's settings of the vehicle (ha-evcc 2026.11.2).
+    ELSEWHERE = {"select.evcc_openwb_vehicle_name": {"vehicle": {"id": "id7", "name": "ID.7"}}}
+    page, errors = card(set=UNPLUGGED, attrs=ELSEWHERE, vehicle_device=False)
+    ex30 = page.locator(block("ex30"))
+    marker = (ex30.locator(".soc-limit-marker").get_attribute("style") or "").replace(" ", "")
+    track = ex30.locator(".soc-track").get_attribute("style") or ""
+    t.check("left:80%" in marker and not errors, "at no loadpoint: the limit marker is evcc's limit of the vehicle", marker)
+    t.check("20%" in track and "80%" in track, "at no loadpoint: evcc's minimum charge and limit of the vehicle tint the bar", track)
+    done(page)
+    # evcc without a limit of its own for the vehicle: no blue marker, the
+    # vehicle's limit stays grey; the same limit twice is one marker
+    page, errors = card(set={**UNPLUGGED, "sensor.evcc_ex30_limit_soc": "unknown"}, attrs=ELSEWHERE, vehicle_device=False)
+    ex30 = page.locator(block("ex30"))
+    t.check(ex30.locator(".soc-limit-marker").count() == 0 and ex30.locator(".soc-vehicle-limit-marker").count() == 1 and not errors,
+            "at no loadpoint, no evcc limit: only the vehicle's limit", "")
+    done(page)
+    page, errors = card(set={**UNPLUGGED, "sensor.evcc_ex30_limit_soc": "90"}, attrs=ELSEWHERE, vehicle_device=False)
+    ex30 = page.locator(block("ex30"))
+    t.check(ex30.locator(".soc-limit-marker").count() == 1 and ex30.locator(".soc-vehicle-limit-marker").count() == 0,
+            "at no loadpoint, both limits the same: one marker", "")
+    done(page)
+    # plugged in, the loadpoint leads: its limit and minimum, not the vehicle's settings
+    page, errors = card(set={"select.evcc_openwb_min_soc": "30"}, vehicle_device=False)
+    ex30 = page.locator(block("ex30"))
+    marker = (ex30.locator(".soc-limit-marker").get_attribute("style") or "").replace(" ", "")
+    track = ex30.locator(".soc-track").get_attribute("style") or ""
+    t.check("left:90%" in marker and "30%" in track and "20%" not in track and not errors,
+            "plugged in: limit and minimum charge from the loadpoint", f"{marker}; {track}")
     done(page)
 
     VL = "sensor.evcc_openwb_vehicle_limit_soc"
@@ -426,8 +469,8 @@ def vehicle_mode(browser, port, t):
     page, errors = card(set={VL: "80"})
     t.check(vmark(page) == "80%" and not errors, "plugged in: the limit set in the vehicle on the bar", str(vmark(page)))
     done(page)
-    page, errors = card(set={**UNPLUGGED, VL: "80"})
-    t.check(vmark(page) is None, "unplugged: the loadpoint's reading does not apply", str(vmark(page)))
+    page, errors = card(set={**UNPLUGGED, VL: "80", "sensor.evcc_openwb_effective_limit_soc": "70"})
+    t.check(vmark(page) == "90%", "unplugged: the loadpoint's reading does not apply, the vehicle's own does", str(vmark(page)))
     done(page)
 
     t.group("vehicle - device of the vehicle's own integration")
@@ -950,6 +993,12 @@ def vehicle_mode(browser, port, t):
     t.check(ex30.count() == 1 and "erweiterten Fahrzeugdaten" in hint and "Admin-Passwort" in hint and ex30.locator('[data-vehicle-fold="rplan"]').count() == 1
             and ex30.locator(".lp-disabled-warn").count() == 0 and not errors,
             "without the extended vehicle data the block stays, with a hint naming option and password", hint[:200])
+    done(page)
+    # evcc's settings of the vehicle are no readings: the loadpoint's sensors
+    # that end alike make no vehicle of their own
+    page, errors = card(config={"mode": "vehicle"})
+    empty = page.locator(in_card(".empty")).inner_text()
+    t.check("openwb" not in empty.lower() and "wp_" not in empty.lower(), "effective_limit_soc and vehicle_limit_soc of a loadpoint are no vehicle", empty[:200])
     done(page)
     page, errors = card(set=UNPLUGGED, vehicle_device=False, disable=CONFIGVEHICLE)
     hint = page.locator(block("ex30")).locator(".vehicle-hint").inner_text()

@@ -2058,6 +2058,42 @@
   "last_updated": "2026-09-17T17:24:20.224697+00:00",
   "state": "52"
  },
+ "sensor.evcc_ex30_limit_soc": {
+  "attributes": {
+   "friendly_name": "EX30 Ladelimit [Fzg.]",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_ex30_limit_soc",
+  "last_changed": "2026-09-17T17:24:20.224923+00:00",
+  "last_updated": "2026-09-17T17:24:20.224923+00:00",
+  "state": "80"
+ },
+ "sensor.evcc_ex30_min_soc": {
+  "attributes": {
+   "friendly_name": "EX30 Min. Ladung [Fzg.]",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_ex30_min_soc",
+  "last_changed": "2026-09-17T17:24:20.224923+00:00",
+  "last_updated": "2026-09-17T17:24:20.224923+00:00",
+  "state": "20"
+ },
+ "sensor.evcc_ex30_vehicle_capacity": {
+  "attributes": {
+   "friendly_name": "EX30 Kapazität",
+   "icon": "mdi:car-battery",
+   "state_class": "measurement",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_ex30_vehicle_capacity",
+  "last_changed": "2026-09-17T17:24:20.224923+00:00",
+  "last_updated": "2026-09-17T17:24:20.224923+00:00",
+  "state": "69"
+ },
  "sensor.evcc_forecast_solar": {
   "attributes": {
    "dayAfterTomorrow": {
@@ -2850,6 +2886,42 @@
   "last_changed": "2026-09-17T17:24:20.226265+00:00",
   "last_updated": "2026-09-17T17:24:20.226265+00:00",
   "state": "0"
+ },
+ "sensor.evcc_id7_limit_soc": {
+  "attributes": {
+   "friendly_name": "id7 Ladelimit [Fzg.]",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_id7_limit_soc",
+  "last_changed": "2026-09-17T17:24:20.224923+00:00",
+  "last_updated": "2026-09-17T17:24:20.224923+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_id7_min_soc": {
+  "attributes": {
+   "friendly_name": "id7 Min. Ladung [Fzg.]",
+   "icon": "mdi:battery-charging",
+   "state_class": "measurement",
+   "unit_of_measurement": "%"
+  },
+  "entity_id": "sensor.evcc_id7_min_soc",
+  "last_changed": "2026-09-17T17:24:20.224923+00:00",
+  "last_updated": "2026-09-17T17:24:20.224923+00:00",
+  "state": "unknown"
+ },
+ "sensor.evcc_id7_vehicle_capacity": {
+  "attributes": {
+   "friendly_name": "id7 Kapazität",
+   "icon": "mdi:car-battery",
+   "state_class": "measurement",
+   "unit_of_measurement": "kWh"
+  },
+  "entity_id": "sensor.evcc_id7_vehicle_capacity",
+  "last_changed": "2026-09-17T17:24:20.224923+00:00",
+  "last_updated": "2026-09-17T17:24:20.224923+00:00",
+  "state": "77"
  },
  "sensor.evcc_openwb_charge_current": {
   "attributes": {

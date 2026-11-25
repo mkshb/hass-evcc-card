@@ -17,10 +17,33 @@ test("vehicle sensors, plan switches and session totals land under one slug", ()
   ]));
   assert.deepEqual(Object.keys(got), ["ex30"]);
   assert.equal(got.ex30.soc, "sensor.evcc_ex30_configvehicle_soc");
-  assert.equal(got.ex30.limit_soc, "sensor.evcc_ex30_configvehicle_limitsoc");
+  assert.equal(got.ex30.vehicle_limit_soc, "sensor.evcc_ex30_configvehicle_limitsoc");
   assert.equal(got.ex30.sessions_cost, "sensor.evcc_cstotal_ex30_charging_sessions_vehicle_cost");
   assert.deepEqual(got.ex30.repeating_plans,
     ["switch.evcc_ex30_repeating_plan_2", "switch.evcc_ex30_repeating_plan_10"], "plan order is numeric");
+});
+
+test("evcc's settings of a vehicle (ha-evcc 2026.11.2+) land under its slug", () => {
+  const got = discoverVehicles(hassOf([
+    "sensor.evcc_ex30_limit_soc",
+    "sensor.evcc_ex30_min_soc",
+    "sensor.evcc_ex30_vehicle_capacity",
+  ]));
+  assert.deepEqual(got, { ex30: {
+    limit_soc: "sensor.evcc_ex30_limit_soc",
+    min_soc:   "sensor.evcc_ex30_min_soc",
+    capacity:  "sensor.evcc_ex30_vehicle_capacity",
+    repeating_plans: [],
+  } });
+});
+
+test("the loadpoint's effective and vehicle limit are no vehicle limit", () => {
+  const got = discoverVehicles(hassOf([
+    "sensor.evcc_openwb_effective_limit_soc",
+    "sensor.evcc_openwb_vehicle_limit_soc",
+    "sensor.evcc_ex30_limit_soc",
+  ]));
+  assert.deepEqual(got, { ex30: { limit_soc: "sensor.evcc_ex30_limit_soc", repeating_plans: [] } });
 });
 
 test("a vehicle without the extended vehicle data is still found", () => {
