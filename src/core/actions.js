@@ -58,7 +58,21 @@ export const actions = {
   // the entity, a failed call drops it, and a stale note expires on its own.
   _expect(entityId, value, call) {
     const state = this._hass?.states?.[entityId]?.state;
-    if (state != null) this._expected[entityId] = { value, from: state, ts: Date.now() };
+    if (state != null) {
+      const note = { value, from: state, ts: Date.now() };
+      this._expected[entityId] = note;
+      // A note expires in a render, and a render needs a state that moved.
+      // When HA never reports a new one (evcc changed back before ha-evcc read
+      // it, or did not take the value), the card would keep the written value,
+      // so the expiry asks for a render of its own.
+      setTimeout(() => {
+        if (this._expected[entityId] !== note) return;
+        delete this._expected[entityId];
+        if (!this.isConnected) return;
+        this._lastRenderKey = null;
+        this._render();
+      }, EXPECT_MS);
+    }
     call?.catch?.(() => { delete this._expected[entityId]; });
     return call;
   },

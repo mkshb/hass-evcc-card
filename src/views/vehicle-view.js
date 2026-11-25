@@ -161,9 +161,25 @@ export const vehicleView = {
     // reach, which would hide the reading of the vehicle's own integration.
     const range    = this._vehicleValue({ vehicle: vehicle.range,     device: roles.range,      lp, lpKey: "vehicle_range",    min: 0 });
     const odometer = this._vehicleValue({ vehicle: vehicle.odometer,  device: roles.odometer,   lp, lpKey: "vehicle_odometer", min: 0 });
-    // evcc reports a limit of 0 for a vehicle that has none.
-    const limit    = this._vehicleValue({ vehicle: vehicle.limit_soc, device: roles.target_soc, lp, lpKey: "effective_limit_soc", min: 0 });
-    const limitSoc = limit ? limit.value : null;
+    // Two limits, as at the loadpoint: evcc's, which it charges to (the blue
+    // marker), and the one set in the vehicle (the grey one). evcc's comes
+    // from the loadpoint the vehicle is assigned to, plugged in or not: a
+    // limit set there while unplugged is the session limit of the next charge
+    // (evcc resets it on disconnect, then the vehicle's own setting applies,
+    // core/loadpoint_effective.go). Only a vehicle at no loadpoint shows the
+    // limit in evcc's settings of it (ha-evcc 2026.11.2+). The vehicle's own
+    // limit is a reading of the vehicle: from the loadpoint while plugged in,
+    // else the newer of ha-evcc's configvehicle reading and the target of the
+    // vehicle's device. evcc reports a limit of 0 for a vehicle that has none.
+    const num = id => { const v = id ? parseFloat(stateVal(this._hass, id)) : NaN; return v > 0 ? v : null; };
+    const limitSoc = lp ? num(lp.ents.effective_limit_soc) : num(vehicle.limit_soc);
+    const carLimit = lp?.connected ? (lp.ents.vehicle_limit_soc ? { value: this._vehicleLimit(lp.ents), entityId: lp.ents.vehicle_limit_soc } : null)
+      : this._vehicleValue({ vehicle: vehicle.vehicle_limit_soc, device: roles.target_soc, min: 0 });
+    // The same limit twice is one marker, evcc's.
+    const carLimitSoc = carLimit?.value != null && carLimit.value !== limitSoc ? carLimit.value : null;
+    // evcc's minimum charge of the vehicle: amber up to it, as at the loadpoint,
+    // from the same place as evcc's limit.
+    const minSoc = lp ? num(lp.ents.min_soc) : num(vehicle.min_soc);
 
     // What the vehicle is doing. evcc knows about its own loadpoints and leads
     // there; everything else (driving, charging somewhere else) only the
@@ -189,14 +205,15 @@ export const vehicleView = {
     const km = v => `${Math.round(v.value)} ${escHtml(unitStr(this._hass, v.entityId) || "km")}`;
 
     const socHtml = soc ? `
-      <div class="soc-track" style="background:${socTrackBg(0, limitSoc ?? 100)}">
+      <div class="soc-track" style="background:${socTrackBg(minSoc ?? 0, limitSoc ?? 100)}">
         <div class="soc-fill ${state === "charging" ? "charging" : ""}"
-             style="width:${Math.min(soc.value, 100)}%;background:${socFillGradient(soc.value, 0, limitSoc ?? 100)}"></div>
-        ${lp?.connected ? this._renderVehicleLimitMarker(lp.ents, this._vehicleLimit(lp.ents), soc.value) : ""}
+             style="width:${Math.min(soc.value, 100)}%;background:${socFillGradient(soc.value, minSoc ?? 0, limitSoc ?? 100)}"></div>
+        ${carLimitSoc !== null ? this._renderVehicleLimitMarker({ vehicle_limit_soc: carLimit.entityId }, carLimitSoc, soc.value) : ""}
         ${limitSoc !== null ? `<div class="soc-limit-marker" style="left:${Math.min(limitSoc, 100)}%"></div>` : ""}
       </div>` : "";
 
-    const hasVehicleData = VEHICLE_FEATURES.some(f => vehicle[f.key]) || !!dev;
+    // Readings of the vehicle only: evcc's settings of it say nothing about its state.
+    const hasVehicleData = VEHICLE_FEATURES.some(f => f.config && vehicle[f.key]) || !!dev;
 
     return `
       <div class="loadpoint vehicle-block" data-vehicle="${escAttr(slug)}">
@@ -224,7 +241,7 @@ export const vehicleView = {
         ${this._renderVehiclePlan(lp)}
         ${this._renderVehicleRepeatPlans(vehicle)}
         ${this._renderVehicleTotals(vehicle)}
-        ${dev ? this._renderVehicleDetails(slug, dev) : ""}
+        ${this._renderVehicleDetails(slug, dev, vehicle)}
       </div>`;
   },
 
@@ -233,7 +250,7 @@ export const vehicleView = {
   // else the sensors look missing.
   _vehicleDataDisabled(slug) {
     const prefix = this._getPrefix();
-    return VEHICLE_FEATURES.some(f => this._isEntityDisabled(`${f.domain}.${prefix}${slug}_${f.suffix}`));
+    return VEHICLE_FEATURES.some(f => f.config && this._isEntityDisabled(`${f.domain}.${prefix}${slug}_${f.suffix}`));
   },
 
   // The configured pictures for a state at an evcc loadpoint, first choice
@@ -487,9 +504,12 @@ export const vehicleView = {
     if (cmd === "press") return this._pressVehicleButton(entityId);
   },
 
-  // Everything else the device reports, folded away by default.
-  _renderVehicleDetails(slug, dev) {
-    const ids  = [dev.roles.capacity, dev.roles.target_soc, ...dev.details].filter(Boolean);
+  // Everything else the device reports, folded away by default. The capacity
+  // comes from the device, else from evcc (ha-evcc 2026.11.2+), so a vehicle
+  // without a device can have this block with only that in it.
+  _renderVehicleDetails(slug, dev, vehicle) {
+    const shown = id => id && this._vehicleStateText(id) !== null ? id : null;
+    const ids  = [shown(dev?.roles.capacity) ?? shown(vehicle?.capacity), dev?.roles.target_soc, ...(dev?.details ?? [])].filter(Boolean);
     const rows = ids.map(id => {
       const text = this._vehicleStateText(id);
       return text === null ? "" : `

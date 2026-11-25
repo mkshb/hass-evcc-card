@@ -153,13 +153,16 @@ def done(page):
 
 def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="de", ws=True, set=None, disable=None,
               rename=None, attrs=None, tariff=None, second=None, wsname=None, admin=True, drop=None,
-              vehicle_device=True, optimizer=False, battery_ext=False, optimize=False, caps_version=None, dynamic=False):
+              vehicle_device=True, optimizer=False, battery_ext=False, optimize=False, caps_version=None, dynamic=False,
+              automatic=None, move=None):
     q = {"w": width, "lang": lang}
     if dynamic: q["dyn"] = 1 if dynamic is True else dynamic
     if caps_version: q["capsver"] = caps_version
     if optimizer: q["optimizer"] = 1 if optimizer is True else optimizer
     if battery_ext: q["battext"] = 1
     if optimize: q["optimize"] = 1
+    if automatic: q["automatic"] = automatic
+    if move: q["move"] = json.dumps(move)
     if not ws: q["ws"] = 0
     if not admin: q["admin"] = 0
     if drop: q["drop"] = ",".join(drop)
@@ -396,9 +399,11 @@ def vehicle_mode(browser, port, t):
     t.check(id7.locator(".lp-badge.ready").count() == 1 and id7.locator(".vehicle-lp").count() == 0
             and id7.locator(".soc-track").count() == 0 and "Keine aktuellen Daten" in id7.inner_text(),
             "a vehicle evcc cannot reach shows no 0 % bar but a hint", id7.inner_text()[:120])
+    details = id7.locator(".vehicle-detail")
     t.check(id7.locator(".rplan-row").count() == 0 and id7.locator(".vehicle-totals").count() == 0
-            and id7.locator(".vehicle-chips, [data-vehicle-details]").count() == 0,
-            "no plans, no totals, and without a device of its own no chips either", "")
+            and id7.locator(".vehicle-chips").count() == 0
+            and details.count() == 1 and details.get_attribute("data-more-info") == "sensor.evcc_id7_vehicle_capacity",
+            "no plans, no totals, no chips without a device; the details only with evcc's capacity", f"{details.count()} details")
     done(page)
 
     # ha-evcc suggests days for the total charge duration; 60.81 d are the same 1459 h.
@@ -415,8 +420,49 @@ def vehicle_mode(browser, port, t):
             "unplugged: the values come from the vehicle's own sensors", json.dumps(info))
     t.check(ex30.locator(".lp-badge.ready").inner_text().strip() == "Nicht verbunden" and ex30.locator(".vehicle-lp").count() == 0 and not errors,
             "unplugged: badge says so, no loadpoint is named", ex30.locator(".lp-header").inner_text())
-    marker = ex30.locator(".soc-limit-marker").get_attribute("style") or ""
-    t.check("left:90%" in marker.replace(" ", ""), "the limit marker follows the vehicle's own limit", marker)
+    cap = ex30.locator('.vehicle-detail[data-more-info="sensor.evcc_ex30_vehicle_capacity"]')
+    t.check(cap.count() == 1 and "69" in cap.inner_text(), "without a device the details carry evcc's capacity",
+            ex30.locator(".vehicle-details").last.inner_text() if ex30.locator(".vehicle-details").count() else "no details")
+    done(page)
+    # Unplugged but still assigned to its loadpoint: a limit set there is the
+    # session limit of the next charge, as the loadpoint card shows it.
+    page, errors = card(set={**UNPLUGGED, "sensor.evcc_openwb_effective_limit_soc": "70", "select.evcc_openwb_min_soc": "30"}, vehicle_device=False)
+    ex30 = page.locator(block("ex30"))
+    marker = (ex30.locator(".soc-limit-marker").get_attribute("style") or "").replace(" ", "")
+    grey = page.evaluate("window.__card.shadowRoot.querySelector('.vehicle-block[data-vehicle=ex30] .soc-vehicle-limit-marker')?.style.left ?? null")
+    track = ex30.locator(".soc-track").get_attribute("style") or ""
+    t.check("left:70%" in marker and not errors, "unplugged at its loadpoint: the limit set at the loadpoint is the blue marker", marker)
+    t.check(grey == "90%", "unplugged: the limit the vehicle reports is the grey marker, as at the loadpoint", str(grey))
+    t.check("30%" in track and "70%" in track and "20%" not in track, "unplugged at its loadpoint: the loadpoint's minimum charge and limit tint the bar", track)
+    done(page)
+    # At no loadpoint: evcc's settings of the vehicle (ha-evcc 2026.11.2).
+    ELSEWHERE = {"select.evcc_openwb_vehicle_name": {"vehicle": {"id": "id7", "name": "ID.7"}}}
+    page, errors = card(set=UNPLUGGED, attrs=ELSEWHERE, vehicle_device=False)
+    ex30 = page.locator(block("ex30"))
+    marker = (ex30.locator(".soc-limit-marker").get_attribute("style") or "").replace(" ", "")
+    track = ex30.locator(".soc-track").get_attribute("style") or ""
+    t.check("left:80%" in marker and not errors, "at no loadpoint: the limit marker is evcc's limit of the vehicle", marker)
+    t.check("20%" in track and "80%" in track, "at no loadpoint: evcc's minimum charge and limit of the vehicle tint the bar", track)
+    done(page)
+    # evcc without a limit of its own for the vehicle: no blue marker, the
+    # vehicle's limit stays grey; the same limit twice is one marker
+    page, errors = card(set={**UNPLUGGED, "sensor.evcc_ex30_limit_soc": "unknown"}, attrs=ELSEWHERE, vehicle_device=False)
+    ex30 = page.locator(block("ex30"))
+    t.check(ex30.locator(".soc-limit-marker").count() == 0 and ex30.locator(".soc-vehicle-limit-marker").count() == 1 and not errors,
+            "at no loadpoint, no evcc limit: only the vehicle's limit", "")
+    done(page)
+    page, errors = card(set={**UNPLUGGED, "sensor.evcc_ex30_limit_soc": "90"}, attrs=ELSEWHERE, vehicle_device=False)
+    ex30 = page.locator(block("ex30"))
+    t.check(ex30.locator(".soc-limit-marker").count() == 1 and ex30.locator(".soc-vehicle-limit-marker").count() == 0,
+            "at no loadpoint, both limits the same: one marker", "")
+    done(page)
+    # plugged in, the loadpoint leads: its limit and minimum, not the vehicle's settings
+    page, errors = card(set={"select.evcc_openwb_min_soc": "30"}, vehicle_device=False)
+    ex30 = page.locator(block("ex30"))
+    marker = (ex30.locator(".soc-limit-marker").get_attribute("style") or "").replace(" ", "")
+    track = ex30.locator(".soc-track").get_attribute("style") or ""
+    t.check("left:90%" in marker and "30%" in track and "20%" not in track and not errors,
+            "plugged in: limit and minimum charge from the loadpoint", f"{marker}; {track}")
     done(page)
 
     VL = "sensor.evcc_openwb_vehicle_limit_soc"
@@ -424,8 +470,8 @@ def vehicle_mode(browser, port, t):
     page, errors = card(set={VL: "80"})
     t.check(vmark(page) == "80%" and not errors, "plugged in: the limit set in the vehicle on the bar", str(vmark(page)))
     done(page)
-    page, errors = card(set={**UNPLUGGED, VL: "80"})
-    t.check(vmark(page) is None, "unplugged: the loadpoint's reading does not apply", str(vmark(page)))
+    page, errors = card(set={**UNPLUGGED, VL: "80", "sensor.evcc_openwb_effective_limit_soc": "70"})
+    t.check(vmark(page) == "90%", "unplugged: the loadpoint's reading does not apply, the vehicle's own does", str(vmark(page)))
     done(page)
 
     t.group("vehicle - device of the vehicle's own integration")
@@ -948,6 +994,12 @@ def vehicle_mode(browser, port, t):
     t.check(ex30.count() == 1 and "erweiterten Fahrzeugdaten" in hint and "Admin-Passwort" in hint and ex30.locator('[data-vehicle-fold="rplan"]').count() == 1
             and ex30.locator(".lp-disabled-warn").count() == 0 and not errors,
             "without the extended vehicle data the block stays, with a hint naming option and password", hint[:200])
+    done(page)
+    # evcc's settings of the vehicle are no readings: the loadpoint's sensors
+    # that end alike make no vehicle of their own
+    page, errors = card(config={"mode": "vehicle"})
+    empty = page.locator(in_card(".empty")).inner_text()
+    t.check("openwb" not in empty.lower() and "wp_" not in empty.lower(), "effective_limit_soc and vehicle_limit_soc of a loadpoint are no vehicle", empty[:200])
     done(page)
     page, errors = card(set=UNPLUGGED, vehicle_device=False, disable=CONFIGVEHICLE)
     hint = page.locator(block("ex30")).locator(".vehicle-hint").inner_text()
@@ -1695,6 +1747,20 @@ def interactions(browser, port, t):
     page.wait_for_timeout(600)
     t.check(page.evaluate("window.__card.shadowRoot.querySelector('.mode-btn.active')?.dataset.value") == "off",
             "a state HA reports overrides the optimistic mark")
+    done(page)
+
+    # HA never answers: evcc changed back before ha-evcc read the value, or did
+    # not take it. No state moves, so the expiry has to bring the render itself.
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, config={"mode": "loadpoint", "loadpoints": ["openwb"]})
+    before = active()
+    page.evaluate("""() => { const c = window.__card; c._hass.callService = () => Promise.resolve();
+      c.shadowRoot.querySelector('button.mode-btn[data-value="now"]').click(); }""")
+    page.wait_for_timeout(600)
+    marked = active()
+    page.wait_for_timeout(6000)
+    t.check(before != "now" and marked == "now" and active() == before,
+            "without an answer from HA the pressed mode falls back once the mark expires", f"{before} -> {marked} -> {active()}")
     done(page)
 
     # --- a focused input holds every render back ------------------------------------
@@ -4405,6 +4471,28 @@ def optimizer_mode(browser, port, t):
     settle(page)
     t.check(text(page, ".opt-dt") == ["Mi 23:45 bis 00:00"] and text(page, ".opt-step-label") == ["Morgen"], "a render keeps page and slot")
 
+    t.group("optimizer - automatic control")
+    page2, errors = opt_page(automatic="full")
+    t.check(not errors, "renders with the automatic control", "; ".join(errors)[:300])
+    sel = page2.locator(in_card(".opt-auto select"))
+    t.check(sel.count() == 1 and sel.input_value() == "full"
+            and page2.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('.opt-auto option')].map(o => o.textContent)") == ["Aus", "Hausbatterie", "Hausbatterie & Ladepunkte"],
+            "the level as a select, evcc's three levels")
+    t.check("startet und stoppt das Laden" in page2.locator(in_card(".opt-auto-desc")).inner_text(), "what the level does", page2.locator(in_card(".opt-auto-desc")).inner_text())
+    sel.select_option("battery"); settle(page2)
+    call = [c for c in svc(page2) if c["service"] == "select_option"]
+    t.check(call and call[-1]["data"] == {"entity_id": "select.evcc_optimizer_automatic", "option": "battery"}, "a level writes the select", json.dumps(call)[-200:])
+    t.check(page2.locator(in_card(".opt-chart")).count() == 1, "the plan stays below it")
+    done(page2)
+    page2, errors = opt_page(automatic="disabled")
+    t.check(not errors and text(page2, ".opt-note") == ["Der Optimizer in evcc ist ausgeschaltet."] and page2.locator(in_card(".opt-chart")).count() == 0,
+            "the optimizer switched off: a note instead of the plan", str(text(page2, ".opt-note")))
+    click(page2, "button.batt-discharge-toggle[data-entity='switch.evcc_optimizer']")
+    call = [c for c in svc(page2) if c["domain"] == "switch"]
+    t.check(call and call[-1]["service"] == "turn_on" and call[-1]["data"] == {"entity_id": "switch.evcc_optimizer"}, "its switch turns it on", json.dumps(call)[-200:])
+    done(page2)
+    t.check(page.locator(in_card(".opt-auto")).count() == 0, "without ha-evcc's select no automatic control")
+
     t.group("optimizer - legend")
     legend = text(page, "button.opt-leg")
     t.check(legend == ["Haus", "WP", "openWB (EX30)", "Speicher", "PV-Prognose", "Netz"], "the power lane's entries are buttons", str(legend))
@@ -4753,6 +4841,12 @@ def battery_mode(browser, port, t):
         t.check((chip.count() == 1 and "Entladen verhindern" in chip.inner_text()) if actionable else chip.count() == 0,
                 f"suggestion {'shown' if actionable else 'hidden'} with actionable={actionable}")
         done(page)
+    # evcc 0.320 calls it holddischarge (evcc #36103): the same chip
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", attrs={"sensor.evcc_battery_0_soc": {"suggestion": {"action": "holddischarge", "actionable": True}}})
+    chip = page.locator(in_card(".batt-suggestion"))
+    t.check(chip.count() == 1 and "Entladen verhindern" in chip.inner_text(), "holddischarge reads as hold")
+    done(page)
 
     # two batteries: one row each, each with its own suggestion
     page = new_page(browser, 480, 1600)
@@ -4930,6 +5024,62 @@ def battery_mode(browser, port, t):
     t.check("batt-band charge" in got and not any("future" in c for c in got), "no forecast: the past only", json.dumps(sorted(set(got))))
     done(page)
 
+    t.group("battery - optimizer automatic control")
+    # evcc's automatic control (ha-evcc 2026.11.2): evcc refuses the discharge
+    # lock and the grid charge limit (409) and the optimizer decides in place
+    # of both limits; grid discharging stays the opt-in it was
+    limits = {"number.evcc_battery_grid_charge_limit": "0.21", "switch.evcc_battery_grid_discharge": "on",
+              "number.evcc_battery_grid_discharge_limit": "0.09", "switch.evcc_battery_discharge_control": "on"}
+    lock_sel = "button.batt-discharge-toggle[data-entity='switch.evcc_battery_discharge_control']"
+    for level in ("battery", "full"):
+        page = new_page(browser, 480, 1600)
+        errors = open_card(page, port, mode="battery", battery_ext=True, optimizer=True, automatic=level, set=limits)
+        t.check(not errors, f"automatic {level}: renders without errors", "; ".join(errors)[:200])
+        got = bands(page)
+        t.check(got and not any("future" in c for c in got), f"automatic {level}: the past bands only, the limits no longer say what lies ahead", json.dumps(sorted(set(got))))
+        lock = page.locator(in_card(lock_sel))
+        t.check(lock.is_disabled() and lock.get_attribute("aria-checked") == "false", f"automatic {level}: the discharge lock shows off and is disabled")
+        hint = page.locator(in_card(".batt-auto-hint"))
+        t.check(hint.count() == 1 and "Durch automatische Steuerung deaktiviert" in hint.inner_text(), f"automatic {level}: evcc's note under it")
+        page.evaluate(f"() => window.__card.shadowRoot.querySelector({json.dumps(lock_sel)}).click()")
+        settle(page)
+        t.check(not [c for c in svc(page) if c["domain"] == "switch"], f"automatic {level}: a click writes nothing", json.dumps(svc(page))[:200])
+        page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).click(); settle(page)
+        body = lambda sel: page.locator(in_card(f".batt-tab-body {sel}")).count()
+        t.check(body(".batt-auto-hint") == 1 and body(".batt-slots") == 1 and body(".batt-slots.pick") == 0
+                and body("line.batt-slots-limit") == 0 and body(".slider-row") == 0 and body("button.batt-discharge-toggle") == 0,
+                f"automatic {level}: grid charging shows the note and the tariff, no switch, slider, limit line or selector")
+        page.locator(in_card('button.batt-tab[data-batt-tab="discharge"]')).click(); settle(page)
+        allow = page.locator(in_card("button.batt-discharge-toggle[data-batt-discharge]"))
+        t.check(allow.count() == 1 and not allow.is_disabled() and body(".batt-auto-hint") == 0 and body(".slider-row") == 1,
+                f"automatic {level}: grid discharging unchanged, as in evcc")
+        done(page)
+    # level off: everything as without the select
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True, optimizer=True, automatic="off", set=limits)
+    lock = page.locator(in_card(lock_sel))
+    t.check(not lock.is_disabled() and lock.get_attribute("aria-checked") == "true" and page.locator(in_card(".batt-auto-hint")).count() == 0,
+            "automatic off: the discharge lock as it is")
+    t.check(any("future" in c for c in bands(page)), "automatic off: the future bands from the limits")
+    done(page)
+    # a running optimizer with the select disabled: the triangle names it
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True, optimizer=True, optimize=True, automatic="off", disable=["select.evcc_optimizer_automatic"])
+    warn = page.locator(in_card(".battery-block .lp-disabled-warn"))
+    t.check(warn.count() == 1 and "Automatische Steuerung" in (warn.get_attribute("title") or ""), "disabled automatic control: the triangle names it", warn.get_attribute("title") if warn.count() else "")
+    done(page)
+    # automatic control on, its select disabled: ha-evcc reports the grid
+    # charge limit unavailable, the card cannot say why
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, mode="battery", battery_ext=True, optimizer=True, automatic="full", disable=["select.evcc_optimizer_automatic"])
+    t.check(not errors, "unavailable grid charge limit: renders without errors", "; ".join(errors)[:200])
+    page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).click(); settle(page)
+    body = lambda sel: page.locator(in_card(f".batt-tab-body {sel}")).count()
+    t.check(body(".batt-switch-row.locked") == 1 and body(".batt-slots") == 1 and body(".batt-auto-hint") == 0
+            and body(".slider-row") == 0 and body("button.batt-discharge-toggle") == 0 and body(".batt-slots.pick") == 0,
+            "unavailable grid charge limit: the sentence and the tariff, no controls, no note without the select")
+    done(page)
+
     # priority and buffer SoC: a line each in the chart, and their values in
     # the settings in the same colour, which is what explains the lines; a
     # value of 0 or 100 has no line and keeps the usual colour
@@ -5091,6 +5241,54 @@ def battery_mode(browser, port, t):
     t.check(page.locator(in_card(".lp-disabled-warn")).count() == 0 and "deaktiviert" in note(page),
             "not an administrator: the note, no triangle", note(page))
     done(page)
+    # renamed by hand in HA: the note says to what, the card looks for ha-evcc's id
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, mode="battery", move={"sensor.evcc_battery_soc": "sensor.hausbatterie_soc"})
+    t.check(not errors and note(page) == "Der Ladestand der Hausbatterie wurde in Home Assistant in sensor.hausbatterie_soc umbenannt. Die Karte sucht sensor.evcc_battery_soc.",
+            "a renamed SoC sensor: the note names the new id and the one the card looks for", note(page))
+    done(page)
+
+    # The debug view and report: the status of each mode's required entity
+    # (#211), the mode of the card it was opened from first.
+    t.group("debug - required entity per mode")
+    req = lambda page: page.evaluate("[...window.__card.shadowRoot.querySelectorAll('#debug-required li')].map(li => [li.dataset.mode, li.dataset.status, li.textContent.replace(/\\s+/g, ' ').trim()])")
+    report = lambda page, mask=False: page.evaluate(f"window.__card._buildDebugReport({'true' if mask else 'false'})") or ""
+    line = lambda rep: next((l for l in rep.split("\n") if l.startswith("- `battery`:")), "")
+    cases = [
+        ({}, "ok", "gefunden", "found (`30`)"),
+        ({"disable": ["sensor.evcc_battery_soc"]}, "disabled", "In Home Assistant deaktiviert", "**disabled** in the entity registry"),
+        ({"move": {"sensor.evcc_battery_soc": "sensor.hausbatterie_soc"}}, "renamed", "Heißt jetzt sensor.hausbatterie_soc", "**renamed** to `sensor.hausbatterie_soc`"),
+        ({"drop": ["sensor.evcc_battery_soc"]}, "missing", "ha-evcc hat sie nicht angelegt", "**missing** (not in the entity registry)"),
+        ({"set": {"sensor.evcc_battery_soc": "unavailable"}}, "unavailable", "nicht verfügbar", "**unavailable**"),
+    ]
+    for kw, status, view_text, report_text in cases:
+        page = new_page(browser, 480, 1600)
+        errors = open_card(page, port, mode="debug", **kw)
+        got = req(page)
+        t.check(not errors and got and got[0][:2] == ["battery", status] and view_text in got[0][2],
+                f"{status}: the view says so", json.dumps(got)[:300])
+        t.check(report_text in line(report(page)), f"{status}: the report says so", line(report(page)))
+        done(page)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="debug", move={"sensor.evcc_battery_soc": "sensor.hausbatterie_soc"})
+    t.check("hausbatterie" not in line(report(page, mask=True)) and "renamed** to `sensor.…`" in line(report(page, mask=True)),
+            "masked report: the new id is left out", line(report(page, mask=True)))
+    done(page)
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="debug", drop=["sensor.evcc_battery_soc"])
+    page.evaluate("window.__card._registryRead = false; window.__card._lastRenderKey = null; window.__card._render()")
+    settle(page)
+    got = req(page)
+    t.check(got and "nur ein Administrator" in got[0][2] and "may also be disabled or renamed" in line(report(page)),
+            "registry not readable: missing, maybe disabled or renamed", json.dumps(got)[:200])
+    done(page)
+    # opened from a battery card through its note: the battery mode leads
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", drop=["sensor.evcc_battery_soc"])
+    page.locator(in_card('.battery-block button[data-action="open-debug"]')).click(); settle(page)
+    got = req(page)
+    t.check(got and got[0][:2] == ["battery", "missing"], "the debug view opened from the battery note shows its status", json.dumps(got)[:200])
+    done(page)
 
 # The forecast mode on a dynamic tariff (test/mock-hass.js `dynamic`): prices
 # by time of day, known until the end of tomorrow. The clock stands on a
@@ -5189,6 +5387,18 @@ def forecast_mode(browser, port, t):
     # The bar lanes span the range of their values (#206): above zero they start
     # a round step below the lowest, as evcc's price chart with zoom, and name
     # the lowest and highest value of the page in a tag above its bar.
+    t.group("forecast - a fixed tariff with cheaper nights")
+    # 28.1 ct from 05:00 to midnight, the dearest price and more than two
+    # thirds of the slots: it is the middle, the nights are the cheap ones (#213).
+    page, errors = fc_page(dynamic="fixed")
+    t.check(not errors and text(page, ".fc-chip") != ["Jetzt günstig"], "28.1 ct now is not cheap", f"{text(page, '.fc-chip')} {errors}")
+    t.check(text(page, "button.fc-hint") == ["günstig ab morgen 00:00 · in 3 h 45 min"], "cheap from midnight", str(text(page, "button.fc-hint")))
+    # The page runs from 20:15 to the end of tomorrow: slot 15 is midnight.
+    green = page.evaluate("""() => [...window.__card.shadowRoot.querySelectorAll('.opt-lane')[1].querySelectorAll('.fc-bar')]
+        .map((b, k) => b.classList.contains('fc-cheap') ? k : -1).filter(k => k >= 0)""")
+    t.check(green == list(range(15, 35)), "green from 00:00 to 05:00 and nowhere else, 28.1 ct included", str(green))
+    done(page)
+
     t.group("forecast - scale and tags")
     # The grid line labels of lane i, bottom up, and its tags as [class, text, x, y, w].
     axis = lambda page, i: page.evaluate(f"""() => [...window.__card.shadowRoot.querySelectorAll('.opt-lane')[{i}]
@@ -5214,6 +5424,31 @@ def forecast_mode(browser, port, t):
     page, _ = fc_page(dynamic=True, set={**FC_LIMITS, "number.evcc_openwb_smart_cost_limit": 0.05})
     t.check(axis(page, 1) == ["0", "10", "20", "30", "40 ct"], "a limit far below the prices widens the lane down to it", str(axis(page, 1)))
     done(page)
+    # A tag covers no bar and not the other tag, on every page (#213): the
+    # rectangles of the bars it spans end below it.
+    clash = lambda page, i: page.evaluate(f"""() => {{
+        const l = window.__card.shadowRoot.querySelectorAll('.opt-lane')[{i}];
+        const box = e => ({{ x: +e.getAttribute('x'), y: +e.getAttribute('y'), w: +e.getAttribute('width'), h: +e.getAttribute('height') }});
+        const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+        const tags = [...l.querySelectorAll('.fc-tag rect')].map(box), bars = [...l.querySelectorAll('.fc-bar')].map(box);
+        return [tags.length, tags.flatMap(t => bars.filter(b => hit(t, b))).length, tags.length == 2 && hit(tags[0], tags[1])]; }}""")
+    for variant in ("fixed", "high", "negative", True):
+        page, errors = fc_page(dynamic=variant)
+        seen = []
+        for _ in range(3):
+            seen.append(clash(page, 1))
+            click(page, 'button.fc-step[data-fc-step="1"]')
+        t.check(not errors and any(n == 2 for n, _, _ in seen) and all(c == 0 and not o for _, c, o in seen),
+                f"tariff {variant}: the tags cover no bar and not each other", str(seen))
+        done(page)
+    # At 23:45 the dearest price is the first slot and the cheapest the next
+    # one: the tags would meet at the left edge, the lowest moves aside.
+    page, errors = fc_page(time="2026-09-18T23:45:00+02:00", dynamic="fixed")
+    tg, seen = tags(page, 1), clash(page, 1)
+    t.check(not errors and [g[:2] for g in tg] == [["fc-tag-min", "10,0 ct"], ["fc-tag-max", "28,1 ct"]] and seen[1:] == [0, False],
+            "the dearest slot right before the cheapest: both tags, apart, over no bar", f"{tg} {seen}")
+    done(page)
+
     page, errors = fc_page(dynamic="negative")
     t.check(not errors and axis(page, 1) == ["-20", "0", "20", "40 ct"], "prices below zero keep the zero line", f"{axis(page, 1)} {errors}")
     t.check([g[:2] for g in tags(page, 1)] == [["fc-tag-min", "-3,0 ct"], ["fc-tag-max", "37,2 ct"]], "and name the lowest one below zero", str(tags(page, 1)))
@@ -5223,6 +5458,19 @@ def forecast_mode(browser, port, t):
     px = lambda page: page.evaluate("""() => { const svg = window.__card.shadowRoot.querySelector('.fc-chart-svg');
         const label = svg.querySelector('text'), r = svg.getBoundingClientRect();
         return [svg.viewBox.baseVal.width, Math.round(r.width), +label.getAttribute('font-size') * r.width / svg.viewBox.baseVal.width]; }""")
+    # Before the first measurement the card's width less its padding and the
+    # border of ha-card stands in. Without a ResizeObserver that is all there
+    # is: it must already be the width on screen, or every chart is drawn
+    # twice, and a check right after loading can catch the first drawing.
+    # A context of its own: the init script would stay with a pooled page.
+    ctx = browser.new_context(viewport={"width": 480, "height": 1200}, timezone_id=TIMEZONE, locale=LOCALE)
+    page = ctx.new_page()
+    page.clock.set_fixed_time(FC_TIME)
+    page.add_init_script("delete window.ResizeObserver")
+    open_card(page, port, config={"mode": "forecast"}, dynamic=True, width=334)
+    vw, rw, _ = px(page)
+    t.check(vw == rw, "unmeasured: the first drawing already has the width on screen", f"viewBox {vw}, on screen {rw}")
+    ctx.close()
     for width in (334, 600):
         page, errors = fc_page(dynamic=True, width=width)
         vw, rw, font = px(page)

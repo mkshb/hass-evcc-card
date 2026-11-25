@@ -41,8 +41,16 @@ export async function detectIntegration(hass, preferredPrefix = null) {
   try {
     const entities = await hass.callWS({ type: "config/entity_registry/list" });
     const evccEnts = entities.filter(e => e.platform === "evcc_intg");
-    if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null, instances: [], disabled: [] };
+    if (evccEnts.length === 0) return { prefix: "evcc_", entryId: null, instances: [], disabled: [], renamed: {}, registry: true };
     const disabled = evccEnts.filter(e => e.disabled_by).map(e => e.entity_id);
+    // ha-evcc's unique_id is `evcc_intg.<object id it created>` and stays when
+    // the entity id is changed in HA: original id -> the id it carries now.
+    const renamed = {};
+    for (const e of evccEnts) {
+      const created = typeof e.unique_id === "string" && e.unique_id.startsWith("evcc_intg.")
+        ? `${e.entity_id.slice(0, e.entity_id.indexOf("."))}.${e.unique_id.slice("evcc_intg.".length)}` : null;
+      if (created && created !== e.entity_id) renamed[created] = e.entity_id;
+    }
 
     // One group per config entry, in registry order; the prefix of a group comes
     // from its own first site entity.
@@ -56,10 +64,10 @@ export async function detectIntegration(hass, preferredPrefix = null) {
 
     const instances = [...byEntry.values()].map(g => ({ prefix: g.prefix ?? "evcc_", entryId: g.entryId }));
     const chosen = (preferredPrefix && instances.find(i => i.prefix === preferredPrefix)) || instances[0];
-    return { prefix: chosen.prefix, entryId: chosen.entryId, instances, disabled };
+    return { prefix: chosen.prefix, entryId: chosen.entryId, instances, disabled, renamed, registry: true };
   } catch (e) {
     console.warn("[evcc-card] Could not detect integration from entity registry:", e);
-    return { prefix: "evcc_", entryId: null, instances: [], disabled: [] };
+    return { prefix: "evcc_", entryId: null, instances: [], disabled: [], renamed: {}, registry: false };
   }
 }
 
@@ -241,12 +249,19 @@ function ownEntityCheck(hass) {
 
 // The vehicles ha-evcc knows, keyed by the slug it puts into their entity ids
 // (slugify of the vehicle title in evcc). A vehicle shows up here as soon as one
-// of its own entities exists: the configvehicle_* sensors, a repeating plan
-// switch or the session totals. None of them depends on a loadpoint, so an
+// of its own entities exists: the configvehicle_* sensors, evcc's settings of
+// the vehicle (limit, minimum charge, capacity), a repeating plan switch or the
+// session totals. None of them depends on a loadpoint, so an
 // unplugged vehicle stays in the list. Per vehicle: the VEHICLE_FEATURES and
 // VEHICLE_SESSION_FEATURES keys with their entity ids, plus `repeating_plans`,
 // the plan switches in plan order.
 const REPEATING_PLAN_RE = /^(.+)_repeating_plan_(\d+)$/;
+// A vehicle's `limit_soc` sensor ends like the loadpoint's effective_limit_soc
+// and vehicle_limit_soc: sensor.evcc_openwb_effective_limit_soc is no vehicle
+// "openwb_effective". Per vehicle feature, the loadpoint suffixes that end in it.
+const VEHICLE_SHADOWS = new Map(VEHICLE_FEATURES.map(v => [v, FEATURES
+  .filter(f => f.lp && f.domain === v.domain && f.suffix.endsWith("_" + v.suffix))
+  .map(f => "_" + f.suffix)]));
 export function discoverVehicles(hass, prefix = "evcc_") {
   const vehicles = {};
   const foreign  = installedPrefixes(hass).filter(p => p.length > prefix.length && p.startsWith(prefix));
@@ -274,6 +289,7 @@ export function discoverVehicles(hass, prefix = "evcc_") {
     const name    = session ? rest.slice(VEHICLE_SESSION_INFIX.length) : rest;
     for (const feat of feats) {
       if (feat.domain !== domain || !name.endsWith("_" + feat.suffix)) continue;
+      if (!session && VEHICLE_SHADOWS.get(feat).some(sh => name.endsWith(sh))) break;
       entry(name.slice(0, name.length - feat.suffix.length - 1))[feat.key] = entityId;
       break;
     }

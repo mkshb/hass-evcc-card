@@ -12,6 +12,8 @@
 //   attrs:   { "number.evcc_openwb_smart_cost_limit": { unit_of_measurement: "g/kWh" } }  override attributes
 //   disable: ["number.evcc_openwb_smart_cost_limit", ...]  mark registry entries disabled and drop their state
 //   rename:  { from: "evcc_", to: "myevcc_" }  rename the entity prefix everywhere (multi-instance setups)
+//   move:    { "sensor.evcc_battery_soc": "sensor.home_battery" }  entity ids changed by
+//            hand in HA: the registry keeps ha-evcc's unique_id with the id it created
 //   tariff:  "price" (default) or "co2" - what the WS data API reports as smartCostType
 //   second:  { prefix, entryId, first } - clone the fixture as a second ha-evcc config entry
 //   wsName:  "…"  put this string into every name the WS data API reports (session
@@ -40,7 +42,11 @@
 //            the end of tomorrow, as such a tariff publishes it; a list of
 //            variants instead: "high" lifts every price by 22 ct (39 to 59 ct
 //            as on a German dynamic tariff), "negative" puts it below zero
-//            from 12 to 14 h
+//            from 12 to 14 h, "fixed" is a fixed tariff of 28.1 ct with cheaper
+//            nights, 10 ct at midnight rising to 19 ct until 05:00 (#213)
+//   automatic: "off" | "battery" | "full"  ha-evcc 2026.11.2's optimizer switch (on) and
+//            automatic control select at that level, enabled; "disabled": the
+//            optimizer switched off, the level with it at "off" as evcc sets it
 //   capsVersion: "2026.6.3"  the version evcc_intg/capabilities reports; 2026.6.3
 //            also leaves out the loadpoint list, as that release did
 // A battery SoC by time of day: charges from 9 to 14 h, discharges overnight.
@@ -50,7 +56,7 @@ function mockSoc(t) {
   return Math.max(5, Math.min(100, Math.round(v)));
 }
 
-export async function createMockHass({ batteryExt = false, optimizer = false, language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, admin = true, drop = [], vehicleDevice = true, optimize = false, capsVersion = null, dynamic = false } = {}) {
+export async function createMockHass({ batteryExt = false, optimizer = false, language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, admin = true, drop = [], vehicleDevice = true, optimize = false, capsVersion = null, dynamic = false, automatic = null, move = {} } = {}) {
   const base = new URL("./fixtures/", import.meta.url);
   const json = (p) => fetch(new URL(p, base)).then(r => r.ok ? r.json() : Promise.reject(new Error(`fixture ${p}: ${r.status}`)));
 
@@ -88,8 +94,26 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
                       unique_id: `evcc_intg.${id.split(".")[1]}`, original_name: attributes.friendly_name });
     }
   }
+  if (automatic) {
+    const off = automatic === "disabled";
+    const ext = {
+      "switch.evcc_optimizer":           [off ? "off" : "on", { friendly_name: "Optimizer (experimental)" }],
+      "select.evcc_optimizer_automatic": [off ? "off" : automatic, { options: ["off", "battery", "full"], friendly_name: "Optimizer Automatic Control" }],
+    };
+    for (const [id, [state, attributes]] of Object.entries(ext)) {
+      states[id] = { entity_id: id, state, attributes };
+      registry.push({ entity_id: id, platform: "evcc_intg", config_entry_id: "01KW6EDNA9VMFE9QX98AZHH3WC", disabled_by: null,
+                      unique_id: `evcc_intg.${id.split(".")[1]}`, original_name: attributes.friendly_name });
+    }
+  }
+  // ha-evcc after 2026.11.2: the grid charge limit is unavailable while the
+  // automatic control is on (AvailableRule on optimizerAutomatic)
+  const autoOn = automatic === "battery" || automatic === "full";
   for (const [id, state] of Object.entries(set)) {
     if (states[id]) states[id] = { ...states[id], state: String(state) };
+  }
+  if (autoOn && states["number.evcc_battery_grid_charge_limit"]) {
+    states["number.evcc_battery_grid_charge_limit"] = { ...states["number.evcc_battery_grid_charge_limit"], state: "unavailable" };
   }
   for (const [id, over] of Object.entries(attrs)) {
     if (states[id]) states[id] = { ...states[id], attributes: { ...states[id].attributes, ...over } };
@@ -101,6 +125,10 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
   for (const id of disable) {
     delete states[id];
     const e = registry.find(r => r.entity_id === id); if (e) e.disabled_by = "user";
+  }
+  for (const [from, to] of Object.entries(move)) {
+    if (states[from]) { states[to] = { ...states[from], entity_id: to }; delete states[from]; }
+    const e = registry.find(r => r.entity_id === from); if (e) e.entity_id = to;
   }
   if (rename?.from && rename?.to) {
     const ren = (id) => id.replace(new RegExp(`^([a-z_]+\\.)${rename.from}`), `$1${rename.to}`);
@@ -193,6 +221,7 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
       let base = h < 5 ? 0.24 : h < 8 ? 0.29 : h < 11 ? 0.26 : h < 15 ? 0.17 : h < 17 ? 0.23 : h < 21 ? 0.36 : 0.27;
       if (dynVariants.includes("negative") && h >= 12 && h < 14) base = -0.03;
       if (dynVariants.includes("high")) base += 0.22;
+      if (dynVariants.includes("fixed")) return h < 5 ? Math.round((0.10 + 0.018 * (h + d.getMinutes() / 60)) * 10000) / 10000 : 0.281;
       return Math.round((base + 0.004 * (d.getMinutes() / 15)) * 10000) / 10000;
     };
     return { ...obj, rates: obj.rates.filter(r => new Date(r.start) < end).map(r => ({ ...r, value: at(r.start) })) };

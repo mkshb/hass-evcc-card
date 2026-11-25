@@ -42,12 +42,24 @@ test("entities of other integrations are ignored", async () => {
 
 test("without any evcc entity it falls back without an entry id", async () => {
   const got = await detectIntegration(hassWith([]));
-  assert.deepEqual(got, { prefix: "evcc_", entryId: null, instances: [], disabled: [] });
+  assert.deepEqual(got, { prefix: "evcc_", entryId: null, instances: [], disabled: [], renamed: {}, registry: true });
 });
 
 test("a failing registry call does not throw", async () => {
   const got = await detectIntegration({ callWS: async () => { throw new Error("nope"); } });
-  assert.deepEqual(got, { prefix: "evcc_", entryId: null, instances: [], disabled: [] });
+  assert.deepEqual(got, { prefix: "evcc_", entryId: null, instances: [], disabled: [], renamed: {}, registry: false });
+});
+
+test("an entity renamed in HA is found by ha-evcc's unique_id", async () => {
+  const got = await detectIntegration(hassWith([
+    ...entry("evcc_", "A"),
+    { entity_id: "sensor.hausbatterie_soc", unique_id: "evcc_intg.evcc_battery_soc", platform: "evcc_intg", config_entry_id: "A" },
+    { entity_id: "sensor.evcc_pv_energy",   unique_id: "evcc_intg.evcc_pv_energy",   platform: "evcc_intg", config_entry_id: "A" },
+    { entity_id: "sensor.evcc_grid_power",  unique_id: "something_else",             platform: "evcc_intg", config_entry_id: "A" },
+  ]));
+  assert.deepEqual(got.renamed, { "sensor.evcc_battery_soc": "sensor.hausbatterie_soc" },
+    "only ids that differ from the created one, and only ha-evcc's unique_id form");
+  assert.equal(got.registry, true);
 });
 
 // --- two config entries ------------------------------------------------------

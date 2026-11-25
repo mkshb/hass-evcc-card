@@ -266,7 +266,8 @@ def roundtrip(page, t):
     at_evcc = wait_for(lambda: evcc_state()["loadpoints"][idx - 1]["mode"] == "now" and "now", timeout=20)
     t.check(at_evcc == "now", "click on 'now' arrives at evcc (card -> HA -> ha-evcc -> evcc)",
             f"evcc mode={evcc_state()['loadpoints'][idx - 1]['mode']}")
-    in_card = wait_for(lambda: active() == "now" and "now", timeout=40)
+    # The card marks the pressed button at once; coming back means HA reports it.
+    in_card = wait_for(lambda: active() == "now" and ha_state(page, entity) == "now" and "now", timeout=40)
     t.check(in_card == "now", "and comes back into the card (evcc -> ha-evcc -> HA -> card)",
             f"active={active()} ha={ha_state(page, entity)}")
 
@@ -319,18 +320,22 @@ DURATION = {"d": 86400, "h": 3600, "min": 60, "s": 1}
 
 def vehicle_blocks(page):
     """What the vehicle view shows per vehicle, read from the shadow root of every
-    card in it - one card per vehicle."""
-    return page.locator("evcc-card").evaluate_all("""els => Object.fromEntries(els.flatMap(el => [...el.shadowRoot.querySelectorAll('.vehicle-block')]).map(b => [b.dataset.vehicle, {
+    card in it - one card per vehicle. `device`: the details carry an entity of the
+    vehicle's own device; evcc's capacity of the vehicle (ha-evcc 2026.11.2) alone
+    gives a vehicle without a device the details block as well."""
+    return page.locator("evcc-card").evaluate_all("""(els, prefix) => Object.fromEntries(els.flatMap(el => [...el.shadowRoot.querySelectorAll('.vehicle-block')]).map(b => [b.dataset.vehicle, {
         title:  b.querySelector('.lp-name')?.textContent.trim() ?? null,
         lp:     b.querySelector('.vehicle-lp')?.textContent.trim() ?? null,
         badge:  b.querySelector('.lp-badge')?.textContent.trim() ?? null,
         warn:   b.querySelector('.lp-disabled-warn')?.getAttribute('title') ?? null,
         hint:   b.querySelector('.vehicle-hint')?.textContent.trim() ?? null,
-        device: !!b.querySelector('[data-vehicle-details]'),
+        device: [...b.querySelectorAll('.vehicle-detail[data-more-info]')]
+                  .some(e => e.dataset.moreInfo !== `sensor.${prefix}${b.dataset.vehicle}_vehicle_capacity`),
+        capacity: b.querySelector(`.vehicle-detail[data-more-info="sensor.${prefix}${b.dataset.vehicle}_vehicle_capacity"]`) !== null,
         values: [...b.querySelectorAll('.soc-label-row [data-more-info]')].map(e => [e.dataset.moreInfo, e.textContent.trim()]),
         totals: Object.fromEntries([...b.querySelectorAll('.vehicle-totals .session-item')].map(e => [e.dataset.moreInfo, e.querySelector('.si-value').textContent.trim()])),
         plan:   b.querySelector('[data-vehicle-fold="plan"] .vehicle-fold-summary')?.textContent.trim() ?? null,
-      }]))""")
+      }]))""", PREFIX)
 
 
 def vehicle_view(page, t):
@@ -428,6 +433,9 @@ def vehicle_view(page, t):
         ids = [f"sensor.{PREFIX}{slug}_configvehicle_{k}" for k in ("soc", "range", "odometer", "limitsoc")]
         disabled = [i for i in ids if registry.get(i, {}).get("disabled_by")]
         b = blocks.get(slug, {})
+        cap = ha_state(page, f"sensor.{PREFIX}{slug}_vehicle_capacity")
+        if not b.get("device") and cap not in (None, "unknown", "unavailable"):
+            t.check(b.get("capacity"), f"{title}: without a device of its own the details carry evcc's capacity", f"HA {cap}")
         if b.get("device"):
             t.check(b.get("warn") is None, f"{title}: linked to a device of its own, no triangle", "")
         elif disabled:

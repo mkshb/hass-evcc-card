@@ -2798,5 +2798,59 @@
   "unique_id": "evcc_intg.evcc_id7_repeating_plan_10",
   "original_name": "id7 Ladeplan 10 (wiederholend)",
   "device_id": "f1c0de00evccvehicleid7fixture0004"
+ },
+ {
+  "entity_id": "sensor.evcc_ex30_limit_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_ex30_limit_soc",
+  "original_name": "EX30 Ladelimit [Fzg.]",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
+ },
+ {
+  "entity_id": "sensor.evcc_ex30_min_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_ex30_min_soc",
+  "original_name": "EX30 Min. Ladung [Fzg.]",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
+ },
+ {
+  "entity_id": "sensor.evcc_ex30_vehicle_capacity",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_ex30_vehicle_capacity",
+  "original_name": "EX30 Kapazität",
+  "device_id": "f1c0de00evccvehicleex30fixture003"
+ },
+ {
+  "entity_id": "sensor.evcc_id7_limit_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_id7_limit_soc",
+  "original_name": "id7 Ladelimit [Fzg.]",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
+ },
+ {
+  "entity_id": "sensor.evcc_id7_min_soc",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_id7_min_soc",
+  "original_name": "id7 Min. Ladung [Fzg.]",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
+ },
+ {
+  "entity_id": "sensor.evcc_id7_vehicle_capacity",
+  "platform": "evcc_intg",
+  "config_entry_id": "01KW6EDNA9VMFE9QX98AZHH3WC",
+  "disabled_by": null,
+  "unique_id": "evcc_intg.evcc_id7_vehicle_capacity",
+  "original_name": "id7 Kapazität",
+  "device_id": "f1c0de00evccvehicleid7fixture0004"
  }
 ]

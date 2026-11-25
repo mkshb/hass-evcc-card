@@ -1,4 +1,5 @@
 import { escHtml, escAttr } from "../utils/html.js";
+import { stateVal, attr, isOn, isLive } from "../utils/state.js";
 import { evccDate, fmtPrice } from "../utils/format.js";
 import { HA_EVCC_OPTIMIZER_VERSION } from "../core/constants.js";
 import { AXIS_FONT } from "../components/chart-px.js";
@@ -17,6 +18,13 @@ const REFRESH = 60 * 1000;
 // Chart geometry in pixels, the SVG in the width the chart has on screen
 // (src/components/chart-px.js). The left margin follows the longest axis label.
 const MR = 4, MT = 8, MB = 24;
+
+// evcc's automatic control levels (core/site.go OptimizerAutomaticLevels).
+const AUTO_LEVELS = ["off", "battery", "full"];
+// mdi:auto-fix, ha-evcc's icon of the automatic control.
+const autoIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16"><path d="M7.5,5.6L5,7L6.4,4.5L5,2L7.5,3.4L10,2L8.6,4.5L10,7L7.5,5.6M19.5,15.4L22,14L20.6,16.5L22,19L19.5,17.6L17,19L18.4,16.5L17,14L19.5,15.4M22,2L20.6,4.5L22,7L19.5,5.6L17,7L18.4,4.5L17,2L19.5,3.4L22,2M13.34,12.78L15.78,10.34L13.66,8.22L11.22,10.66L13.34,12.78M14.37,7.29L16.71,9.63C17.1,10 17.1,10.65 16.71,11.04L5.04,22.71C4.65,23.1 4,23.1 3.63,22.71L1.29,20.37C0.9,20 0.9,19.35 1.29,18.96L12.96,7.29C13.35,6.9 14,6.9 14.37,7.29Z"/></svg>`;
+// Opens HA's more-info dialog of the entity (listeners.js wires the click).
+const moreInfoAttr = (entityId) => entityId ? ` data-more-info="${escAttr(entityId)}"` : "";
 
 // The view last picked (chart or list), per ha-evcc instance (prefix), as the
 // battery mode keeps its tab. Storage that fails only means the chart shows.
@@ -75,11 +83,19 @@ export const optimizerView = {
         <span class="lp-name">${escHtml(this._config.title || this._t("optimizer"))}</span>
         ${extra}
       </div>`;
-    const note = (text) => `<div class="optimizer-block">${head()}<div class="opt-note">${escHtml(text)}</div></div>`;
+    const note = (text, extra = "") => `<div class="optimizer-block">${head()}<div class="opt-note">${escHtml(text)}</div>${extra}</div>`;
 
     if (this._haEvccTooOld()) return note(this._t("optTooOld", { ver: HA_EVCC_OPTIMIZER_VERSION }));
     if (!this._capsLoaded) return note(this._t("optLoading"));
     if (!this._hasCmd("optimizer")) return note(this._t("optTooOld", { ver: HA_EVCC_OPTIMIZER_VERSION }));
+
+    // evcc's own switch says the optimizer is off: no plan to wait for, the
+    // switch to turn it on instead (evcc's optimize page: "The optimizer is
+    // disabled"). A plan from before stays in ha-evcc, evcc hides it too.
+    if (isLive(this._hass, site.optimizer) && !isOn(this._hass, site.optimizer)) {
+      return note(this._t("optDisabled"), this._battSwitchRow(this._t("optSwitch"),
+        `data-entity="${site.optimizer}" data-domain="switch"`, false, site.optimizer));
+    }
 
     this._optScheduleRefresh();
     const result = this._wsOptimizer();
@@ -102,6 +118,7 @@ export const optimizerView = {
     return `
       <div class="optimizer-block">
         ${head(status + this._renderBattRecompute(site, "optRecompute"))}
+        ${this._renderOptAutomatic(site)}
         ${this._renderOptMeta(m)}
         ${this._renderOptSummary(m, result.data?.batteryForecast)}
         <div class="opt-section">
@@ -117,6 +134,39 @@ export const optimizerView = {
             ${this._renderOptChart(m, page, sel)}
             ${this._renderOptLegend(m)}
             <div class="opt-detail" aria-live="polite">${this._renderOptDetail(m, sel)}</div>`}
+        </div>
+      </div>`;
+  },
+
+  // evcc's automatic control: "battery" while the optimizer controls the home
+  // battery, "full" when it also starts and stops charging; null when it only
+  // suggests, or when ha-evcc does not tell (before 2026.11.2, or the select
+  // disabled). evcc's own pages go by this level alone (Battery.vue), and evcc
+  // drops it to "off" when the optimizer is switched off.
+  _optAutomatic(site) {
+    const id = site?.optimizer_automatic;
+    if (!isLive(this._hass, id)) return null;
+    const v = stateVal(this._hass, id);
+    return v === "battery" || v === "full" ? v : null;
+  },
+
+  // The automatic control under the header, as evcc's optimize page shows it:
+  // the level as a select and what it means. Only with ha-evcc's select.
+  _renderOptAutomatic(site) {
+    const id = site.optimizer_automatic;
+    if (!isLive(this._hass, id)) return "";
+    const cur = stateVal(this._hass, id);
+    const offered = attr(this._hass, id, "options");
+    const levels = AUTO_LEVELS.filter(l => !Array.isArray(offered) || offered.includes(l));
+    if (!levels.includes(cur)) return "";
+    const options = levels.map(l => `<option value="${l}"${l === cur ? " selected" : ""}>${this._t(`optAuto_${l}`)}</option>`).join("");
+    return `
+      <div class="opt-auto">
+        <span class="opt-auto-icon">${autoIcon}</span>
+        <div>
+          <div><span class="opt-auto-title"${moreInfoAttr(id)}>${this._t("optAutoTitle")}</span>
+            <select class="batt-inline-select" data-entity="${escAttr(id)}" aria-label="${escAttr(this._t("optAutoTitle"))}">${options}</select></div>
+          <div class="opt-auto-desc">${this._t(`optAutoDesc_${cur}`)}</div>
         </div>
       </div>`;
   },
@@ -847,6 +897,10 @@ export const optimizerCss = `
         --opt-dis: var(--evcc-orange);
         --opt-hold: color-mix(in srgb, var(--secondary-text-color) 55%, transparent); }
       .optimizer-block .lp-header { margin-bottom: 0; }
+      .opt-auto { display: flex; align-items: flex-start; gap: 8px; font-size: .8rem; }
+      .opt-auto-icon svg { fill: var(--primary-color, #00b4d8); margin-top: 1px; }
+      .opt-auto-title { font-weight: 600; margin-right: 4px; }
+      .opt-auto-desc { color: var(--secondary-text-color); font-size: .74rem; margin-top: 2px; }
       .opt-note { font-size: .82rem; color: var(--secondary-text-color); line-height: 1.5; }
       .opt-status { font-size: .7rem; font-weight: 600; padding: 2px 9px; border-radius: 999px; white-space: nowrap;
         color: var(--evcc-green); border: 1px solid var(--evcc-green); background: color-mix(in srgb, var(--evcc-green) 12%, transparent); }
