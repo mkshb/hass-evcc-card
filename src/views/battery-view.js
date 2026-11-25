@@ -50,6 +50,8 @@ const MDI = {
   bolt:      "M11 15H6L13 1V9H18L11 23V15Z",
   sun:       "M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z",
   refresh:   "M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z",
+  // mdi:auto-fix, evcc's automatic control (ha-evcc's icon of optimizer_automatic)
+  autoFix:   "M7.5,5.6L5,7L6.4,4.5L5,2L7.5,3.4L10,2L8.6,4.5L10,7L7.5,5.6M19.5,15.4L22,14L20.6,16.5L22,19L19.5,17.6L17,19L18.4,16.5L17,14L19.5,15.4M22,2L20.6,4.5L22,7L19.5,5.6L17,7L18.4,4.5L17,2L19.5,3.4L22,2M13.34,12.78L15.78,10.34L13.66,8.22L11.22,10.66L13.34,12.78M14.37,7.29L16.71,9.63C17.1,10 17.1,10.65 16.71,11.04L5.04,22.71C4.65,23.1 4,23.1 3.63,22.71L1.29,20.37C0.9,20 0.9,19.35 1.29,18.96L12.96,7.29C13.35,6.9 14,6.9 14.37,7.29Z",
   lightbulb: "M12,2A7,7 0 0,0 5,9C5,11.38 6.19,13.47 8,14.74V17A1,1 0 0,0 9,18H15A1,1 0 0,0 16,17V14.74C17.81,13.47 19,11.38 19,9A7,7 0 0,0 12,2M9,21A1,1 0 0,0 10,22H14A1,1 0 0,0 15,21V20H9V21Z",
   grid:      "M8.28,5.45L6.5,4.55L7.76,2H16.23L17.5,4.55L15.72,5.44L15,4H9L8.28,5.45M18.62,8H14.09L13.3,5H10.7L9.91,8H5.38L4.1,10.55L5.89,11.44L6.62,10H17.38L18.1,11.45L19.89,10.56L18.62,8M17.77,22H15.7L15.46,21.1L12,15.9L8.53,21.1L8.3,22H6.23L9.12,11H11.19L10.83,12.35L12,14.1L13.16,12.35L12.81,11H14.88L17.77,22M11.4,15L10.5,13.65L9.32,18.13L11.4,15M14.68,18.12L13.5,13.64L12.6,15L14.68,18.12Z",
 };
@@ -432,7 +434,10 @@ export const batteryView = {
       const past = this._battHistory(id, win.start, histEnd, states => this._battOnIntervals(states)) ?? [];
       for (const b of past) bands.push({ s: b.s, e: Math.min(b.e, histEnd), kind, future: false });
     }
-    if (win.end > win.now) {
+    // Under evcc's automatic control the optimizer decides in place of both
+    // limits (core/site_battery.go): the tariff against a limit says nothing
+    // about the future then, only the past stays.
+    if (win.end > win.now && !this._optAutomatic(site)) {
       const future = (kind, rateKind, limitId, hit) => {
         const limit = limitId ? parseFloat(stateVal(this._hass, limitId)) : NaN;
         if (isNaN(limit)) return;
@@ -699,12 +704,14 @@ export const batteryView = {
     return `<div class="batt-section">${head}<div class="batt-tab-body">${body}</div></div>`;
   },
 
-  // A switch on the right of the sentence that says what it does.
-  _battSwitchRow(desc, attrs, on, infoId) {
+  // A switch on the right of the sentence that says what it does. `locked`:
+  // evcc refuses the setting (automatic control), the switch shows off and
+  // takes no click.
+  _battSwitchRow(desc, attrs, on, infoId, locked = false) {
     return `
-      <div class="batt-switch-row">
+      <div class="batt-switch-row${locked ? " locked" : ""}">
         <span class="batt-switch-desc"${moreInfo(infoId)}>${desc}</span>
-        <button class="batt-discharge-toggle ${on ? "on" : ""}" role="switch" aria-checked="${on}" data-on="${on}" ${attrs}>
+        <button class="batt-discharge-toggle ${on ? "on" : ""}" role="switch" aria-checked="${on}" data-on="${on}" ${attrs}${locked ? " disabled" : ""}>
           <span class="batt-toggle-knob"></span>
         </button>
       </div>`;
@@ -714,6 +721,13 @@ export const batteryView = {
   // mean none.
   _battRefLine(v) {
     return v > 0 && v < 100;
+  },
+
+  // evcc's note under a setting its automatic control takes over: "Disabled
+  // by automatic control. The optimizer decides instead." It opens the
+  // automatic control's more-info, where it is switched.
+  _renderBattAutoHint(site) {
+    return `<div class="batt-auto-hint"${moreInfo(site.optimizer_automatic)}>${icon(MDI.autoFix, 16)}<span>${this._t("battAutoControlled")}</span></div>`;
   },
 
   _renderBattUsage(site) {
@@ -764,9 +778,14 @@ export const batteryView = {
       items.push(item(MDI.bolt, this._t("battBufferTitle"),
         this._t(bufferVal < 100 ? "battBuffer" : "battBufferNone", { soc: sel, start }), site.buffer_soc));
     }
+    // Under automatic control evcc refuses the setting and shows it off, as
+    // a stored "on" no longer applies (BatteryConfigCard.vue).
+    const auto = !!this._optAutomatic(site);
     const lock = isLive(this._hass, site.battery_discharge_control)
       ? this._battSwitchRow(this._t("battDischargeLock"),
-          `data-entity="${site.battery_discharge_control}" data-domain="switch"`, isOn(this._hass, site.battery_discharge_control), site.battery_discharge_control)
+          `data-entity="${site.battery_discharge_control}" data-domain="switch"`,
+          !auto && isOn(this._hass, site.battery_discharge_control), site.battery_discharge_control, auto)
+        + (auto ? this._renderBattAutoHint(site) : "")
       : "";
     return `<div class="batt-text-col">${items.join("")}</div>${lock}`;
   },
@@ -778,6 +797,18 @@ export const batteryView = {
 
   _renderBattGridCharge(site) {
     const limitId = site.battery_grid_charge_limit;
+    // Under automatic control evcc refuses the limit (409) and the optimizer
+    // decides when to charge from the grid: the sentence, the note and the
+    // tariff without a limit, no switch, no slider, no selector. ha-evcc after
+    // 2026.11.2 also reports the limit unavailable then (an AvailableRule on
+    // optimizerAutomatic), which is all the card sees while the select is
+    // disabled: the same without the note, as the card cannot say why.
+    const auto = this._optAutomatic(site);
+    if (auto || stateVal(this._hass, limitId) === "unavailable") {
+      return `<div class="batt-switch-row locked"><span class="batt-switch-desc"${moreInfo(limitId)}>${this._t("battGridChargeDesc")}</span></div>
+        ${auto ? this._renderBattAutoHint(site) : ""}
+        ${this._battSlots("planner", null, () => false)?.html ?? ""}`;
+    }
     const isCo2   = (attr(this._hass, limitId, "unit_of_measurement") ?? "") === "g/kWh";
     return this._renderBattLimit({
       key: "charge", limitId, activeId: site.battery_grid_charge_active,
@@ -1197,6 +1228,10 @@ export const batteryCss = `
       /* Mixed with the text colour: readable on a light and a dark theme. */
       .batt-inline-select.priority { color: color-mix(in srgb, var(--batt-priority) 80%, var(--primary-text-color)); border-bottom-color: currentColor; }
       .batt-inline-select.buffer   { color: color-mix(in srgb, var(--batt-buffer) 65%, var(--primary-text-color)); border-bottom-color: currentColor; }
+      .batt-auto-hint { display: flex; align-items: flex-start; gap: 8px; margin: 4px 0 8px; color: var(--secondary-text-color); font-size: .76rem; line-height: 1.35; }
+      .batt-auto-hint svg { flex: 0 0 auto; margin-top: 1px; fill: currentColor; }
+      .batt-switch-row.locked .batt-switch-desc { color: var(--secondary-text-color); }
+      .batt-discharge-toggle:disabled { opacity: .4; cursor: default; }
       .batt-inline-select { color: var(--primary-color, #00b4d8); font-weight: 600; font-size: .76rem; font-family: inherit; background: transparent; border: none; border-bottom: 1px dotted var(--primary-color, #00b4d8); cursor: pointer; padding: 0 2px; outline: none; appearance: none; -webkit-appearance: none; }
       .batt-discharge-toggle { width: 42px; height: 24px; border-radius: 12px; border: none; background: var(--divider-color, #444); position: relative; cursor: pointer; flex-shrink: 0; transition: background .2s; }
       .batt-discharge-toggle.on { background: var(--primary-color, #00b4d8); }

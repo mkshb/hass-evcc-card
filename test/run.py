@@ -153,13 +153,15 @@ def done(page):
 
 def open_card(page, port, config=None, mode=None, dark=False, width=400, lang="de", ws=True, set=None, disable=None,
               rename=None, attrs=None, tariff=None, second=None, wsname=None, admin=True, drop=None,
-              vehicle_device=True, optimizer=False, battery_ext=False, optimize=False, caps_version=None, dynamic=False):
+              vehicle_device=True, optimizer=False, battery_ext=False, optimize=False, caps_version=None, dynamic=False,
+              automatic=None):
     q = {"w": width, "lang": lang}
     if dynamic: q["dyn"] = 1 if dynamic is True else dynamic
     if caps_version: q["capsver"] = caps_version
     if optimizer: q["optimizer"] = 1 if optimizer is True else optimizer
     if battery_ext: q["battext"] = 1
     if optimize: q["optimize"] = 1
+    if automatic: q["automatic"] = automatic
     if not ws: q["ws"] = 0
     if not admin: q["admin"] = 0
     if drop: q["drop"] = ",".join(drop)
@@ -4405,6 +4407,28 @@ def optimizer_mode(browser, port, t):
     settle(page)
     t.check(text(page, ".opt-dt") == ["Mi 23:45 bis 00:00"] and text(page, ".opt-step-label") == ["Morgen"], "a render keeps page and slot")
 
+    t.group("optimizer - automatic control")
+    page2, errors = opt_page(automatic="full")
+    t.check(not errors, "renders with the automatic control", "; ".join(errors)[:300])
+    sel = page2.locator(in_card(".opt-auto select"))
+    t.check(sel.count() == 1 and sel.input_value() == "full"
+            and page2.evaluate("() => [...window.__card.shadowRoot.querySelectorAll('.opt-auto option')].map(o => o.textContent)") == ["Aus", "Hausbatterie", "Hausbatterie & Ladepunkte"],
+            "the level as a select, evcc's three levels")
+    t.check("startet und stoppt das Laden" in page2.locator(in_card(".opt-auto-desc")).inner_text(), "what the level does", page2.locator(in_card(".opt-auto-desc")).inner_text())
+    sel.select_option("battery"); settle(page2)
+    call = [c for c in svc(page2) if c["service"] == "select_option"]
+    t.check(call and call[-1]["data"] == {"entity_id": "select.evcc_optimizer_automatic", "option": "battery"}, "a level writes the select", json.dumps(call)[-200:])
+    t.check(page2.locator(in_card(".opt-chart")).count() == 1, "the plan stays below it")
+    done(page2)
+    page2, errors = opt_page(automatic="disabled")
+    t.check(not errors and text(page2, ".opt-note") == ["Der Optimizer in evcc ist ausgeschaltet."] and page2.locator(in_card(".opt-chart")).count() == 0,
+            "the optimizer switched off: a note instead of the plan", str(text(page2, ".opt-note")))
+    click(page2, "button.batt-discharge-toggle[data-entity='switch.evcc_optimizer']")
+    call = [c for c in svc(page2) if c["domain"] == "switch"]
+    t.check(call and call[-1]["service"] == "turn_on" and call[-1]["data"] == {"entity_id": "switch.evcc_optimizer"}, "its switch turns it on", json.dumps(call)[-200:])
+    done(page2)
+    t.check(page.locator(in_card(".opt-auto")).count() == 0, "without ha-evcc's select no automatic control")
+
     t.group("optimizer - legend")
     legend = text(page, "button.opt-leg")
     t.check(legend == ["Haus", "WP", "openWB (EX30)", "Speicher", "PV-Prognose", "Netz"], "the power lane's entries are buttons", str(legend))
@@ -4934,6 +4958,62 @@ def battery_mode(browser, port, t):
     open_card(page, port, mode="battery", set={"number.evcc_battery_grid_charge_limit": "0.21"})
     got = bands(page)
     t.check("batt-band charge" in got and not any("future" in c for c in got), "no forecast: the past only", json.dumps(sorted(set(got))))
+    done(page)
+
+    t.group("battery - optimizer automatic control")
+    # evcc's automatic control (ha-evcc 2026.11.2): evcc refuses the discharge
+    # lock and the grid charge limit (409) and the optimizer decides in place
+    # of both limits; grid discharging stays the opt-in it was
+    limits = {"number.evcc_battery_grid_charge_limit": "0.21", "switch.evcc_battery_grid_discharge": "on",
+              "number.evcc_battery_grid_discharge_limit": "0.09", "switch.evcc_battery_discharge_control": "on"}
+    lock_sel = "button.batt-discharge-toggle[data-entity='switch.evcc_battery_discharge_control']"
+    for level in ("battery", "full"):
+        page = new_page(browser, 480, 1600)
+        errors = open_card(page, port, mode="battery", battery_ext=True, optimizer=True, automatic=level, set=limits)
+        t.check(not errors, f"automatic {level}: renders without errors", "; ".join(errors)[:200])
+        got = bands(page)
+        t.check(got and not any("future" in c for c in got), f"automatic {level}: the past bands only, the limits no longer say what lies ahead", json.dumps(sorted(set(got))))
+        lock = page.locator(in_card(lock_sel))
+        t.check(lock.is_disabled() and lock.get_attribute("aria-checked") == "false", f"automatic {level}: the discharge lock shows off and is disabled")
+        hint = page.locator(in_card(".batt-auto-hint"))
+        t.check(hint.count() == 1 and "Durch automatische Steuerung deaktiviert" in hint.inner_text(), f"automatic {level}: evcc's note under it")
+        page.evaluate(f"() => window.__card.shadowRoot.querySelector({json.dumps(lock_sel)}).click()")
+        settle(page)
+        t.check(not [c for c in svc(page) if c["domain"] == "switch"], f"automatic {level}: a click writes nothing", json.dumps(svc(page))[:200])
+        page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).click(); settle(page)
+        body = lambda sel: page.locator(in_card(f".batt-tab-body {sel}")).count()
+        t.check(body(".batt-auto-hint") == 1 and body(".batt-slots") == 1 and body(".batt-slots.pick") == 0
+                and body("line.batt-slots-limit") == 0 and body(".slider-row") == 0 and body("button.batt-discharge-toggle") == 0,
+                f"automatic {level}: grid charging shows the note and the tariff, no switch, slider, limit line or selector")
+        page.locator(in_card('button.batt-tab[data-batt-tab="discharge"]')).click(); settle(page)
+        allow = page.locator(in_card("button.batt-discharge-toggle[data-batt-discharge]"))
+        t.check(allow.count() == 1 and not allow.is_disabled() and body(".batt-auto-hint") == 0 and body(".slider-row") == 1,
+                f"automatic {level}: grid discharging unchanged, as in evcc")
+        done(page)
+    # level off: everything as without the select
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True, optimizer=True, automatic="off", set=limits)
+    lock = page.locator(in_card(lock_sel))
+    t.check(not lock.is_disabled() and lock.get_attribute("aria-checked") == "true" and page.locator(in_card(".batt-auto-hint")).count() == 0,
+            "automatic off: the discharge lock as it is")
+    t.check(any("future" in c for c in bands(page)), "automatic off: the future bands from the limits")
+    done(page)
+    # a running optimizer with the select disabled: the triangle names it
+    page = new_page(browser, 480, 1600)
+    open_card(page, port, mode="battery", battery_ext=True, optimizer=True, optimize=True, automatic="off", disable=["select.evcc_optimizer_automatic"])
+    warn = page.locator(in_card(".battery-block .lp-disabled-warn"))
+    t.check(warn.count() == 1 and "Automatische Steuerung" in (warn.get_attribute("title") or ""), "disabled automatic control: the triangle names it", warn.get_attribute("title") if warn.count() else "")
+    done(page)
+    # automatic control on, its select disabled: ha-evcc reports the grid
+    # charge limit unavailable, the card cannot say why
+    page = new_page(browser, 480, 1600)
+    errors = open_card(page, port, mode="battery", battery_ext=True, optimizer=True, automatic="full", disable=["select.evcc_optimizer_automatic"])
+    t.check(not errors, "unavailable grid charge limit: renders without errors", "; ".join(errors)[:200])
+    page.locator(in_card('button.batt-tab[data-batt-tab="charge"]')).click(); settle(page)
+    body = lambda sel: page.locator(in_card(f".batt-tab-body {sel}")).count()
+    t.check(body(".batt-switch-row.locked") == 1 and body(".batt-slots") == 1 and body(".batt-auto-hint") == 0
+            and body(".slider-row") == 0 and body("button.batt-discharge-toggle") == 0 and body(".batt-slots.pick") == 0,
+            "unavailable grid charge limit: the sentence and the tariff, no controls, no note without the select")
     done(page)
 
     # priority and buffer SoC: a line each in the chart, and their values in

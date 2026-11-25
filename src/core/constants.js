@@ -141,6 +141,10 @@ export const FEATURES = [
   { suffix: "battery_grid_discharge_limit",  domain: "number",        type: "slider",      lp: false },
   // evcc's "optimize" (POST /api/optimize), ha-evcc 2026.10.2+, disabled by default there
   { suffix: "optimize",                      domain: "button",        type: "button",      lp: false },
+  // evcc's optimizer and its automatic control (off, battery, full), ha-evcc
+  // 2026.11.2+, both disabled by default there; writing needs the evcc password
+  { suffix: "optimizer",                     domain: "switch",        type: "toggle",      lp: false },
+  { suffix: "optimizer_automatic",           domain: "select",        type: "select",      lp: false },
 ];
 
 // Entities ha-evcc creates per vehicle, independent of any loadpoint:
@@ -508,6 +512,8 @@ export const DISABLED_NEEDED = [
   { domain: "button", suffix: "battery_grid_charge_limit",    site: true, needs: "number.battery_grid_charge_limit", what: "disabledWhatBattGridChargeClear" },
   // Site level, only while evcc's optimizer delivers a forecast: the battery mode recomputes it through it.
   { domain: "button", suffix: "optimize",                     site: true, optimizer: true,                          what: "disabledWhatOptimize" },
+  // Site level, only while evcc's optimizer delivers a forecast: whether it controls the battery itself.
+  { domain: "select", suffix: "optimizer_automatic",          site: true, optimizer: true,                          what: "disabledWhatOptimizerAutomatic" },
   { domain: "number", suffix: "limit_energy",                 hide: "limit_soc",                    energy: true,                                   what: "disabledWhatLimitEnergy" },
   // The plan block reads the kWh target of a saved plan from it (#207).
   { domain: "sensor", suffix: "plan_energy",                  plan: true,                                                                           what: "disabledWhatPlanEnergy" },

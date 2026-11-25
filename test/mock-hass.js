@@ -41,6 +41,9 @@
 //            variants instead: "high" lifts every price by 22 ct (39 to 59 ct
 //            as on a German dynamic tariff), "negative" puts it below zero
 //            from 12 to 14 h
+//   automatic: "off" | "battery" | "full"  ha-evcc 2026.11.2's optimizer switch (on) and
+//            automatic control select at that level, enabled; "disabled": the
+//            optimizer switched off, the level with it at "off" as evcc sets it
 //   capsVersion: "2026.6.3"  the version evcc_intg/capabilities reports; 2026.6.3
 //            also leaves out the loadpoint list, as that release did
 // A battery SoC by time of day: charges from 9 to 14 h, discharges overnight.
@@ -50,7 +53,7 @@ function mockSoc(t) {
   return Math.max(5, Math.min(100, Math.round(v)));
 }
 
-export async function createMockHass({ batteryExt = false, optimizer = false, language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, admin = true, drop = [], vehicleDevice = true, optimize = false, capsVersion = null, dynamic = false } = {}) {
+export async function createMockHass({ batteryExt = false, optimizer = false, language = "de", ws = true, set = {}, attrs = {}, disable = [], rename = null, tariff = "price", second = null, wsName = null, admin = true, drop = [], vehicleDevice = true, optimize = false, capsVersion = null, dynamic = false, automatic = null } = {}) {
   const base = new URL("./fixtures/", import.meta.url);
   const json = (p) => fetch(new URL(p, base)).then(r => r.ok ? r.json() : Promise.reject(new Error(`fixture ${p}: ${r.status}`)));
 
@@ -88,8 +91,26 @@ export async function createMockHass({ batteryExt = false, optimizer = false, la
                       unique_id: `evcc_intg.${id.split(".")[1]}`, original_name: attributes.friendly_name });
     }
   }
+  if (automatic) {
+    const off = automatic === "disabled";
+    const ext = {
+      "switch.evcc_optimizer":           [off ? "off" : "on", { friendly_name: "Optimizer (experimental)" }],
+      "select.evcc_optimizer_automatic": [off ? "off" : automatic, { options: ["off", "battery", "full"], friendly_name: "Optimizer Automatic Control" }],
+    };
+    for (const [id, [state, attributes]] of Object.entries(ext)) {
+      states[id] = { entity_id: id, state, attributes };
+      registry.push({ entity_id: id, platform: "evcc_intg", config_entry_id: "01KW6EDNA9VMFE9QX98AZHH3WC", disabled_by: null,
+                      unique_id: `evcc_intg.${id.split(".")[1]}`, original_name: attributes.friendly_name });
+    }
+  }
+  // ha-evcc after 2026.11.2: the grid charge limit is unavailable while the
+  // automatic control is on (AvailableRule on optimizerAutomatic)
+  const autoOn = automatic === "battery" || automatic === "full";
   for (const [id, state] of Object.entries(set)) {
     if (states[id]) states[id] = { ...states[id], state: String(state) };
+  }
+  if (autoOn && states["number.evcc_battery_grid_charge_limit"]) {
+    states["number.evcc_battery_grid_charge_limit"] = { ...states["number.evcc_battery_grid_charge_limit"], state: "unavailable" };
   }
   for (const [id, over] of Object.entries(attrs)) {
     if (states[id]) states[id] = { ...states[id], attributes: { ...states[id].attributes, ...over } };
